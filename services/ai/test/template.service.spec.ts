@@ -22,6 +22,6 @@ describe('AiController', () => {
     const ctx = { organisationId: 'org-1', actorId: 'user-1' } as any;
     const result = await controller.summarize(ctx, { prompt: 'Summarize this' });
     expect(result.result).toBe('A placeholder summary.');
-    expect(mockService.summarize).toHaveBeenCalledWith('Summarize this');
+    expect(mockService.summarize).toHaveBeenCalledWith('Summarize this', undefined);
   });
 });

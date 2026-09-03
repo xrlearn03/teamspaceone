@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { MetricsModule } from '@reactify/metrics';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { InboxModule } from '../inbox/inbox.module.js';
 import { AuditModule } from '../audit/audit.module.js';
@@ -10,7 +11,7 @@ import { ReplayService } from './replay.service.js';
 import { ReplayController } from './replay.controller.js';
 
 @Module({
-  imports: [PrismaModule, InboxModule, AuditModule],
+  imports: [PrismaModule, InboxModule, AuditModule, MetricsModule],
   controllers: [DeadLetterController, ReplayController],
   providers: [NatsClientService, NatsConsumerService, DeadLetterService, ReplayService],
   exports: [NatsClientService, DeadLetterService, ReplayService],

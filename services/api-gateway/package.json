@@ -27,6 +27,7 @@
     "@reactify/logger": "workspace:*",
     "@reactify/opentelemetry": "workspace:*",
     "@reactify/organisation-context": "workspace:*",
+    "@reactify/metrics": "workspace:*",
     "http-proxy-middleware": "^3.0.0",
     "jsonwebtoken": "^9.0.2",
     "nats": "^2.28.0",

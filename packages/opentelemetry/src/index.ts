@@ -14,6 +14,20 @@ export interface TelemetryOptions {
 
 let sdk: NodeSDK | undefined;
 
+export function getTraceContextHeaders(): Record<string, string> {
+  const carrier: Record<string, string> = {};
+  propagation.inject(context.active(), carrier);
+  return carrier;
+}
+
+export function withTraceContextHeaders<T>(
+  headers: Record<string, string>,
+  fn: () => T | Promise<T>,
+): Promise<T> {
+  const ctx = propagation.extract(context.active(), headers);
+  return context.with(ctx, fn) as Promise<T>;
+}
+
 export function initTelemetry(options: TelemetryOptions): void {
   if (sdk) {
     return;

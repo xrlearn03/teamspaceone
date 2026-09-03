@@ -9,6 +9,7 @@ import { AppModule } from './app.module.js';
 import { createLogger, type Logger } from '@reactify/logger';
 import { initTelemetry } from '@reactify/opentelemetry';
 import { OrganisationContextMiddleware } from '@reactify/organisation-context';
+import { MetricsService } from '@reactify/metrics';
 
 function adaptLogger(pino: Logger): LoggerService {
   return {
@@ -59,7 +60,32 @@ async function bootstrap() {
   const pino = createLogger({ name: 'api-gateway' });
   const app = await NestFactory.create(AppModule, { logger: adaptLogger(pino) });
 
+  const metrics = app.get(MetricsService);
+  const requestCounter = metrics.counter(
+    'reactify_http_requests_total',
+    'HTTP requests handled by the gateway',
+    ['method', 'status'],
+  );
+  const requestDuration = metrics.histogram(
+    'reactify_http_request_duration_seconds',
+    'HTTP request duration in seconds',
+    ['method'],
+    [0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5],
+  );
+
+  function metricsMiddleware(req: Request, res: Response, next: NextFunction) {
+    const start = process.hrtime.bigint();
+    res.on('finish', () => {
+      const duration = Number(process.hrtime.bigint() - start) / 1e9;
+      const status = String(res.statusCode);
+      requestCounter.inc({ method: req.method, status });
+      requestDuration.observe({ method: req.method }, duration);
+    });
+    next();
+  }
+
   app.use(securityHeaders);
+  app.use(metricsMiddleware);
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const middleware = new OrganisationContextMiddleware();

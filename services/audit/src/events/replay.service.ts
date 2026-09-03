@@ -1,6 +1,8 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { AckPolicy, DeliverPolicy, ReplayPolicy, type JsMsg } from 'nats';
+import { AckPolicy, DeliverPolicy, ReplayPolicy, headers, type JsMsg } from 'nats';
 import { isEventEnvelope, type EventEnvelope } from '@reactify/event-contracts';
+import { getTraceContextHeaders } from '@reactify/opentelemetry';
+import { MetricsService } from '@reactify/metrics';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { NatsClientService } from './nats-client.service.js';
 
@@ -16,11 +18,19 @@ export interface ReplayInput {
 @Injectable()
 export class ReplayService {
   private readonly logger = new Logger(ReplayService.name);
+  private readonly replayCounter;
 
   constructor(
     private readonly nats: NatsClientService,
     private readonly prisma: PrismaService,
-  ) {}
+    private readonly metrics: MetricsService,
+  ) {
+    this.replayCounter = this.metrics.counter(
+      'reactify_events_replayed_total',
+      'Total events replayed by the audit service',
+      ['subject'],
+    );
+  }
 
   async replay(input: ReplayInput): Promise<{ replayed: number; to: string; from: string }> {
     const fromTime = new Date(input.from);
@@ -31,6 +41,11 @@ export class ReplayService {
     }
 
     const js = await this.nats.getJetStream();
+    const natsHeaders = headers();
+    for (const [k, v] of Object.entries(getTraceContextHeaders())) {
+      natsHeaders.append(k, v);
+    }
+
     const subscription = await js.subscribe(input.subject, {
       config: {
         deliver_policy: DeliverPolicy.StartTime,
@@ -76,8 +91,9 @@ export class ReplayService {
         }
 
         const target = input.targetSubject ?? envelope.eventType;
-        await js.publish(target, raw);
+        await js.publish(target, raw, { headers: natsHeaders });
         replayed.push(envelope.eventId);
+        this.replayCounter.inc({ subject: input.subject });
 
         jsMsg.ack();
       }

@@ -1,4 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { headers } from 'nats';
+import { MetricsService } from '@reactify/metrics';
+import { getTraceContextHeaders } from '@reactify/opentelemetry';
 import { type EventEnvelope } from '@reactify/event-contracts';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { NatsClientService } from './nats-client.service.js';
@@ -33,10 +36,25 @@ function isEventEnvelopeLike(value: unknown): value is EventEnvelope {
 export class DeadLetterService {
   private readonly logger = new Logger(DeadLetterService.name);
 
+  private readonly dlqCounter;
+  private readonly retryCounter;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly nats: NatsClientService,
-  ) {}
+    private readonly metrics: MetricsService,
+  ) {
+    this.dlqCounter = this.metrics.counter(
+      'reactify_dead_letter_events_total',
+      'Total dead-letter events received',
+      ['subject'],
+    );
+    this.retryCounter = this.metrics.counter(
+      'reactify_dead_letter_retries_total',
+      'Total dead-letter retry attempts',
+      ['success'],
+    );
+  }
 
   isDeadLetterSubject(subject: string): boolean {
     return subject.startsWith('reactify.dead-letter.') || subject.startsWith('reactify.dlq.');
@@ -62,6 +80,7 @@ export class DeadLetterService {
       },
     });
 
+    this.dlqCounter.inc({ subject });
     this.logger.log({ subject, eventId: raw.eventId }, 'Stored dead-letter event');
   }
 
@@ -93,8 +112,13 @@ export class DeadLetterService {
     const subject = original.eventType ?? dlq.subject;
     const js = await this.nats.getJetStream();
 
+    const natsHeaders = headers();
+    for (const [k, v] of Object.entries(getTraceContextHeaders())) {
+      natsHeaders.append(k, v);
+    }
+
     try {
-      await js.publish(subject, JSON.stringify(original));
+      await js.publish(subject, JSON.stringify(original), { headers: natsHeaders });
 
       await this.prisma.deadLetterEvent.update({
         where: { id },
@@ -112,10 +136,12 @@ export class DeadLetterService {
         },
       });
 
+      this.retryCounter.inc({ success: 'true' });
       this.logger.log({ deadLetterId: id, subject, eventId: original.eventId }, 'Retried dead-letter event');
 
       return { retried: true, retry };
     } catch (err) {
+      this.retryCounter.inc({ success: 'false' });
       await this.prisma.deadLetterRetry.create({
         data: {
           deadLetterEventId: id,

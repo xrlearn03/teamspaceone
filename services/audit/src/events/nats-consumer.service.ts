@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { AckPolicy, type JsMsg } from 'nats';
 import { isEventEnvelope, type EventEnvelope } from '@reactify/event-contracts';
+import { withTraceContextHeaders } from '@reactify/opentelemetry';
 import { InboxService } from '../inbox/inbox.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NatsClientService } from './nats-client.service.js';
@@ -35,24 +36,29 @@ export class NatsConsumerService implements OnModuleInit {
   private async consume(subscription: any) {
     for await (const msg of subscription) {
       const jsMsg = msg as JsMsg;
+      const traceparent = jsMsg.headers?.get('traceparent');
+      const traceHeaders: Record<string, string> = traceparent ? { traceparent } : {};
+
       try {
-        const raw = new TextDecoder().decode(jsMsg.data);
-        const data = JSON.parse(raw);
+        await withTraceContextHeaders(traceHeaders, async () => {
+          const raw = new TextDecoder().decode(jsMsg.data);
+          const data = JSON.parse(raw);
 
-        if (this.deadLetter.isDeadLetterSubject(jsMsg.subject)) {
-          await this.deadLetter.store(jsMsg.subject, data as any);
+          if (this.deadLetter.isDeadLetterSubject(jsMsg.subject)) {
+            await this.deadLetter.store(jsMsg.subject, data as any);
+            jsMsg.ack();
+            return;
+          }
+
+          if (!isEventEnvelope(data)) {
+            this.logger.warn('Received invalid event envelope');
+            jsMsg.ack();
+            return;
+          }
+
+          await this.inbox.handle(data, (tx, envelope) => this.audit.store(tx, envelope));
           jsMsg.ack();
-          continue;
-        }
-
-        if (!isEventEnvelope(data)) {
-          this.logger.warn('Received invalid event envelope');
-          jsMsg.ack();
-          continue;
-        }
-
-        await this.inbox.handle(data, (tx, envelope) => this.audit.store(tx, envelope));
-        jsMsg.ack();
+        });
       } catch (err) {
         this.logger.error(`Event processing failed: ${(err as Error).message}`);
         jsMsg.nak(5000);
