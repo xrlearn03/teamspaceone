@@ -8,6 +8,13 @@ import { type CreateMessageDto } from './dto/create-message.dto.js';
 export class MessagingController {
   constructor(private readonly messaging: MessagingService) {}
 
+  @Get('channels')
+  async listChannels(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    return this.messaging.listChannels(ctx);
+  }
+
   @Post('channels')
   async createChannel(
     @CurrentOrganisation() ctx: OrganisationContextValue,

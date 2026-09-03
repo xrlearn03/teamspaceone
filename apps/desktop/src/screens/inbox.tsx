@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Bell, Check, Filter } from "lucide-react";
-import { notifications } from "../lib/data";
+import { useMarkAllRead, useMarkRead, useNotifications } from "../hooks/api";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { EmptyState } from "../components/ui/empty-state";
@@ -8,29 +8,36 @@ import { cn } from "../lib/utils";
 
 const categories = [
   { id: "all", label: "All" },
-  { id: "mentions", label: "Mentions" },
-  { id: "messages", label: "Messages" },
-  { id: "tasks", label: "Tasks" },
-  { id: "meetings", label: "Meetings" },
-  { id: "approvals", label: "Approvals" },
+  { id: "message", label: "Messages" },
+  { id: "task", label: "Tasks" },
+  { id: "meeting", label: "Meetings" },
+  { id: "file", label: "Approvals" },
 ];
+
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return d.toLocaleDateString();
+}
 
 export function InboxScreen() {
   const [active, setActive] = useState("all");
-  const [items, setItems] = useState(notifications);
+  const { data: notifications, isLoading } = useNotifications(active === "all" ? false : true);
+  const markRead = useMarkRead();
+  const markAllRead = useMarkAllRead();
 
   const filtered =
-    active === "all" ? items : items.filter((n) => n.type === active);
+    active === "all"
+      ? notifications ?? []
+      : (notifications ?? []).filter((n) => n.resourceType === active);
 
-  function markRead(id: string) {
-    setItems((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
-    );
-  }
-
-  function markAllRead() {
-    setItems((prev) => prev.map((n) => ({ ...n, read: true })));
-  }
+  const unreadCount = filtered.filter((n) => !n.read).length;
 
   return (
     <div className="flex h-full flex-col">
@@ -38,10 +45,15 @@ export function InboxScreen() {
         <div className="flex items-center gap-3">
           <Bell className="h-5 w-5 text-text" />
           <h1 className="text-lg font-semibold text-text">Inbox</h1>
-          <Badge variant="secondary">{filtered.filter((n) => !n.read).length}</Badge>
+          <Badge variant="secondary">{unreadCount}</Badge>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={markAllRead}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => markAllRead.mutate()}
+            disabled={markAllRead.isPending}
+          >
             <Check className="mr-1.5 h-4 w-4" />
             Mark all read
           </Button>
@@ -70,7 +82,9 @@ export function InboxScreen() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <div className="p-8 text-center text-sm text-text-muted">Loading…</div>
+        ) : filtered.length === 0 ? (
           <EmptyState
             icon={Bell}
             title="No notifications"
@@ -82,19 +96,19 @@ export function InboxScreen() {
               <button
                 key={n.id}
                 type="button"
-                onClick={() => markRead(n.id)}
+                onClick={() => n.read || markRead.mutate(n.id)}
                 className={cn(
                   "flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-surface-elevated",
                   !n.read && "border-l-4 border-l-primary bg-surface",
                 )}
               >
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-elevated text-xs font-medium text-primary">
-                  {n.actor.charAt(0)}
+                  {(n.actorId ?? "?").slice(0, 1).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-text">{n.title}</span>
-                    <span className="text-xs text-text-muted">{n.time}</span>
+                    <span className="text-xs text-text-muted">{formatTime(n.createdAt)}</span>
                   </div>
                   <p className="text-sm text-text-secondary">{n.body}</p>
                 </div>

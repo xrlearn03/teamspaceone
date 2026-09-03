@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 
-const GATEWAY_URL = (import.meta.env.VITE_GATEWAY_URL as string | undefined) ?? "http://localhost:3000";
+const GATEWAY_URL =
+  (import.meta.env.VITE_GATEWAY_URL as string | undefined) ??
+  "http://localhost:3000";
 const TOKEN_SERVICE = "reactify-connect";
 const TOKEN_ACCOUNT = "access-token";
 
@@ -49,7 +51,10 @@ interface RequestOptions {
   org?: string | null;
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function apiRequest<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
   const token = await getAccessToken();
   const org = options.org ?? getActiveOrganisation();
 
@@ -96,101 +101,118 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   return response.json() as Promise<T>;
 }
 
-// Auth
-export function register(email: string, password: string) {
-  return apiRequest<{ id: string; email: string }>("/auth/register", {
-    method: "POST",
-    body: { email, password },
-  });
+export interface UserDto {
+  id: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  active: boolean;
+  emailVerified: boolean;
+  createdAt: string;
 }
 
-export async function login(email: string, password: string) {
-  const result = await apiRequest<{ accessToken: string; refreshToken: string }>("/auth/login", {
-    method: "POST",
-    body: { email, password },
-  });
-  await setAccessToken(result.accessToken);
-  return result;
+export interface TokenPair {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
 }
 
-export function getMe() {
-  return apiRequest<{ id: string; email: string }>("/auth/me");
+export interface Organisation {
+  id: string;
+  name: string;
+  slug: string;
+  ownerId: string;
+  createdAt: string;
 }
 
-// Organisations
-export function getOrganisations() {
-  return apiRequest<Array<{ id: string; name: string }>>("/organisations");
+export interface Workspace {
+  id: string;
+  organisationId: string;
+  name: string;
+  createdAt: string;
 }
 
-export function createOrganisation(name: string) {
-  return apiRequest<{ id: string; name: string }>("/organisations", {
-    method: "POST",
-    body: { name },
-  });
+export interface Channel {
+  id: string;
+  organisationId: string;
+  workspaceId?: string | null;
+  name: string;
+  type: string;
+  createdBy: string;
+  createdAt: string;
 }
 
-// Messaging
-export function createChannel(name: string, workspaceId?: string) {
-  return apiRequest<{ id: string; name: string }>("/channels", {
-    method: "POST",
-    body: { name, workspaceId },
-  });
+export interface Message {
+  id: string;
+  channelId: string;
+  senderId: string;
+  content: string;
+  createdAt: string;
 }
 
-export function getMessages(channelId: string) {
-  return apiRequest<Array<{ id: string; senderId: string; content: string; createdAt: string }>>(
-    `/channels/${channelId}/messages`,
-  );
+export interface Project {
+  id: string;
+  organisationId: string;
+  workspaceId?: string | null;
+  name: string;
+  description?: string | null;
+  ownerId: string;
+  status: string;
+  createdAt: string;
 }
 
-export function sendMessage(channelId: string, content: string) {
-  return apiRequest<{ id: string }>("/messages", {
-    method: "POST",
-    body: { channelId, content },
-  });
+export interface Task {
+  id: string;
+  projectId: string;
+  title: string;
+  description?: string | null;
+  assigneeId?: string | null;
+  status: string;
+  createdAt: string;
 }
 
-// Projects
-export function createProject(name: string, description?: string, workspaceId?: string) {
-  return apiRequest<{ id: string; name: string }>("/projects", {
-    method: "POST",
-    body: { name, description, workspaceId },
-  });
+export interface Notification {
+  id: string;
+  organisationId: string;
+  userId: string;
+  actorId?: string | null;
+  eventType: string;
+  resourceType?: string | null;
+  resourceId?: string | null;
+  title: string;
+  body: string;
+  link?: string | null;
+  read: boolean;
+  createdAt: string;
 }
 
-export function getProjects() {
-  return apiRequest<Array<{ id: string; name: string }>>("/projects");
+export interface FileRecord {
+  id: string;
+  organisationId: string;
+  workspaceId?: string | null;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  status: string;
+  url?: string | null;
+  downloadUrl?: string | null;
+  storageKey?: string | null;
+  createdAt: string;
 }
 
-export function getTasks(projectId: string) {
-  return apiRequest<Array<{ id: string; title: string; status: string }>>(`/projects/${projectId}/tasks`);
+export interface SearchResult {
+  id: string;
+  resourceType: string;
+  resourceId: string;
+  title?: string | null;
+  content: string;
+  metadata?: unknown;
+  organisationId: string;
+  workspaceId?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export function createTask(projectId: string, title: string, description?: string) {
-  return apiRequest<{ id: string }>("/tasks", {
-    method: "POST",
-    body: { projectId, title, description },
-  });
-}
-
-// Files
-export function uploadFile(file: File) {
-  const form = new FormData();
-  form.append("file", file);
-  return apiRequest<{ id: string; originalName: string; url: string }>("/files/upload", {
-    method: "POST",
-    body: form,
-  });
-}
-
-// Search
-export function search(query: string) {
-  return apiRequest<Array<{ resourceType: string; resourceId: string; content: string }>>(
-    `/search?q=${encodeURIComponent(query)}`,
-  );
-}
-
-// Meetings
 export interface Meeting {
   id: string;
   roomName: string;
@@ -199,6 +221,7 @@ export interface Meeting {
   status: string;
   type: string;
   createdBy: string;
+  scheduledAt?: string | null;
   participants?: MeetingParticipant[];
 }
 
@@ -220,6 +243,142 @@ export interface MeetingTokenResult {
   roomName: string;
 }
 
+// Auth
+export function register(
+  email: string,
+  password: string,
+  firstName?: string,
+  lastName?: string,
+) {
+  return apiRequest<{ user: UserDto; tokens: TokenPair }>("/auth/register", {
+    method: "POST",
+    body: { email, password, firstName, lastName },
+  });
+}
+
+export async function login(email: string, password: string) {
+  const result = await apiRequest<{ user: UserDto; tokens: TokenPair }>(
+    "/auth/login",
+    {
+      method: "POST",
+      body: { email, password },
+    },
+  );
+  await setAccessToken(result.tokens.accessToken);
+  return result;
+}
+
+export function getMe() {
+  return apiRequest<UserDto>("/auth/me");
+}
+
+// Organisations
+export function getOrganisations() {
+  return apiRequest<Organisation[]>("/organisations");
+}
+
+export function createOrganisation(name: string) {
+  return apiRequest<Organisation>("/organisations", {
+    method: "POST",
+    body: { name, slug: name.toLowerCase().replace(/\s+/g, "-") },
+  });
+}
+
+export function getWorkspaces(organisationId: string) {
+  return apiRequest<Workspace[]>(`/organisations/${organisationId}/workspaces`);
+}
+
+export function getMembers(organisationId: string) {
+  return apiRequest<UserDto[]>(`/organisations/${organisationId}/members`);
+}
+
+// Messaging
+export function getChannels() {
+  return apiRequest<Channel[]>("/channels");
+}
+
+export function createChannel(name: string, workspaceId?: string, type = "public") {
+  return apiRequest<Channel>("/channels", {
+    method: "POST",
+    body: { name, workspaceId, type },
+  });
+}
+
+export function getMessages(channelId: string) {
+  return apiRequest<Message[]>(`/channels/${channelId}/messages`);
+}
+
+export function sendMessage(channelId: string, content: string) {
+  return apiRequest<Message>("/messages", {
+    method: "POST",
+    body: { channelId, content },
+  });
+}
+
+// Projects
+export function getProjects() {
+  return apiRequest<Project[]>("/projects");
+}
+
+export function createProject(name: string, description?: string, workspaceId?: string) {
+  return apiRequest<Project>("/projects", {
+    method: "POST",
+    body: { name, description, workspaceId },
+  });
+}
+
+export function getTasks(projectId: string) {
+  return apiRequest<Task[]>(`/projects/${projectId}/tasks`);
+}
+
+export function createTask(
+  projectId: string,
+  title: string,
+  description?: string,
+  assigneeId?: string,
+  dueDate?: string,
+) {
+  return apiRequest<Task>("/tasks", {
+    method: "POST",
+    body: { projectId, title, description, assigneeId, dueDate },
+  });
+}
+
+export function updateTask(
+  taskId: string,
+  body: { status?: string; title?: string; assigneeId?: string },
+) {
+  return apiRequest<Task>(`/tasks/${taskId}`, {
+    method: "PUT",
+    body,
+  });
+}
+
+// Files
+export function getFiles() {
+  return apiRequest<FileRecord[]>("/files");
+}
+
+export function uploadFile(file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  return apiRequest<FileRecord>("/files/upload", {
+    method: "POST",
+    body: form,
+  });
+}
+
+// Search
+export function search(query: string, filters?: string[]) {
+  const params = new URLSearchParams();
+  params.set("q", query);
+  if (filters) {
+    for (const f of filters) params.append("type", f);
+  }
+  return apiRequest<SearchResult[]>(`/search?${params.toString()}`);
+}
+
+// Meetings
 export function getMeetings() {
   return apiRequest<Meeting[]>("/meetings");
 }
@@ -232,13 +391,6 @@ export function createMeeting(title: string, description?: string, workspaceId?:
   return apiRequest<Meeting>("/meetings", {
     method: "POST",
     body: { title, description, workspaceId },
-  });
-}
-
-export function createVoiceRoom(title: string, workspaceId?: string) {
-  return apiRequest<Meeting>("/meetings/voice-rooms", {
-    method: "POST",
-    body: { title, workspaceId },
   });
 }
 
@@ -273,14 +425,43 @@ export function getMeetingToken(id: string) {
 }
 
 // Notifications
-export function getNotifications() {
-  return apiRequest<Array<{ id: string; title: string; body: string; read: boolean }>>("/notifications");
+export function getNotifications(unreadOnly = false, limit = 50) {
+  const params = new URLSearchParams();
+  if (unreadOnly) params.set("unread", "true");
+  params.set("limit", String(limit));
+  return apiRequest<Notification[]>(`/notifications?${params.toString()}`);
+}
+
+export function getUnreadCount() {
+  return apiRequest<{ count: number }>("/notifications/count/unread");
+}
+
+export function markNotificationRead(id: string) {
+  return apiRequest<{ updated: number }>(`/notifications/${id}/read`, {
+    method: "PATCH",
+  });
+}
+
+export function markAllNotificationsRead() {
+  return apiRequest<{ updated: number }>("/notifications/read-all", {
+    method: "PATCH",
+  });
 }
 
 // AI
-export function summarize(prompt: string) {
+export function summarize(prompt: string, sourceText?: string) {
   return apiRequest<{ result: string; model: string }>("/ai/summarize", {
     method: "POST",
-    body: { prompt },
+    body: { prompt, sourceText },
   });
+}
+
+export function askAI(question: string, workspaceId?: string, resourceTypes?: string[]) {
+  return apiRequest<{ answer: string; sources: { resourceType: string; resourceId: string; title: string; text: string }[] }>(
+    "/ai/ask",
+    {
+      method: "POST",
+      body: { question, workspaceId, resourceTypes },
+    },
+  );
 }

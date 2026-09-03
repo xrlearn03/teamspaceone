@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
-import { OrganisationContext, CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
+import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
 import { OrganisationService } from './organisation.service.js';
 import { type CreateOrganisationDto } from './dto/create-organisation.dto.js';
 import { type CreateMemberDto } from './dto/create-member.dto.js';
@@ -9,6 +9,16 @@ import { type CreateWorkspaceDto } from './dto/create-workspace.dto.js';
 @Controller('organisations')
 export class OrganisationController {
   constructor(private readonly organisation: OrganisationService) {}
+
+  @Get()
+  async listForActor(
+    @Headers('x-actor-id') actorId?: string,
+  ) {
+    if (!actorId) {
+      throw new Error('Missing x-actor-id header');
+    }
+    return this.organisation.listForActor(actorId);
+  }
 
   @Post()
   async create(

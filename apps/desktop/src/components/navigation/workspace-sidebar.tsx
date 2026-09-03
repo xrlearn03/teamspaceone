@@ -21,14 +21,14 @@ import * as CollapsiblePrimitive from "@radix-ui/react-collapsible";
 import { useUIStore, type View } from "../../stores/ui";
 import { useShallow } from "zustand/shallow";
 import {
-  channels,
-  currentWorkspace,
-  directMessages,
-  meetings,
-  organisations,
-  projects,
-  voiceRooms,
-} from "../../lib/data";
+  useChannels,
+  useMeetings,
+  useOrganisations,
+  useProjects,
+  useUnreadCount,
+  useWorkspaces,
+} from "../../hooks/api";
+import { getActiveOrganisation, setActiveOrganisation } from "../../lib/api";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Avatar, AvatarFallback } from "../ui/avatar";
@@ -127,6 +127,26 @@ function SidebarSection({
   );
 }
 
+function CalendarIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
+      <line x1="16" x2="16" y1="2" y2="6" />
+      <line x1="8" x2="8" y1="2" y2="6" />
+      <line x1="3" x2="21" y1="10" y2="10" />
+    </svg>
+  );
+}
+
 export function WorkspaceSidebar() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -154,6 +174,17 @@ export function WorkspaceSidebar() {
     })),
   );
 
+  const activeOrgId = getActiveOrganisation();
+  const { data: organisations } = useOrganisations();
+  const { data: workspaces } = useWorkspaces(activeOrgId ?? undefined);
+  const { data: channels } = useChannels();
+  const { data: projects } = useProjects();
+  const { data: meetings } = useMeetings();
+  const { data: unread } = useUnreadCount();
+
+  const currentOrganisation = organisations?.find((o) => o.id === activeOrgId);
+  const currentWorkspace = workspaces?.[0];
+
   useEffect(() => {
     if (!dragging) return;
     function onMove(e: MouseEvent) {
@@ -176,9 +207,19 @@ export function WorkspaceSidebar() {
     setActiveView(view, params);
   }
 
+  function switchOrganisation(id: string) {
+    setActiveOrganisation(id);
+    navigate("home");
+  }
+
   if (sidebarCollapsed) {
     return null;
   }
+
+  const workspaceName = currentWorkspace?.name ?? currentOrganisation?.name ?? "Workspace";
+
+  const publicChannels = channels?.filter((c) => c.type !== "direct") ?? [];
+  const directMessages = channels?.filter((c) => c.type === "direct") ?? [];
 
   return (
     <aside
@@ -195,31 +236,37 @@ export function WorkspaceSidebar() {
             >
               <Avatar className="h-6 w-6">
                 <AvatarFallback className="text-[10px]">
-                  {currentWorkspace.name.slice(0, 2).toUpperCase()}
+                  {workspaceName.slice(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold text-text">
-                  {currentWorkspace.name}
+                  {workspaceName}
                 </div>
                 <div className="text-xs text-text-muted capitalize">
-                  {currentWorkspace.role}
+                  {currentOrganisation?.slug ?? "workspace"}
                 </div>
               </div>
               <ChevronDown className="h-4 w-4 shrink-0 text-text-muted" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
-            {organisations.map((org) => (
-              <DropdownMenuItem key={org.id}>
+            {organisations?.map((org) => (
+              <DropdownMenuItem
+                key={org.id}
+                onClick={() => switchOrganisation(org.id)}
+              >
                 <span className="flex flex-1 items-center justify-between">
                   {org.name}
-                  {org.name === currentWorkspace.name && (
+                  {org.id === activeOrgId && (
                     <span className="text-xs text-text-muted">current</span>
                   )}
                 </span>
               </DropdownMenuItem>
             ))}
+            {(!organisations || organisations.length === 0) && (
+              <DropdownMenuItem disabled>No organisations</DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -265,7 +312,7 @@ export function WorkspaceSidebar() {
           <SidebarItem
             icon={Inbox}
             label="Inbox"
-            badge={3}
+            badge={unread?.count ?? 0}
             active={activeView === "inbox"}
             onClick={() => navigate("inbox")}
           />
@@ -274,80 +321,90 @@ export function WorkspaceSidebar() {
         </SidebarSection>
 
         <SidebarSection title="Channels">
-          {channels.map((ch) => (
-            <SidebarItem
-              key={ch.id}
-              icon={ch.type === "private" ? Lock : Hash}
-              label={ch.name}
-              badge={ch.mentions || ch.unread || undefined}
-              mention={ch.mentions > 0}
-              active={activeView === "channel" && activeChannelId === ch.id}
-              onClick={() => navigate("channel", { channelId: ch.id })}
-              isPrivate={ch.type === "private"}
-            />
-          ))}
+          {publicChannels.length > 0 ? (
+            publicChannels.map((ch) => (
+              <SidebarItem
+                key={ch.id}
+                icon={ch.type === "private" ? Lock : Hash}
+                label={ch.name}
+                active={activeView === "channel" && activeChannelId === ch.id}
+                onClick={() => navigate("channel", { channelId: ch.id })}
+                isPrivate={ch.type === "private"}
+              />
+            ))
+          ) : (
+            <div className="px-2 py-1 text-xs text-text-muted">No channels yet</div>
+          )}
         </SidebarSection>
 
         <SidebarSection title="Direct messages">
-          {directMessages.map((dm) => {
-            const Icon = ({ className }: { className?: string }) => (
-              <span
-                className={cn(
-                  "h-2 w-2 rounded-full",
-                  className,
-                  dm.status === "online" && "bg-online",
-                  dm.status === "away" && "bg-away",
-                  dm.status === "offline" && "bg-offline",
-                )}
-              />
-            );
-            return (
-              <SidebarItem
-                key={dm.id}
-                icon={Icon}
-                label={dm.name}
-                badge={dm.unread || undefined}
-                active={activeView === "dm" && activeChannelId === dm.id}
-                onClick={() => navigate("dm", { channelId: dm.id })}
-                subtext={dm.status}
-              />
-            );
-          })}
+          {directMessages.length > 0 ? (
+            directMessages.map((dm) => {
+              const Icon = ({ className }: { className?: string }) => (
+                <span
+                  className={cn(
+                    "h-2 w-2 rounded-full bg-online",
+                    className,
+                  )}
+                />
+              );
+              return (
+                <SidebarItem
+                  key={dm.id}
+                  icon={Icon}
+                  label={dm.name}
+                  active={activeView === "dm" && activeChannelId === dm.id}
+                  onClick={() => navigate("dm", { channelId: dm.id })}
+                />
+              );
+            })
+          ) : (
+            <div className="px-2 py-1 text-xs text-text-muted">No direct messages yet</div>
+          )}
         </SidebarSection>
 
         <SidebarSection title="Projects">
-          {projects.map((p) => (
-            <SidebarItem
-              key={p.id}
-              icon={Folder}
-              label={p.name}
-              badge={p.unread || undefined}
-              active={activeView === "project" && activeProjectId === p.id}
-              onClick={() => navigate("project", { projectId: p.id })}
-              subtext={p.status}
-            />
-          ))}
+          {projects && projects.length > 0 ? (
+            projects.map((p) => (
+              <SidebarItem
+                key={p.id}
+                icon={Folder}
+                label={p.name}
+                active={activeView === "project" && activeProjectId === p.id}
+                onClick={() => navigate("project", { projectId: p.id })}
+                subtext={p.status}
+              />
+            ))
+          ) : (
+            <div className="px-2 py-1 text-xs text-text-muted">No projects yet</div>
+          )}
         </SidebarSection>
 
         <SidebarSection title="Meetings & voice">
-          {meetings.map((m) => (
-            <SidebarItem
-              key={m.id}
-              icon={m.status === "live" ? Video : CalendarIcon}
-              label={m.title}
-              onClick={() => navigate("meeting", { meetingId: m.id })}
-              subtext={m.time}
-            />
-          ))}
-          {voiceRooms.map((v) => (
-            <SidebarItem
-              key={v.id}
-              icon={Mic}
-              label={v.name}
-              onClick={() => navigate("voice", { meetingId: v.id })}
-              badge={v.participants || undefined}
-            />
-          ))}
+          {meetings && meetings.length > 0 ? (
+            meetings.map((m) => (
+              <SidebarItem
+                key={m.id}
+                icon={m.status === "live" ? Video : CalendarIcon}
+                label={m.title}
+                onClick={() => navigate("meeting", { meetingId: m.id })}
+                subtext={
+                  m.status === "live"
+                    ? "Live"
+                    : m.scheduledAt
+                      ? new Date(m.scheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                      : "Upcoming"
+                }
+              />
+            ))
+          ) : (
+            <div className="px-2 py-1 text-xs text-text-muted">No meetings yet</div>
+          )}
+          <SidebarItem
+            icon={Mic}
+            label="General voice"
+            onClick={() => navigate("voice")}
+          />
         </SidebarSection>
 
         <SidebarSection title="Files & apps">
@@ -380,25 +437,5 @@ export function WorkspaceSidebar() {
         <span className="h-4 w-px bg-text-muted" />
       </button>
     </aside>
-  );
-}
-
-function CalendarIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      {...props}
-    >
-      <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
-      <line x1="16" x2="16" y1="2" y2="6" />
-      <line x1="8" x2="8" y1="2" y2="6" />
-      <line x1="3" x2="21" y1="10" y2="10" />
-    </svg>
   );
 }

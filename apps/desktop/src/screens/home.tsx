@@ -1,4 +1,5 @@
 import {
+  Calendar,
   CheckSquare,
   FileText,
   Folder,
@@ -8,11 +9,20 @@ import {
   Video,
 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
-import { currentUser, messages, meetings, notifications, projects, tasks } from "../lib/data";
+import { useShallow } from "zustand/shallow";
+import {
+  useChannels,
+  useMe,
+  useMeetings,
+  useMessages,
+  useNotifications,
+  useProjects,
+  useTasks,
+} from "../hooks/api";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
-import { cn } from "../lib/utils";
+import { EmptyState } from "../components/ui/empty-state";
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -21,14 +31,47 @@ function getGreeting() {
   return "Good evening";
 }
 
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatRelative(iso: string) {
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  if (hours < 24) return `${hours}h`;
+  return d.toLocaleDateString();
+}
+
 export function HomeScreen() {
-  const setActiveView = useUIStore((s) => s.setActiveView);
+  const { setActiveView } = useUIStore(
+    useShallow((s) => ({ setActiveView: s.setActiveView })),
+  );
+
+  const { data: user } = useMe();
+  const { data: projects } = useProjects();
+  const { data: meetings } = useMeetings();
+  const { data: notifications } = useNotifications();
+  const { data: channels } = useChannels();
+  const firstChannelId = channels?.[0]?.id;
+  const { data: messages } = useMessages(firstChannelId);
+  const firstProjectId = projects?.[0]?.id;
+  const { data: tasks } = useTasks(firstProjectId);
+
+  const firstName =
+    user?.firstName ?? user?.email?.split("@")[0] ?? "there";
+  const unread = notifications?.filter((n) => !n.read) ?? [];
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       <header className="sticky top-0 z-10 border-b bg-background/95 px-6 py-4 backdrop-blur">
         <h1 className="text-xl font-semibold text-text">
-          {getGreeting()}, {currentUser.name.split(" ")[0]}
+          {getGreeting()}, {firstName}
         </h1>
         <p className="text-sm text-text-secondary">
           Here is what needs your attention today.
@@ -58,7 +101,7 @@ export function HomeScreen() {
                 <Video className="mr-1.5 h-4 w-4" />
                 Start meeting
               </Button>
-              <Button variant="secondary">
+              <Button variant="secondary" onClick={() => setActiveView("files")}>
                 <Upload className="mr-1.5 h-4 w-4" />
                 Upload file
               </Button>
@@ -73,30 +116,29 @@ export function HomeScreen() {
         <Card>
           <CardHeader>
             <CardTitle>My tasks</CardTitle>
-            <Badge variant="secondary">{tasks.length}</Badge>
+            <Badge variant="secondary">{tasks?.length ?? 0}</Badge>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {tasks.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setActiveView("project")}
-                  className="flex w-full items-center gap-2 rounded-md p-1.5 text-left hover:bg-surface-elevated"
-                >
-                  <span
-                    className={cn(
-                      "h-2 w-2 rounded-full",
-                      t.priority === "high" && "bg-error",
-                      t.priority === "medium" && "bg-warning",
-                      t.priority === "low" && "bg-info",
-                    )}
-                  />
-                  <span className="flex-1 truncate text-sm text-text">{t.title}</span>
-                  <span className="text-xs text-text-muted">{t.due}</span>
-                </button>
-              ))}
-            </div>
+            {tasks && tasks.length > 0 ? (
+              <div className="space-y-2">
+                {tasks.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setActiveView("project", { projectId: t.projectId })}
+                    className="flex w-full items-center gap-2 rounded-md p-1.5 text-left hover:bg-surface-elevated"
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full bg-primary"
+                    />
+                    <span className="flex-1 truncate text-sm text-text">{t.title}</span>
+                    <span className="text-xs text-text-muted capitalize">{t.status}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon={CheckSquare} title="No tasks" description="Create a task in a project to see it here." />
+            )}
           </CardContent>
         </Card>
 
@@ -105,19 +147,25 @@ export function HomeScreen() {
             <CardTitle>Upcoming meetings</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {meetings.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setActiveView("meeting", { meetingId: m.id })}
-                  className="flex w-full items-center justify-between rounded-md p-1.5 text-left hover:bg-surface-elevated"
-                >
-                  <span className="text-sm text-text">{m.title}</span>
-                  <span className="text-xs text-text-muted">{m.time}</span>
-                </button>
-              ))}
-            </div>
+            {meetings && meetings.length > 0 ? (
+              <div className="space-y-2">
+                {meetings.slice(0, 6).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setActiveView("meeting", { meetingId: m.id })}
+                    className="flex w-full items-center justify-between rounded-md p-1.5 text-left hover:bg-surface-elevated"
+                  >
+                    <span className="text-sm text-text">{m.title}</span>
+                    <span className="text-xs text-text-muted">
+                      {m.status === "live" ? "Live" : m.scheduledAt ? formatTime(m.scheduledAt) : "Upcoming"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon={Calendar} title="No meetings" description="Schedule a meeting to see it here." />
+            )}
           </CardContent>
         </Card>
 
@@ -126,22 +174,26 @@ export function HomeScreen() {
             <CardTitle>Recent conversations</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {messages.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setActiveView("channel")}
-                  className="flex w-full flex-col gap-0.5 rounded-md p-1.5 text-left hover:bg-surface-elevated"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-text">{m.author}</span>
-                    <span className="text-xs text-text-muted">{m.time}</span>
-                  </div>
-                  <p className="line-clamp-1 text-xs text-text-secondary">{m.content}</p>
-                </button>
-              ))}
-            </div>
+            {messages && messages.length > 0 ? (
+              <div className="space-y-3">
+                {messages.slice(-6).reverse().map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setActiveView("channel", { channelId: m.channelId })}
+                    className="flex w-full flex-col gap-0.5 rounded-md p-1.5 text-left hover:bg-surface-elevated"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-text">{m.senderId.slice(0, 8)}</span>
+                      <span className="text-xs text-text-muted">{formatRelative(m.createdAt)}</span>
+                    </div>
+                    <p className="line-clamp-1 text-xs text-text-secondary">{m.content}</p>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon={MessageSquare} title="No messages" description="Send a message in a channel to see it here." />
+            )}
           </CardContent>
         </Card>
 
@@ -150,47 +202,26 @@ export function HomeScreen() {
             <CardTitle>Recent projects</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {projects.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setActiveView("project", { projectId: p.id })}
-                  className="flex w-full flex-col gap-1 rounded-md p-1.5 text-left hover:bg-surface-elevated"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-text">{p.name}</span>
-                    <Badge variant="secondary">{p.status}</Badge>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-elevated">
-                    <div
-                      className="h-full rounded-full bg-primary"
-                      style={{ width: `${p.progress * 100}%` }}
-                    />
-                  </div>
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Pending approvals</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <button
-              type="button"
-              onClick={() => setActiveView("inbox")}
-              className="flex w-full items-center gap-3 rounded-md p-2 hover:bg-surface-elevated"
-            >
-              <FileText className="h-4 w-4 text-text-muted" />
-              <div className="flex-1 text-left">
-                <p className="text-sm text-text">Website homepage v3</p>
-                <p className="text-xs text-text-muted">Awaiting approval from ClientCo</p>
+            {projects && projects.length > 0 ? (
+              <div className="space-y-3">
+                {projects.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setActiveView("project", { projectId: p.id })}
+                    className="flex w-full flex-col gap-1 rounded-md p-1.5 text-left hover:bg-surface-elevated"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-text">{p.name}</span>
+                      <Badge variant="secondary">{p.status}</Badge>
+                    </div>
+                    <p className="line-clamp-1 text-xs text-text-muted">{p.description}</p>
+                  </button>
+                ))}
               </div>
-              <Badge variant="warning">1</Badge>
-            </button>
+            ) : (
+              <EmptyState icon={Folder} title="No projects" description="Create a project to see it here." />
+            )}
           </CardContent>
         </Card>
 
@@ -201,9 +232,9 @@ export function HomeScreen() {
           </CardHeader>
           <CardContent>
             <p className="text-sm leading-relaxed text-text-secondary">
-              You have 2 tasks due today, 1 overdue approval, and 3 unread mentions in
-              #design. Engineering standup is live now. Consider reviewing the brand
-              palette thread before the client review.
+              {unread.length > 0
+                ? `You have ${unread.length} unread notification${unread.length === 1 ? "" : "s"}. Open the Inbox to review them.`
+                : "No new notifications. You're all caught up."}
             </p>
             <Button
               variant="secondary"
@@ -224,29 +255,31 @@ export function HomeScreen() {
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              {notifications.map((n) => (
-                <button
-                  key={n.id}
-                  type="button"
-                  onClick={() => setActiveView("inbox")}
-                  className="flex items-start gap-3 rounded-md p-2 text-left hover:bg-surface-elevated"
-                >
-                  <span
-                    className={cn(
-                      "mt-0.5 h-2 w-2 rounded-full",
-                      !n.read && "bg-unread",
-                      n.read && "bg-text-muted",
-                    )}
-                  />
-                  <div className="flex-1">
-                    <p className="text-sm text-text">{n.title}</p>
-                    <p className="text-xs text-text-muted">{n.body}</p>
-                  </div>
-                  <span className="text-xs text-text-muted">{n.time}</span>
-                </button>
-              ))}
-            </div>
+            {notifications && notifications.length > 0 ? (
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                {notifications.slice(0, 8).map((n) => (
+                  <button
+                    key={n.id}
+                    type="button"
+                    onClick={() => setActiveView("inbox")}
+                    className="flex items-start gap-3 rounded-md p-2 text-left hover:bg-surface-elevated"
+                  >
+                    <span
+                      className={
+                        `mt-0.5 h-2 w-2 rounded-full ${!n.read ? "bg-unread" : "bg-text-muted"}`
+                      }
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm text-text">{n.title}</p>
+                      <p className="text-xs text-text-muted">{n.body}</p>
+                    </div>
+                    <span className="text-xs text-text-muted">{formatRelative(n.createdAt)}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon={FileText} title="No notifications" description="New activity will appear here." />
+            )}
           </CardContent>
         </Card>
       </div>

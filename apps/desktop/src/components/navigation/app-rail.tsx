@@ -4,6 +4,7 @@ import {
   HelpCircle,
   Home,
   Inbox,
+  LogOut,
   MessageSquare,
   PanelLeft,
   Search,
@@ -13,7 +14,12 @@ import {
 } from "lucide-react";
 import { useUIStore, type View } from "../../stores/ui";
 import { useShallow } from "zustand/shallow";
-import { currentUser, organisations, currentWorkspace } from "../../lib/data";
+import { useMe, useOrganisations, useUnreadCount } from "../../hooks/api";
+import {
+  getActiveOrganisation,
+  setActiveOrganisation,
+  clearAccessToken,
+} from "../../lib/api";
 import { Avatar, AvatarFallback } from "../ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -23,13 +29,6 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { cn } from "../../lib/utils";
-
-const statusColors: Record<string, string> = {
-  online: "bg-online",
-  away: "bg-away",
-  busy: "bg-busy",
-  offline: "bg-offline",
-};
 
 export function AppRail() {
   const { activeView, sidebarCollapsed, toggleSidebar, setActiveView, setSearchOpen } =
@@ -43,8 +42,23 @@ export function AppRail() {
       })),
     );
 
+  const { data: user, isLoading: userLoading } = useMe();
+  const { data: organisations } = useOrganisations();
+  const { data: unread } = useUnreadCount();
+  const activeOrgId = getActiveOrganisation();
+
   function navigate(view: View) {
     setActiveView(view);
+  }
+
+  async function switchOrganisation(id: string) {
+    setActiveOrganisation(id);
+    navigate("home");
+  }
+
+  async function signOut() {
+    await clearAccessToken();
+    window.location.reload();
   }
 
   const topItems: Array<{
@@ -55,7 +69,7 @@ export function AppRail() {
     badge?: number;
   }> = [
     { id: "home", icon: Home, label: "Home" },
-    { id: "inbox", icon: Inbox, label: "Inbox", badge: 3 },
+    { id: "inbox", icon: Inbox, label: "Inbox", badge: unread?.count ?? 0 },
     { id: "dm", icon: MessageSquare, label: "Messages" },
     { id: "project", icon: Folder, label: "Projects" },
     { id: "meeting", icon: Calendar, label: "Meetings" },
@@ -67,6 +81,10 @@ export function AppRail() {
     { id: "settings", icon: Settings, label: "Settings", onClick: () => navigate("settings") },
     { id: "help", icon: HelpCircle, label: "Help", onClick: () => navigate("home") },
   ];
+
+  const displayName = user?.firstName
+    ? `${user.firstName} ${user.lastName ?? ""}`.trim()
+    : user?.email ?? "User";
 
   return (
     <nav className="flex w-14 shrink-0 flex-col items-center border-r bg-surface py-2">
@@ -95,16 +113,22 @@ export function AppRail() {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" side="right" sideOffset={8}>
-            {organisations.map((org) => (
-              <DropdownMenuItem key={org.id}>
+            {organisations?.map((org) => (
+              <DropdownMenuItem
+                key={org.id}
+                onClick={() => switchOrganisation(org.id)}
+              >
                 <span className="flex flex-1 items-center justify-between">
                   {org.name}
-                  {org.id === currentWorkspace.id && (
+                  {org.id === activeOrgId && (
                     <span className="text-xs text-text-muted">current</span>
                   )}
                 </span>
               </DropdownMenuItem>
             ))}
+            {(!organisations || organisations.length === 0) && (
+              <DropdownMenuItem disabled>No organisations</DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -128,7 +152,7 @@ export function AppRail() {
                   aria-label={item.label}
                 >
                   <Icon className="h-[18px] w-[18px]" />
-                  {item.badge ? (
+                  {(item.badge ?? 0) > 0 ? (
                     <span className="absolute right-0.5 top-0.5 flex h-2 w-2 rounded-full bg-mention" />
                   ) : null}
                 </button>
@@ -192,12 +216,14 @@ export function AppRail() {
               aria-label="User menu"
             >
               <Avatar className="h-8 w-8">
-                <AvatarFallback>{currentUser.name.charAt(0)}</AvatarFallback>
+                <AvatarFallback>
+                  {userLoading ? "?" : displayName.charAt(0).toUpperCase()}
+                </AvatarFallback>
               </Avatar>
               <span
                 className={cn(
                   "absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-surface",
-                  statusColors[currentUser.status],
+                  "bg-online",
                 )}
               />
             </button>
@@ -206,8 +232,11 @@ export function AppRail() {
             <DropdownMenuItem onClick={() => navigate("settings")}>
               Profile & settings
             </DropdownMenuItem>
-            <DropdownMenuItem>Set status</DropdownMenuItem>
-            <DropdownMenuItem>Sign out</DropdownMenuItem>
+            <DropdownMenuItem disabled>Set status</DropdownMenuItem>
+            <DropdownMenuItem onClick={signOut} className="text-danger">
+              <LogOut className="mr-2 h-4 w-4" />
+              Sign out
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

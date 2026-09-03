@@ -4,7 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Card } from "../components/ui/card";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
-import { currentUser } from "../lib/data";
+import { useAskAI, useMe } from "../hooks/api";
 import { cn } from "../lib/utils";
 
 const suggestions = [
@@ -22,43 +22,53 @@ interface Message {
   content: string;
 }
 
-const initialMessages: Message[] = [
-  {
-    id: "a1",
-    role: "assistant",
-    content:
-      "Good morning. You have 2 tasks due today, 1 pending approval, and 3 unread mentions in #design. Would you like me to prioritize them?",
-  },
-];
-
 export function AIAssistantScreen() {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { data: user } = useMe();
+  const askAI = useAskAI();
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  function ask(prompt: string) {
+  async function ask(prompt: string) {
     if (!prompt.trim()) return;
-    setMessages((prev) => [...prev, { id: Date.now().toString(), role: "user", content: prompt }]);
+    const userMessage = { id: Date.now().toString(), role: "user" as const, content: prompt };
+    setMessages((prev) => [...prev, userMessage]);
     setDraft("");
     setStreaming(true);
-    setTimeout(() => {
+    try {
+      const result = await askAI.mutateAsync({ question: prompt });
       setMessages((prev) => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
           role: "assistant",
-          content:
-            "I reviewed your workspace. The brand refresh project is 62% complete. One task is blocked on client feedback. Engineering standup is live now. I can create a reminder to follow up on the blocked task if you'd like.",
+          content: result.answer,
         },
       ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: "Sorry, I couldn't process that. Please try again.",
+        },
+      ]);
+    } finally {
       setStreaming(false);
-    }, 1500);
+    }
   }
+
+  const userName =
+    user?.firstName
+      ? `${user.firstName} ${user.lastName ?? ""}`.trim()
+      : user?.email ?? "You";
+  const userInitial = userName.charAt(0).toUpperCase();
 
   return (
     <div className="flex h-full flex-col">
@@ -69,6 +79,11 @@ export function AIAssistantScreen() {
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-3xl space-y-6">
+          {messages.length === 0 && !streaming && (
+            <div className="text-center text-sm text-text-muted">
+              Ask me anything about your workspace.
+            </div>
+          )}
           {messages.map((m) => (
             <div
               key={m.id}
@@ -79,7 +94,7 @@ export function AIAssistantScreen() {
             >
               <Avatar className="h-8 w-8">
                 <AvatarFallback className={m.role === "user" ? "bg-primary-subtle text-primary" : "bg-primary text-white"}>
-                  {m.role === "user" ? currentUser.name.charAt(0) : "AI"}
+                  {m.role === "user" ? userInitial : "AI"}
                 </AvatarFallback>
               </Avatar>
               <Card className={cn("max-w-xl p-3", m.role === "user" && "bg-primary-subtle")}>
@@ -142,7 +157,7 @@ export function AIAssistantScreen() {
               }}
               className="flex-1 border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0"
             />
-            <Button size="icon" onClick={() => ask(draft)} disabled={streaming}>
+            <Button size="icon" onClick={() => ask(draft)} disabled={streaming || askAI.isPending}>
               <Send className="h-4 w-4" />
             </Button>
           </div>

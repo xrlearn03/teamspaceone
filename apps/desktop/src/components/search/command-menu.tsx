@@ -4,14 +4,13 @@ import {
   FileText,
   Folder,
   Hash,
-  MessageSquare,
   Search,
   User,
   X,
-  CheckSquare,
 } from "lucide-react";
-import { useUIStore } from "../../stores/ui";
-import { channels, directMessages, projects, tasks, meetings } from "../../lib/data";
+import { useUIStore, type View } from "../../stores/ui";
+import { useShallow } from "zustand/shallow";
+import { useChannels, useFiles, useMeetings, useProjects } from "../../hooks/api";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
@@ -25,10 +24,15 @@ interface SearchResult {
   subtitle: string;
   icon: LucideIcon;
   view?: string;
+  params?: { channelId?: string; projectId?: string; meetingId?: string };
 }
 
-const filters = ["All", "Messages", "Channels", "Files", "Projects", "Tasks", "Meetings", "People"];
-const recentSearches = ["brand refresh", "homepage wireframes", "@sarah"];
+const filters = ["All", "Messages", "Channels", "Files", "Projects", "Meetings"];
+
+function formatTime(iso?: string | null) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 
 export function CommandMenu({
   open,
@@ -40,64 +44,80 @@ export function CommandMenu({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All");
   const [selected, setSelected] = useState(0);
-  const setActiveView = useUIStore((s) => s.setActiveView);
-  const setSearchOpen = useUIStore((s) => s.setSearchOpen);
+  const { setActiveView, setSearchOpen } = useUIStore(
+    useShallow((s) => ({ setActiveView: s.setActiveView, setSearchOpen: s.setSearchOpen })),
+  );
+
+  const { data: channels } = useChannels();
+  const { data: projects } = useProjects();
+  const { data: meetings } = useMeetings();
+  const { data: files } = useFiles();
+
+  const publicChannels = channels?.filter((c) => c.type !== "direct") ?? [];
+  const directChannels = channels?.filter((c) => c.type === "direct") ?? [];
 
   const results: SearchResult[] = useMemo(() => {
     const all: SearchResult[] = [
-      ...channels.map((c) => ({
+      ...publicChannels.map((c) => ({
         id: c.id,
         type: "Channel",
         title: `#${c.name}`,
         subtitle: "Workspace channel",
         icon: Hash,
         view: "channel",
+        params: { channelId: c.id },
       })),
-      ...directMessages.map((dm) => ({
-        id: dm.id,
-        type: "Person",
-        title: dm.name,
+      ...directChannels.map((c) => ({
+        id: c.id,
+        type: "Message",
+        title: c.name,
         subtitle: "Direct message",
         icon: User,
         view: "dm",
+        params: { channelId: c.id },
       })),
-      ...projects.map((p) => ({
+      ...(projects ?? []).map((p) => ({
         id: p.id,
         type: "Project",
         title: p.name,
         subtitle: `Status: ${p.status}`,
         icon: Folder,
         view: "project",
+        params: { projectId: p.id },
       })),
-      ...tasks.map((t) => ({
-        id: t.id,
-        type: "Task",
-        title: t.title,
-        subtitle: `${t.status} · ${t.assignee}`,
-        icon: CheckSquare,
-      })),
-      ...meetings.map((m) => ({
+      ...(meetings ?? []).map((m) => ({
         id: m.id,
         type: "Meeting",
         title: m.title,
-        subtitle: `Today at ${m.time}`,
+        subtitle: m.scheduledAt ? `Today at ${formatTime(m.scheduledAt)}` : m.status,
         icon: Calendar,
+        view: "meeting",
+        params: { meetingId: m.id },
       })),
-      { id: "f-1", type: "File", title: "brand-guidelines-v3.pdf", subtitle: "Shared in #design", icon: FileText },
-      { id: "f-2", type: "File", title: "homepage-wireframes.fig", subtitle: "Shared in #design", icon: FileText },
+      ...(files ?? []).map((f) => ({
+        id: f.id,
+        type: "File",
+        title: f.originalName,
+        subtitle: "Shared file",
+        icon: FileText,
+        view: "files",
+      })),
     ];
 
     const q = query.toLowerCase();
     return all.filter((r) => {
       const matchesQuery = r.title.toLowerCase().includes(q) || r.subtitle.toLowerCase().includes(q);
-      const matchesFilter = filter === "All" || filter === r.type || (filter === "Messages" && r.type === "Person");
+      const matchesFilter =
+        filter === "All" ||
+        filter === r.type ||
+        (filter === "Channels" && r.type === "Channel");
       return matchesQuery && matchesFilter;
     });
-  }, [query, filter]);
+  }, [query, filter, publicChannels, directChannels, projects, meetings, files]);
 
   function activate(result: SearchResult) {
     if (result.view) {
-      setActiveView(result.view as any, { channelId: result.id, projectId: result.id });
+      setActiveView(result.view as View, result.params ?? {});
     }
     setSearchOpen(false);
   }
@@ -167,21 +187,9 @@ export function CommandMenu({
         <div className="max-h-96 overflow-y-auto p-2">
           {query.length === 0 && (
             <div className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
-              Recent searches
+              Type to search
             </div>
           )}
-          {query.length === 0 &&
-            recentSearches.map((term) => (
-              <button
-                key={term}
-                type="button"
-                onClick={() => setQuery(term)}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-text-secondary hover:bg-surface-elevated"
-              >
-                <MessageSquare className="h-4 w-4 text-text-muted" />
-                {term}
-              </button>
-            ))}
 
           {results.length === 0 ? (
             <div className="py-8 text-center text-sm text-text-muted">

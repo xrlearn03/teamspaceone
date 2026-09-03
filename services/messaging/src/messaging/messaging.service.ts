@@ -106,6 +106,13 @@ export class MessagingService {
     });
   }
 
+  async listChannels(ctx: OrganisationContextValue) {
+    return this.prisma.channel.findMany({
+      where: { organisationId: ctx.organisationId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async listMessages(ctx: OrganisationContextValue, channelId: string) {
     const organisationId = ctx.organisationId;
     const channel = await this.prisma.channel.findFirst({

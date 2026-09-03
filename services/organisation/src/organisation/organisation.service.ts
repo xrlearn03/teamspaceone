@@ -201,6 +201,18 @@ export class OrganisationService {
     });
   }
 
+  async listForActor(actorId: string): Promise<unknown[]> {
+    return this.prisma.organisation.findMany({
+      where: {
+        OR: [
+          { ownerId: actorId },
+          { memberships: { some: { userId: actorId } } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   private async assertMemberOf(organisationId: string, actorId: string): Promise<void> {
     const org = await this.prisma.organisation.findUnique({ where: { id: organisationId } });
     if (!org) {

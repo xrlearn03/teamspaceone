@@ -1,8 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { io, type Socket } from "socket.io-client";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { getAccessToken, getActiveOrganisation } from "../lib/api";
-import { currentUser } from "../lib/data";
+import { getAccessToken, getActiveOrganisation, getMe } from "../lib/api";
 
 const REALTIME_URL = (import.meta.env.VITE_REALTIME_URL as string | undefined) ?? "http://localhost:3005";
 
@@ -52,7 +51,8 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     async function connect() {
       const token = await getAccessToken();
       const organisationId = getActiveOrganisation();
-      const userId = currentUser.id;
+      const me = await getMe().catch(() => null);
+      const userId = me?.id ?? "unknown";
 
       const socket = io(`${REALTIME_URL}/realtime`, {
         transports: ["websocket", "polling"],

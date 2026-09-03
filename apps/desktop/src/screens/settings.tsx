@@ -15,7 +15,8 @@ import {
 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
-import { currentUser, currentWorkspace } from "../lib/data";
+import { useMe, useOrganisations, useWorkspaces } from "../hooks/api";
+import { getActiveOrganisation } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
@@ -34,6 +35,16 @@ const sections = [
 
 export function SettingsScreen() {
   const [section, setSection] = useState("appearance");
+  const { data: user } = useMe();
+  const activeOrgId = getActiveOrganisation();
+  const { data: organisations } = useOrganisations();
+  const { data: workspaces } = useWorkspaces(activeOrgId ?? undefined);
+  const organisation = organisations?.find((o) => o.id === activeOrgId);
+  const workspace = workspaces?.[0];
+  const userName =
+    user?.firstName
+      ? `${user.firstName} ${user.lastName ?? ""}`.trim()
+      : user?.email ?? "User";
   const { theme, setTheme } = useUIStore(
     useShallow((s) => ({ theme: s.theme, setTheme: s.setTheme })),
   );
@@ -72,11 +83,11 @@ export function SettingsScreen() {
             <SettingsSection title="My account">
               <div className="flex items-center gap-4">
                 <Avatar className="h-16 w-16">
-                  <AvatarFallback className="text-xl">{currentUser.name.charAt(0)}</AvatarFallback>
+                  <AvatarFallback className="text-xl">{userName.charAt(0).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div>
-                  <p className="text-base font-semibold text-text">{currentUser.name}</p>
-                  <p className="text-sm text-text-muted">{currentUser.email}</p>
+                  <p className="text-base font-semibold text-text">{userName}</p>
+                  <p className="text-sm text-text-muted">{user?.email}</p>
                 </div>
               </div>
               <Button variant="secondary" className="mt-4">Edit profile</Button>
@@ -200,8 +211,8 @@ export function SettingsScreen() {
           )}
 
           {section === "organisation" && (
-            <SettingsSection title={currentWorkspace.name}>
-              <p className="text-sm text-text-secondary">Role: {currentWorkspace.role}</p>
+            <SettingsSection title={organisation?.name ?? "Organisation"}>
+              <p className="text-sm text-text-secondary">Workspace: {workspace?.name ?? "Default"}</p>
               <div className="mt-4 flex gap-2">
                 <Button variant="secondary">Invite members</Button>
                 <Button variant="secondary">Manage roles</Button>

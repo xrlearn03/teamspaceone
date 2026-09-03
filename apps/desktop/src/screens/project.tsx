@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Calendar,
   Filter,
@@ -12,7 +12,8 @@ import {
   Users,
 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
-import { projects, tasks } from "../lib/data";
+import { useProjects, useTasks, useCreateTask } from "../hooks/api";
+import { type Task } from "../lib/api";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -29,12 +30,44 @@ const tabs = [
   { id: "activity", label: "Activity" },
 ];
 
-const columns = ["Backlog", "Todo", "In Progress", "In Review", "Blocked", "Done"];
-
 export function ProjectScreen() {
   const activeProjectId = useUIStore((s) => s.activeProjectId);
-  const project = projects.find((p) => p.id === activeProjectId) ?? projects[0];
+  const { data: projects } = useProjects();
+  const project =
+    projects?.find((p) => p.id === activeProjectId) ?? projects?.[0];
+  const { data: tasks } = useTasks(project?.id);
+  const createTask = useCreateTask();
   const [tab, setTab] = useState("board");
+  const [newTask, setNewTask] = useState<Record<string, string>>({});
+
+  const grouped = useMemo(() => {
+    const g: Record<string, Task[]> = {};
+    if (!tasks) return g;
+    for (const t of tasks) {
+      const status = t.status || "Backlog";
+      if (!g[status]) g[status] = [];
+      g[status].push(t);
+    }
+    return g;
+  }, [tasks]);
+
+  const columns =
+    tasks && tasks.length > 0 ? Object.keys(grouped) : ["Backlog", "Todo", "In Progress", "In Review", "Blocked", "Done"];
+
+  function addTask(status: string) {
+    const title = newTask[status]?.trim();
+    if (!title || !project) return;
+    createTask.mutate({ projectId: project.id, title });
+    setNewTask((prev) => ({ ...prev, [status]: "" }));
+  }
+
+  if (!project) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center text-text-muted">
+        No project selected.
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -46,7 +79,9 @@ export function ProjectScreen() {
             </div>
             <div>
               <h1 className="text-lg font-semibold text-text">{project.name}</h1>
-              <p className="text-xs text-text-muted">{project.status} · Due Sep 15</p>
+              <p className="text-xs text-text-muted capitalize">
+                {project.status} · {project.description}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -101,7 +136,7 @@ export function ProjectScreen() {
             <Button variant="ghost" size="icon">
               <LayoutGrid className="h-4 w-4" />
             </Button>
-            <Button size="sm">
+            <Button size="sm" onClick={() => addTask("Todo")}>
               <Plus className="mr-1.5 h-4 w-4" />
               New task
             </Button>
@@ -109,25 +144,11 @@ export function ProjectScreen() {
         </div>
       </header>
 
-      {tab === "overview" && <ProjectOverview project={project} />}
+      {tab === "overview" && <ProjectOverview tasks={tasks} />}
       {(tab === "board" || tab === "list") && (
         <div className="flex flex-1 gap-3 overflow-x-auto p-4">
           {columns.map((col) => {
-            const colTasks = tasks.filter((t) =>
-              col === "Done"
-                ? t.status === "Done"
-                : col === "Blocked"
-                  ? t.status === "Blocked"
-                  : col === "In Progress"
-                    ? t.status === "In Progress"
-                    : col === "Todo"
-                      ? t.status === "Todo"
-                      : col === "In Review"
-                        ? false
-                        : col === "Backlog"
-                          ? false
-                          : false,
-            );
+            const colTasks = grouped[col] ?? [];
             return (
               <div
                 key={col}
@@ -142,18 +163,12 @@ export function ProjectScreen() {
                     <Card key={t.id} className="cursor-pointer p-3 hover:border-primary/30">
                       <div className="flex items-start justify-between gap-2">
                         <p className="text-sm font-medium text-text">{t.title}</p>
-                        <span
-                          className={cn(
-                            "h-2 w-2 rounded-full",
-                            t.priority === "high" && "bg-error",
-                            t.priority === "medium" && "bg-warning",
-                            t.priority === "low" && "bg-info",
-                          )}
-                        />
+                        <span className="h-2 w-2 rounded-full bg-primary" />
                       </div>
                       <div className="mt-2 flex items-center justify-between">
-                        <span className="text-xs text-text-muted">{t.assignee}</span>
-                        <span className="text-xs text-text-muted">{t.due}</span>
+                        <span className="text-xs text-text-muted">
+                          {t.assigneeId ? t.assigneeId.slice(0, 8) : "Unassigned"}
+                        </span>
                       </div>
                     </Card>
                   ))}
@@ -163,12 +178,26 @@ export function ProjectScreen() {
                     </div>
                   )}
                 </div>
-                <button
-                  type="button"
-                  className="m-2 flex items-center justify-center gap-1 rounded-md py-1.5 text-xs font-medium text-text-muted hover:bg-surface-elevated hover:text-text"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Add task
-                </button>
+                <div className="m-2 space-y-1">
+                  <Input
+                    placeholder="Add task…"
+                    value={newTask[col] ?? ""}
+                    onChange={(e) =>
+                      setNewTask((prev) => ({ ...prev, [col]: e.target.value }))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") addTask(col);
+                    }}
+                    className="h-7 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => addTask(col)}
+                    className="flex w-full items-center justify-center gap-1 rounded-md py-1.5 text-xs font-medium text-text-muted hover:bg-surface-elevated hover:text-text"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add task
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -198,7 +227,24 @@ export function ProjectScreen() {
   );
 }
 
-function ProjectOverview({ project }: { project: (typeof projects)[0] }) {
+function ProjectOverview({
+  tasks,
+}: {
+  tasks?: Task[];
+}) {
+  const total = tasks?.length ?? 0;
+  const done = tasks?.filter((t) => t.status.toLowerCase() === "done").length ?? 0;
+  const progress = total > 0 ? done / total : 0;
+
+  const breakdown = useMemo(() => {
+    const counts: Record<string, number> = {};
+    if (!tasks) return {};
+    for (const t of tasks) {
+      counts[t.status] = (counts[t.status] ?? 0) + 1;
+    }
+    return counts;
+  }, [tasks]);
+
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <div className="grid auto-rows-min grid-cols-1 gap-4 md:grid-cols-3">
@@ -207,51 +253,52 @@ function ProjectOverview({ project }: { project: (typeof projects)[0] }) {
           <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-surface-elevated">
             <div
               className="h-full rounded-full bg-primary"
-              style={{ width: `${project.progress * 100}%` }}
+              style={{ width: `${progress * 100}%` }}
             />
           </div>
           <p className="mt-2 text-xs text-text-muted">
-            {Math.round(project.progress * 100)}% complete
+            {Math.round(progress * 100)}% complete ({done} of {total})
           </p>
         </Card>
 
         <Card>
           <h3 className="text-sm font-semibold text-text">Task breakdown</h3>
           <div className="mt-3 space-y-2">
-            {[
-              { label: "Todo", count: 1 },
-              { label: "In Progress", count: 1 },
-              { label: "Blocked", count: 1 },
-              { label: "Done", count: 1 },
-            ].map((s) => (
-              <div key={s.label} className="flex items-center justify-between text-sm">
-                <span className="text-text-secondary">{s.label}</span>
-                <span className="font-medium text-text">{s.count}</span>
-              </div>
-            ))}
+            {Object.entries(breakdown).length > 0 ? (
+              Object.entries(breakdown).map(([label, count]) => (
+                <div key={label} className="flex items-center justify-between text-sm">
+                  <span className="text-text-secondary capitalize">{label}</span>
+                  <span className="font-medium text-text">{count}</span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-text-muted">No tasks yet.</p>
+            )}
           </div>
         </Card>
 
         <Card>
           <h3 className="text-sm font-semibold text-text">Upcoming deadlines</h3>
           <div className="mt-3 space-y-2">
-            {tasks.map((t) => (
-              <div key={t.id} className="flex items-center gap-2 text-sm">
-                <Calendar className="h-4 w-4 text-text-muted" />
-                <span className="flex-1 text-text-secondary">{t.title}</span>
-                <span className="text-xs text-text-muted">{t.due}</span>
-              </div>
-            ))}
+            {tasks && tasks.length > 0 ? (
+              tasks.slice(0, 6).map((t) => (
+                <div key={t.id} className="flex items-center gap-2 text-sm">
+                  <Calendar className="h-4 w-4 text-text-muted" />
+                  <span className="flex-1 text-text-secondary">{t.title}</span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-text-muted">No upcoming deadlines.</p>
+            )}
           </div>
         </Card>
 
         <Card className="md:col-span-2">
           <h3 className="text-sm font-semibold text-text">AI project summary</h3>
           <p className="mt-3 text-sm leading-relaxed text-text-secondary">
-            The project is on track with 62% completion. One task is currently blocked
-            pending client feedback on assets. The design team completed the color
-            palette and the engineering team is preparing for the navigation refactor.
-            Recommend prioritizing the blocked task to avoid missing the Sep 15 deadline.
+            {total > 0
+              ? `This project has ${total} task${total === 1 ? "" : "s"}. ${done} ${done === 1 ? "is" : "are"} done. Keep up the momentum.`
+              : "No tasks yet. Create one to start tracking progress."}
           </p>
         </Card>
       </div>

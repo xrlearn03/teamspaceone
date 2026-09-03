@@ -13,13 +13,14 @@ import {
   leaveMeeting,
   type Meeting,
 } from "../lib/api";
-import { currentUser } from "../lib/data";
+import { useMe } from "../hooks/api";
 
 export function VoiceRoomScreen() {
   const { activeMeetingId, setActiveView } = useUIStore(
     useShallow((s) => ({ activeMeetingId: s.activeMeetingId, setActiveView: s.setActiveView })),
   );
   const { joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent } = useRealtime();
+  const { data: user } = useMe();
 
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -134,7 +135,7 @@ export function VoiceRoomScreen() {
       token={token}
       videoEnabled={false}
       onLeave={handleLeave}
-      onEnd={meeting.createdBy === currentUser.id ? handleEnd : undefined}
+      onEnd={meeting.createdBy === user?.id ? handleEnd : undefined}
     />
   );
 }
