@@ -12,6 +12,7 @@ model Project {
   id             String   @id @default(cuid())
   organisationId String
   workspaceId    String?
+  clientId       String?
   name           String
   description    String?
   ownerId        String
@@ -22,6 +23,7 @@ model Project {
 
   @@index([organisationId])
   @@index([workspaceId])
+  @@index([clientId])
   @@map("projects")
 }
 
@@ -43,6 +45,28 @@ model Task {
   @@index([projectId])
   @@index([assigneeId])
   @@map("tasks")
+}
+
+model Approval {
+  id             String    @id @default(cuid())
+  organisationId String
+  projectId      String?
+  resourceType   String    // task, file, deliverable
+  resourceId     String
+  requestedBy    String
+  requestedAt    DateTime  @default(now())
+  status         String    @default("pending") // pending, approved, rejected
+  resolvedBy     String?
+  resolvedAt     DateTime?
+  message        String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([organisationId])
+  @@index([projectId])
+  @@index([resourceType, resourceId])
+  @@index([status])
+  @@map("approvals")
 }
 
 model OutboxEvent {

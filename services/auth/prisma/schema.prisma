@@ -14,6 +14,7 @@ model User {
   passwordHash  String
   firstName     String?
   lastName      String?
+  type          String   @default("member") // member, guest
   active        Boolean  @default(true)
   emailVerified Boolean  @default(false)
   createdAt     DateTime @default(now())

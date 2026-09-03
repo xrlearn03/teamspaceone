@@ -46,6 +46,7 @@ model OrganisationMembership {
   userId         String
   organisationId String
   roleId         String
+  isGuest        Boolean      @default(false)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
@@ -84,6 +85,19 @@ model Workspace {
 
   @@index([organisationId])
   @@map("workspaces")
+}
+
+model Client {
+  id             String   @id @default(cuid())
+  organisationId String
+  clientOrganisationId String?
+  name           String
+  email          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organisationId])
+  @@map("clients")
 }
 
 model OutboxEvent {

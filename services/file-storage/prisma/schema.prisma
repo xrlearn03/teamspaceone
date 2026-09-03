@@ -30,7 +30,8 @@ model FileRecord {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  previews FilePreview[]
+  previews       FilePreview[]
+  externalShares ExternalShare[]
 
   @@index([organisationId])
   @@index([workspaceId])
@@ -54,6 +55,24 @@ model FilePreview {
   @@index([fileId])
   @@index([organisationId])
   @@map("file_previews")
+}
+
+model ExternalShare {
+  id             String     @id @default(cuid())
+  fileId         String
+  file           FileRecord @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  organisationId String
+  token          String     @unique
+  createdBy      String
+  expiresAt      DateTime?
+  maxViews       Int?
+  viewCount      Int        @default(0)
+  createdAt      DateTime   @default(now())
+
+  @@index([fileId])
+  @@index([organisationId])
+  @@index([token])
+  @@map("external_shares")
 }
 
 model OutboxEvent {

@@ -31,7 +31,12 @@ export const streamConfigs: StreamConfig[] = [
   },
   {
     name: Streams.ORGANISATION,
-    subjects: ['reactify.organisation.>', 'reactify.workspace.>'],
+    subjects: [
+      'reactify.organisation.>',
+      'reactify.workspace.>',
+      'reactify.guest.>',
+      'reactify.client.>',
+    ],
     retention: 'limits',
   },
   {
@@ -41,7 +46,12 @@ export const streamConfigs: StreamConfig[] = [
   },
   {
     name: Streams.PROJECTS,
-    subjects: ['reactify.project.>', 'reactify.task.>'],
+    subjects: [
+      'reactify.project.>',
+      'reactify.task.>',
+      'reactify.client_project.>',
+      'reactify.approval.>',
+    ],
     retention: 'limits',
   },
   {

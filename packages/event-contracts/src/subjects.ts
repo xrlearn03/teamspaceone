@@ -24,7 +24,22 @@ export const Subjects = {
   MEETING_SCREEN_SHARED: 'reactify.meeting.screen.shared',
   VOICE_ROOM_CREATED: 'reactify.voice.room.created',
   AI_SUMMARY_COMPLETED: 'reactify.ai.summary_completed',
+  AI_DOCUMENT_INDEXED: 'reactify.ai.document_indexed',
+  AI_QUESTION_ANSWERED: 'reactify.ai.question_answered',
+  AI_TASK_EXTRACTED: 'reactify.ai.task_extracted',
+  AI_DECISION_EXTRACTED: 'reactify.ai.decision_extracted',
+  AI_ACTION_CONFIRMED: 'reactify.ai.action_confirmed',
   NOTIFICATION_CREATED: 'reactify.notification.created',
+
+  // Phase 9 - client collaboration
+  GUEST_CREATED: 'reactify.guest.created',
+  GUEST_INVITED: 'reactify.guest.invited',
+  CLIENT_CREATED: 'reactify.client.created',
+  CLIENT_PROJECT_CREATED: 'reactify.client_project.created',
+  APPROVAL_CREATED: 'reactify.approval.created',
+  APPROVAL_APPROVED: 'reactify.approval.approved',
+  APPROVAL_REJECTED: 'reactify.approval.rejected',
+  FILE_SHARED_EXTERNALLY: 'reactify.file.shared_externally',
 } as const;
 
 export type Subject = (typeof Subjects)[keyof typeof Subjects];
