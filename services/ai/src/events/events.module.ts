@@ -1,11 +1,11 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { InboxModule } from '../inbox/inbox.module.js';
 import { AiModule } from '../ai/ai.module.js';
 import { NatsClientService } from './nats-client.service.js';
 import { NatsConsumerService } from './nats-consumer.service.js';
 
 @Module({
-  imports: [InboxModule, AiModule],
+  imports: [InboxModule, forwardRef(() => AiModule)],
   providers: [NatsClientService, NatsConsumerService],
   exports: [NatsClientService],
 })
