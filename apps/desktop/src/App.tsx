@@ -1,7 +1,12 @@
 import { AppShell } from "./components/layouts/app-shell";
+import { RealtimeProvider } from "./hooks/useRealtime";
 
 function App() {
-  return <AppShell />;
+  return (
+    <RealtimeProvider>
+      <AppShell />
+    </RealtimeProvider>
+  );
 }
 
 export default App;

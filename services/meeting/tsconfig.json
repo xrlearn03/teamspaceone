@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "sourceMap": true,
     "paths": {
       "#prisma": ["./node_modules/.prisma/client"]
@@ -28,7 +28,8 @@
     "src/events/events.module.ts",
     "src/events/nats-client.service.ts",
     "src/outbox/**/*",
-    "src/meeting/**/*"
+    "src/meeting/**/*",
+    "src/livekit/**/*"
   ],
   "exclude": ["dist", "node_modules"]
 }

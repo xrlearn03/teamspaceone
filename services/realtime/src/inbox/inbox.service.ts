@@ -12,6 +12,10 @@ export class InboxService {
   constructor(private readonly prisma: PrismaService) {}
 
   async handle(envelope: EventEnvelope, handler: EventHandler): Promise<void> {
+    if (!envelope.organisationId) {
+      throw new Error('Event envelope missing organisationId');
+    }
+
     await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.inboxEvent.findUnique({
         where: { eventId: envelope.eventId },

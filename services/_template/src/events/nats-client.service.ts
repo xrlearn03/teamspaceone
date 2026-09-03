@@ -24,7 +24,9 @@ export class NatsClientService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    await this.nc?.close();
+    if (this.nc && !this.nc.isClosed()) {
+      await this.nc.drain();
+    }
   }
 
   isConnected(): boolean {

@@ -3,6 +3,7 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 COPY . /app
 RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @reactify/event-contracts build
 RUN pnpm --filter @reactify/file-storage-service db:generate
 RUN pnpm --filter @reactify/file-storage-service build
 

@@ -17,6 +17,7 @@ interface UIState {
   activeView: View;
   activeChannelId: string | null;
   activeProjectId: string | null;
+  activeMeetingId: string | null;
   sidebarCollapsed: boolean;
   sidebarWidth: number;
   rightPanelOpen: boolean;
@@ -26,8 +27,9 @@ interface UIState {
   setTheme: (theme: "light" | "dark" | "system") => void;
   setActiveView: (
     view: View,
-    params?: { channelId?: string; projectId?: string },
+    params?: { channelId?: string; projectId?: string; meetingId?: string },
   ) => void;
+  setActiveMeetingId: (meetingId: string | null) => void;
   toggleSidebar: () => void;
   setSidebarWidth: (width: number) => void;
   toggleRightPanel: () => void;
@@ -41,6 +43,7 @@ export const useUIStore = create<UIState>((set) => ({
   activeView: "home",
   activeChannelId: null,
   activeProjectId: null,
+  activeMeetingId: null,
   sidebarCollapsed: false,
   sidebarWidth: 256,
   rightPanelOpen: false,
@@ -53,7 +56,9 @@ export const useUIStore = create<UIState>((set) => ({
       activeView: view,
       activeChannelId: params?.channelId ?? null,
       activeProjectId: params?.projectId ?? null,
+      activeMeetingId: params?.meetingId ?? null,
     }),
+  setActiveMeetingId: (meetingId) => set({ activeMeetingId: meetingId }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setSidebarWidth: (width) =>
     set({ sidebarWidth: Math.max(180, Math.min(400, width)) }),

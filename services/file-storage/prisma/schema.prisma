@@ -12,17 +12,48 @@ model FileRecord {
   id             String   @id @default(cuid())
   organisationId String
   workspaceId    String?
+  resourceType   String?
+  resourceId     String?
+  category       String   // avatar, message, project, task, meeting, attachment, ai-document
   uploaderId     String
   originalName   String
   mimeType       String
   size           Int
+  bucket         String
   storageKey     String   @unique
-  url            String
+  url            String?
+  etag           String?
+  status         String   @default("uploaded") // uploaded, processing, processed, failed
+  previewUrl     String?
+  thumbnailUrl   String?
+  metadata       Json?
   createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  previews FilePreview[]
 
   @@index([organisationId])
   @@index([workspaceId])
+  @@index([resourceType, resourceId])
+  @@index([category])
+  @@index([status])
   @@map("files")
+}
+
+model FilePreview {
+  id           String     @id @default(cuid())
+  fileId       String
+  file         FileRecord @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  previewType  String     // thumbnail, image_preview, text_extract
+  organisationId String
+  storageKey   String     @unique
+  url          String?
+  metadata     Json?
+  createdAt    DateTime   @default(now())
+
+  @@index([fileId])
+  @@index([organisationId])
+  @@map("file_previews")
 }
 
 model OutboxEvent {

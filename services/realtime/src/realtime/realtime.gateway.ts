@@ -24,30 +24,131 @@ export class RealtimeGateway implements OnGatewayInit {
 
   @SubscribeMessage('join')
   handleJoin(client: Socket, channelId: string): void {
-    client.join(`channel:${channelId}`);
-    this.logger.log(`Client joined channel: ${channelId}`);
+    const room = `channel:${channelId}`;
+    client.join(room);
+    this.logger.log(`Client ${client.id} joined channel room ${room}`);
+  }
+
+  @SubscribeMessage('join-user')
+  handleJoinUser(client: Socket, userId: string): void {
+    const room = `user:${userId}`;
+    client.join(room);
+    this.logger.log(`Client ${client.id} joined user room ${room}`);
+  }
+
+  @SubscribeMessage('join-meeting')
+  handleJoinMeeting(client: Socket, meetingId: string): void {
+    const room = `meeting:${meetingId}`;
+    client.join(room);
+    this.logger.log(`Client ${client.id} joined meeting room ${room}`);
+  }
+
+  @SubscribeMessage('join-organisation')
+  handleJoinOrganisation(client: Socket, organisationId: string): void {
+    const room = `organisation:${organisationId}`;
+    client.join(room);
+    this.logger.log(`Client ${client.id} joined organisation room ${room}`);
+  }
+
+  @SubscribeMessage('join-workspace')
+  handleJoinWorkspace(client: Socket, workspaceId: string): void {
+    const room = `workspace:${workspaceId}`;
+    client.join(room);
+    this.logger.log(`Client ${client.id} joined workspace room ${room}`);
   }
 
   @SubscribeMessage('leave')
-  handleLeave(client: Socket, channelId: string): void {
-    client.leave(`channel:${channelId}`);
+  handleLeave(client: Socket, room: string): void {
+    client.leave(room);
   }
 
   broadcast(envelope: EventEnvelope): void {
     if (!this.server) return;
 
     const payload = envelope.payload as Record<string, any> | undefined;
-    const channelId = payload?.channelId as string | undefined;
-    if (!channelId) return;
+    if (!payload) return;
 
-    const room = `channel:${channelId}`;
-
-    if (envelope.eventType === Subjects.MESSAGE_CREATED) {
-      this.server.to(room).emit('message.created', payload);
-    } else if (envelope.eventType === Subjects.MESSAGE_UPDATED) {
-      this.server.to(room).emit('message.updated', payload);
-    } else if (envelope.eventType === Subjects.MESSAGE_DELETED) {
-      this.server.to(room).emit('message.deleted', payload);
+    switch (envelope.eventType) {
+      case Subjects.MESSAGE_CREATED: {
+        const channelId = payload.channelId as string | undefined;
+        if (channelId) {
+          this.server.to(`channel:${channelId}`).emit('message.created', payload);
+        }
+        break;
+      }
+      case Subjects.MESSAGE_UPDATED: {
+        const channelId = payload.channelId as string | undefined;
+        if (channelId) {
+          this.server.to(`channel:${channelId}`).emit('message.updated', payload);
+        }
+        break;
+      }
+      case Subjects.MESSAGE_DELETED: {
+        const channelId = payload.channelId as string | undefined;
+        if (channelId) {
+          this.server.to(`channel:${channelId}`).emit('message.deleted', payload);
+        }
+        break;
+      }
+      case Subjects.NOTIFICATION_CREATED: {
+        const userId = payload.userId as string | undefined;
+        if (userId) {
+          this.server.to(`user:${userId}`).emit('notification.created', payload);
+          this.logger.debug({ userId, eventId: envelope.eventId }, 'Broadcasted notification to user room');
+        }
+        break;
+      }
+      case Subjects.MEETING_CREATED: {
+        const organisationId = envelope.organisationId as string | undefined;
+        if (organisationId) {
+          this.server.to(`organisation:${organisationId}`).emit('meeting.created', payload);
+        }
+        break;
+      }
+      case Subjects.MEETING_STARTED: {
+        const meetingId = payload.id as string | undefined;
+        if (meetingId) {
+          this.server.to(`meeting:${meetingId}`).emit('meeting.started', payload);
+        }
+        break;
+      }
+      case Subjects.MEETING_ENDED: {
+        const meetingId = payload.id as string | undefined;
+        if (meetingId) {
+          this.server.to(`meeting:${meetingId}`).emit('meeting.ended', payload);
+        }
+        break;
+      }
+      case Subjects.MEETING_PARTICIPANT_JOINED: {
+        const meetingId = payload.meetingId as string | undefined;
+        if (meetingId) {
+          this.server.to(`meeting:${meetingId}`).emit('meeting.participant.joined', payload);
+        }
+        break;
+      }
+      case Subjects.MEETING_PARTICIPANT_LEFT: {
+        const meetingId = payload.meetingId as string | undefined;
+        if (meetingId) {
+          this.server.to(`meeting:${meetingId}`).emit('meeting.participant.left', payload);
+        }
+        break;
+      }
+      case Subjects.MEETING_SCREEN_SHARED: {
+        const meetingId = payload.meetingId as string | undefined;
+        if (meetingId) {
+          this.server.to(`meeting:${meetingId}`).emit('meeting.screen.shared', payload);
+        }
+        break;
+      }
+      case Subjects.VOICE_ROOM_CREATED: {
+        const workspaceId = envelope.workspaceId as string | undefined;
+        if (workspaceId) {
+          this.server.to(`workspace:${workspaceId}`).emit('voice.room.created', payload);
+        }
+        break;
+      }
+      default:
+        this.logger.debug({ eventType: envelope.eventType }, 'No realtime broadcast configured');
     }
   }
 }

@@ -110,7 +110,7 @@ export function HomeScreen() {
                 <button
                   key={m.id}
                   type="button"
-                  onClick={() => setActiveView("meeting")}
+                  onClick={() => setActiveView("meeting", { meetingId: m.id })}
                   className="flex w-full items-center justify-between rounded-md p-1.5 text-left hover:bg-surface-elevated"
                 >
                   <span className="text-sm text-text">{m.title}</span>

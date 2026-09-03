@@ -243,6 +243,21 @@ services:
       - redis
       - otel-collector
 
+  livekit:
+    image: livekit/livekit-server:v1.7.2
+    container_name: reactify-livekit
+    restart: unless-stopped
+    command: ["--dev", "--bind", "0.0.0.0"]
+    ports:
+      - "7880:7880"
+      - "7881:7881/udp"
+      - "7882:7882"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7880"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   meeting-service:
     build:
       context: .
@@ -255,6 +270,9 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/meeting_db?schema=public
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: reactify-meeting-service
     ports:
@@ -263,6 +281,7 @@ services:
       - postgres
       - nats
       - redis
+      - livekit
       - otel-collector
 
   file-storage-service:
@@ -277,11 +296,13 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/file_db?schema=public
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
-      STORAGE_PATH: /app/uploads
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_BUCKET: reactify
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: reactify-file-storage-service
-    volumes:
-      - file-uploads:/app/uploads
     ports:
       - "3010:3010"
     depends_on:
@@ -377,4 +398,3 @@ volumes:
   postgres-data:
   nats-data:
   minio-data:
-  file-uploads:

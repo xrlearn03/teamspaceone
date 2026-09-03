@@ -6,6 +6,7 @@ import { HealthModule } from './health/health.module.js';
 import { EventsModule } from './events/events.module.js';
 import { OutboxModule } from './outbox/outbox.module.js';
 import { FileStorageModule } from './file-storage/file-storage.module.js';
+import { FileProcessingModule } from './file-processing/file-processing.module.js';
 
 function parseRedisUrl(url?: string) {
   if (!url) return { host: 'localhost', port: 6379 };
@@ -31,6 +32,7 @@ function parseRedisUrl(url?: string) {
     EventsModule,
     OutboxModule,
     FileStorageModule,
+    FileProcessingModule,
   ],
 })
 export class AppModule {}

@@ -8,12 +8,18 @@ export class OutboxScheduler implements OnModuleInit {
 
   constructor(@InjectQueue('outbox') private readonly outboxQueue: Queue) {}
 
-  onModuleInit() {
+  async onModuleInit() {
     this.logger.log('Starting outbox scheduler');
-    setInterval(() => {
-      this.outboxQueue.add('publish', {}).catch((err: Error) => {
-        this.logger.error(`Failed to schedule outbox publish: ${err.message}`);
-      });
-    }, 5000);
+    await this.outboxQueue.add(
+      'publish',
+      {},
+      {
+        repeat: {
+          every: 5000,
+          key: 'outbox-publish-every-5s',
+        },
+        jobId: 'outbox-publish-recurring',
+      },
+    );
   }
 }

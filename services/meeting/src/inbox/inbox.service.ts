@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { type EventEnvelope, isEventEnvelope } from '@reactify/event-contracts';
-import { type PrismaClient, Prisma } from '#prisma';
+import { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
@@ -14,6 +14,10 @@ export class InboxService {
       throw new Error('Event missing organisationId');
     }
 
+    if (!isEventEnvelope(envelope)) {
+      throw new Error('Invalid event envelope');
+    }
+
     await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.inboxEvent.findUnique({
         where: { eventId: envelope.eventId },
@@ -24,7 +28,7 @@ export class InboxService {
         return;
       }
 
-      await this.processEvent(envelope, tx);
+      await this.processEvent(envelope);
 
       await tx.inboxEvent.create({
         data: {
@@ -38,25 +42,22 @@ export class InboxService {
     });
   }
 
-  private async processEvent(
-    envelope: EventEnvelope,
-    tx: PrismaClient | Prisma.TransactionClient,
-  ): Promise<void> {
-    this.logger.log({ eventId: envelope.eventId, eventType: envelope.eventType }, 'Processing event');
+  private async processEvent(envelope: EventEnvelope): Promise<void> {
+    this.logger.log(
+      { eventId: envelope.eventId, eventType: envelope.eventType, organisationId: envelope.organisationId },
+      'Processing event',
+    );
 
-    if (envelope.eventType === 'reactify.template.created') {
-      const payload = envelope.payload as { name?: string } | undefined;
-      if (payload?.name) {
-        await tx.templateEntity.upsert({
-          where: { id: envelope.resourceId },
-          update: { name: payload.name },
-          create: {
-            id: envelope.resourceId,
-            organisationId: envelope.organisationId,
-            name: payload.name,
-          },
-        });
-      }
+    switch (envelope.eventType) {
+      case 'reactify.organisation.created':
+      case 'reactify.organisation.member_added':
+      case 'reactify.workspace.created':
+      case 'reactify.user.created':
+        // Meeting service keeps these as read-only context for validation.
+        // No local projection required for Phase 5.
+        break;
+      default:
+        this.logger.debug({ eventType: envelope.eventType }, 'No handler for event type');
     }
   }
 }

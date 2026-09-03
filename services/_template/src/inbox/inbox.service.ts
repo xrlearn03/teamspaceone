@@ -9,7 +9,7 @@ export class InboxService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async handle(envelope: EventEnvelope): Promise<void> {
+  async handle(envelope: EventEnvelope, subject = envelope.eventType): Promise<void> {
     if (!envelope.organisationId) {
       throw new Error('Event missing organisationId');
     }
@@ -30,7 +30,7 @@ export class InboxService {
         data: {
           eventId: envelope.eventId,
           eventType: envelope.eventType,
-          subject: envelope.eventType,
+          subject,
           payload: envelope as any,
           organisationId: envelope.organisationId,
         },

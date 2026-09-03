@@ -65,7 +65,7 @@ export const streamConfigs: StreamConfig[] = [
   },
   {
     name: Streams.AUDIT,
-    subjects: ['reactify.audit.>', 'reactify.>'],
+    subjects: ['reactify.audit.>'],
     retention: 'limits',
   },
   {

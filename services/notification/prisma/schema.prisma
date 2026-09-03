@@ -9,21 +9,74 @@ datasource db {
 }
 
 model Notification {
-  id             String   @id @default(cuid())
+  id             String                @id @default(cuid())
   organisationId String
   userId         String
+  actorId        String?
   eventId        String
   eventType      String
+  resourceType   String?
+  resourceId     String?
+  workspaceId    String?
   title          String
   body           String
-  read           Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  link           String?
+  read           Boolean               @default(false)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  deliveries     NotificationDelivery[]
 
   @@index([organisationId])
   @@index([userId])
   @@index([read])
+  @@index([organisationId, userId, createdAt])
   @@map("notifications")
+}
+
+model NotificationPreference {
+  id             String   @id @default(cuid())
+  organisationId String
+  userId         String
+  eventType      String
+  inApp          Boolean  @default(true)
+  email          Boolean  @default(false)
+  desktop        Boolean  @default(true)
+  push           Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organisationId, userId, eventType])
+  @@index([organisationId])
+  @@index([userId])
+  @@map("notification_preferences")
+}
+
+model NotificationDelivery {
+  id             String           @id @default(cuid())
+  notificationId String
+  channel        DeliveryChannel
+  status         DeliveryStatus   @default(pending)
+  error          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  notification   Notification     @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId])
+  @@index([channel, status])
+  @@map("notification_deliveries")
+}
+
+enum DeliveryChannel {
+  in_app
+  email
+  desktop
+  push
+}
+
+enum DeliveryStatus {
+  pending
+  sent
+  failed
 }
 
 model InboxEvent {

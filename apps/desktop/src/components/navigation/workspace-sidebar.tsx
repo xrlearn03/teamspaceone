@@ -172,7 +172,7 @@ export function WorkspaceSidebar() {
     };
   }, [dragging, setSidebarWidth]);
 
-  function navigate(view: View, params?: { channelId?: string; projectId?: string }) {
+  function navigate(view: View, params?: { channelId?: string; projectId?: string; meetingId?: string }) {
     setActiveView(view, params);
   }
 
@@ -335,7 +335,7 @@ export function WorkspaceSidebar() {
               key={m.id}
               icon={m.status === "live" ? Video : CalendarIcon}
               label={m.title}
-              onClick={() => navigate("meeting")}
+              onClick={() => navigate("meeting", { meetingId: m.id })}
               subtext={m.time}
             />
           ))}
@@ -344,7 +344,7 @@ export function WorkspaceSidebar() {
               key={v.id}
               icon={Mic}
               label={v.name}
-              onClick={() => navigate("voice")}
+              onClick={() => navigate("voice", { meetingId: v.id })}
               badge={v.participants || undefined}
             />
           ))}

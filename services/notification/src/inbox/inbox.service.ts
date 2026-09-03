@@ -3,7 +3,10 @@ import { type EventEnvelope } from '@reactify/event-contracts';
 import { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 
-export type EventHandler = (tx: Prisma.TransactionClient, envelope: EventEnvelope) => Promise<unknown> | unknown;
+export type EventHandler = (
+  tx: Prisma.TransactionClient,
+  envelope: EventEnvelope,
+) => Promise<unknown> | unknown;
 
 @Injectable()
 export class InboxService {
@@ -11,14 +14,18 @@ export class InboxService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async handle(envelope: EventEnvelope, handler: EventHandler): Promise<void> {
-    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  async handle(envelope: EventEnvelope, handler: EventHandler): Promise<unknown> {
+    if (!envelope.organisationId) {
+      throw new Error('Event envelope missing organisationId');
+    }
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.inboxEvent.findUnique({
         where: { eventId: envelope.eventId },
       });
       if (existing) {
         this.logger.log({ eventId: envelope.eventId }, 'Duplicate event skipped');
-        return;
+        return undefined;
       }
 
       await tx.inboxEvent.create({
@@ -31,7 +38,7 @@ export class InboxService {
         },
       });
 
-      await handler(tx, envelope);
+      return handler(tx, envelope);
     });
   }
 }

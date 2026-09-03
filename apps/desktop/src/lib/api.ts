@@ -191,11 +191,85 @@ export function search(query: string) {
 }
 
 // Meetings
-export function createMeeting(title: string, description?: string) {
-  return apiRequest<{ id: string; title: string }>("/meetings", {
+export interface Meeting {
+  id: string;
+  roomName: string;
+  title: string;
+  description?: string | null;
+  status: string;
+  type: string;
+  createdBy: string;
+  participants?: MeetingParticipant[];
+}
+
+export interface MeetingParticipant {
+  id: string;
+  userId: string;
+  joinedAt: string;
+  leftAt?: string | null;
+  isScreenSharing: boolean;
+}
+
+export interface JoinMeetingResult {
+  participant: MeetingParticipant;
+  token: string;
+}
+
+export interface MeetingTokenResult {
+  token: string;
+  roomName: string;
+}
+
+export function getMeetings() {
+  return apiRequest<Meeting[]>("/meetings");
+}
+
+export function getMeeting(id: string) {
+  return apiRequest<Meeting>(`/meetings/${id}`);
+}
+
+export function createMeeting(title: string, description?: string, workspaceId?: string) {
+  return apiRequest<Meeting>("/meetings", {
     method: "POST",
-    body: { title, description },
+    body: { title, description, workspaceId },
   });
+}
+
+export function createVoiceRoom(title: string, workspaceId?: string) {
+  return apiRequest<Meeting>("/meetings/voice-rooms", {
+    method: "POST",
+    body: { title, workspaceId },
+  });
+}
+
+export function startMeeting(id: string) {
+  return apiRequest<Meeting>(`/meetings/${id}/start`, { method: "POST" });
+}
+
+export function endMeeting(id: string) {
+  return apiRequest<Meeting>(`/meetings/${id}/end`, { method: "POST" });
+}
+
+export function joinMeeting(id: string, name?: string) {
+  return apiRequest<JoinMeetingResult>(`/meetings/${id}/join`, {
+    method: "POST",
+    body: { name },
+  });
+}
+
+export function leaveMeeting(id: string) {
+  return apiRequest<MeetingParticipant>(`/meetings/${id}/leave`, { method: "POST" });
+}
+
+export function setScreenShare(id: string, isScreenSharing: boolean) {
+  return apiRequest<MeetingParticipant>(`/meetings/${id}/screen-share`, {
+    method: "POST",
+    body: { isScreenSharing },
+  });
+}
+
+export function getMeetingToken(id: string) {
+  return apiRequest<MeetingTokenResult>(`/meetings/${id}/token`);
 }
 
 // Notifications

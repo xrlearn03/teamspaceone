@@ -9,22 +9,46 @@ datasource db {
 }
 
 model Meeting {
-  id             String    @id @default(cuid())
+  id             String              @id @default(cuid())
   organisationId String
   workspaceId    String?
+  roomName       String              @unique
   title          String
   description    String?
+  type           String              @default("meeting")
   scheduledAt    DateTime?
   startedAt      DateTime?
   endedAt        DateTime?
-  status         String    @default("scheduled")
+  status         String              @default("scheduled")
   createdBy      String
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  participants   MeetingParticipant[]
 
   @@index([organisationId])
   @@index([workspaceId])
+  @@index([status])
   @@map("meetings")
+}
+
+model MeetingParticipant {
+  id             String   @id @default(cuid())
+  meetingId      String
+  organisationId String
+  userId         String
+  joinedAt       DateTime @default(now())
+  leftAt         DateTime?
+  isScreenSharing Boolean @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([organisationId])
+  @@index([userId])
+  @@unique([meetingId, userId])
+  @@map("meeting_participants")
 }
 
 model OutboxEvent {

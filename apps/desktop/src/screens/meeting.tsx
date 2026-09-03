@@ -1,107 +1,145 @@
-import { useState } from "react";
-import {
-  Mic,
-  MicOff,
-  Video,
-  VideoOff,
-  MonitorUp,
-  Hand,
-  MessageSquare,
-  Users,
-  PhoneOff,
-  Settings,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Video, Loader2 } from "lucide-react";
+import { useUIStore } from "../stores/ui";
+import { useShallow } from "zustand/shallow";
+import { LiveKitConference } from "../components/livekit/conference";
 import { Button } from "../components/ui/button";
-import { cn } from "../lib/utils";
-
-const participants = [
-  { id: "p1", name: "You", initials: "Y", video: false },
-  { id: "p2", name: "Sarah Miller", initials: "S", video: true },
-  { id: "p3", name: "James Wilson", initials: "J", video: true },
-];
+import { useRealtime } from "../hooks/useRealtime";
+import {
+  endMeeting,
+  getMeeting,
+  getMeetingToken,
+  joinMeeting,
+  leaveMeeting,
+  setScreenShare,
+  type Meeting,
+} from "../lib/api";
+import { currentUser } from "../lib/data";
 
 export function MeetingScreen() {
-  const [mic, setMic] = useState(true);
-  const [camera, setCamera] = useState(true);
-  const [screen, setScreen] = useState(false);
-  const [hand, setHand] = useState(false);
+  const { activeMeetingId, setActiveView } = useUIStore(
+    useShallow((s) => ({ activeMeetingId: s.activeMeetingId, setActiveView: s.setActiveView })),
+  );
+  const { joinMeeting, leaveMeeting, on } = useRealtime();
 
-  return (
-    <div className="flex h-full flex-col bg-surface">
-      <header className="flex h-12 items-center justify-between border-b px-4">
-        <div>
-          <h1 className="text-sm font-semibold text-text">Engineering Standup</h1>
-          <p className="text-xs text-text-muted">3 participants · Recording off</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm">
-            <Users className="mr-1.5 h-4 w-4" />
-            Participants
-          </Button>
-          <Button variant="ghost" size="sm">
-            <MessageSquare className="mr-1.5 h-4 w-4" />
-            Chat
-          </Button>
-        </div>
-      </header>
+  const [meeting, setMeeting] = useState<Meeting | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-      <div className="flex flex-1 items-center justify-center gap-4 p-6">
-        {participants.map((p) => (
-          <div
-            key={p.id}
-            className={cn(
-              "flex aspect-video w-72 flex-col items-center justify-center rounded-lg border bg-surface-elevated",
-              !p.video && "bg-primary-subtle",
-            )}
-          >
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-surface text-2xl font-semibold text-primary">
-              {p.initials}
-            </div>
-            <span className="mt-3 text-sm font-medium text-text">{p.name}</span>
-          </div>
-        ))}
+  useEffect(() => {
+    if (!activeMeetingId) return;
+
+    joinMeeting(activeMeetingId);
+    const unsubscribe = on("meeting.ended", (payload) => {
+      if (payload.id === activeMeetingId) {
+        setToken(null);
+        setMeeting(null);
+        setActiveView("home");
+      }
+    });
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    async function join() {
+      try {
+        const m = await getMeeting(activeMeetingId!);
+        let t: string;
+        try {
+          const result = await getMeetingToken(activeMeetingId!);
+          t = result.token;
+        } catch {
+          const result = await joinMeeting(activeMeetingId!);
+          t = result.token;
+        }
+        if (!cancelled) {
+          setMeeting(m);
+          setToken(t);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to join meeting");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void join();
+    return () => {
+      cancelled = true;
+      leaveMeeting(activeMeetingId);
+      unsubscribe();
+    };
+  }, [activeMeetingId]);
+
+  async function handleLeave() {
+    if (activeMeetingId) {
+      try {
+        await leaveMeeting(activeMeetingId);
+      } catch {
+        // Best-effort.
+      }
+    }
+    setToken(null);
+    setMeeting(null);
+    setActiveView("home");
+  }
+
+  async function handleEnd() {
+    if (activeMeetingId) {
+      await endMeeting(activeMeetingId);
+    }
+    await handleLeave();
+  }
+
+  async function handleScreenShare(enabled: boolean) {
+    if (activeMeetingId) {
+      await setScreenShare(activeMeetingId, enabled).catch(() => {});
+    }
+  }
+
+  if (!activeMeetingId) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-text-secondary">
+        <Video className="h-12 w-12 text-text-muted" />
+        <p className="text-sm">Select a meeting from the sidebar to join.</p>
       </div>
+    );
+  }
 
-      <div className="flex h-16 items-center justify-between border-t px-6">
-        <div className="text-xs text-text-muted">Connection quality: Excellent</div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant={mic ? "secondary" : "destructive"}
-            size="icon"
-            onClick={() => setMic((v) => !v)}
-          >
-            {mic ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-          </Button>
-          <Button
-            variant={camera ? "secondary" : "destructive"}
-            size="icon"
-            onClick={() => setCamera((v) => !v)}
-          >
-            {camera ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-          </Button>
-          <Button
-            variant={screen ? "default" : "secondary"}
-            size="icon"
-            onClick={() => setScreen((v) => !v)}
-          >
-            <MonitorUp className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={hand ? "default" : "secondary"}
-            size="icon"
-            onClick={() => setHand((v) => !v)}
-          >
-            <Hand className="h-4 w-4" />
-          </Button>
-          <Button variant="secondary" size="icon">
-            <Settings className="h-4 w-4" />
-          </Button>
-        </div>
-        <Button variant="destructive" size="sm">
-          <PhoneOff className="mr-1.5 h-4 w-4" />
-          Leave
+  if (loading) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center text-text-muted">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <p className="mt-2 text-sm">Joining meeting...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-text-secondary">
+        <p className="text-sm text-error">{error}</p>
+        <Button variant="secondary" onClick={() => setActiveView("home")}>
+          Go back
         </Button>
       </div>
-    </div>
+    );
+  }
+
+  if (!meeting || !token) return null;
+
+  return (
+    <LiveKitConference
+      meeting={meeting}
+      token={token}
+      videoEnabled={meeting.type !== "voice_room"}
+      onLeave={handleLeave}
+      onEnd={meeting.createdBy === currentUser.id ? handleEnd : undefined}
+      onScreenShare={handleScreenShare}
+    />
   );
 }

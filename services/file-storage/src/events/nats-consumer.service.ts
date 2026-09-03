@@ -1,12 +1,14 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { AckPolicy, type JsMsg } from 'nats';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { AckPolicy, type JsMsg, type JetStreamSubscription } from 'nats';
 import { isEventEnvelope, type EventEnvelope } from '@reactify/event-contracts';
 import { NatsClientService } from './nats-client.service.js';
 import { InboxService } from '../inbox/inbox.service.js';
 
 @Injectable()
-export class NatsConsumerService implements OnModuleInit {
+export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NatsConsumerService.name);
+  private subscription: JetStreamSubscription | undefined;
+  private running = true;
 
   constructor(
     private readonly natsClient: NatsClientService,
@@ -15,21 +17,28 @@ export class NatsConsumerService implements OnModuleInit {
 
   async onModuleInit() {
     const js = this.natsClient.getJetStream();
-    const subscription = await js.subscribe('reactify.template.>', {
+    this.subscription = await js.subscribe('reactify.file.>', {
       config: {
-        durable_name: 'template-consumer',
+        durable_name: 'file-storage-consumer',
         ack_policy: AckPolicy.Explicit,
         deliver_policy: 'all' as any,
       },
     });
 
-    this.consume(subscription).catch((err) => {
+    this.consume(this.subscription).catch((err) => {
       this.logger.error(`NATS consumer error: ${(err as Error).message}`);
     });
   }
 
-  private async consume(subscription: any) {
+  async onModuleDestroy() {
+    this.running = false;
+    await this.subscription?.unsubscribe?.();
+    this.logger.log('NATS consumer unsubscribed');
+  }
+
+  private async consume(subscription: JetStreamSubscription) {
     for await (const msg of subscription) {
+      if (!this.running) break;
       const jsMsg = msg as JsMsg;
       try {
         const raw = new TextDecoder().decode(jsMsg.data);
