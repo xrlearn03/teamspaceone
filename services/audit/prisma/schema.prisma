@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AuditEvent {
+  id             String   @id @default(cuid())
+  eventId        String   @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String?
+  actorId        String?
+  resourceType   String?
+  resourceId     String?
+  correlationId  String?
+  timestamp      String
+  storedAt       DateTime @default(now())
+
+  @@index([organisationId])
+  @@index([eventType])
+  @@index([resourceType, resourceId])
+  @@index([storedAt])
+  @@map("audit_events")
+}
+
+model InboxEvent {
+  id             String   @id @default(cuid())
+  eventId        String   @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String?
+  processedAt    DateTime @default(now())
+
+  @@index([eventId])
+  @@index([organisationId])
+}

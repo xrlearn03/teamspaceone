@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  firstName     String?
+  lastName      String?
+  active        Boolean  @default(true)
+  emailVerified Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+model OutboxEvent {
+  id             String    @id @default(cuid())
+  eventId        String    @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String
+  createdAt      DateTime  @default(now())
+  publishedAt    DateTime?
+
+  @@index([publishedAt])
+  @@index([organisationId])
+}
+
+model InboxEvent {
+  id             String   @id @default(cuid())
+  eventId        String   @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String
+  processedAt    DateTime @default(now())
+
+  @@index([eventId])
+  @@index([organisationId])
+}

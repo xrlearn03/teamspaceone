@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "declaration": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "sourceMap": true,
+    "paths": {
+      "#prisma": ["./node_modules/.prisma/client"]
+    },
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": [
+    "src/main.ts",
+    "src/app.module.ts",
+    "src/prisma/**/*",
+    "src/health/**/*",
+    "src/events/**/*",
+    "src/inbox/**/*",
+    "src/search/**/*"
+  ],
+  "exclude": ["dist", "node_modules"]
+}

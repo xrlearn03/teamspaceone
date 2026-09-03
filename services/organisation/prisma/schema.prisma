@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organisation {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  ownerId     String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  memberships OrganisationMembership[]
+  invitations Invitation[]
+  roles       Role[]
+  workspaces  Workspace[]
+
+  @@index([ownerId])
+  @@map("organisations")
+}
+
+model Role {
+  id             String       @id @default(cuid())
+  organisationId String
+  name           String
+  permissions    Json         @default("[]")
+  isDefault      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  memberships    OrganisationMembership[]
+
+  @@unique([organisationId, name])
+  @@index([organisationId])
+  @@map("roles")
+}
+
+model OrganisationMembership {
+  id             String       @id @default(cuid())
+  userId         String
+  organisationId String
+  roleId         String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  role           Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organisationId])
+  @@index([organisationId])
+  @@index([userId])
+  @@map("organisation_memberships")
+}
+
+model Invitation {
+  id             String       @id @default(cuid())
+  organisationId String
+  email          String
+  roleId         String
+  token          String       @unique
+  status         String       @default("pending")
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([token])
+  @@map("invitations")
+}
+
+model Workspace {
+  id             String       @id @default(cuid())
+  organisationId String
+  name           String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@map("workspaces")
+}
+
+model OutboxEvent {
+  id             String    @id @default(cuid())
+  eventId        String    @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String
+  createdAt      DateTime  @default(now())
+  publishedAt    DateTime?
+
+  @@index([publishedAt])
+  @@index([organisationId])
+}
+
+model InboxEvent {
+  id             String   @id @default(cuid())
+  eventId        String   @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String
+  processedAt    DateTime @default(now())
+
+  @@index([eventId])
+  @@index([organisationId])
+}

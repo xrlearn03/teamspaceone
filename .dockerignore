@@ -1,0 +1,66 @@
+# Dependencies
+node_modules
+**/node_modules
+.pnpm-store
+
+# Build outputs
+dist
+**/dist
+target
+**/target
+build
+**/build
+
+# Runtime / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+**/*.log
+logs
+**/logs
+
+# OS / editor
+.DS_Store
+**/.DS_Store
+Thumbs.db
+**/.vscode
+**/.idea
+
+# Git
+.git
+.gitignore
+**/.git
+
+# Test / coverage
+coverage
+**/coverage
+.nyc_output
+**/.nyc_output
+
+# Turbo / caches
+.turbo
+**/.turbo
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Desktop app artifacts
+apps/desktop/dist
+apps/desktop/src-tauri/target
+
+# Temporary / local data
+*.local
+**/*.local
+tmp
+**/tmp
+temp
+**/temp
+
+# Documentation (not needed for image build)
+README.md
+**/README.md
+
+# CI / local tooling
+.github

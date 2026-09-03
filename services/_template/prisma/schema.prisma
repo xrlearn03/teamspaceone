@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model OutboxEvent {
+  id             String    @id @default(cuid())
+  eventId        String    @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String
+  createdAt      DateTime  @default(now())
+  publishedAt    DateTime?
+
+  @@index([publishedAt])
+  @@index([organisationId])
+}
+
+model InboxEvent {
+  id             String   @id @default(cuid())
+  eventId        String   @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String
+  processedAt    DateTime @default(now())
+
+  @@index([eventId])
+  @@index([organisationId])
+}
+
+model TemplateEntity {
+  id             String   @id @default(cuid())
+  organisationId String
+  name           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organisationId])
+}

@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id             String   @id @default(cuid())
+  organisationId String
+  workspaceId    String?
+  name           String
+  description    String?
+  ownerId        String
+  status         String   @default("active")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  tasks          Task[]
+
+  @@index([organisationId])
+  @@index([workspaceId])
+  @@map("projects")
+}
+
+model Task {
+  id             String    @id @default(cuid())
+  organisationId String
+  projectId      String
+  title          String
+  description    String?
+  status         String    @default("todo")
+  assigneeId     String?
+  dueDate        DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([projectId])
+  @@index([assigneeId])
+  @@map("tasks")
+}
+
+model OutboxEvent {
+  id             String    @id @default(cuid())
+  eventId        String    @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String
+  createdAt      DateTime  @default(now())
+  publishedAt    DateTime?
+
+  @@index([publishedAt])
+  @@index([organisationId])
+}
+
+model InboxEvent {
+  id             String   @id @default(cuid())
+  eventId        String   @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String
+  processedAt    DateTime @default(now())
+
+  @@index([eventId])
+  @@index([organisationId])
+}
