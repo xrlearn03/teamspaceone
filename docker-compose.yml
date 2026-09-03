@@ -91,8 +91,19 @@ services:
     depends_on:
       - jaeger
 
+  base:
+    image: reactify-base
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.base
+    container_name: reactify-base-builder
+    command: ["true"]
+    restart: "no"
+
   auth-service:
     build:
+      additional_contexts:
+        reactify-base: "service:base"
       context: .
       dockerfile: services/auth/Dockerfile
     container_name: reactify-auth-service
@@ -115,6 +126,8 @@ services:
 
   organisation-service:
     build:
+      additional_contexts:
+        reactify-base: "service:base"
       context: .
       dockerfile: services/organisation/Dockerfile
     container_name: reactify-organisation-service
@@ -137,6 +150,8 @@ services:
 
   messaging-service:
     build:
+      additional_contexts:
+        reactify-base: "service:base"
       context: .
       dockerfile: services/messaging/Dockerfile
     container_name: reactify-messaging-service
@@ -159,6 +174,8 @@ services:
 
   realtime-service:
     build:
+      additional_contexts:
+        reactify-base: "service:base"
       context: .
       dockerfile: services/realtime/Dockerfile
     container_name: reactify-realtime-service
@@ -179,6 +196,8 @@ services:
 
   projects-service:
     build:
+      additional_contexts:
+        reactify-base: "service:base"
       context: .
       dockerfile: services/projects/Dockerfile
     container_name: reactify-projects-service
@@ -201,6 +220,8 @@ services:
 
   audit-service:
     build:
+      additional_contexts:
+        reactify-base: "service:base"
       context: .
       dockerfile: services/audit/Dockerfile
     container_name: reactify-audit-service
@@ -221,6 +242,8 @@ services:
 
   notification-service:
     build:
+      additional_contexts:
+        reactify-base: "service:base"
       context: .
       dockerfile: services/notification/Dockerfile
     container_name: reactify-notification-service
@@ -258,6 +281,8 @@ services:
 
   meeting-service:
     build:
+      additional_contexts:
+        reactify-base: "service:base"
       context: .
       dockerfile: services/meeting/Dockerfile
     container_name: reactify-meeting-service
@@ -284,6 +309,8 @@ services:
 
   file-storage-service:
     build:
+      additional_contexts:
+        reactify-base: "service:base"
       context: .
       dockerfile: services/file-storage/Dockerfile
     container_name: reactify-file-storage-service
@@ -311,6 +338,8 @@ services:
 
   search-service:
     build:
+      additional_contexts:
+        reactify-base: "service:base"
       context: .
       dockerfile: services/search/Dockerfile
     container_name: reactify-search-service
@@ -333,6 +362,8 @@ services:
 
   ai-service:
     build:
+      additional_contexts:
+        reactify-base: "service:base"
       context: .
       dockerfile: services/ai/Dockerfile
     container_name: reactify-ai-service
@@ -356,6 +387,8 @@ services:
 
   api-gateway:
     build:
+      additional_contexts:
+        reactify-base: "service:base"
       context: .
       dockerfile: services/api-gateway/Dockerfile
     container_name: reactify-api-gateway

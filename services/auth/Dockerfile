@@ -1,12 +1,9 @@
-FROM node:20-alpine AS builder
+FROM reactify-base AS builder
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
-COPY . /app
-RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @reactify/auth-service db:generate
 RUN pnpm --filter "@reactify/auth-service..." build
 
-FROM node:20-alpine AS runner
+FROM node:20 AS runner
 WORKDIR /app/services/auth
 ENV NODE_ENV=production
 COPY --from=builder /app/node_modules /app/node_modules

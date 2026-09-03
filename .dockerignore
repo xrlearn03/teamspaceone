@@ -48,6 +48,8 @@ coverage
 
 # Desktop app artifacts
 apps/desktop/dist
+apps/desktop/src
+apps/desktop/src-tauri
 apps/desktop/src-tauri/target
 
 # Temporary / local data
