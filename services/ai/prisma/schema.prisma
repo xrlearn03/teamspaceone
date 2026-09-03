@@ -23,6 +23,94 @@ model AiSummary {
   @@map("ai_summaries")
 }
 
+model AiDocument {
+  id             String                   @id @default(cuid())
+  organisationId String
+  workspaceId    String?
+  resourceType   String
+  resourceId     String
+  title          String?
+  text           String
+  metadata       Json
+  vector         Unsupported("vector(1536)")
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@unique([organisationId, resourceType, resourceId])
+  @@index([organisationId])
+  @@index([workspaceId])
+  @@index([resourceType])
+  @@map("ai_documents")
+}
+
+model AiQuestion {
+  id             String   @id @default(cuid())
+  organisationId String
+  workspaceId    String?
+  actorId        String
+  question       String
+  context        Json
+  answer         String
+  model          String
+  createdAt      DateTime @default(now())
+
+  @@index([organisationId])
+  @@index([workspaceId])
+  @@map("ai_questions")
+}
+
+model AiExtractedTask {
+  id             String    @id @default(cuid())
+  organisationId String
+  workspaceId    String?
+  sourceType     String
+  sourceId       String
+  actorId        String?
+  title          String
+  description    String?
+  dueDate        DateTime?
+  assigneeHint   String?
+  status         String    @default("suggested")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([organisationId])
+  @@index([sourceType, sourceId])
+  @@map("ai_extracted_tasks")
+}
+
+model AiDecision {
+  id             String    @id @default(cuid())
+  organisationId String
+  workspaceId    String?
+  sourceType     String
+  sourceId       String
+  actorId        String?
+  decision       String
+  stakeholders   Json?
+  status         String    @default("suggested")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([organisationId])
+  @@map("ai_decisions")
+}
+
+model AiActionConfirmation {
+  id             String    @id @default(cuid())
+  organisationId String
+  workspaceId    String?
+  actorId        String
+  actionType     String
+  payload        Json
+  status         String    @default("pending")
+  createdAt      DateTime  @default(now())
+  confirmedAt    DateTime?
+
+  @@index([organisationId])
+  @@map("ai_action_confirmations")
+}
+
 model InboxEvent {
   id             String   @id @default(cuid())
   eventId        String   @unique
