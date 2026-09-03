@@ -12,4 +12,4 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/services/api-gateway ./services/api-gateway
 EXPOSE 3000
-CMD ["node", "services/api-gateway/dist/src/main"]
+CMD ["node", "services/api-gateway/dist/main"]

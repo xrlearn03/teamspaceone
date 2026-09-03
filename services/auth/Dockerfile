@@ -7,12 +7,10 @@ RUN pnpm --filter @reactify/auth-service db:generate
 RUN pnpm --filter "@reactify/auth-service..." build
 
 FROM node:20-alpine AS runner
-WORKDIR /app
+WORKDIR /app/services/auth
 ENV NODE_ENV=production
-COPY --from=builder /app/services/auth/dist ./dist
-COPY --from=builder /app/services/auth/prisma ./prisma
-COPY --from=builder /app/services/auth/package.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/node_modules /app/node_modules
+COPY --from=builder /app/packages /app/packages
+COPY --from=builder /app/services/auth ./
 EXPOSE 3002
-CMD ["node", "dist/src/main"]
+CMD ["node", "dist/main"]

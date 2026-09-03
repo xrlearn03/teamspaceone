@@ -31,7 +31,7 @@ export class GatewayService {
       payload: input.payload,
     });
 
-    const js = this.natsClient.getJetStream();
+    const js = await this.natsClient.getJetStream();
     await js.publish(input.subject as string, JSON.stringify(envelope));
     this.logger.log({ eventId: envelope.eventId, subject: input.subject }, 'Published event');
 

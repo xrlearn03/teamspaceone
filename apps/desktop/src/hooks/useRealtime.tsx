@@ -25,9 +25,9 @@ export type RealtimeEvent = keyof RealtimeEventPayloads;
 interface RealtimeContextValue {
   socket: Socket | null;
   connected: boolean;
-  joinMeeting: (meetingId: string) => void;
-  leaveMeeting: (meetingId: string) => void;
-  on: <E extends RealtimeEvent>(event: E, handler: (payload: RealtimeEventPayloads[E]) => void) => () => void;
+  joinRealtimeMeeting: (meetingId: string) => void;
+  leaveRealtimeMeeting: (meetingId: string) => void;
+  onRealtimeEvent: <E extends RealtimeEvent>(event: E, handler: (payload: RealtimeEventPayloads[E]) => void) => () => void;
 }
 
 const RealtimeContext = createContext<RealtimeContextValue | null>(null);
@@ -38,8 +38,6 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const handlersRef = useRef<Map<string, Set<(payload: unknown) => void>>>(new Map());
 
   useEffect(() => {
-    let cancelled = false;
-
     void (async () => {
       try {
         const allowed = await isPermissionGranted();
@@ -115,21 +113,20 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     void connect();
 
     return () => {
-      cancelled = true;
       socketRef.current?.disconnect();
       socketRef.current = null;
     };
   }, []);
 
-  const joinMeeting = (meetingId: string) => {
+  const joinRealtimeMeeting = (meetingId: string) => {
     socketRef.current?.emit("join-meeting", meetingId);
   };
 
-  const leaveMeeting = (meetingId: string) => {
+  const leaveRealtimeMeeting = (meetingId: string) => {
     socketRef.current?.emit("leave", `meeting:${meetingId}`);
   };
 
-  const on = <E extends RealtimeEvent>(event: E, handler: (payload: RealtimeEventPayloads[E]) => void) => {
+  const onRealtimeEvent = <E extends RealtimeEvent>(event: E, handler: (payload: RealtimeEventPayloads[E]) => void) => {
     const typedHandler = (payload: unknown) => handler(payload as RealtimeEventPayloads[E]);
     if (!handlersRef.current.has(event)) {
       handlersRef.current.set(event, new Set());
@@ -142,7 +139,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
   return (
     <RealtimeContext.Provider
-      value={{ socket: socketRef.current, connected, joinMeeting, leaveMeeting, on }}
+      value={{ socket: socketRef.current, connected, joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent }}
     >
       {children}
     </RealtimeContext.Provider>

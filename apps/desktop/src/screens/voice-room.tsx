@@ -19,7 +19,7 @@ export function VoiceRoomScreen() {
   const { activeMeetingId, setActiveView } = useUIStore(
     useShallow((s) => ({ activeMeetingId: s.activeMeetingId, setActiveView: s.setActiveView })),
   );
-  const { joinMeeting, leaveMeeting, on } = useRealtime();
+  const { joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent } = useRealtime();
 
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -29,8 +29,8 @@ export function VoiceRoomScreen() {
   useEffect(() => {
     if (!activeMeetingId) return;
 
-    joinMeeting(activeMeetingId);
-    const unsubscribe = on("meeting.ended", (payload) => {
+    joinRealtimeMeeting(activeMeetingId);
+    const unsubscribe = onRealtimeEvent("meeting.ended", (payload) => {
       if (payload.id === activeMeetingId) {
         setToken(null);
         setMeeting(null);
@@ -72,7 +72,7 @@ export function VoiceRoomScreen() {
     void join();
     return () => {
       cancelled = true;
-      leaveMeeting(activeMeetingId);
+      leaveRealtimeMeeting(activeMeetingId);
       unsubscribe();
     };
   }, [activeMeetingId]);

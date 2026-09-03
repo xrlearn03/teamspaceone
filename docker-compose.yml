@@ -36,8 +36,6 @@ services:
     restart: unless-stopped
     command:
       - "--js"
-      - "--store_dir"
-      - "/data/jetstream"
       - "--config"
       - "/etc/nats/nats-server.conf"
     volumes:
@@ -322,6 +320,7 @@ services:
       PORT: 3011
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/search_db?schema=public
       NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: reactify-search-service
     ports:
@@ -329,6 +328,7 @@ services:
     depends_on:
       - postgres
       - nats
+      - redis
       - otel-collector
 
   ai-service:

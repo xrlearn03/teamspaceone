@@ -24,8 +24,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    await this.natsClient.whenReady();
-    const js = this.natsClient.getJetStream();
+    const js = await this.natsClient.getJetStream();
 
     const consumers: ConsumerDefinition[] = [
       { stream: Streams.MESSAGING, subject: 'reactify.message.>', durable: 'realtime-messaging-consumer' },
@@ -112,7 +111,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
 
   private async publishDeadLetter(jsMsg: JsMsg, err: Error) {
     try {
-      const js = this.natsClient.getJetStream();
+      const js = await this.natsClient.getJetStream();
       const raw = new TextDecoder().decode(jsMsg.data);
       const payload = {
         originalSubject: jsMsg.subject,

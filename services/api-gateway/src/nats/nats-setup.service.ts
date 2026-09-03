@@ -10,7 +10,7 @@ export class NatsSetupService implements OnModuleInit {
   constructor(private readonly natsClient: NatsClientService) {}
 
   async onModuleInit() {
-    const nc = this.natsClient.getConnection();
+    const nc = await this.natsClient.getConnection();
     const jsm = await nc.jetstreamManager();
 
     for (const config of streamConfigs) {

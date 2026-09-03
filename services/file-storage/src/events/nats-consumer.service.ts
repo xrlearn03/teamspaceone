@@ -16,7 +16,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    const js = this.natsClient.getJetStream();
+    const js = await this.natsClient.getJetStream();
     this.subscription = await js.subscribe('reactify.file.>', {
       config: {
         durable_name: 'file-storage-consumer',

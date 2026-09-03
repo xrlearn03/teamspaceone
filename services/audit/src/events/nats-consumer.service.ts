@@ -16,7 +16,7 @@ export class NatsConsumerService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    const js = this.natsClient.getJetStream();
+    const js = await this.natsClient.getJetStream();
     const subscription = await js.subscribe('reactify.>', {
       config: {
         durable_name: 'audit-consumer',

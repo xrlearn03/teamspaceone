@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "src",
     "sourceMap": true,
     "paths": {
       "#prisma": ["./node_modules/.prisma/client"]
@@ -21,13 +21,7 @@
     "allowSyntheticDefaultImports": true
   },
   "include": [
-    "src/main.ts",
-    "src/app.module.ts",
-    "src/prisma/**/*",
-    "src/health/**/*",
-    "src/events/**/*",
-    "src/inbox/**/*",
-    "src/search/**/*"
+    "src/**/*"
   ],
   "exclude": ["dist", "node_modules"]
 }

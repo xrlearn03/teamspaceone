@@ -8,6 +8,7 @@ export const Streams = {
   AI: 'AI',
   NOTIFICATIONS: 'NOTIFICATIONS',
   AUDIT: 'AUDIT',
+  DLQ: 'DLQ',
   TEMPLATES: 'TEMPLATES',
 } as const;
 
@@ -66,6 +67,11 @@ export const streamConfigs: StreamConfig[] = [
   {
     name: Streams.AUDIT,
     subjects: ['reactify.audit.>'],
+    retention: 'limits',
+  },
+  {
+    name: Streams.DLQ,
+    subjects: ['reactify.dlq.>'],
     retention: 'limits',
   },
   {

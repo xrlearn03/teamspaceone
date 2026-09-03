@@ -34,7 +34,7 @@ export class OutboxService {
 
     if (pending.length === 0) return 0;
 
-    const js = this.natsClient.getJetStream();
+    const js = await this.natsClient.getJetStream();
     let published = 0;
 
     for (const event of pending) {

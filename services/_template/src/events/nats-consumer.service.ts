@@ -31,7 +31,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    const js = this.natsClient.getJetStream();
+    const js = await this.natsClient.getJetStream();
 
     this.subscription = await js.subscribe('reactify.template.>', {
       config: {
@@ -99,7 +99,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
 
   private async sendToDeadLetter(jsMsg: JsMsg, envelope: EventEnvelope, reason: string) {
     const dlqSubject = `reactify.dead-letter.${envelope.eventType}`;
-    const js = this.natsClient.getJetStream();
+    const js = await this.natsClient.getJetStream();
 
     try {
       await js.publish(

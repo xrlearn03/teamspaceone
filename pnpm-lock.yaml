@@ -1260,6 +1260,9 @@ importers:
 
   services/search:
     dependencies:
+      '@nestjs/bullmq':
+        specifier: ^10.2.0
+        version: 10.2.3(@nestjs/common@10.4.22(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(bullmq@5.81.4)
       '@nestjs/common':
         specifier: ^10.4.0
         version: 10.4.22(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -1290,6 +1293,12 @@ importers:
       '@reactify/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
+      bullmq:
+        specifier: ^5.12.0
+        version: 5.81.4
+      ioredis:
+        specifier: ^5.4.0
+        version: 5.11.1
       nats:
         specifier: ^2.28.0
         version: 2.29.3

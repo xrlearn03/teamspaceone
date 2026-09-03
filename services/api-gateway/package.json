@@ -8,7 +8,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/src/main",
+    "start:prod": "node dist/main",
     "db:generate": "echo 'Gateway has no database'",
     "db:migrate": "echo 'Gateway has no database'",
     "test": "jest",

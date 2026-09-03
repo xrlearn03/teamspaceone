@@ -26,7 +26,7 @@ export class NatsConsumerService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    const js = this.natsClient.getJetStream();
+    const js = await this.natsClient.getJetStream();
 
     for (const consumer of CONSUMERS) {
       try {

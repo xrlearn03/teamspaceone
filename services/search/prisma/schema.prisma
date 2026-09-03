@@ -8,17 +8,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model SearchIndex {
-  id             String   @id @default(cuid())
+model OutboxEvent {
+  id             String    @id @default(cuid())
+  eventId        String    @unique
+  eventType      String
+  subject        String
+  payload        Json
   organisationId String
-  resourceType   String
-  resourceId     String
-  content        String
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
+  publishedAt    DateTime?
 
-  @@unique([resourceType, resourceId])
+  @@index([publishedAt])
   @@index([organisationId])
-  @@map("search_index")
 }
 
 model InboxEvent {
@@ -27,9 +28,31 @@ model InboxEvent {
   eventType      String
   subject        String
   payload        Json
-  organisationId String?
+  organisationId String
   processedAt    DateTime @default(now())
 
   @@index([eventId])
   @@index([organisationId])
+}
+
+model SearchDocument {
+  id             String   @id @default(cuid())
+  organisationId String
+  workspaceId    String?
+  resourceType   String
+  resourceId     String
+  title          String?
+  content        String
+  metadata       Json?
+  permissions    Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organisationId, resourceType, resourceId])
+  @@index([organisationId])
+  @@index([workspaceId])
+  @@index([resourceType])
+  @@index([organisationId, resourceType])
+  @@index([organisationId, workspaceId])
+  @@map("search_documents")
 }
