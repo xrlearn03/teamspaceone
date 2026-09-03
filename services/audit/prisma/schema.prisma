@@ -41,3 +41,37 @@ model InboxEvent {
   @@index([eventId])
   @@index([organisationId])
 }
+
+model DeadLetterEvent {
+  id            String   @id @default(cuid())
+  eventId       String?
+  eventType     String?
+  subject       String
+  originalEvent Json
+  reason        String
+  service       String?
+  deliveryCount Int      @default(0)
+  payload       Json
+  organisationId String?
+  createdAt     DateTime @default(now())
+  retriedAt     DateTime?
+  retryCount    Int      @default(0)
+  retries       DeadLetterRetry[]
+
+  @@index([eventId])
+  @@index([organisationId])
+  @@index([createdAt])
+  @@map("dead_letter_events")
+}
+
+model DeadLetterRetry {
+  id                String        @id @default(cuid())
+  deadLetterEventId String
+  deadLetterEvent   DeadLetterEvent @relation(fields: [deadLetterEventId], references: [id])
+  success           Boolean
+  error             String?
+  retriedAt         DateTime      @default(now())
+
+  @@index([deadLetterEventId])
+  @@map("dead_letter_retries")
+}

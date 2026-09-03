@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+BACKUP_DIR="/backups"
+DATE=$(date +%Y%m%d-%H%M%S)
+HOST="${PGHOST:-postgres}"
+USER="${PGUSER:-postgres}"
+OUT="${BACKUP_DIR}/reactify-${DATE}.sql"
+
+mkdir -p "${BACKUP_DIR}"
+echo "Backing up all databases from ${HOST} to ${OUT}..."
+PGPASSWORD="${PGPASSWORD:-postgres}" pg_dumpall -h "${HOST}" -U "${USER}" -f "${OUT}"
+echo "Backup written to ${OUT}"

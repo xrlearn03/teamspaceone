@@ -4,6 +4,7 @@ import { isEventEnvelope, type EventEnvelope } from '@reactify/event-contracts';
 import { InboxService } from '../inbox/inbox.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NatsClientService } from './nats-client.service.js';
+import { DeadLetterService } from './dead-letter.service.js';
 
 @Injectable()
 export class NatsConsumerService implements OnModuleInit {
@@ -13,6 +14,7 @@ export class NatsConsumerService implements OnModuleInit {
     private readonly natsClient: NatsClientService,
     private readonly inbox: InboxService,
     private readonly audit: AuditService,
+    private readonly deadLetter: DeadLetterService,
   ) {}
 
   async onModuleInit() {
@@ -35,12 +37,20 @@ export class NatsConsumerService implements OnModuleInit {
       const jsMsg = msg as JsMsg;
       try {
         const raw = new TextDecoder().decode(jsMsg.data);
-        const data = JSON.parse(raw) as EventEnvelope;
+        const data = JSON.parse(raw);
+
+        if (this.deadLetter.isDeadLetterSubject(jsMsg.subject)) {
+          await this.deadLetter.store(jsMsg.subject, data as any);
+          jsMsg.ack();
+          continue;
+        }
+
         if (!isEventEnvelope(data)) {
           this.logger.warn('Received invalid event envelope');
           jsMsg.ack();
           continue;
         }
+
         await this.inbox.handle(data, (tx, envelope) => this.audit.store(tx, envelope));
         jsMsg.ack();
       } catch (err) {

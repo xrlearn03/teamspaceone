@@ -43,11 +43,23 @@ function createAuthMiddleware(jwtSecret: string) {
   };
 }
 
+function securityHeaders(_req: Request, res: Response, next: NextFunction) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  res.removeHeader('X-Powered-By');
+  next();
+}
+
 async function bootstrap() {
   initTelemetry({ serviceName: 'reactify-api-gateway' });
 
   const pino = createLogger({ name: 'api-gateway' });
   const app = await NestFactory.create(AppModule, { logger: adaptLogger(pino) });
+
+  app.use(securityHeaders);
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const middleware = new OrganisationContextMiddleware();
