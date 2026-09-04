@@ -6,6 +6,7 @@ import {
   Folder,
   MessageSquare,
   Sparkles,
+  Trash2,
   Upload,
   Video,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import {
   useCreateProject,
   useCreateTask,
   useDailyDigest,
+  useDeleteEndedMeetings,
   useMe,
   useMeetings,
   useMembers,
@@ -78,6 +80,14 @@ export function HomeScreen() {
   const createDirectChannel = useCreateDirectChannel();
   const createTask = useCreateTask();
   const createProject = useCreateProject();
+  const deleteEndedMeetings = useDeleteEndedMeetings();
+  const endedMeetingsCount = meetings?.filter((m) => m.status === "ended").length ?? 0;
+
+  function handleDeleteEndedMeetings() {
+    if (endedMeetingsCount === 0) return;
+    if (!window.confirm(`Delete ${endedMeetingsCount} ended meeting${endedMeetingsCount === 1 ? "" : "s"}? This cannot be undone.`)) return;
+    deleteEndedMeetings.mutate();
+  }
 
   const firstChannelId = channels?.[0]?.id;
   const { data: messages } = useMessages(firstChannelId);
@@ -190,6 +200,18 @@ export function HomeScreen() {
         <Card>
           <CardHeader>
             <CardTitle>Upcoming meetings</CardTitle>
+            {endedMeetingsCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 text-xs text-error"
+                disabled={deleteEndedMeetings.isPending}
+                onClick={handleDeleteEndedMeetings}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete ended
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             {meetings && meetings.length > 0 ? (

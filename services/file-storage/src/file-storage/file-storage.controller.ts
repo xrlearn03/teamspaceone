@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
+import { pipeline } from 'node:stream/promises';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { FileStorageService } from './file-storage.service.js';
 import { PresignUploadDto } from './dto/presign-upload.dto.js';
@@ -40,13 +41,39 @@ export class FileStorageController {
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
     @Query('redirect') redirect: string,
+    @Query('stream') stream: string,
     @Res() res: Response,
   ) {
+    if (stream === 'true' || stream === '1') {
+      const { stream: fileStream, contentType, contentLength, originalName, mimeType } = await this.fileStorage.getFileStream(ctx, id);
+      res.setHeader('Content-Type', contentType ?? mimeType ?? 'application/octet-stream');
+      if (contentLength) res.setHeader('Content-Length', String(contentLength));
+      res.setHeader('Content-Disposition', `inline; filename="${originalName}"`);
+      await pipeline(fileStream, res);
+      return;
+    }
+
     const signedUrl = await this.fileStorage.getSignedDownloadUrl(ctx, id);
     if (redirect === 'true' || redirect === '1') {
       return res.redirect(signedUrl);
     }
     return res.json({ downloadUrl: signedUrl });
+  }
+
+  @Get(':id/preview')
+  async preview(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') id: string,
+    @Query('type') type: string,
+    @Res() res: Response,
+  ) {
+    const previewType = type === 'thumbnail' ? 'thumbnail' : 'preview';
+    const { stream: previewStream, contentType, contentLength, name, mimeType } = await this.fileStorage.getPreviewStream(ctx, id, previewType);
+    res.setHeader('Content-Type', contentType ?? mimeType ?? 'application/octet-stream');
+    if (contentLength) res.setHeader('Content-Length', String(contentLength));
+    res.setHeader('Content-Disposition', `inline; filename="${name}"`);
+    await pipeline(previewStream, res);
+    return;
   }
 
   @Post('presign-upload')

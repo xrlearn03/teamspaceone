@@ -1,5 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+function getMediaErrorMessage(err: unknown): string {
+  if (err instanceof DOMException) {
+    if (err.name === "NotAllowedError") {
+      return "Camera/microphone access was denied. Allow it in System Settings > Privacy & Security.";
+    }
+    if (err.name === "NotReadableError") {
+      if (/permission|denied|system/i.test(err.message)) {
+        return "macOS blocked camera/microphone. Allow Teamspace One in System Settings > Privacy & Security > Camera/Microphone.";
+      }
+      return "Camera or microphone is already in use by another app. Close other apps and try again.";
+    }
+    if (err.name === "OverconstrainedError") {
+      return "The selected camera/microphone is unavailable. A different device will be used.";
+    }
+    if (err.name === "NotFoundError") {
+      return "No camera or microphone was found.";
+    }
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  if (/permission|denied|system/i.test(message)) {
+    return "macOS blocked camera/microphone. Allow Teamspace One in System Settings > Privacy & Security > Camera/Microphone.";
+  }
+  return message;
+}
+
 export interface MediaDeviceInfo {
   deviceId: string;
   label: string;
@@ -39,13 +64,14 @@ export function useMediaDevices(options: UseMediaDevicesOptions = {}) {
       stopStream();
       setError(null);
 
+      const buildTrackConstraints = (deviceId?: string): MediaTrackConstraints | boolean => {
+        if (!deviceId) return true;
+        return { deviceId: { ideal: deviceId } };
+      };
+
       const constraints: MediaStreamConstraints = {
-        audio: audioEnabled
-          ? { deviceId: audioDeviceId ? { exact: audioDeviceId } : undefined }
-          : false,
-        video: videoEnabled
-          ? { deviceId: videoDeviceId ? { exact: videoDeviceId } : undefined }
-          : false,
+        audio: audioEnabled ? buildTrackConstraints(audioDeviceId) : false,
+        video: videoEnabled ? buildTrackConstraints(videoDeviceId) : false,
       };
 
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -53,12 +79,30 @@ export function useMediaDevices(options: UseMediaDevicesOptions = {}) {
         return;
       }
 
+      const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
       try {
+        // Give the OS a moment to release the camera between restarts.
+        await sleep(300);
         const nextStream = await navigator.mediaDevices.getUserMedia(constraints);
         streamRef.current = nextStream;
         setStream(nextStream);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not access camera or microphone.");
+        // If the selected device is busy or no longer available, fall back to defaults.
+        const fallback: MediaStreamConstraints = {
+          audio: audioEnabled ? true : false,
+          video: videoEnabled ? true : false,
+        };
+        try {
+          await sleep(500);
+          const nextStream = await navigator.mediaDevices.getUserMedia(fallback);
+          streamRef.current = nextStream;
+          setStream(nextStream);
+        } catch (err2) {
+          const primary = getMediaErrorMessage(err);
+          const fallbackMessage = err2 instanceof Error ? err2.message : "";
+          setError(fallbackMessage ? `${primary} (fallback: ${fallbackMessage})` : primary);
+        }
       }
     },
     [audioEnabled, videoEnabled, stopStream],
@@ -81,7 +125,7 @@ export function useMediaDevices(options: UseMediaDevicesOptions = {}) {
       setVideoInputId((current) => current || defaultVideoInput);
       setAudioOutputId((current) => current || defaultAudioOutput);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not list media devices.");
+      setError(getMediaErrorMessage(err));
     }
   }, []);
 

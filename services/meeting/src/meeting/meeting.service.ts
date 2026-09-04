@@ -575,4 +575,22 @@ export class MeetingService {
       return updated;
     });
   }
+
+  async deleteEnded(ctx: OrganisationContextValue, workspaceId?: string) {
+    const userId = ctx.actorId;
+    if (!userId) throw new ForbiddenException('Missing actor');
+
+    const where: Prisma.MeetingWhereInput = {
+      organisationId: ctx.organisationId,
+      status: 'ended',
+      createdBy: userId,
+    };
+    if (workspaceId !== undefined) {
+      where.workspaceId = workspaceId || null;
+    }
+
+    const { count } = await this.prisma.meeting.deleteMany({ where });
+
+    return { deleted: count };
+  }
 }

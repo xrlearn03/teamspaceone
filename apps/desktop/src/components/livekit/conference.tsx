@@ -118,6 +118,7 @@ export function LiveKitConference({
   const updateRaiseHand = useUpdateMeetingRaiseHand();
   const setRecording = useSetMeetingRecording();
   const { onRealtimeEvent } = useRealtime();
+  const rtcConfig = useMemo(() => buildRtcConfig(), []);
 
   useEffect(() => {
     const unsubscribe = onRealtimeEvent("meeting.recording.changed", () => {
@@ -170,7 +171,7 @@ export function LiveKitConference({
     videoInputId,
     audioOutputId,
     previewStream,
-    rtcConfig: buildRtcConfig(),
+    rtcConfig,
   });
 
   const raisedUserIds = new Set(raiseHandsData?.map((h) => h.userId) ?? []);
@@ -251,7 +252,7 @@ export function LiveKitConference({
     );
   }
 
-  if (connectionState !== "connected") {
+  if (connectionState === "connecting" || connectionState === "disconnected") {
     return (
       <div className="flex h-full flex-col items-center justify-center text-text-muted">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -260,8 +261,15 @@ export function LiveKitConference({
     );
   }
 
+  const isReconnecting = connectionState === "reconnecting";
+
   return (
     <div className="flex h-full flex-col bg-surface">
+      {isReconnecting && (
+        <div className="shrink-0 bg-warning/90 p-1 text-center text-[10px] text-white">
+          Reconnecting…
+        </div>
+      )}
       <header className="flex h-12 items-center justify-between border-b px-4">
         <div>
           <h1 className="text-sm font-semibold text-text">{meeting.title}</h1>
@@ -441,12 +449,17 @@ export function LiveKitConference({
                   {chatMessages?.length === 0 ? (
                     <p className="text-xs text-text-muted">No messages yet.</p>
                   ) : (
-                    chatMessages?.map((message) => (
-                      <div key={message.id} className={cn("text-sm", message.userId === localUserId && "text-right")}>
-                        <span className="text-[10px] text-text-muted">{message.userId.slice(0, 8)}</span>
-                        <p className="rounded-md bg-surface-elevated px-2 py-1 text-text">{message.content}</p>
-                      </div>
-                    ))
+                    chatMessages?.map((message) => {
+                      const sender =
+                        allParticipants.find((p) => p.participant?.identity.replace(/^user-/, "") === message.userId)
+                          ?.participant?.name ?? message.userId.slice(0, 8);
+                      return (
+                        <div key={message.id} className={cn("text-sm", message.userId === localUserId && "text-right")}>
+                          <span className="text-[10px] text-text-muted">{sender}</span>
+                          <p className="rounded-md bg-surface-elevated px-2 py-1 text-text">{message.content}</p>
+                        </div>
+                      );
+                    })
                   )}
                   <div ref={chatEndRef} />
                 </div>

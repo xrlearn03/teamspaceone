@@ -526,6 +526,14 @@ export function useCreateVoiceRoom() {
   });
 }
 
+export function useDeleteEndedMeetings() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (workspaceId?: string) => api.deleteEndedMeetings(workspaceId),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["meetings", orgId()] }),
+  });
+}
+
 export function useMeetingMessages(meetingId?: string) {
   return useInfiniteQuery({
     queryKey: ["meeting-messages", meetingId],

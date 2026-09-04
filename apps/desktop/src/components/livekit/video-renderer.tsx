@@ -14,6 +14,7 @@ export function VideoRenderer({ track, className }: VideoRendererProps) {
     if (!track || !el) return;
 
     track.attach(el);
+    void el.play().catch(() => {});
     return () => {
       track.detach(el);
     };

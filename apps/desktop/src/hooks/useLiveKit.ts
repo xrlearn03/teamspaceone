@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Room, RoomEvent, type RemoteParticipant, type Room as LKRoom, Track } from "livekit-client";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
+async function focusTauriWindow(): Promise<void> {
+  try {
+    await getCurrentWindow().setFocus();
+  } catch {
+    // Not running inside Tauri; ignore.
+  }
+}
 
 export interface UseLiveKitOptions {
   url: string;
@@ -38,6 +47,80 @@ type MeetingData =
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)),
+  ]);
+}
+
+function createSilentWavUrl(): string {
+  const sampleRate = 8000;
+  const seconds = 2;
+  const samples = sampleRate * seconds;
+  const headerSize = 44;
+  const buffer = new ArrayBuffer(headerSize + samples);
+  const view = new DataView(buffer);
+  const writeString = (offset: number, s: string) => {
+    for (let i = 0; i < s.length; i++) {
+      view.setUint8(offset + i, s.charCodeAt(i));
+    }
+  };
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + samples, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate, true);
+  view.setUint16(32, 1, true);
+  view.setUint16(34, 8, true);
+  writeString(36, "data");
+  view.setUint32(40, samples, true);
+  const blob = new Blob([buffer], { type: "audio/wav" });
+  return URL.createObjectURL(blob);
+}
+
+function startKeepAliveAudio(): HTMLAudioElement | null {
+  try {
+    const audio = new Audio();
+    audio.src = createSilentWavUrl();
+    audio.loop = true;
+    audio.muted = true;
+    audio.play().catch(() => {});
+    return audio;
+  } catch {
+    return null;
+  }
+}
+
+function getMediaErrorMessage(err: unknown): string {
+  if (err instanceof DOMException) {
+    if (err.name === "NotAllowedError") {
+      return "Camera/microphone access was denied. Allow it in System Settings > Privacy & Security.";
+    }
+    if (err.name === "NotReadableError") {
+      if (/permission|denied|system/i.test(err.message)) {
+        return "macOS blocked camera/microphone. Allow Teamspace One in System Settings > Privacy & Security > Camera/Microphone.";
+      }
+      return "Camera or microphone is already in use by another app. Close other apps and try again.";
+    }
+    if (err.name === "OverconstrainedError") {
+      return "The selected camera/microphone is unavailable.";
+    }
+    if (err.name === "NotFoundError") {
+      return "No camera or microphone was found.";
+    }
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  if (/permission|denied|system/i.test(message)) {
+    return "macOS blocked camera/microphone. Allow Teamspace One in System Settings > Privacy & Security > Camera/Microphone.";
+  }
+  return message;
+}
 
 function encodeData(data: MeetingData): Uint8Array<ArrayBuffer> {
   return encoder.encode(JSON.stringify(data)) as Uint8Array<ArrayBuffer>;
@@ -85,8 +168,9 @@ export function useLiveKit({
     const room = new Room({
       adaptiveStream: true,
       dynacast: true,
-      audioCaptureDefaults: audioInputId ? { deviceId: audioInputId } : undefined,
-      videoCaptureDefaults: videoInputId ? { deviceId: videoInputId } : undefined,
+      disconnectOnPageLeave: false,
+      audioCaptureDefaults: audioInputId ? { deviceId: { ideal: audioInputId } } : undefined,
+      videoCaptureDefaults: videoInputId ? { deviceId: { ideal: videoInputId } } : undefined,
       audioOutput: audioOutputId ? { deviceId: audioOutputId } : undefined,
     });
     roomRef.current = room;
@@ -184,54 +268,92 @@ export function useLiveKit({
     setRaiseHands(new Set());
     setIsRecording(false);
     setLocalTrackVersion(0);
+    setLocalAudioEnabled(audioEnabled);
+    setLocalVideoEnabled(videoEnabled);
+
+    // Keep a silent audio loop playing while in a meeting. This tells the webview
+    // the page is "active" and reduces WKWebView throttling when the window is not focused.
+    const keepAlive = startKeepAliveAudio();
+
     room
       .connect(url, token, { rtcConfig })
       .then(async () => {
-        let publishErr: unknown;
+        let micPublished = false;
+        let camPublished = false;
+
         if (previewStream) {
-          try {
-            const audioTrack = previewStream.getAudioTracks()[0];
-            const videoTrack = previewStream.getVideoTracks()[0];
-            if (audioTrack) {
-              await room.localParticipant.publishTrack(audioTrack, { name: "microphone", source: Track.Source.Microphone });
+          const audioTrack = previewStream.getAudioTracks()[0];
+          const videoTrack = previewStream.getVideoTracks()[0];
+          if (audioEnabled && audioTrack && audioTrack.readyState === "live") {
+            try {
+              await withTimeout(
+                room.localParticipant.publishTrack(audioTrack, { name: "microphone", source: Track.Source.Microphone }),
+                8000,
+                "Publish microphone",
+              );
+              micPublished = true;
+            } catch (err) {
+              console.warn("Failed to publish preview microphone:", err);
             }
-            if (videoTrack) {
-              await room.localParticipant.publishTrack(videoTrack, { name: "camera", source: Track.Source.Camera });
+          }
+          if (videoEnabled && videoTrack && videoTrack.readyState === "live") {
+            try {
+              await withTimeout(
+                room.localParticipant.publishTrack(videoTrack, { name: "camera", source: Track.Source.Camera }),
+                8000,
+                "Publish camera",
+              );
+              camPublished = true;
+            } catch (err) {
+              console.warn("Failed to publish preview camera:", err);
             }
-          } catch (err) {
-            publishErr = err;
-            console.warn("Failed to publish preview tracks:", err);
           }
         }
 
-        if (!room.localParticipant.isCameraEnabled || !room.localParticipant.isMicrophoneEnabled) {
+        // If the preview tracks were not published (or the user turned them off in the lobby),
+        // let LiveKit acquire fresh tracks. Use ideal constraints so a busy preferred device
+        // can fall back to the system default instead of throwing NotReadableError.
+        // Stop the unused preview tracks first and wait a moment so the OS releases the device.
+        const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+        setMediaError(null);
+
+        if (audioEnabled && !micPublished) {
           try {
-            // Preview tracks could not be published (or were off in the lobby). Stop the preview
-            // so the device is released, then let LiveKit acquire and manage fresh tracks.
-            if (previewStream) {
-              previewStream.getTracks().forEach((t) => t.stop());
-              await new Promise((r) => setTimeout(r, 300));
-            }
-            if (audioEnabled && !room.localParticipant.isMicrophoneEnabled) {
-              await room.localParticipant.setMicrophoneEnabled(true);
-            }
-            if (videoEnabled && !room.localParticipant.isCameraEnabled) {
-              await room.localParticipant.setCameraEnabled(true);
-            }
+            previewStream?.getAudioTracks().forEach((t) => t.stop());
+            await sleep(1000);
+            // WKWebView can hang getUserMedia if the window is not the key window.
+            // Force focus before asking for the microphone.
+            await focusTauriWindow();
+            await withTimeout(room.localParticipant.setMicrophoneEnabled(true), 8000, "Enable microphone");
           } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            setMediaError(message);
-            console.warn("Failed to enable camera/microphone:", err);
+            setMediaError(getMediaErrorMessage(err));
+            console.warn("Failed to enable microphone:", err);
           }
         }
-
-        if (publishErr && !room.localParticipant.isCameraEnabled && !room.localParticipant.isMicrophoneEnabled) {
-          const message = publishErr instanceof Error ? publishErr.message : String(publishErr);
-          setMediaError(`Preview publish failed: ${message}`);
+        if (videoEnabled && !camPublished) {
+          try {
+            previewStream?.getVideoTracks().forEach((t) => t.stop());
+            await sleep(1000);
+            await focusTauriWindow();
+            await withTimeout(room.localParticipant.setCameraEnabled(true), 8000, "Enable camera");
+          } catch (err) {
+            const message = getMediaErrorMessage(err);
+            setMediaError((prev) => (prev ? `${prev}; ${message}` : message));
+            console.warn("Failed to enable camera:", err);
+          }
+        }
+        if (!audioEnabled) {
+          previewStream?.getAudioTracks().forEach((t) => t.stop());
+          await room.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+        }
+        if (!videoEnabled) {
+          previewStream?.getVideoTracks().forEach((t) => t.stop());
+          await room.localParticipant.setCameraEnabled(false).catch(() => {});
         }
 
-        setLocalAudioEnabled(room.localParticipant.isMicrophoneEnabled);
-        setLocalVideoEnabled(room.localParticipant.isCameraEnabled);
+        setLocalAudioEnabled(audioEnabled && (micPublished || room.localParticipant.isMicrophoneEnabled));
+        setLocalVideoEnabled(videoEnabled && (camPublished || room.localParticipant.isCameraEnabled));
         updateLocalParticipant();
       })
       .catch((err) => setError(err as Error));
@@ -239,21 +361,54 @@ export function useLiveKit({
     return () => {
       room.disconnect().catch(() => {});
       roomRef.current = null;
+      keepAlive?.pause();
+      if (keepAlive?.src) {
+        URL.revokeObjectURL(keepAlive.src);
+      }
     };
   }, [url, token, audioEnabled, videoEnabled, audioInputId, videoInputId, audioOutputId, previewStream, rtcConfig]);
+
+  function isRetryableMediaError(err: unknown): boolean {
+    if (err instanceof DOMException) {
+      if (err.name === "NotAllowedError") return false;
+      return err.name === "NotReadableError" || err.name === "OverconstrainedError" || err.name === "AbortError";
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    if (/permission|denied|system/i.test(message)) return false;
+    return message.includes("NotReadable") || message.includes("Overconstrained") || message.includes("timed out");
+  }
+
+  async function tryToggle(
+    action: () => Promise<unknown>,
+    label: string,
+  ): Promise<void> {
+    try {
+      await withTimeout(action(), 8000, label);
+      setMediaError(null);
+    } catch (err) {
+      if (isRetryableMediaError(err)) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 500));
+        try {
+          await withTimeout(action(), 8000, `${label} retry`);
+          setMediaError(null);
+        } catch (err2) {
+          const message = getMediaErrorMessage(err2);
+          setMediaError(`${label}: ${message}`);
+          console.warn(`Failed to ${label.toLowerCase()} after retry:`, err2);
+        }
+      } else {
+        const message = getMediaErrorMessage(err);
+        setMediaError(`${label}: ${message}`);
+        console.warn(`Failed to ${label.toLowerCase()}:`, err);
+      }
+    }
+  }
 
   const toggleMicrophone = useCallback(async () => {
     const room = roomRef.current;
     if (!room) return;
     const enabled = !room.localParticipant.isMicrophoneEnabled;
-    try {
-      await room.localParticipant.setMicrophoneEnabled(enabled);
-      setMediaError(null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setMediaError(`Microphone: ${message}`);
-      console.warn("Failed to toggle microphone:", err);
-    }
+    await tryToggle(() => room.localParticipant.setMicrophoneEnabled(enabled), "Microphone");
     setLocalAudioEnabled(room.localParticipant.isMicrophoneEnabled);
     setLocalTrackVersion((v) => v + 1);
   }, []);
@@ -262,14 +417,7 @@ export function useLiveKit({
     const room = roomRef.current;
     if (!room) return;
     const enabled = !room.localParticipant.isCameraEnabled;
-    try {
-      await room.localParticipant.setCameraEnabled(enabled);
-      setMediaError(null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setMediaError(`Camera: ${message}`);
-      console.warn("Failed to toggle camera:", err);
-    }
+    await tryToggle(() => room.localParticipant.setCameraEnabled(enabled), "Camera");
     setLocalVideoEnabled(room.localParticipant.isCameraEnabled);
     setLocalTrackVersion((v) => v + 1);
   }, []);

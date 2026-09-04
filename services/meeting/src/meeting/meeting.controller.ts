@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Post, Put, Query } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { MeetingService } from './meeting.service.js';
 import { type CreateMeetingDto } from './dto/create-meeting.dto.js';
@@ -160,5 +160,13 @@ export class MeetingController {
     @Body() dto: UpdateMeetingRecordingDto,
   ) {
     return this.meeting.setRecording(ctx, id, dto.recording);
+  }
+
+  @Delete('ended')
+  async deleteEnded(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Query('workspaceId') workspaceId?: string,
+  ) {
+    return this.meeting.deleteEnded(ctx, workspaceId);
   }
 }

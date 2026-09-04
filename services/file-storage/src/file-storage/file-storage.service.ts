@@ -362,4 +362,31 @@ export class FileStorageService {
     }
     return this.storage.getSignedDownloadUrl(record.storageKey);
   }
+
+  async getFileStream(ctx: OrganisationContextValue, id: string) {
+    const record = await this.prisma.fileRecord.findFirst({
+      where: { id, organisationId: ctx.organisationId },
+    });
+    if (!record) {
+      throw new NotFoundException('File not found');
+    }
+    const object = await this.storage.getObjectStream(record.storageKey);
+    return { ...record, ...object };
+  }
+
+  async getPreviewStream(ctx: OrganisationContextValue, id: string, type: 'thumbnail' | 'preview') {
+    const record = await this.prisma.fileRecord.findFirst({
+      where: { id, organisationId: ctx.organisationId },
+      include: { previews: { where: { previewType: type === 'preview' ? 'image_preview' : 'thumbnail' } } },
+    });
+    if (!record) {
+      throw new NotFoundException('File not found');
+    }
+    const preview = record.previews[0];
+    if (!preview) {
+      throw new NotFoundException('Preview not found');
+    }
+    const object = await this.storage.getObjectStream(preview.storageKey);
+    return { name: `${type}-${record.originalName}`, mimeType: record.mimeType, ...object };
+  }
 }

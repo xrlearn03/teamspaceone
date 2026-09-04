@@ -1,6 +1,6 @@
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -105,6 +105,17 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}));
     }
 
+    let port: Option<u16> = if cfg!(not(dev)) {
+        Some(portpicker::pick_unused_port().expect("failed to find unused port"))
+    } else {
+        None
+    };
+
+    #[cfg(not(dev))]
+    {
+        builder = builder.plugin(tauri_plugin_localhost::Builder::new(port.unwrap()).build());
+    }
+
     builder
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -138,13 +149,26 @@ pub fn run() {
             desktop::get_deep_link,
             desktop::get_app_info,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             #[cfg(desktop)]
             {
                 setup_tray(app.app_handle())?;
                 setup_global_shortcut(app.app_handle())?;
                 setup_deep_link(app.app_handle())?;
             }
+
+            let url: WebviewUrl = if cfg!(dev) {
+                WebviewUrl::External("http://localhost:1420".parse::<Url>().unwrap())
+            } else {
+                WebviewUrl::External(format!("http://localhost:{}", port.unwrap()).parse::<Url>().unwrap())
+            };
+
+            WebviewWindowBuilder::new(app, "main".to_string(), url)
+                .title("Teamspace One")
+                .inner_size(1200.0, 800.0)
+                .min_inner_size(800.0, 600.0)
+                .build()?;
+
             Ok(())
         })
         .run(tauri::generate_context!())

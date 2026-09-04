@@ -15,6 +15,7 @@ import {
   Settings,
   Sparkles,
   Star,
+  Trash2,
   Users,
   Video,
 } from "lucide-react";
@@ -28,6 +29,7 @@ import {
   useCreateMeeting,
   useCreateProject,
   useCreateVoiceRoom,
+  useDeleteEndedMeetings,
   useMeetings,
   useMembers,
   useOrganisations,
@@ -224,6 +226,7 @@ export function WorkspaceSidebar() {
   const createProject = useCreateProject();
   const createMeeting = useCreateMeeting();
   const createVoiceRoom = useCreateVoiceRoom();
+  const deleteEndedMeetings = useDeleteEndedMeetings();
   const { data: projects } = useProjects();
   const { data: meetings } = useMeetings();
   const { data: unread } = useUnreadCount();
@@ -268,6 +271,13 @@ export function WorkspaceSidebar() {
     setMeetingTitle("");
     setMeetingDescription("");
     setMeetingScheduledAt("");
+  }
+
+  function handleDeleteEndedMeetings() {
+    const count = visibleMeetings.filter((m) => m.status === "ended").length;
+    if (count === 0) return;
+    if (!window.confirm(`Delete ${count} ended meeting${count === 1 ? "" : "s"}? This cannot be undone.`)) return;
+    deleteEndedMeetings.mutate(currentWorkspace?.id);
   }
 
   function submitCreateMeeting(instant = false) {
@@ -559,6 +569,17 @@ export function WorkspaceSidebar() {
               )
             }
           />
+          {visibleMeetings.some((m) => m.status === "ended") && (
+            <button
+              type="button"
+              disabled={deleteEndedMeetings.isPending}
+              onClick={handleDeleteEndedMeetings}
+              className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-error hover:bg-surface-elevated"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete ended meetings
+            </button>
+          )}
         </SidebarSection>
 
         <SidebarSection title="Files & apps">

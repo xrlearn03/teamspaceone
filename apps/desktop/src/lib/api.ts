@@ -782,19 +782,35 @@ export function uploadFile(file: File) {
   });
 }
 
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getAccessToken();
+  const org = getActiveOrganisation();
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (org) headers["x-organisation-id"] = org;
+  return headers;
+}
+
 export async function downloadFile(fileId: string): Promise<Blob> {
-  const { downloadUrl } = await apiRequest<{ downloadUrl: string }>(`/files/${fileId}/download?redirect=false`);
-  const response = await fetch(downloadUrl);
+  const response = await fetch(`${GATEWAY_URL}/files/${fileId}/download?stream=true`, {
+    method: "GET",
+    headers: await authHeaders(),
+  });
   if (!response.ok) {
-    throw new Error(`Download error ${response.status}: ${response.statusText}`);
+    const text = await response.text();
+    throw new Error(`Download error ${response.status}: ${text}`);
   }
   return response.blob();
 }
 
-export async function fetchFileBlob(url: string): Promise<Blob> {
-  const response = await fetch(url);
+export async function fetchFilePreview(fileId: string, type: "thumbnail" | "preview"): Promise<Blob> {
+  const response = await fetch(`${GATEWAY_URL}/files/${fileId}/preview?type=${type}`, {
+    method: "GET",
+    headers: await authHeaders(),
+  });
   if (!response.ok) {
-    throw new Error(`Fetch error ${response.status}: ${response.statusText}`);
+    const text = await response.text();
+    throw new Error(`Preview error ${response.status}: ${text}`);
   }
   return response.blob();
 }
@@ -875,6 +891,11 @@ export function setScreenShare(id: string, isScreenSharing: boolean) {
     method: "POST",
     body: { isScreenSharing },
   });
+}
+
+export function deleteEndedMeetings(workspaceId?: string) {
+  const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+  return apiRequest<{ deleted: number }>(`/meetings/ended${query}`, { method: "DELETE" });
 }
 
 export function getMeetingMessages(id: string, cursor?: string, limit = 50) {

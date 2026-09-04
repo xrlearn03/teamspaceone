@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FileText,
   Grid,
@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { FileRecord } from "../lib/api";
-import { downloadFile, fetchFileBlob } from "../lib/api";
+import { downloadFile, fetchFilePreview } from "../lib/api";
 import { useCreateExternalShare, useDeleteFile, useFiles, useUploadFile } from "../hooks/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -55,10 +55,6 @@ function getFileUrl(file: FileRecord) {
   return file.url ?? file.downloadUrl ?? null;
 }
 
-function getPreviewUrl(file: FileRecord) {
-  return file.previewUrl ?? file.url ?? file.downloadUrl ?? null;
-}
-
 function matchesFilter(file: { originalName: string; mimeType: string }, filter: string) {
   if (filter === "All") return true;
   const name = file.originalName.toLowerCase();
@@ -85,13 +81,13 @@ function matchesFilter(file: { originalName: string; mimeType: string }, filter:
   }
 }
 
-function useObjectUrl(file: FileRecord, sourceUrl: string | null | undefined, enabled = true) {
+function useObjectUrl(load: (() => Promise<Blob>) | null, enabled = true) {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || !load) {
       setUrl(null);
       setError(null);
       setLoading(false);
@@ -102,23 +98,12 @@ function useObjectUrl(file: FileRecord, sourceUrl: string | null | undefined, en
     setLoading(true);
     setError(null);
 
-    async function load() {
-      let blob: Blob;
-      if (sourceUrl) {
-        try {
-          blob = await fetchFileBlob(sourceUrl);
-        } catch {
-          blob = await downloadFile(file.id);
-        }
-      } else {
-        blob = await downloadFile(file.id);
-      }
-      if (!active) return;
-      objectUrl = URL.createObjectURL(blob);
-      setUrl(objectUrl);
-    }
-
     load()
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      })
       .catch((err) => { if (active) setError(err instanceof Error ? err.message : "Failed to load file"); })
       .finally(() => { if (active) setLoading(false); });
 
@@ -126,14 +111,20 @@ function useObjectUrl(file: FileRecord, sourceUrl: string | null | undefined, en
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [enabled, file.id, sourceUrl]);
+  }, [enabled, load]);
 
   return { url, loading, error };
 }
 
 function FileThumbnail({ file, className, fallbackClassName }: { file: FileRecord; className?: string; fallbackClassName?: string }) {
-  const source = isImage(file) ? (file.thumbnailUrl ?? file.url ?? file.downloadUrl) : null;
-  const { url, loading } = useObjectUrl(file, source, isImage(file));
+  const load = useCallback(async () => {
+    try {
+      return await fetchFilePreview(file.id, "thumbnail");
+    } catch {
+      return downloadFile(file.id);
+    }
+  }, [file.id]);
+  const { url, loading } = useObjectUrl(load, isImage(file));
 
   if (loading) {
     return <div className={cn("animate-pulse rounded bg-surface-elevated", className)} />;
@@ -147,10 +138,17 @@ function FileThumbnail({ file, className, fallbackClassName }: { file: FileRecor
 }
 
 function FilePreview({ file }: { file: FileRecord }) {
-  const imageSource = isImage(file) ? getPreviewUrl(file) : null;
-  const { url: imageUrl, loading: imageLoading, error: imageError } = useObjectUrl(file, imageSource, isImage(file));
-  const videoSource = isVideo(file) ? getFileUrl(file) : null;
-  const { url: videoUrl, loading: videoLoading, error: videoError } = useObjectUrl(file, videoSource, isVideo(file));
+  const loadImage = useCallback(async () => {
+    try {
+      return await fetchFilePreview(file.id, "preview");
+    } catch {
+      return downloadFile(file.id);
+    }
+  }, [file.id]);
+  const { url: imageUrl, loading: imageLoading, error: imageError } = useObjectUrl(loadImage, isImage(file));
+
+  const loadVideo = useCallback(() => downloadFile(file.id), [file.id]);
+  const { url: videoUrl, loading: videoLoading, error: videoError } = useObjectUrl(loadVideo, isVideo(file));
 
   return (
     <div className="flex min-h-[16rem] items-center justify-center p-4 pt-0">

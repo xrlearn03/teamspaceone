@@ -131,6 +131,11 @@ export class StorageService implements OnModuleInit {
     }
   }
 
+  async getObjectStream(key: string): Promise<{ stream: Readable; contentType?: string; contentLength?: number }> {
+    const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    return { stream: response.Body as Readable, contentType: response.ContentType, contentLength: response.ContentLength };
+  }
+
   async delete(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }

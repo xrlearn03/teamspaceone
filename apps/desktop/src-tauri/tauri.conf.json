@@ -9,16 +9,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Teamspace One",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 800,
-        "minHeight": 600,
-        "backgroundColor": "#02040a"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }
