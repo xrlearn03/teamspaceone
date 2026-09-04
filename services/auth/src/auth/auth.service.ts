@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
 import { createEventEnvelope, Subjects } from '@reactify/event-contracts';
@@ -9,6 +9,7 @@ import { TokenService, type TokenPair } from './token.service.js';
 import { type RegisterDto } from './dto/register.dto.js';
 import { type LoginDto } from './dto/login.dto.js';
 import { type UserDto } from './dto/user.dto.js';
+import { type UpdateProfileDto } from './dto/update-profile.dto.js';
 
 @Injectable()
 export class AuthService {
@@ -84,6 +85,33 @@ export class AuthService {
 
   async refresh(rawRefresh: string): Promise<TokenPair> {
     return this.tokens.rotate(rawRefresh);
+  }
+
+  async logout(rawRefresh: string): Promise<void> {
+    await this.tokens.revoke(rawRefresh);
+  }
+
+  async updateProfile(userId: string, input: UpdateProfileDto): Promise<UserDto> {
+    const firstName = input.firstName?.trim() || null;
+    const lastName = input.lastName?.trim() || null;
+    if ((firstName?.length ?? 0) > 100 || (lastName?.length ?? 0) > 100) {
+      throw new BadRequestException('Names must not exceed 100 characters');
+    }
+    const user = await this.prisma.user.update({ where: { id: userId }, data: { firstName, lastName } });
+    return this.toDto(user);
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    if (newPassword.length < 12) throw new BadRequestException('New password must contain at least 12 characters');
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !(await compare(currentPassword, user.passwordHash))) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    const passwordHash = await hash(newPassword, 12);
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+      this.prisma.refreshToken.deleteMany({ where: { userId } }),
+    ]);
   }
 
   async me(userId: string): Promise<UserDto> {

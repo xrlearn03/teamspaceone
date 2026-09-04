@@ -1,24 +1,23 @@
-import { useState } from "react";
-import {
-  Bell,
-  Command,
-  CreditCard,
-  Key,
-  Monitor,
-  Moon,
-  Palette,
-  Plug,
-  Shield,
-  Sun,
-  User,
-  Users,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bell, Command, Key, Monitor, Moon, Palette, Shield, Sun, User, Users } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
-import { useMe, useOrganisations, useWorkspaces } from "../hooks/api";
+import {
+  useChangePassword,
+  useCreateInvitation,
+  useCreateWorkspace,
+  useMe,
+  useNotificationPreference,
+  useOrganisations,
+  useRoles,
+  useSetNotificationPreference,
+  useUpdateProfile,
+  useWorkspaces,
+} from "../hooks/api";
 import { getActiveOrganisation } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
+import { Input } from "../components/ui/input";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { cn } from "../lib/utils";
 
@@ -29,229 +28,76 @@ const sections = [
   { id: "shortcuts", label: "Keyboard shortcuts", icon: Command },
   { id: "privacy", label: "Privacy & security", icon: Shield },
   { id: "organisation", label: "Organisation", icon: Users },
-  { id: "billing", label: "Billing", icon: CreditCard },
-  { id: "integrations", label: "Integrations", icon: Plug },
 ];
 
 export function SettingsScreen() {
-  const [section, setSection] = useState("appearance");
+  const [section, setSection] = useState("account");
   const { data: user } = useMe();
   const activeOrgId = getActiveOrganisation();
   const { data: organisations } = useOrganisations();
   const { data: workspaces } = useWorkspaces(activeOrgId ?? undefined);
-  const organisation = organisations?.find((o) => o.id === activeOrgId);
-  const workspace = workspaces?.[0];
-  const userName =
-    user?.firstName
-      ? `${user.firstName} ${user.lastName ?? ""}`.trim()
-      : user?.email ?? "User";
-  const { theme, setTheme } = useUIStore(
-    useShallow((s) => ({ theme: s.theme, setTheme: s.setTheme })),
-  );
+  const { data: roles } = useRoles(activeOrgId ?? undefined);
+  const organisation = organisations?.find((item) => item.id === activeOrgId);
+  const { theme, setTheme } = useUIStore(useShallow((state) => ({ theme: state.theme, setTheme: state.setTheme })));
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center border-b px-6">
-        <h1 className="text-lg font-semibold text-text">Settings</h1>
-      </header>
-
+      <header className="flex h-14 items-center border-b px-6"><h1 className="text-lg font-semibold text-text">Settings</h1></header>
       <div className="flex flex-1 overflow-hidden">
-        <div className="w-56 shrink-0 border-r bg-surface p-2">
-          {sections.map((s) => {
-            const Icon = s.icon;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setSection(s.id)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  section === s.id
-                    ? "bg-primary-subtle text-primary"
-                    : "text-text-secondary hover:bg-surface-elevated hover:text-text",
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {s.label}
-              </button>
-            );
-          })}
-        </div>
-
+        <div className="w-56 shrink-0 border-r bg-surface p-2">{sections.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => setSection(item.id)} className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors", section === item.id ? "bg-primary-subtle text-primary" : "text-text-secondary hover:bg-surface-elevated hover:text-text")}><Icon className="h-4 w-4" />{item.label}</button>; })}</div>
         <div className="flex-1 overflow-y-auto p-6">
-          {section === "account" && (
-            <SettingsSection title="My account">
-              <div className="flex items-center gap-4">
-                <Avatar className="h-16 w-16">
-                  <AvatarFallback className="text-xl">{userName.charAt(0).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <div>
-                  <p className="text-base font-semibold text-text">{userName}</p>
-                  <p className="text-sm text-text-muted">{user?.email}</p>
-                </div>
-              </div>
-              <Button variant="secondary" className="mt-4">Edit profile</Button>
-            </SettingsSection>
-          )}
-
-          {section === "appearance" && (
-            <SettingsSection title="Appearance">
-              <div className="space-y-4">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-text">Theme</label>
-                  <div className="flex gap-2">
-                    {(["light", "dark", "system"] as const).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setTheme(t)}
-                        className={cn(
-                          "flex flex-1 items-center justify-center gap-2 rounded-md border py-2 text-sm capitalize transition-colors",
-                          theme === t
-                            ? "border-primary bg-primary-subtle text-primary"
-                            : "text-text-secondary hover:bg-surface-elevated",
-                        )}
-                      >
-                        {t === "light" && <Sun className="h-4 w-4" />}
-                        {t === "dark" && <Moon className="h-4 w-4" />}
-                        {t === "system" && <Monitor className="h-4 w-4" />}
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-text">Density</label>
-                  <div className="flex gap-2">
-                    {["Compact", "Default", "Comfortable"].map((d) => (
-                      <button
-                        key={d}
-                        type="button"
-                        className={cn(
-                          "rounded-md border px-3 py-1.5 text-sm transition-colors",
-                          d === "Default"
-                            ? "border-primary bg-primary-subtle text-primary"
-                            : "text-text-secondary hover:bg-surface-elevated",
-                        )}
-                      >
-                        {d}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-text">Accent color</label>
-                  <div className="flex gap-2">
-                    {["#4f46e5", "#0ea5e9", "#10b981", "#f59e0b", "#f43f5e"].map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        className="h-6 w-6 rounded-full border"
-                        style={{ backgroundColor: c }}
-                        aria-label={`Accent color ${c}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </SettingsSection>
-          )}
-
-          {section === "notifications" && (
-            <SettingsSection title="Notifications">
-              <div className="space-y-3">
-                {[
-                  "Enable desktop notifications",
-                  "Play sound for new messages",
-                  "Show unread badge",
-                  "Mute mentions outside work hours",
-                ].map((label) => (
-                  <label key={label} className="flex items-center justify-between rounded-md border p-3">
-                    <span className="text-sm text-text">{label}</span>
-                    <input type="checkbox" defaultChecked className="h-4 w-4 accent-primary" />
-                  </label>
-                ))}
-              </div>
-            </SettingsSection>
-          )}
-
-          {section === "shortcuts" && (
-            <SettingsSection title="Keyboard shortcuts">
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { shortcut: "⌘K", action: "Global search" },
-                  { shortcut: "⌘⇧]", action: "Open inbox" },
-                  { shortcut: "Esc", action: "Close panels" },
-                  { shortcut: "⌘+", action: "Increase font size" },
-                ].map((s) => (
-                  <div key={s.action} className="flex items-center justify-between rounded-md border p-3">
-                    <span className="text-sm text-text">{s.action}</span>
-                    <kbd className="rounded bg-surface-elevated px-2 py-0.5 text-xs font-mono text-text-secondary">
-                      {s.shortcut}
-                    </kbd>
-                  </div>
-                ))}
-              </div>
-            </SettingsSection>
-          )}
-
-          {section === "privacy" && (
-            <SettingsSection title="Privacy & security">
-              <div className="space-y-3">
-                <Button variant="secondary" className="w-full justify-start">
-                  <Key className="mr-2 h-4 w-4" /> Change password
-                </Button>
-                <Button variant="secondary" className="w-full justify-start">
-                  <Shield className="mr-2 h-4 w-4" /> Manage two-factor auth
-                </Button>
-              </div>
-            </SettingsSection>
-          )}
-
-          {section === "organisation" && (
-            <SettingsSection title={organisation?.name ?? "Organisation"}>
-              <p className="text-sm text-text-secondary">Workspace: {workspace?.name ?? "Default"}</p>
-              <div className="mt-4 flex gap-2">
-                <Button variant="secondary">Invite members</Button>
-                <Button variant="secondary">Manage roles</Button>
-              </div>
-            </SettingsSection>
-          )}
-
-          {section === "billing" && (
-            <SettingsSection title="Billing">
-              <p className="text-sm text-text-secondary">Current plan: Pro</p>
-              <p className="text-sm text-text-secondary">Next invoice: Sep 15, 2026</p>
-              <Button variant="secondary" className="mt-4">View invoices</Button>
-            </SettingsSection>
-          )}
-
-          {section === "integrations" && (
-            <SettingsSection title="Integrations">
-              <p className="text-sm text-text-secondary">Connect tools to Teamspace One.</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {["Slack", "GitHub", "Figma", "Linear", "Notion"].map((tool) => (
-                  <Button key={tool} variant="secondary" size="sm">
-                    <Plug className="mr-1.5 h-3.5 w-3.5" />
-                    {tool}
-                  </Button>
-                ))}
-              </div>
-            </SettingsSection>
-          )}
+          {section === "account" ? <AccountSettings user={user} /> : null}
+          {section === "appearance" ? <SettingsSection title="Appearance"><div><label className="mb-2 block text-sm font-medium">Theme</label><div className="flex gap-2">{(["light", "dark", "system"] as const).map((item) => <button key={item} type="button" onClick={() => setTheme(item)} className={cn("flex flex-1 items-center justify-center gap-2 rounded-md border py-2 text-sm capitalize", theme === item ? "border-primary bg-primary-subtle text-primary" : "text-text-secondary hover:bg-surface-elevated")}>{item === "light" ? <Sun className="h-4 w-4" /> : item === "dark" ? <Moon className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}{item}</button>)}</div></div></SettingsSection> : null}
+          {section === "notifications" ? <NotificationSettings /> : null}
+          {section === "shortcuts" ? <ShortcutSettings /> : null}
+          {section === "privacy" ? <PasswordSettings /> : null}
+          {section === "organisation" ? <OrganisationSettings organisationId={activeOrgId} organisationName={organisation?.name} workspaces={workspaces ?? []} roles={roles ?? []} /> : null}
         </div>
       </div>
     </div>
   );
 }
 
+function AccountSettings({ user }: { user?: { email: string; firstName?: string | null; lastName?: string | null } }) {
+  const update = useUpdateProfile();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  useEffect(() => { setFirstName(user?.firstName ?? ""); setLastName(user?.lastName ?? ""); }, [user]);
+  const name = `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() || user?.email || "User";
+  return <SettingsSection title="My account"><div className="flex items-center gap-4"><Avatar className="h-16 w-16"><AvatarFallback className="text-xl">{name.charAt(0).toUpperCase()}</AvatarFallback></Avatar><div><p className="font-semibold">{name}</p><p className="text-sm text-text-muted">{user?.email}</p></div></div><div className="mt-4 grid max-w-lg grid-cols-2 gap-3"><Input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="First name" /><Input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Last name" /></div>{update.error ? <p className="mt-2 text-sm text-error">{update.error.message}</p> : null}<Button className="mt-3" disabled={update.isPending} onClick={() => update.mutate({ firstName, lastName })}>Save profile</Button></SettingsSection>;
+}
+
+function NotificationSettings() {
+  const eventType = "reactify.message.created";
+  const { data: preference } = useNotificationPreference(eventType);
+  const update = useSetNotificationPreference();
+  const options = [{ key: "inApp", label: "Show in-app notifications" }, { key: "desktop", label: "Enable desktop notifications" }, { key: "email", label: "Send email notifications" }, { key: "push", label: "Send push notifications" }] as const;
+  return <SettingsSection title="Message notifications"><div className="space-y-3">{options.map((option) => <label key={option.key} className="flex items-center justify-between rounded-md border p-3"><span className="text-sm">{option.label}</span><input type="checkbox" checked={preference?.[option.key] ?? false} onChange={(event) => update.mutate({ eventType, body: { [option.key]: event.target.checked } })} className="h-4 w-4 accent-primary" /></label>)}</div>{update.error ? <p className="mt-2 text-sm text-error">{update.error.message}</p> : null}</SettingsSection>;
+}
+
+function PasswordSettings() {
+  const change = useChangePassword();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  return <SettingsSection title="Privacy & security"><div className="max-w-lg space-y-3"><Input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} placeholder="Current password" /><Input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="New password (12+ characters)" />{change.error ? <p className="text-sm text-error">{change.error.message}</p> : null}{change.isSuccess ? <p className="text-sm text-success">Password changed. Other sessions were revoked.</p> : null}<Button disabled={!currentPassword || newPassword.length < 12 || change.isPending} onClick={() => change.mutate({ currentPassword, newPassword }, { onSuccess: () => { setCurrentPassword(""); setNewPassword(""); } })}><Key className="mr-2 h-4 w-4" />Change password</Button></div></SettingsSection>;
+}
+
+function OrganisationSettings({ organisationId, organisationName, workspaces, roles }: { organisationId: string | null; organisationName?: string; workspaces: { id: string; name: string }[]; roles: { id: string; name: string; isDefault: boolean }[] }) {
+  const createWorkspace = useCreateWorkspace();
+  const invite = useCreateInvitation();
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [email, setEmail] = useState("");
+  const [roleId, setRoleId] = useState("");
+  useEffect(() => { if (!roleId) setRoleId(roles.find((role) => role.isDefault)?.id ?? roles[0]?.id ?? ""); }, [roleId, roles]);
+  if (!organisationId) return <SettingsSection title="Organisation"><p className="text-sm text-text-muted">Select an organisation first.</p></SettingsSection>;
+  return <SettingsSection title={organisationName ?? "Organisation"}><div className="grid gap-6 lg:grid-cols-2"><div><h3 className="mb-2 text-sm font-semibold">Workspaces</h3><div className="mb-3 space-y-1">{workspaces.map((workspace) => <div key={workspace.id} className="rounded-md border px-3 py-2 text-sm">{workspace.name}</div>)}</div><div className="flex gap-2"><Input value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="Workspace name" /><Button disabled={!workspaceName.trim() || createWorkspace.isPending} onClick={() => createWorkspace.mutate({ organisationId, name: workspaceName.trim() }, { onSuccess: () => setWorkspaceName("") })}>Create</Button></div></div><div><h3 className="mb-2 text-sm font-semibold">Invite member</h3><div className="space-y-2"><Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email address" /><select className="h-9 w-full rounded-md border bg-surface px-3 text-sm" value={roleId} onChange={(event) => setRoleId(event.target.value)}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select><Button disabled={!email.trim() || !roleId || invite.isPending} onClick={() => invite.mutate({ organisationId, email: email.trim(), roleId }, { onSuccess: () => setEmail("") })}>Send invitation</Button>{invite.isSuccess ? <p className="text-sm text-success">Invitation created.</p> : null}</div></div></div>{(createWorkspace.error || invite.error) ? <p className="mt-3 text-sm text-error">{(createWorkspace.error ?? invite.error)?.message}</p> : null}</SettingsSection>;
+}
+
+function ShortcutSettings() {
+  const shortcuts = [{ shortcut: "⌘K", action: "Global search" }, { shortcut: "Esc", action: "Close panels" }];
+  return <SettingsSection title="Keyboard shortcuts"><div className="grid grid-cols-2 gap-3">{shortcuts.map((item) => <div key={item.action} className="flex items-center justify-between rounded-md border p-3"><span className="text-sm">{item.action}</span><kbd className="rounded bg-surface-elevated px-2 py-0.5 text-xs font-mono">{item.shortcut}</kbd></div>)}</div></SettingsSection>;
+}
+
 function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <Card className="mb-6">
-      <h2 className="mb-4 text-base font-semibold text-text">{title}</h2>
-      {children}
-    </Card>
-  );
+  return <Card className="mb-6"><h2 className="mb-4 text-base font-semibold text-text">{title}</h2>{children}</Card>;
 }

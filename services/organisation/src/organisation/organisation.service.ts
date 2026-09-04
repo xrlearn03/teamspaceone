@@ -192,6 +192,11 @@ export class OrganisationService {
     });
   }
 
+  async listRoles(organisationId: string, actorId: string): Promise<unknown[]> {
+    await this.assertMemberOf(organisationId, actorId);
+    return this.prisma.role.findMany({ where: { organisationId }, orderBy: [{ isDefault: 'desc' }, { name: 'asc' }] });
+  }
+
   async listMembers(organisationId: string, actorId: string): Promise<unknown[]> {
     await this.assertMemberOf(organisationId, actorId);
     return this.prisma.organisationMembership.findMany({

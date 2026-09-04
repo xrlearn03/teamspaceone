@@ -4,7 +4,9 @@ const GATEWAY_URL =
   (import.meta.env.VITE_GATEWAY_URL as string | undefined) ??
   "http://localhost:3000";
 const TOKEN_KEY = "reactify:accessToken";
+const REFRESH_TOKEN_KEY = "reactify:refreshToken";
 
+let refreshPromise: Promise<string | null> | null = null;
 let activeOrganisationId: string | null = null;
 
 export function setActiveOrganisation(organisationId: string | null): void {
@@ -31,6 +33,33 @@ export async function getAccessToken(): Promise<string | null> {
 
 export async function clearAccessToken(): Promise<void> {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+async function storeTokens(tokens: TokenPair): Promise<void> {
+  localStorage.setItem(TOKEN_KEY, tokens.accessToken);
+  localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+    if (!refreshToken) return null;
+    const response = await fetch(`${GATEWAY_URL}/auth/refresh`, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!response.ok) {
+      await clearAccessToken();
+      return null;
+    }
+    const tokens = await response.json() as TokenPair;
+    await storeTokens(tokens);
+    return tokens.accessToken;
+  })().finally(() => { refreshPromise = null; });
+  return refreshPromise;
 }
 
 interface RequestOptions {
@@ -43,6 +72,7 @@ interface RequestOptions {
 export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
+  retryAfterRefresh = true,
 ): Promise<T> {
   const token = await getAccessToken();
   const org = options.org ?? getActiveOrganisation();
@@ -76,6 +106,10 @@ export async function apiRequest<T>(
 
   const response = await fetch(`${GATEWAY_URL}${path}`, init);
   if (response.status === 401) {
+    if (retryAfterRefresh && !["/auth/login", "/auth/register", "/auth/refresh", "/auth/logout"].includes(path)) {
+      const refreshed = await refreshAccessToken();
+      if (refreshed) return apiRequest<T>(path, options, false);
+    }
     await clearAccessToken();
     throw new Error("Unauthorized");
   }
@@ -118,6 +152,23 @@ export interface Workspace {
   organisationId: string;
   name: string;
   createdAt: string;
+}
+
+export interface OrganisationRole {
+  id: string;
+  organisationId: string;
+  name: string;
+  permissions: string[];
+  isDefault: boolean;
+}
+
+export interface Invitation {
+  id: string;
+  organisationId: string;
+  email: string;
+  roleId: string;
+  status: string;
+  expiresAt: string;
 }
 
 export interface OrganisationMember {
@@ -249,6 +300,14 @@ export interface CursorPage<T> {
   nextCursor: string | null;
 }
 
+export interface NotificationPreference {
+  eventType: string;
+  inApp: boolean;
+  email: boolean;
+  desktop: boolean;
+  push: boolean;
+}
+
 export interface Notification {
   id: string;
   organisationId: string;
@@ -335,7 +394,7 @@ export async function register(
       body: { email, password, firstName, lastName },
     },
   );
-  await setAccessToken(result.tokens.accessToken);
+  await storeTokens(result.tokens);
   return result;
 }
 
@@ -347,12 +406,28 @@ export async function login(email: string, password: string) {
       body: { email, password },
     },
   );
-  await setAccessToken(result.tokens.accessToken);
+  await storeTokens(result.tokens);
   return result;
 }
 
 export function getMe() {
   return apiRequest<UserDto>("/auth/me");
+}
+
+export function updateProfile(body: { firstName?: string; lastName?: string }) {
+  return apiRequest<UserDto>("/auth/me", { method: "PATCH", body });
+}
+
+export function changePassword(currentPassword: string, newPassword: string) {
+  return apiRequest<void>("/auth/change-password", { method: "POST", body: { currentPassword, newPassword } });
+}
+
+export async function logout(): Promise<void> {
+  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (refreshToken) {
+    await apiRequest<void>("/auth/logout", { method: "POST", body: { refreshToken }, org: null }, false).catch(() => undefined);
+  }
+  await clearAccessToken();
 }
 
 // Organisations
@@ -373,6 +448,18 @@ export function getWorkspaces(organisationId: string) {
 
 export function getMembers(organisationId: string) {
   return apiRequest<OrganisationMember[]>(`/organisations/${organisationId}/members`);
+}
+
+export function getRoles(organisationId: string) {
+  return apiRequest<OrganisationRole[]>(`/organisations/${organisationId}/roles`);
+}
+
+export function createWorkspace(organisationId: string, name: string) {
+  return apiRequest<Workspace>(`/organisations/${organisationId}/workspaces`, { method: "POST", body: { name } });
+}
+
+export function createInvitation(organisationId: string, email: string, roleId: string) {
+  return apiRequest<Invitation>(`/organisations/${organisationId}/invitations`, { method: "POST", body: { email, roleId } });
 }
 
 // Messaging
@@ -506,6 +593,10 @@ export function getFile(fileId: string) {
   return apiRequest<FileRecord>(`/files/${fileId}`);
 }
 
+export function deleteFile(fileId: string) {
+  return apiRequest<void>(`/files/${fileId}`, { method: "DELETE" });
+}
+
 export function uploadFile(file: File) {
   const form = new FormData();
   form.append("file", file);
@@ -593,6 +684,14 @@ export function markAllNotificationsRead() {
   return apiRequest<{ updated: number }>("/notifications/read-all", {
     method: "PATCH",
   });
+}
+
+export function getNotificationPreference(eventType: string) {
+  return apiRequest<NotificationPreference>(`/notifications/preferences/${encodeURIComponent(eventType)}`);
+}
+
+export function setNotificationPreference(eventType: string, body: Partial<Pick<NotificationPreference, "inApp" | "email" | "desktop" | "push">>) {
+  return apiRequest<NotificationPreference>(`/notifications/preferences/${encodeURIComponent(eventType)}`, { method: "POST", body });
 }
 
 // AI

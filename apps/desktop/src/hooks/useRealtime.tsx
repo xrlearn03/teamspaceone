@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { io, type Socket } from "socket.io-client";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { getAccessToken, getActiveOrganisation, getMe, type Message, type MessagePage } from "../lib/api";
+import { getAccessToken, getActiveOrganisation, type Message, type MessagePage } from "../lib/api";
 
 const REALTIME_URL = (import.meta.env.VITE_REALTIME_URL as string | undefined) ?? "http://localhost:3005";
 
@@ -72,9 +72,6 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     async function connect() {
       const token = await getAccessToken();
       const organisationId = getActiveOrganisation();
-      const me = await getMe().catch(() => null);
-      const userId = me?.id ?? "unknown";
-
       const socket = io(`${REALTIME_URL}/realtime`, {
         transports: ["websocket", "polling"],
         auth: token ? { token } : undefined,
@@ -87,7 +84,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         if (organisationId) {
           socket.emit("join-organisation", organisationId);
         }
-        socket.emit("join-user", userId);
+        socket.emit("join-user");
       });
 
       socket.on("disconnect", () => {

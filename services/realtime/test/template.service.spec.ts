@@ -2,7 +2,7 @@ import { RealtimeGateway } from '../src/realtime/realtime.gateway.js';
 
 describe('RealtimeGateway', () => {
   it('should broadcast message.created to the right room', () => {
-    const gateway = new RealtimeGateway();
+    const gateway = new RealtimeGateway({ get: jest.fn().mockReturnValue('test-secret') } as any);
     const to = jest.fn().mockReturnThis();
     const emit = jest.fn();
     (gateway as any).server = { to, emit } as any;

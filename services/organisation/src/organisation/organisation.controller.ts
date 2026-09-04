@@ -71,6 +71,15 @@ export class OrganisationController {
     return this.organisation.listWorkspaces(ctx.organisationId, ctx.actorId as string);
   }
 
+  @Get(':id/roles')
+  async listRoles(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.listRoles(ctx.organisationId, ctx.actorId as string);
+  }
+
   @Get(':id/members')
   async listMembers(
     @Param('id') id: string,

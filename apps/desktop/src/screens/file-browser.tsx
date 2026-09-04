@@ -4,13 +4,12 @@ import {
   Grid,
   List,
   Search,
-  Filter,
   Download,
-  MoreHorizontal,
+  Trash2,
   Upload,
-  Clock,
 } from "lucide-react";
-import { useFiles, useUploadFile } from "../hooks/api";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useDeleteFile, useFiles, useUploadFile } from "../hooks/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
@@ -68,11 +67,15 @@ function matchesFilter(file: { originalName: string; mimeType: string }, filter:
 export function FileBrowserScreen() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [activeFilter, setActiveFilter] = useState("All");
+  const [query, setQuery] = useState("");
   const { data: files, isLoading } = useFiles();
   const uploadFile = useUploadFile();
+  const deleteFile = useDeleteFile();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const filtered = (files ?? []).filter((f) => matchesFilter(f, activeFilter));
+  const filtered = (files ?? []).filter((file) =>
+    matchesFilter(file, activeFilter) && file.originalName.toLowerCase().includes(query.trim().toLowerCase()),
+  );
 
   function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -91,11 +94,8 @@ export function FileBrowserScreen() {
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-            <Input placeholder="Search files" className="h-8 w-56 pl-8 text-sm" />
+            <Input placeholder="Search files" value={query} onChange={(event) => setQuery(event.target.value)} className="h-8 w-56 pl-8 text-sm" />
           </div>
-          <Button variant="ghost" size="icon">
-            <Filter className="h-4 w-4" />
-          </Button>
           <Button
             variant={viewMode === "list" ? "secondary" : "ghost"}
             size="icon"
@@ -170,16 +170,11 @@ export function FileBrowserScreen() {
                     <td className="px-4 py-3 text-text-secondary">{formatRelative(f.createdAt)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" asChild>
-                          <a href={f.downloadUrl ?? f.url ?? "#"} download>
-                            <Download className="h-4 w-4" />
-                          </a>
+                        <Button variant="ghost" size="icon" disabled={!f.downloadUrl && !f.url} onClick={() => { const url = f.downloadUrl ?? f.url; if (url) void openUrl(url); }} aria-label={`Download ${f.originalName}`}>
+                          <Download className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon">
-                          <Clock className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="h-4 w-4" />
+                        <Button variant="ghost" size="icon" className="text-error" disabled={deleteFile.isPending} onClick={() => deleteFile.mutate(f.id)} aria-label={`Delete ${f.originalName}`}>
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </td>
@@ -200,6 +195,10 @@ export function FileBrowserScreen() {
                 </div>
                 <p className="truncate text-sm font-medium text-text">{f.originalName}</p>
                 <p className="text-xs text-text-muted">{formatBytes(f.size)} · {f.status}</p>
+                <div className="mt-auto flex gap-1">
+                  <Button variant="ghost" size="sm" disabled={!f.downloadUrl && !f.url} onClick={() => { const url = f.downloadUrl ?? f.url; if (url) void openUrl(url); }}><Download className="mr-1 h-3.5 w-3.5" />Download</Button>
+                  <Button variant="ghost" size="icon" className="text-error" onClick={() => deleteFile.mutate(f.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                </div>
               </div>
             ))}
           </div>

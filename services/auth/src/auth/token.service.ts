@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes } from 'node:crypto';
@@ -72,10 +72,15 @@ export class TokenService {
     });
 
     if (!existing) {
-      throw new Error('Invalid or expired refresh token');
+      throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
     return this.issuePair(existing);
+  }
+
+  async revoke(rawRefresh: string): Promise<void> {
+    const tokenHash = createHash('sha256').update(rawRefresh).digest('hex');
+    await this.prisma.refreshToken.deleteMany({ where: { tokenHash } });
   }
 
   async revokeByUser(userId: string): Promise<void> {

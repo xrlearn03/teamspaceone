@@ -185,6 +185,7 @@ services:
       PORT: 3005
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/realtime_db?schema=public
       NATS_URL: nats://nats:4222
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-auth}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: reactify-realtime-service
     ports:

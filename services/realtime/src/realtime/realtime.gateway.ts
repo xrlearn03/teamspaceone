@@ -2,9 +2,12 @@ import {
   WebSocketGateway,
   WebSocketServer,
   SubscribeMessage,
+  OnGatewayConnection,
   OnGatewayInit,
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { verify } from 'jsonwebtoken';
 import { type Server, type Socket } from 'socket.io';
 import { type EventEnvelope } from '@reactify/event-contracts';
 import { Subjects } from '@reactify/event-contracts';
@@ -13,13 +16,30 @@ import { Subjects } from '@reactify/event-contracts';
   cors: { origin: '*' },
   namespace: '/realtime',
 })
-export class RealtimeGateway implements OnGatewayInit {
+export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   private readonly logger = new Logger(RealtimeGateway.name);
+
+  constructor(private readonly config: ConfigService) {}
 
   @WebSocketServer() server!: Server;
 
   afterInit() {
     this.logger.log('Realtime WebSocket gateway initialized');
+  }
+
+  handleConnection(client: Socket): void {
+    const token = typeof client.handshake.auth?.token === 'string'
+      ? client.handshake.auth.token
+      : client.handshake.headers.authorization?.replace(/^Bearer\s+/i, '');
+    try {
+      if (!token) throw new Error('Missing token');
+      const payload = verify(token, this.config.get<string>('JWT_SECRET', 'change-me')) as { sub?: string; type?: string };
+      if (!payload.sub || payload.type !== 'access') throw new Error('Invalid access token');
+      client.data.userId = payload.sub;
+      client.join(`user:${payload.sub}`);
+    } catch {
+      client.disconnect(true);
+    }
   }
 
   @SubscribeMessage('join')
@@ -30,7 +50,9 @@ export class RealtimeGateway implements OnGatewayInit {
   }
 
   @SubscribeMessage('join-user')
-  handleJoinUser(client: Socket, userId: string): void {
+  handleJoinUser(client: Socket): void {
+    const userId = client.data.userId as string | undefined;
+    if (!userId) return;
     const room = `user:${userId}`;
     client.join(room);
     this.logger.log(`Client ${client.id} joined user room ${room}`);

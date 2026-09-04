@@ -22,6 +22,15 @@ export function useMe() {
   });
 }
 
+export function useUpdateProfile() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: api.updateProfile, onSuccess: (user) => client.setQueryData(["me"], user) });
+}
+
+export function useChangePassword() {
+  return useMutation({ mutationFn: (args: { currentPassword: string; newPassword: string }) => api.changePassword(args.currentPassword, args.newPassword) });
+}
+
 export function useOrganisations() {
   return useQuery({
     queryKey: ["organisations"],
@@ -56,6 +65,22 @@ export function useMembers(organisationId?: string) {
     enabled: Boolean(organisationId),
     staleTime: 60 * 1000,
   });
+}
+
+export function useRoles(organisationId?: string) {
+  return useQuery({ queryKey: ["roles", organisationId], queryFn: () => api.getRoles(organisationId as string), enabled: Boolean(organisationId) });
+}
+
+export function useCreateWorkspace() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; name: string }) => api.createWorkspace(args.organisationId, args.name),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["workspaces", args.organisationId] }),
+  });
+}
+
+export function useCreateInvitation() {
+  return useMutation({ mutationFn: (args: { organisationId: string; email: string; roleId: string }) => api.createInvitation(args.organisationId, args.email, args.roleId) });
 }
 
 export function useChannels() {
@@ -321,6 +346,18 @@ export function useNotifications(unreadOnly = false) {
   });
 }
 
+export function useNotificationPreference(eventType: string) {
+  return useQuery({ queryKey: ["notification-preference", orgId(), eventType], queryFn: () => api.getNotificationPreference(eventType), enabled: getActiveOrganisation() !== null });
+}
+
+export function useSetNotificationPreference() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { eventType: string; body: Parameters<typeof api.setNotificationPreference>[1] }) => api.setNotificationPreference(args.eventType, args.body),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["notification-preference", orgId(), args.eventType] }),
+  });
+}
+
 export function useUnreadCount() {
   return useQuery({
     queryKey: ["unread-count", orgId()],
@@ -365,6 +402,14 @@ export function useFiles() {
     enabled: getActiveOrganisation() !== null,
     staleTime: 60 * 1000,
     retry: 2,
+  });
+}
+
+export function useDeleteFile() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteFile,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["files", orgId()] }),
   });
 }
 

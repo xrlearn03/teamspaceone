@@ -18,7 +18,7 @@ import { useMe, useOrganisations, useUnreadCount } from "../../hooks/api";
 import {
   getActiveOrganisation,
   setActiveOrganisation,
-  clearAccessToken,
+  logout,
 } from "../../lib/api";
 import { Avatar, AvatarFallback } from "../ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
@@ -57,7 +57,7 @@ export function AppRail() {
   }
 
   async function signOut() {
-    await clearAccessToken();
+    await logout();
     window.location.reload();
   }
 
