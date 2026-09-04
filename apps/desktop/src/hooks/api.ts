@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "../lib/api";
 import { useRealtime } from "./useRealtime";
 import { getActiveOrganisation, setActiveOrganisation } from "../lib/api";
@@ -94,6 +94,14 @@ export function useUpdateChannel() {
   });
 }
 
+export function useReplaceChannelMembers() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { channelId: string; memberIds: string[] }) => api.replaceChannelMembers(args.channelId, args.memberIds),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["channels", orgId()] }),
+  });
+}
+
 export function useDeleteChannel() {
   const client = useQueryClient();
   return useMutation({
@@ -110,10 +118,12 @@ export function useMessages(channelId?: string) {
     return () => leaveRealtimeChannel(channelId);
   }, [channelId, connected, joinRealtimeChannel, leaveRealtimeChannel]);
 
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ["messages", channelId],
-    queryFn: () => api.getMessages(channelId as string),
-    select: (page) => page.items,
+    queryFn: ({ pageParam }) => api.getMessages(channelId as string, pageParam ?? undefined),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    select: (data) => data.pages.slice().reverse().flatMap((page) => page.items),
     enabled: Boolean(channelId),
     staleTime: 10 * 1000,
     retry: 2,
@@ -267,6 +277,15 @@ export function useMarkAllRead() {
     mutationFn: api.markAllNotificationsRead,
     onSuccess: () =>
       client.invalidateQueries({ queryKey: ["notifications", orgId()] }),
+  });
+}
+
+export function useFile(fileId?: string) {
+  return useQuery({
+    queryKey: ["file", fileId],
+    queryFn: () => api.getFile(fileId as string),
+    enabled: Boolean(fileId),
+    staleTime: 5 * 60 * 1000,
   });
 }
 

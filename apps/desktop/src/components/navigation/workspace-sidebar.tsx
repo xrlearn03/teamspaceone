@@ -22,7 +22,10 @@ import { useUIStore, type View } from "../../stores/ui";
 import { useShallow } from "zustand/shallow";
 import {
   useChannels,
+  useCreateChannel,
+  useCreateDirectChannel,
   useMeetings,
+  useMembers,
   useOrganisations,
   useProjects,
   useUnreadCount,
@@ -39,6 +42,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { cn } from "../../lib/utils";
 
 const Collapsible = CollapsiblePrimitive.Root;
@@ -150,6 +154,10 @@ function CalendarIcon(props: React.SVGProps<SVGSVGElement>) {
 export function WorkspaceSidebar() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [createMode, setCreateMode] = useState<"channel" | "direct" | null>(null);
+  const [channelName, setChannelName] = useState("");
+  const [privateChannel, setPrivateChannel] = useState(false);
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const {
     sidebarCollapsed,
     sidebarWidth,
@@ -177,7 +185,10 @@ export function WorkspaceSidebar() {
   const activeOrgId = getActiveOrganisation();
   const { data: organisations } = useOrganisations();
   const { data: workspaces } = useWorkspaces(activeOrgId ?? undefined);
+  const { data: members } = useMembers(activeOrgId ?? undefined);
   const { data: channels } = useChannels();
+  const createChannel = useCreateChannel();
+  const createDirectChannel = useCreateDirectChannel();
   const { data: projects } = useProjects();
   const { data: meetings } = useMeetings();
   const { data: unread } = useUnreadCount();
@@ -212,6 +223,31 @@ export function WorkspaceSidebar() {
     navigate("home");
   }
 
+  function toggleMember(userId: string) {
+    setSelectedMembers((current) => current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]);
+  }
+
+  function closeCreate() {
+    setCreateMode(null);
+    setChannelName("");
+    setPrivateChannel(false);
+    setSelectedMembers([]);
+  }
+
+  function submitCreate() {
+    if (createMode === "channel") {
+      if (!channelName.trim()) return;
+      createChannel.mutate(
+        { name: channelName.trim(), workspaceId: currentWorkspace?.id, type: privateChannel ? "private" : "public", memberIds: selectedMembers },
+        { onSuccess: (channel) => { closeCreate(); navigate("channel", { channelId: channel.id }); } },
+      );
+    } else if (createMode === "direct" && selectedMembers.length > 0) {
+      createDirectChannel.mutate(selectedMembers, {
+        onSuccess: (channel) => { closeCreate(); navigate("dm", { channelId: channel.id }); },
+      });
+    }
+  }
+
   if (sidebarCollapsed) {
     return null;
   }
@@ -222,6 +258,7 @@ export function WorkspaceSidebar() {
   const directMessages = channels?.filter((c) => c.type === "direct") ?? [];
 
   return (
+    <>
     <aside
       ref={sidebarRef}
       className="relative flex shrink-0 flex-col border-r bg-surface"
@@ -277,8 +314,11 @@ export function WorkspaceSidebar() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => navigate("dm")}>
+            <DropdownMenuItem onClick={() => setCreateMode("direct")}>
               New message
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setCreateMode("channel")}>
+              Create channel
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate("project")}>
               Create project
@@ -437,5 +477,48 @@ export function WorkspaceSidebar() {
         <span className="h-4 w-px bg-text-muted" />
       </button>
     </aside>
+    <Dialog open={createMode !== null} onOpenChange={(open) => { if (!open) closeCreate(); }}>
+      <DialogContent className="max-w-md p-0">
+        <DialogHeader>
+          <DialogTitle>{createMode === "channel" ? "Create channel" : "New direct message"}</DialogTitle>
+          <DialogDescription>
+            {createMode === "channel" ? "Create a public or private space for your team." : "Choose one or more organisation members."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 px-4 pb-4">
+          {createMode === "channel" ? (
+            <>
+              <Input value={channelName} onChange={(e) => setChannelName(e.target.value)} placeholder="Channel name" autoFocus />
+              <label className="flex items-center gap-2 text-sm text-text-secondary">
+                <input type="checkbox" checked={privateChannel} onChange={(e) => setPrivateChannel(e.target.checked)} />
+                Private channel
+              </label>
+            </>
+          ) : null}
+          {(createMode === "direct" || privateChannel) ? (
+            <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border p-2">
+              {members?.map((member) => (
+                <label key={member.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-surface-elevated">
+                  <input type="checkbox" checked={selectedMembers.includes(member.userId)} onChange={() => toggleMember(member.userId)} />
+                  <span className="flex-1 truncate">{member.userId}</span>
+                  <span className="text-xs text-text-muted">{member.role.name}</span>
+                </label>
+              ))}
+              {!members?.length ? <p className="p-2 text-sm text-text-muted">No organisation members available.</p> : null}
+            </div>
+          ) : null}
+          {(createChannel.error || createDirectChannel.error) ? (
+            <p className="text-sm text-error">{(createChannel.error ?? createDirectChannel.error)?.message}</p>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={closeCreate}>Cancel</Button>
+            <Button onClick={submitCreate} disabled={createChannel.isPending || createDirectChannel.isPending || (createMode === "channel" ? !channelName.trim() : selectedMembers.length === 0)}>
+              Create
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

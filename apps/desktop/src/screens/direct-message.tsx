@@ -1,20 +1,25 @@
 import { useState } from "react";
 import {
+  Check,
   Info,
   MoreHorizontal,
   Paperclip,
+  Pencil,
   Phone,
   Search,
   Send,
   Smile,
+  Trash2,
   Video,
+  X,
 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
-import { useChannels, useMe, useMessages, useSendMessage } from "../hooks/api";
+import { useChannels, useDeleteMessage, useMe, useMessages, useSendMessage, useUpdateMessage, useUploadFile } from "../hooks/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
+import { MessageAttachment } from "../components/ui/message-attachment";
 import { cn } from "../lib/utils";
 
 function formatTime(iso: string) {
@@ -36,14 +41,34 @@ export function DirectMessageScreen() {
   const contact =
     directChannels.find((c) => c.id === activeChannelId) ??
     directChannels[0];
-  const { data: messages } = useMessages(contact?.id);
+  const { data: messages, fetchNextPage, hasNextPage, isFetchingNextPage } = useMessages(contact?.id);
   const sendMessage = useSendMessage();
+  const updateMessage = useUpdateMessage();
+  const deleteMessage = useDeleteMessage();
+  const uploadFile = useUploadFile();
   const [draft, setDraft] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
 
   function send() {
     if (!contact || !draft.trim()) return;
     sendMessage.mutate({ channelId: contact.id, content: draft.trim() });
     setDraft("");
+  }
+
+  function attach(file?: File) {
+    if (!file || !contact) return;
+    uploadFile.mutate(file, {
+      onSuccess: (uploaded) => sendMessage.mutate({ channelId: contact.id, content: "", attachmentIds: [uploaded.id] }),
+    });
+  }
+
+  function saveEdit() {
+    if (!contact || !editingId || !editDraft.trim()) return;
+    updateMessage.mutate(
+      { messageId: editingId, channelId: contact.id, content: editDraft.trim() },
+      { onSuccess: () => setEditingId(null) },
+    );
   }
 
   return (
@@ -88,6 +113,9 @@ export function DirectMessageScreen() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
+        {hasNextPage ? (
+          <div className="mb-3 text-center"><Button variant="ghost" size="sm" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>{isFetchingNextPage ? "Loading…" : "Load older messages"}</Button></div>
+        ) : null}
         <div className="space-y-4">
           {messages && messages.length > 0 ? (
             messages.map((m) => {
@@ -103,12 +131,27 @@ export function DirectMessageScreen() {
                       <span className="text-xs font-medium text-text">{author}</span>
                       <span className="text-xs text-text-muted">{formatTime(m.createdAt)}</span>
                     </div>
-                    <div className={cn(
-                      "mt-0.5 rounded-lg px-3 py-2 text-sm",
-                      isMe ? "bg-primary text-white" : "bg-surface-elevated text-text"
-                    )}>
-                      {m.content}
-                    </div>
+                    {editingId === m.id ? (
+                      <div className="mt-1 flex items-center gap-1">
+                        <Input value={editDraft} onChange={(e) => setEditDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") setEditingId(null); }} className="h-8" autoFocus />
+                        <Button size="icon" variant="ghost" onClick={saveEdit} aria-label="Save message"><Check className="h-4 w-4" /></Button>
+                        <Button size="icon" variant="ghost" onClick={() => setEditingId(null)} aria-label="Cancel edit"><X className="h-4 w-4" /></Button>
+                      </div>
+                    ) : (
+                      <div className="group flex items-center gap-1">
+                        <div className={cn("mt-0.5 rounded-lg px-3 py-2 text-sm", isMe ? "bg-primary text-white" : "bg-surface-elevated text-text", m.deletedAt && "italic opacity-60")}>
+                          {m.deletedAt ? "Message deleted" : m.content}
+                          {m.editedAt && !m.deletedAt ? <span className="ml-1 text-[10px] opacity-70">(edited)</span> : null}
+                          {m.attachments.map((attachment) => <MessageAttachment key={attachment.id} fileId={attachment.fileId} />)}
+                        </div>
+                        {isMe && !m.deletedAt ? (
+                          <div className="flex opacity-0 transition-opacity group-hover:opacity-100">
+                            <Button size="icon" variant="ghost" onClick={() => { setEditingId(m.id); setEditDraft(m.content); }} aria-label="Edit message"><Pencil className="h-3.5 w-3.5" /></Button>
+                            <Button size="icon" variant="ghost" onClick={() => contact && deleteMessage.mutate({ messageId: m.id, channelId: contact.id })} aria-label="Delete message"><Trash2 className="h-3.5 w-3.5" /></Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -142,8 +185,11 @@ export function DirectMessageScreen() {
             />
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon">
-              <Paperclip className="h-4 w-4" />
+            <Button variant="ghost" size="icon" asChild>
+              <label aria-label="Attach file" className="cursor-pointer">
+                <Paperclip className="h-4 w-4" />
+                <input type="file" className="hidden" onChange={(e) => { attach(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+              </label>
             </Button>
             <Button variant="ghost" size="icon">
               <Smile className="h-4 w-4" />

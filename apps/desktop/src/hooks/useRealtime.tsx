@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { io, type Socket } from "socket.io-client";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { getAccessToken, getActiveOrganisation, getMe, type Message, type MessagePage } from "../lib/api";
 
@@ -111,21 +111,23 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           }
           if (event === "message.created") {
             const message = payload as Message;
-            queryClient.setQueryData<MessagePage>(["messages", message.channelId], (page) => {
-              if (!page || page.items.some((item) => item.id === message.id)) return page;
-              return { ...page, items: [...page.items, message] };
+            queryClient.setQueryData<InfiniteData<MessagePage, string | null>>(["messages", message.channelId], (data) => {
+              if (!data || data.pages.some((page) => page.items.some((item) => item.id === message.id))) return data;
+              const pages = data.pages.slice();
+              pages[0] = { ...pages[0], items: [...pages[0].items, message] };
+              return { ...data, pages };
             });
           }
           if (event === "message.updated") {
             const message = payload as Message;
-            queryClient.setQueryData<MessagePage>(["messages", message.channelId], (page) =>
-              page ? { ...page, items: page.items.map((item) => item.id === message.id ? message : item) } : page,
+            queryClient.setQueryData<InfiniteData<MessagePage, string | null>>(["messages", message.channelId], (data) =>
+              data ? { ...data, pages: data.pages.map((page) => ({ ...page, items: page.items.map((item) => item.id === message.id ? message : item) })) } : data,
             );
           }
           if (event === "message.deleted") {
             const deleted = payload as RealtimeEventPayloads["message.deleted"];
-            queryClient.setQueryData<MessagePage>(["messages", deleted.channelId], (page) =>
-              page ? { ...page, items: page.items.map((item) => item.id === deleted.id ? { ...item, content: "", deletedAt: deleted.deletedAt, attachments: [] } : item) } : page,
+            queryClient.setQueryData<InfiniteData<MessagePage, string | null>>(["messages", deleted.channelId], (data) =>
+              data ? { ...data, pages: data.pages.map((page) => ({ ...page, items: page.items.map((item) => item.id === deleted.id ? { ...item, content: "", deletedAt: deleted.deletedAt, attachments: [] } : item) })) } : data,
             );
           }
           if (event === "notification.created") {

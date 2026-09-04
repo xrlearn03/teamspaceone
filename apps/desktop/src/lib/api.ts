@@ -412,6 +412,10 @@ export function getFiles() {
   return apiRequest<FileRecord[]>("/files");
 }
 
+export function getFile(fileId: string) {
+  return apiRequest<FileRecord>(`/files/${fileId}`);
+}
+
 export function uploadFile(file: File) {
   const form = new FormData();
   form.append("file", file);
