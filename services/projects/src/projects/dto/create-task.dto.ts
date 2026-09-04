@@ -4,4 +4,7 @@ export class CreateTaskDto {
   description?: string;
   assigneeId?: string;
   dueDate?: string;
+  status?: string;
+  priority?: string;
+  position?: number;
 }

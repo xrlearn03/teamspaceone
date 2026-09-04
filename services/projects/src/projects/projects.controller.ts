@@ -1,8 +1,12 @@
-import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
 import { ProjectsService } from './projects.service.js';
+import { type AddAttachmentDto } from './dto/add-attachment.dto.js';
+import { type CreateCommentDto } from './dto/create-comment.dto.js';
 import { type CreateProjectDto } from './dto/create-project.dto.js';
 import { type CreateTaskDto } from './dto/create-task.dto.js';
+import { type UpdateCommentDto } from './dto/update-comment.dto.js';
+import { type UpdateProjectDto } from './dto/update-project.dto.js';
 import { type UpdateTaskDto } from './dto/update-task.dto.js';
 
 @Controller()
@@ -10,40 +14,87 @@ export class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
 
   @Post('projects')
-  async createProject(
-    @CurrentOrganisation() ctx: OrganisationContextValue,
-    @Body() dto: CreateProjectDto,
-  ) {
+  createProject(@CurrentOrganisation() ctx: OrganisationContextValue, @Body() dto: CreateProjectDto) {
     return this.projects.createProject(ctx, dto);
   }
 
   @Get('projects')
-  async listProjects(@CurrentOrganisation() ctx: OrganisationContextValue) {
+  listProjects(@CurrentOrganisation() ctx: OrganisationContextValue) {
     return this.projects.listProjects(ctx);
   }
 
+  @Get('projects/:id')
+  getProject(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string) {
+    return this.projects.getProject(ctx, projectId);
+  }
+
+  @Patch('projects/:id')
+  updateProject(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Body() dto: UpdateProjectDto) {
+    return this.projects.updateProject(ctx, projectId, dto);
+  }
+
+  @Delete('projects/:id')
+  async deleteProject(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string) {
+    await this.projects.deleteProject(ctx, projectId);
+  }
+
   @Post('tasks')
-  async createTask(
-    @CurrentOrganisation() ctx: OrganisationContextValue,
-    @Body() dto: CreateTaskDto,
-  ) {
+  createTask(@CurrentOrganisation() ctx: OrganisationContextValue, @Body() dto: CreateTaskDto) {
     return this.projects.createTask(ctx, dto);
   }
 
   @Get('projects/:id/tasks')
-  async listTasks(
-    @CurrentOrganisation() ctx: OrganisationContextValue,
-    @Param('id') projectId: string,
-  ) {
+  listTasks(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string) {
     return this.projects.listTasks(ctx, projectId);
   }
 
-  @Put('tasks/:id')
-  async updateTask(
-    @CurrentOrganisation() ctx: OrganisationContextValue,
-    @Param('id') taskId: string,
-    @Body() dto: UpdateTaskDto,
-  ) {
+  @Patch('tasks/:id')
+  updateTask(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') taskId: string, @Body() dto: UpdateTaskDto) {
     return this.projects.updateTask(ctx, taskId, dto);
+  }
+
+  @Delete('tasks/:id')
+  async deleteTask(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') taskId: string) {
+    await this.projects.deleteTask(ctx, taskId);
+  }
+
+  @Get('projects/:id/comments')
+  listComments(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Query('cursor') cursor?: string, @Query('limit') limit?: string) {
+    return this.projects.listComments(ctx, projectId, cursor, limit ? Number(limit) : 50);
+  }
+
+  @Post('projects/:id/comments')
+  createComment(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Body() dto: CreateCommentDto) {
+    return this.projects.createComment(ctx, projectId, dto);
+  }
+
+  @Patch('project-comments/:id')
+  updateComment(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') commentId: string, @Body() dto: UpdateCommentDto) {
+    return this.projects.updateComment(ctx, commentId, dto);
+  }
+
+  @Delete('project-comments/:id')
+  deleteComment(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') commentId: string) {
+    return this.projects.deleteComment(ctx, commentId);
+  }
+
+  @Get('projects/:id/attachments')
+  listAttachments(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string) {
+    return this.projects.listAttachments(ctx, projectId);
+  }
+
+  @Post('projects/:id/attachments')
+  addAttachment(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Body() dto: AddAttachmentDto) {
+    return this.projects.addAttachment(ctx, projectId, dto);
+  }
+
+  @Delete('projects/:id/attachments/:fileId')
+  async removeAttachment(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Param('fileId') fileId: string) {
+    await this.projects.removeAttachment(ctx, projectId, fileId);
+  }
+
+  @Get('projects/:id/activity')
+  listActivity(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Query('cursor') cursor?: string, @Query('limit') limit?: string) {
+    return this.projects.listActivity(ctx, projectId, cursor, limit ? Number(limit) : 50);
   }
 }

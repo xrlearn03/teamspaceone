@@ -36,6 +36,12 @@ export class RealtimeGateway implements OnGatewayInit {
     this.logger.log(`Client ${client.id} joined user room ${room}`);
   }
 
+  @SubscribeMessage('join-project')
+  handleJoinProject(client: Socket, projectId: string): void {
+    const room = `project:${projectId}`;
+    client.join(room);
+  }
+
   @SubscribeMessage('join-meeting')
   handleJoinMeeting(client: Socket, meetingId: string): void {
     const room = `meeting:${meetingId}`;
@@ -69,6 +75,30 @@ export class RealtimeGateway implements OnGatewayInit {
     if (!payload) return;
 
     switch (envelope.eventType) {
+      case Subjects.PROJECT_CREATED:
+        this.server.to(`organisation:${envelope.organisationId}`).emit('project.created', payload);
+        break;
+      case Subjects.PROJECT_UPDATED:
+      case Subjects.PROJECT_DELETED: {
+        const projectId = (payload.id ?? envelope.resourceId) as string;
+        const eventName = envelope.eventType.replace('reactify.', '');
+        this.server.to(`organisation:${envelope.organisationId}`).to(`project:${projectId}`).emit(eventName, payload);
+        break;
+      }
+      case Subjects.TASK_CREATED:
+      case Subjects.TASK_UPDATED:
+      case Subjects.TASK_COMPLETED:
+      case Subjects.PROJECT_COMMENT_CREATED:
+      case Subjects.PROJECT_COMMENT_UPDATED:
+      case Subjects.PROJECT_COMMENT_DELETED:
+      case Subjects.PROJECT_ATTACHMENT_ADDED:
+      case Subjects.PROJECT_ATTACHMENT_REMOVED: {
+        const projectId = payload.projectId as string | undefined;
+        if (projectId) {
+          this.server.to(`project:${projectId}`).emit(envelope.eventType.replace('reactify.', ''), payload);
+        }
+        break;
+      }
       case Subjects.CHANNEL_CREATED:
       case Subjects.CHANNEL_UPDATED:
       case Subjects.CHANNEL_DELETED:

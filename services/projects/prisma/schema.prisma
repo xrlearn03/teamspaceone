@@ -9,22 +9,42 @@ datasource db {
 }
 
 model Project {
-  id             String   @id @default(cuid())
+  id             String              @id @default(cuid())
   organisationId String
   workspaceId    String?
   clientId       String?
   name           String
   description    String?
   ownerId        String
-  status         String   @default("active")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  status         String              @default("active")
+  startDate      DateTime?
+  targetDate     DateTime?
+  archivedAt     DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
   tasks          Task[]
+  members        ProjectMember[]
+  comments       ProjectComment[]
+  attachments    ProjectAttachment[]
+  activities     ProjectActivity[]
 
   @@index([organisationId])
   @@index([workspaceId])
   @@index([clientId])
   @@map("projects")
+}
+
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  role      String   @default("member")
+  joinedAt  DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+  @@map("project_members")
 }
 
 model Task {
@@ -34,6 +54,8 @@ model Task {
   title          String
   description    String?
   status         String    @default("todo")
+  priority       String    @default("medium")
+  position       Int       @default(0)
   assigneeId     String?
   dueDate        DateTime?
   completedAt    DateTime?
@@ -42,9 +64,55 @@ model Task {
   project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([organisationId])
-  @@index([projectId])
+  @@index([projectId, status, position])
   @@index([assigneeId])
   @@map("tasks")
+}
+
+model ProjectComment {
+  id             String   @id @default(cuid())
+  organisationId String
+  projectId      String
+  authorId       String
+  content        String
+  editedAt       DateTime?
+  deletedAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([authorId])
+  @@map("project_comments")
+}
+
+model ProjectAttachment {
+  id        String   @id @default(cuid())
+  projectId String
+  fileId    String
+  addedBy   String
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, fileId])
+  @@index([fileId])
+  @@map("project_attachments")
+}
+
+model ProjectActivity {
+  id             String   @id @default(cuid())
+  organisationId String
+  projectId      String
+  actorId        String
+  action         String
+  resourceType   String
+  resourceId     String
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@map("project_activity")
 }
 
 model Approval {

@@ -134,9 +134,9 @@ async function bootstrap() {
     }),
   );
 
-  app.use(['/projects', '/tasks'], createAuthMiddleware(jwtSecret));
+  app.use(['/projects', '/tasks', '/project-comments'], createAuthMiddleware(jwtSecret));
   app.use(
-    ['/projects', '/tasks'],
+    ['/projects', '/tasks', '/project-comments'],
     createProxyMiddleware({
       target: projectsUrl,
       changeOrigin: true,
