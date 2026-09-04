@@ -74,13 +74,7 @@ export class NatsClientService implements OnModuleInit, OnModuleDestroy {
       } catch (err) {
         if (err instanceof NatsError && err.message?.includes('already in use')) {
           try {
-            await jsm.streams.update(config.name, {
-              subjects: config.subjects,
-              retention: this.toRetentionPolicy(config.retention),
-              max_msgs: config.maxMsgs,
-              max_age: config.maxAge ? nanos(config.maxAge) : undefined,
-              num_replicas: config.replicas ?? 1,
-            });
+            await jsm.streams.update(config.name, { subjects: config.subjects });
             this.logger.log(`Updated JetStream stream ${config.name}`);
           } catch (updateErr) {
             this.logger.error(`Failed to update stream ${config.name}: ${(updateErr as Error).message}`);

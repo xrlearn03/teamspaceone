@@ -46,7 +46,18 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   }
 
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-background p-6">
+    <div className="relative h-dvh w-full overflow-hidden">
+      <img
+        src="/teamspace-one-background-light.jpg"
+        alt=""
+        className="absolute inset-0 h-full w-full object-cover dark:hidden"
+      />
+      <img
+        src="/teamspace-one-background-dark.jpg"
+        alt=""
+        className="absolute inset-0 hidden h-full w-full object-cover dark:block"
+      />
+      <div className="relative z-10 flex h-full items-center justify-center p-6">
       <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-8 shadow-sm">
         <h1 className="text-2xl font-semibold text-text">
           {mode === "login" ? "Sign in" : "Create account"}
@@ -113,6 +124,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           </button>
         </p>
       </div>
+    </div>
     </div>
   );
 }
