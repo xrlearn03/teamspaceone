@@ -1,62 +1,13 @@
-import { ArrowRight, Folder, MessageSquare, Video } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Reveal } from "./Reveal";
 
-/** Abstract workspace visual built with CSS — intentionally not a product screenshot. */
-function WorkspaceVisual() {
+function AppVisual() {
   return (
-    <div
-      aria-hidden="true"
-      className="relative mx-auto aspect-[4/3] w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-ink-900 via-ink-800 to-brand-900 shadow-2xl"
-    >
-      {/* Soft brand glows */}
-      <div className="absolute -top-16 -right-16 h-64 w-64 rounded-full bg-brand-500/25 blur-3xl" />
-      <div className="absolute -bottom-16 -left-16 h-64 w-64 rounded-full bg-violet-brand/25 blur-3xl" />
-
-      {/* Abstract panels */}
-      <div className="absolute top-[12%] left-[8%] w-[46%] rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur-md">
-        <div className="flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 text-brand-300" />
-          <div className="h-2 w-16 rounded-full bg-white/40" />
-        </div>
-        <div className="mt-3 space-y-2">
-          <div className="h-2 w-full rounded-full bg-white/25" />
-          <div className="h-2 w-4/5 rounded-full bg-white/25" />
-          <div className="h-2 w-3/5 rounded-full bg-brand-400/60" />
-        </div>
-      </div>
-
-      <div className="absolute top-[22%] right-[8%] w-[34%] rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur-md">
-        <div className="flex items-center gap-2">
-          <Video className="h-4 w-4 text-violet-300" />
-          <div className="h-2 w-12 rounded-full bg-white/40" />
-        </div>
-        <div className="mt-3 flex -space-x-2">
-          {[0, 1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="h-8 w-8 rounded-full border-2 border-white/20"
-              style={{
-                background: `linear-gradient(135deg, ${
-                  ["#0aa8fd", "#0170fb", "#7a53ed", "#4397fe"][i]
-                }, #0233ca)`,
-              }}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="absolute bottom-[14%] left-[16%] w-[56%] rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur-md">
-        <div className="flex items-center gap-2">
-          <Folder className="h-4 w-4 text-brand-300" />
-          <div className="h-2 w-20 rounded-full bg-white/40" />
-        </div>
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          <div className="h-8 rounded-lg bg-brand-500/40" />
-          <div className="h-8 rounded-lg bg-white/20" />
-          <div className="h-8 rounded-lg bg-violet-brand/40" />
-        </div>
-      </div>
-    </div>
+    <img
+      src="/assets/app-home.png"
+      alt="Teamspace One home screen"
+      className="mx-auto w-full max-w-2xl rounded-2xl border border-slate-200 shadow-2xl"
+    />
   );
 }
 
@@ -86,7 +37,7 @@ export function Intro() {
             </div>
           </Reveal>
           <Reveal delay={150}>
-            <WorkspaceVisual />
+            <AppVisual />
           </Reveal>
         </div>
       </div>

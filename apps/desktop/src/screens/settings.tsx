@@ -7,6 +7,7 @@ import {
   useClients,
   useCreateClient,
   useCreateInvitation,
+  useCreateOrganisation,
   useCreateWorkspace,
   useDeleteClient,
   useInvitations,
@@ -19,7 +20,7 @@ import {
   useUpdateProfile,
   useWorkspaces,
 } from "../hooks/api";
-import { getActiveOrganisation } from "../lib/api";
+import { getActiveOrganisation, setActiveOrganisation } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -91,15 +92,17 @@ function PasswordSettings() {
 
 function OrganisationSettings({ organisationId, organisationName, workspaces, roles }: { organisationId: string | null; organisationName?: string; workspaces: { id: string; name: string }[]; roles: { id: string; name: string; isDefault: boolean }[] }) {
   const createWorkspace = useCreateWorkspace();
+  const createOrganisation = useCreateOrganisation();
   const invite = useCreateInvitation();
+  const [newOrganisationName, setNewOrganisationName] = useState("");
   const { data: invitations } = useInvitations(organisationId ?? undefined);
   const revokeInvitation = useRevokeInvitation();
   const [workspaceName, setWorkspaceName] = useState("");
   const [email, setEmail] = useState("");
   const [roleId, setRoleId] = useState("");
   useEffect(() => { if (!roleId) setRoleId(roles.find((role) => role.isDefault)?.id ?? roles[0]?.id ?? ""); }, [roleId, roles]);
-  if (!organisationId) return <SettingsSection title="Organisation"><p className="text-sm text-text-muted">Select an organisation first.</p></SettingsSection>;
-  return <SettingsSection title={organisationName ?? "Organisation"}><div className="grid gap-6 lg:grid-cols-2"><div><h3 className="mb-2 text-sm font-semibold">Workspaces</h3><div className="mb-3 space-y-1">{workspaces.map((workspace) => <div key={workspace.id} className="rounded-md border px-3 py-2 text-sm">{workspace.name}</div>)}</div><div className="flex gap-2"><Input value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="Workspace name" /><Button disabled={!workspaceName.trim() || createWorkspace.isPending} onClick={() => createWorkspace.mutate({ organisationId, name: workspaceName.trim() }, { onSuccess: () => setWorkspaceName("") })}>Create</Button></div></div><div><h3 className="mb-2 text-sm font-semibold">Invite member</h3><div className="space-y-2"><Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email address" /><select className="h-9 w-full rounded-md border bg-surface px-3 text-sm" value={roleId} onChange={(event) => setRoleId(event.target.value)}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select><Button disabled={!email.trim() || !roleId || invite.isPending} onClick={() => invite.mutate({ organisationId, email: email.trim(), roleId }, { onSuccess: () => setEmail("") })}>Send invitation</Button>{invite.isSuccess ? <p className="text-sm text-success">Invitation created.</p> : null}</div></div></div><div className="mt-6"><h3 className="mb-2 text-sm font-semibold">Invitations</h3><div className="space-y-2">{invitations?.map((item) => <div key={item.id} className="flex items-center justify-between rounded-md border px-3 py-2"><div><p className="text-sm">{item.email}</p><p className="text-xs text-text-muted">{item.status} · expires {new Date(item.expiresAt).toLocaleDateString()}</p></div>{item.status === "pending" ? <Button variant="ghost" size="sm" className="text-error" onClick={() => revokeInvitation.mutate({ organisationId, invitationId: item.id })}>Revoke</Button> : null}</div>)}</div></div>{(createWorkspace.error || invite.error || revokeInvitation.error) ? <p className="mt-3 text-sm text-error">{(createWorkspace.error ?? invite.error)?.message}</p> : null}</SettingsSection>;
+
+  return <SettingsSection title={organisationName ?? "Organisation"}><div className="mb-6"><h3 className="mb-2 text-sm font-semibold">Create organisation</h3><div className="flex gap-2"><Input value={newOrganisationName} onChange={(event) => setNewOrganisationName(event.target.value)} placeholder="Organisation name" /><Button disabled={!newOrganisationName.trim() || createOrganisation.isPending} onClick={() => createOrganisation.mutate(newOrganisationName.trim(), { onSuccess: (org) => { setActiveOrganisation(org.id); setNewOrganisationName(""); } })}>Create</Button></div>{createOrganisation.error ? <p className="mt-2 text-sm text-error">{createOrganisation.error.message}</p> : null}</div><div className="grid gap-6 lg:grid-cols-2"><div><h3 className="mb-2 text-sm font-semibold">Workspaces</h3><div className="mb-3 space-y-1">{organisationId ? workspaces.map((workspace) => <div key={workspace.id} className="rounded-md border px-3 py-2 text-sm">{workspace.name}</div>) : <p className="text-sm text-text-muted">No organisation yet. Creating a workspace will create one for you.</p>}</div><div className="flex gap-2"><Input value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="Workspace name" /><Button disabled={!workspaceName.trim() || createWorkspace.isPending} onClick={() => createWorkspace.mutate({ name: workspaceName.trim() }, { onSuccess: () => setWorkspaceName("") })}>Create</Button></div></div><div><h3 className="mb-2 text-sm font-semibold">Invite member</h3><div className="space-y-2"><Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email address" /><select className="h-9 w-full rounded-md border bg-surface px-3 text-sm" value={roleId} onChange={(event) => setRoleId(event.target.value)}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select><Button disabled={!organisationId || !email.trim() || !roleId || invite.isPending} onClick={() => { if (!organisationId || !roleId) return; invite.mutate({ organisationId, email: email.trim(), roleId }, { onSuccess: () => setEmail("") }); }}>Send invitation</Button>{invite.isSuccess ? <p className="text-sm text-success">Invitation created.</p> : null}</div></div></div><div className="mt-6"><h3 className="mb-2 text-sm font-semibold">Invitations</h3><div className="space-y-2">{invitations?.map((item) => <div key={item.id} className="flex items-center justify-between rounded-md border px-3 py-2"><div><p className="text-sm">{item.email}</p><p className="text-xs text-text-muted">{item.status} · expires {new Date(item.expiresAt).toLocaleDateString()}</p></div>{item.status === "pending" ? <Button variant="ghost" size="sm" className="text-error" onClick={() => { if (!organisationId) return; revokeInvitation.mutate({ organisationId, invitationId: item.id }); }}>Revoke</Button> : null}</div>)}</div></div>{(createWorkspace.error || invite.error || revokeInvitation.error) ? <p className="mt-3 text-sm text-error">{(createWorkspace.error ?? invite.error)?.message}</p> : null}</SettingsSection>;
 }
 
 function ClientSettings({ organisationId }: { organisationId: string | null }) {

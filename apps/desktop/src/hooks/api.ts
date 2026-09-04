@@ -43,7 +43,7 @@ export function useOrganisations() {
 export function useCreateOrganisation() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: api.createOrganisation,
+    mutationFn: (name: string) => api.createOrganisation(name),
     onSuccess: () => client.invalidateQueries({ queryKey: ["organisations"] }),
   });
 }
@@ -74,8 +74,11 @@ export function useRoles(organisationId?: string) {
 export function useCreateWorkspace() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { organisationId: string; name: string }) => api.createWorkspace(args.organisationId, args.name),
-    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["workspaces", args.organisationId] }),
+    mutationFn: (args: { organisationId?: string | null; name: string }) => api.createWorkspace(args.organisationId ?? null, args.name),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["organisations"] });
+      client.invalidateQueries({ queryKey: ["workspaces", args.organisationId ?? getActiveOrganisation() ?? "none"] });
+    },
   });
 }
 

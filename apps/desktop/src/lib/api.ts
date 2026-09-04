@@ -470,10 +470,19 @@ export function getOrganisations() {
   return apiRequest<Organisation[]>("/organisations");
 }
 
-export function createOrganisation(name: string) {
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+export function createOrganisation(name: string, slug?: string) {
   return apiRequest<Organisation>("/organisations", {
     method: "POST",
-    body: { name, slug: name.toLowerCase().replace(/\s+/g, "-") },
+    body: { name, slug: slug ?? slugify(name) },
   });
 }
 
@@ -489,8 +498,18 @@ export function getRoles(organisationId: string) {
   return apiRequest<OrganisationRole[]>(`/organisations/${organisationId}/roles`);
 }
 
-export function createWorkspace(organisationId: string, name: string) {
-  return apiRequest<Workspace>(`/organisations/${organisationId}/workspaces`, { method: "POST", body: { name } });
+export async function createWorkspace(organisationId: string | null, name: string): Promise<Workspace> {
+  let orgId = organisationId ?? getActiveOrganisation();
+  if (!orgId) {
+    const user = await getMe();
+    const orgName = `${user.firstName || user.email || "Personal"}'s Organisation`;
+    const suffix = Math.random().toString(36).slice(2, 10);
+    const slug = `${slugify(orgName)}-${suffix}`;
+    const org = await createOrganisation(orgName, slug);
+    setActiveOrganisation(org.id);
+    orgId = org.id;
+  }
+  return apiRequest<Workspace>(`/organisations/${orgId}/workspaces`, { method: "POST", body: { name } });
 }
 
 export function createInvitation(organisationId: string, email: string, roleId: string) {

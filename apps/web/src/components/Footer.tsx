@@ -1,4 +1,3 @@
-import { downloadLinks } from "../config/downloads";
 
 const columns = [
   {
@@ -41,23 +40,6 @@ export function Footer() {
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-slate-400">
               One workspace. Every team.
             </p>
-            <div className="mt-5 flex gap-3">
-              <a
-                href={downloadLinks.windows}
-                download
-                className="text-sm font-medium text-slate-300 transition-colors hover:text-white"
-              >
-                Windows
-              </a>
-              <span className="text-slate-600" aria-hidden="true">·</span>
-              <a
-                href={downloadLinks.macos}
-                download
-                className="text-sm font-medium text-slate-300 transition-colors hover:text-white"
-              >
-                macOS
-              </a>
-            </div>
           </div>
 
           {/* Link columns */}
@@ -83,7 +65,7 @@ export function Footer() {
         </div>
 
         <div className="mt-12 border-t border-white/10 pt-8">
-          <p className="text-sm text-slate-500">
+          <p className="text-center text-sm text-slate-500">
             © 2026 Teamspace One. All rights reserved.
           </p>
         </div>

@@ -55,16 +55,7 @@ export function Header() {
               {link.label}
             </a>
           ))}
-          <a
-            href="#signin"
-            className={`text-sm font-medium transition-colors ${
-              solid
-                ? "text-slate-600 hover:text-slate-900"
-                : "text-slate-300 hover:text-white"
-            }`}
-          >
-            Sign In
-          </a>
+
           <a
             href="#download"
             className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-500 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2"
@@ -101,13 +92,7 @@ export function Header() {
                 {link.label}
               </a>
             ))}
-            <a
-              href="#signin"
-              onClick={() => setOpen(false)}
-              className="rounded-lg px-3 py-2.5 text-base font-medium text-slate-700 hover:bg-slate-100"
-            >
-              Sign In
-            </a>
+
             <a
               href="#download"
               onClick={() => setOpen(false)}
