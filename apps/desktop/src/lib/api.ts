@@ -172,6 +172,14 @@ export interface MessagePage {
   nextCursor: string | null;
 }
 
+export interface ProjectMember {
+  id: string;
+  projectId: string;
+  userId: string;
+  role: string;
+  joinedAt: string;
+}
+
 export interface Project {
   id: string;
   organisationId: string;
@@ -180,17 +188,65 @@ export interface Project {
   description?: string | null;
   ownerId: string;
   status: string;
+  startDate?: string | null;
+  targetDate?: string | null;
+  archivedAt?: string | null;
   createdAt: string;
+  updatedAt: string;
+  members: ProjectMember[];
 }
 
 export interface Task {
   id: string;
+  organisationId: string;
   projectId: string;
   title: string;
   description?: string | null;
   assigneeId?: string | null;
   status: string;
+  priority: string;
+  position: number;
+  dueDate?: string | null;
+  completedAt?: string | null;
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectComment {
+  id: string;
+  organisationId: string;
+  projectId: string;
+  authorId: string;
+  content: string;
+  editedAt?: string | null;
+  deletedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectAttachment {
+  id: string;
+  projectId: string;
+  fileId: string;
+  addedBy: string;
+  createdAt: string;
+}
+
+export interface ProjectActivity {
+  id: string;
+  organisationId: string;
+  projectId: string;
+  actorId: string;
+  action: string;
+  resourceType: string;
+  resourceId: string;
+  metadata?: unknown;
+  createdAt: string;
+}
+
+export interface CursorPage<T> {
+  items: T[];
+  nextCursor: string | null;
 }
 
 export interface Notification {
@@ -373,38 +429,72 @@ export function getProjects() {
   return apiRequest<Project[]>("/projects");
 }
 
-export function createProject(name: string, description?: string, workspaceId?: string) {
-  return apiRequest<Project>("/projects", {
-    method: "POST",
-    body: { name, description, workspaceId },
-  });
+export function getProject(projectId: string) {
+  return apiRequest<Project>(`/projects/${projectId}`);
+}
+
+export function createProject(body: { name: string; description?: string; workspaceId?: string; memberIds?: string[]; startDate?: string; targetDate?: string }) {
+  return apiRequest<Project>("/projects", { method: "POST", body });
+}
+
+export function updateProject(projectId: string, body: { name?: string; description?: string | null; status?: string; startDate?: string | null; targetDate?: string | null; memberIds?: string[] }) {
+  return apiRequest<Project>(`/projects/${projectId}`, { method: "PATCH", body });
+}
+
+export function deleteProject(projectId: string) {
+  return apiRequest<void>(`/projects/${projectId}`, { method: "DELETE" });
 }
 
 export function getTasks(projectId: string) {
   return apiRequest<Task[]>(`/projects/${projectId}/tasks`);
 }
 
-export function createTask(
-  projectId: string,
-  title: string,
-  description?: string,
-  assigneeId?: string,
-  dueDate?: string,
-) {
-  return apiRequest<Task>("/tasks", {
-    method: "POST",
-    body: { projectId, title, description, assigneeId, dueDate },
-  });
+export function createTask(body: { projectId: string; title: string; description?: string; assigneeId?: string; dueDate?: string; status?: string; priority?: string; position?: number }) {
+  return apiRequest<Task>("/tasks", { method: "POST", body });
 }
 
-export function updateTask(
-  taskId: string,
-  body: { status?: string; title?: string; assigneeId?: string },
-) {
-  return apiRequest<Task>(`/tasks/${taskId}`, {
-    method: "PUT",
-    body,
-  });
+export function updateTask(taskId: string, body: { status?: string; title?: string; description?: string | null; assigneeId?: string | null; dueDate?: string | null; priority?: string; position?: number }) {
+  return apiRequest<Task>(`/tasks/${taskId}`, { method: "PATCH", body });
+}
+
+export function deleteTask(taskId: string) {
+  return apiRequest<void>(`/tasks/${taskId}`, { method: "DELETE" });
+}
+
+export function getProjectComments(projectId: string, cursor?: string) {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  return apiRequest<CursorPage<ProjectComment>>(`/projects/${projectId}/comments?${params.toString()}`);
+}
+
+export function createProjectComment(projectId: string, content: string) {
+  return apiRequest<ProjectComment>(`/projects/${projectId}/comments`, { method: "POST", body: { content } });
+}
+
+export function updateProjectComment(commentId: string, content: string) {
+  return apiRequest<ProjectComment>(`/project-comments/${commentId}`, { method: "PATCH", body: { content } });
+}
+
+export function deleteProjectComment(commentId: string) {
+  return apiRequest<ProjectComment>(`/project-comments/${commentId}`, { method: "DELETE" });
+}
+
+export function getProjectAttachments(projectId: string) {
+  return apiRequest<ProjectAttachment[]>(`/projects/${projectId}/attachments`);
+}
+
+export function addProjectAttachment(projectId: string, fileId: string) {
+  return apiRequest<ProjectAttachment>(`/projects/${projectId}/attachments`, { method: "POST", body: { fileId } });
+}
+
+export function removeProjectAttachment(projectId: string, fileId: string) {
+  return apiRequest<void>(`/projects/${projectId}/attachments/${fileId}`, { method: "DELETE" });
+}
+
+export function getProjectActivity(projectId: string, cursor?: string) {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  return apiRequest<CursorPage<ProjectActivity>>(`/projects/${projectId}/activity?${params.toString()}`);
 }
 
 // Files

@@ -170,55 +170,124 @@ export function useProjects() {
 export function useCreateProject() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { name: string; description?: string; workspaceId?: string }) =>
-      api.createProject(args.name, args.description, args.workspaceId),
-    onSuccess: () =>
-      client.invalidateQueries({ queryKey: ["projects", orgId()] }),
+    mutationFn: api.createProject,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["projects", orgId()] }),
+  });
+}
+
+export function useUpdateProject() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; body: Parameters<typeof api.updateProject>[1] }) => api.updateProject(args.projectId, args.body),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["projects", orgId()] }),
+  });
+}
+
+export function useDeleteProject() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteProject,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["projects", orgId()] }),
   });
 }
 
 export function useTasks(projectId?: string) {
-  return useQuery({
-    queryKey: ["tasks", projectId],
-    queryFn: () => api.getTasks(projectId as string),
-    enabled: Boolean(projectId),
-    staleTime: 60 * 1000,
-    retry: 2,
-  });
+  const { connected, joinRealtimeProject, leaveRealtimeProject } = useRealtime();
+  useEffect(() => {
+    if (!projectId || !connected) return;
+    joinRealtimeProject(projectId);
+    return () => leaveRealtimeProject(projectId);
+  }, [connected, joinRealtimeProject, leaveRealtimeProject, projectId]);
+  return useQuery({ queryKey: ["tasks", projectId], queryFn: () => api.getTasks(projectId as string), enabled: Boolean(projectId), staleTime: 60 * 1000, retry: 2 });
 }
 
 export function useCreateTask() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: {
-      projectId: string;
-      title: string;
-      description?: string;
-      assigneeId?: string;
-      dueDate?: string;
-    }) =>
-      api.createTask(
-        args.projectId,
-        args.title,
-        args.description,
-        args.assigneeId,
-        args.dueDate,
-      ),
-    onSuccess: (_, args) =>
-      client.invalidateQueries({ queryKey: ["tasks", args.projectId] }),
+    mutationFn: api.createTask,
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["tasks", args.projectId] }),
   });
 }
 
 export function useUpdateTask() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: {
-      taskId: string;
-      projectId: string;
-      body: { status?: string; title?: string; assigneeId?: string };
-    }) => api.updateTask(args.taskId, args.body),
-    onSuccess: (_, args) =>
-      client.invalidateQueries({ queryKey: ["tasks", args.projectId] }),
+    mutationFn: (args: { taskId: string; projectId: string; body: Parameters<typeof api.updateTask>[1] }) => api.updateTask(args.taskId, args.body),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["tasks", args.projectId] }),
+  });
+}
+
+export function useDeleteTask() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { taskId: string; projectId: string }) => api.deleteTask(args.taskId),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["tasks", args.projectId] }),
+  });
+}
+
+export function useProjectComments(projectId?: string) {
+  return useInfiniteQuery({
+    queryKey: ["project-comments", projectId],
+    queryFn: ({ pageParam }) => api.getProjectComments(projectId as string, pageParam ?? undefined),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    select: (data) => data.pages.slice().reverse().flatMap((page) => page.items),
+    enabled: Boolean(projectId),
+  });
+}
+
+export function useCreateProjectComment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; content: string }) => api.createProjectComment(args.projectId, args.content),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["project-comments", args.projectId] }),
+  });
+}
+
+export function useUpdateProjectComment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; commentId: string; content: string }) => api.updateProjectComment(args.commentId, args.content),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["project-comments", args.projectId] }),
+  });
+}
+
+export function useDeleteProjectComment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; commentId: string }) => api.deleteProjectComment(args.commentId),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["project-comments", args.projectId] }),
+  });
+}
+
+export function useProjectAttachments(projectId?: string) {
+  return useQuery({ queryKey: ["project-attachments", projectId], queryFn: () => api.getProjectAttachments(projectId as string), enabled: Boolean(projectId) });
+}
+
+export function useAddProjectAttachment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; fileId: string }) => api.addProjectAttachment(args.projectId, args.fileId),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["project-attachments", args.projectId] }),
+  });
+}
+
+export function useRemoveProjectAttachment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; fileId: string }) => api.removeProjectAttachment(args.projectId, args.fileId),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["project-attachments", args.projectId] }),
+  });
+}
+
+export function useProjectActivity(projectId?: string) {
+  return useInfiniteQuery({
+    queryKey: ["project-activity", projectId],
+    queryFn: ({ pageParam }) => api.getProjectActivity(projectId as string, pageParam ?? undefined),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    select: (data) => data.pages.flatMap((page) => page.items),
+    enabled: Boolean(projectId),
   });
 }
 

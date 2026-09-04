@@ -7,6 +7,17 @@ import { getAccessToken, getActiveOrganisation, getMe, type Message, type Messag
 const REALTIME_URL = (import.meta.env.VITE_REALTIME_URL as string | undefined) ?? "http://localhost:3005";
 
 export interface RealtimeEventPayloads {
+  "project.created": { id: string };
+  "project.updated": { id: string };
+  "project.deleted": { id: string };
+  "task.created": { id: string; projectId: string };
+  "task.updated": { id: string; projectId: string; deleted?: boolean };
+  "task.completed": { id: string; projectId: string };
+  "project.comment.created": { id: string; projectId: string };
+  "project.comment.updated": { id: string; projectId: string };
+  "project.comment.deleted": { id: string; projectId: string };
+  "project.attachment.added": { id: string; projectId: string };
+  "project.attachment.removed": { id: string; projectId: string };
   "channel.created": { id: string };
   "channel.updated": { id: string };
   "channel.deleted": { id: string };
@@ -31,6 +42,8 @@ interface RealtimeContextValue {
   connected: boolean;
   joinRealtimeChannel: (channelId: string) => void;
   leaveRealtimeChannel: (channelId: string) => void;
+  joinRealtimeProject: (projectId: string) => void;
+  leaveRealtimeProject: (projectId: string) => void;
   joinRealtimeMeeting: (meetingId: string) => void;
   leaveRealtimeMeeting: (meetingId: string) => void;
   onRealtimeEvent: <E extends RealtimeEvent>(event: E, handler: (payload: RealtimeEventPayloads[E]) => void) => () => void;
@@ -87,6 +100,17 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       });
 
       const eventNames: RealtimeEvent[] = [
+        "project.created",
+        "project.updated",
+        "project.deleted",
+        "task.created",
+        "task.updated",
+        "task.completed",
+        "project.comment.created",
+        "project.comment.updated",
+        "project.comment.deleted",
+        "project.attachment.added",
+        "project.attachment.removed",
         "channel.created",
         "channel.updated",
         "channel.deleted",
@@ -106,6 +130,18 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
       for (const event of eventNames) {
         socket.on(event, (payload: unknown) => {
+          if (event.startsWith("project.") || event.startsWith("task.")) {
+            const resource = payload as { projectId?: string };
+            if (event === "project.created" || event === "project.updated" || event === "project.deleted") {
+              void queryClient.invalidateQueries({ queryKey: ["projects"] });
+            }
+            if (resource.projectId) {
+              if (event.startsWith("task.")) void queryClient.invalidateQueries({ queryKey: ["tasks", resource.projectId] });
+              if (event.startsWith("project.comment.")) void queryClient.invalidateQueries({ queryKey: ["project-comments", resource.projectId] });
+              if (event.startsWith("project.attachment.")) void queryClient.invalidateQueries({ queryKey: ["project-attachments", resource.projectId] });
+              void queryClient.invalidateQueries({ queryKey: ["project-activity", resource.projectId] });
+            }
+          }
           if (event.startsWith("channel.")) {
             void queryClient.invalidateQueries({ queryKey: ["channels"] });
           }
@@ -162,6 +198,14 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     socketRef.current?.emit("leave", `channel:${channelId}`);
   }, []);
 
+  const joinRealtimeProject = useCallback((projectId: string) => {
+    socketRef.current?.emit("join-project", projectId);
+  }, []);
+
+  const leaveRealtimeProject = useCallback((projectId: string) => {
+    socketRef.current?.emit("leave", `project:${projectId}`);
+  }, []);
+
   const joinRealtimeMeeting = useCallback((meetingId: string) => {
     socketRef.current?.emit("join-meeting", meetingId);
   }, []);
@@ -183,7 +227,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
   return (
     <RealtimeContext.Provider
-      value={{ socket: socketRef.current, connected, joinRealtimeChannel, leaveRealtimeChannel, joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent }}
+      value={{ socket: socketRef.current, connected, joinRealtimeChannel, leaveRealtimeChannel, joinRealtimeProject, leaveRealtimeProject, joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent }}
     >
       {children}
     </RealtimeContext.Provider>
