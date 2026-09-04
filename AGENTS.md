@@ -1,4 +1,4 @@
-# Reactify Connect — Agent Notes
+# Teamspace One — Agent Notes
 
 ## Project
 
@@ -9,7 +9,7 @@
 ## Useful Commands
 
 - Build the desktop app: `pnpm build:desktop`
-- Build only the frontend: `pnpm --filter @reactify/desktop build`
+- Build only the frontend: `pnpm --filter @teamspace-one/desktop build`
 - Start desktop dev: `pnpm dev:desktop`
 - Start backend services: `pnpm docker:up` then `pnpm dev:gateway` etc.
 - Run tests: `pnpm test`

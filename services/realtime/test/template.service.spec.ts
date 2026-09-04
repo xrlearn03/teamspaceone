@@ -11,7 +11,7 @@ describe('RealtimeGateway', () => {
 
     gateway.broadcast({
       eventId: '1',
-      eventType: 'reactify.message.created',
+      eventType: 'teamspace-one.message.created',
       organisationId: 'org-1',
       actorId: 'user-1',
       resourceType: 'message',

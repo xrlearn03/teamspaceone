@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { AckPolicy, type JsMsg } from 'nats';
-import { isEventEnvelope, type EventEnvelope } from '@reactify/event-contracts';
+import { isEventEnvelope, type EventEnvelope, Streams } from '@teamspace-one/event-contracts';
 import { InboxService } from '../inbox/inbox.service.js';
 import { AiService } from '../ai/ai.service.js';
 import { NatsClientService } from './nats-client.service.js';
@@ -17,25 +17,34 @@ export class NatsConsumerService implements OnModuleInit {
 
   async onModuleInit() {
     const subjects = [
-      'reactify.message.>',
-      'reactify.task.>',
-      'reactify.file.>',
-      'reactify.meeting.>',
+      'teamspace-one.message.>',
+      'teamspace-one.task.>',
+      'teamspace-one.file.>',
+      'teamspace-one.meeting.>',
     ];
+
+    const subjectToStream: Record<string, string> = {
+      'teamspace-one.message.>': Streams.MESSAGING,
+      'teamspace-one.task.>': Streams.PROJECTS,
+      'teamspace-one.file.>': Streams.FILES,
+      'teamspace-one.meeting.>': Streams.MEETINGS,
+    };
 
     await Promise.all(
       subjects.map((subject) => {
         const durable = `ai-consumer-${subject.replace(/[^a-zA-Z0-9]/g, '-')}`;
-        return this.consume(subject, durable);
+        const stream = subjectToStream[subject];
+        return this.consume(subject, durable, stream);
       }),
     );
   }
 
-  private async consume(subject: string, durable: string) {
+  private async consume(subject: string, durable: string, stream: string) {
     const js = await this.natsClient.getJetStream();
-    this.logger.log({ subject, durable }, 'Subscribing to NATS JetStream subject');
+    this.logger.log(`Subscribing to ${subject} on stream ${stream} with durable ${durable}`);
 
     const subscription = await js.subscribe(subject, {
+      stream,
       config: {
         durable_name: durable,
         deliver_subject: durable,

@@ -4,7 +4,7 @@ import { NotificationController } from '../src/notification/notification.control
 import { NotificationService } from '../src/notification/notification.service.js';
 import { OutboxService } from '../src/outbox/outbox.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { Subjects, createEventEnvelope } from '@reactify/event-contracts';
+import { Subjects, createEventEnvelope } from '@teamspace-one/event-contracts';
 
 describe('NotificationController', () => {
   let controller: NotificationController;
@@ -137,7 +137,7 @@ describe('NotificationService', () => {
 
   it('skips notifications for unrecognised event types', async () => {
     const envelope = createEventEnvelope({
-      eventType: 'reactify.unknown.event',
+      eventType: 'teamspace-one.unknown.event',
       organisationId: 'org-1',
       resourceType: 'unknown',
       resourceId: 'u1',

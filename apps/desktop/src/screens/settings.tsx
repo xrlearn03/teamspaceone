@@ -75,7 +75,7 @@ function AccountSettings({ user }: { user?: { email: string; firstName?: string 
 }
 
 function NotificationSettings() {
-  const eventType = "reactify.message.created";
+  const eventType = "teamspace-one.message.created";
   const { data: preference } = useNotificationPreference(eventType);
   const update = useSetNotificationPreference();
   const options = [{ key: "inApp", label: "Show in-app notifications" }, { key: "desktop", label: "Enable desktop notifications" }, { key: "email", label: "Send email notifications" }, { key: "push", label: "Send push notifications" }] as const;

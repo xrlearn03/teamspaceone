@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { type Queue } from 'bullmq';
-import { createEventEnvelope, Subjects } from '@reactify/event-contracts';
+import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';

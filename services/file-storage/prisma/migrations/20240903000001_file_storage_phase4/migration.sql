@@ -2,7 +2,7 @@
 ALTER TABLE "files" ADD COLUMN "resourceType" TEXT;
 ALTER TABLE "files" ADD COLUMN "resourceId" TEXT;
 ALTER TABLE "files" ADD COLUMN "category" TEXT NOT NULL DEFAULT 'attachment';
-ALTER TABLE "files" ADD COLUMN "bucket" TEXT NOT NULL DEFAULT 'reactify';
+ALTER TABLE "files" ADD COLUMN "bucket" TEXT NOT NULL DEFAULT 'teamspace-one';
 ALTER TABLE "files" ADD COLUMN "etag" TEXT;
 ALTER TABLE "files" ADD COLUMN "status" TEXT NOT NULL DEFAULT 'uploaded';
 ALTER TABLE "files" ADD COLUMN "previewUrl" TEXT;

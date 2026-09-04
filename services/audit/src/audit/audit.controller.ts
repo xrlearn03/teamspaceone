@@ -1,5 +1,5 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
+import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Controller('audit')

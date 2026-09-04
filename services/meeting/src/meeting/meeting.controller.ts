@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Post, Put } from '@nestjs/common';
-import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
+import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { MeetingService } from './meeting.service.js';
 import { type CreateMeetingDto } from './dto/create-meeting.dto.js';
 import { type CreateVoiceRoomDto } from './dto/create-voice-room.dto.js';

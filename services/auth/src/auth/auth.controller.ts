@@ -6,7 +6,7 @@ import { type LoginDto } from './dto/login.dto.js';
 import { type RefreshDto } from './dto/refresh.dto.js';
 import { type ChangePasswordDto } from './dto/change-password.dto.js';
 import { type UpdateProfileDto } from './dto/update-profile.dto.js';
-import { OrganisationContext } from '@reactify/organisation-context';
+import { OrganisationContext } from '@teamspace-one/organisation-context';
 
 @Controller('auth')
 export class AuthController {

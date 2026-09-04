@@ -3,8 +3,8 @@ import { fetch } from "@tauri-apps/plugin-http";
 const GATEWAY_URL =
   (import.meta.env.VITE_GATEWAY_URL as string | undefined) ??
   "http://localhost:3000";
-const TOKEN_KEY = "reactify:accessToken";
-const REFRESH_TOKEN_KEY = "reactify:refreshToken";
+const TOKEN_KEY = "teamspace-one:accessToken";
+const REFRESH_TOKEN_KEY = "teamspace-one:refreshToken";
 
 let refreshPromise: Promise<string | null> | null = null;
 let activeOrganisationId: string | null = null;
@@ -12,15 +12,15 @@ let activeOrganisationId: string | null = null;
 export function setActiveOrganisation(organisationId: string | null): void {
   activeOrganisationId = organisationId;
   if (organisationId) {
-    localStorage.setItem("reactify:organisationId", organisationId);
+    localStorage.setItem("teamspace-one:organisationId", organisationId);
   } else {
-    localStorage.removeItem("reactify:organisationId");
+    localStorage.removeItem("teamspace-one:organisationId");
   }
 }
 
 export function getActiveOrganisation(): string | null {
   if (activeOrganisationId) return activeOrganisationId;
-  return localStorage.getItem("reactify:organisationId");
+  return localStorage.getItem("teamspace-one:organisationId");
 }
 
 export async function setAccessToken(token: string): Promise<void> {

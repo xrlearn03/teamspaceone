@@ -1,8 +1,8 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { AckPolicy, DeliverPolicy, ReplayPolicy, createInbox, headers, type JsMsg } from 'nats';
-import { isEventEnvelope, type EventEnvelope } from '@reactify/event-contracts';
-import { getTraceContextHeaders } from '@reactify/opentelemetry';
-import { MetricsService } from '@reactify/metrics';
+import { isEventEnvelope, type EventEnvelope } from '@teamspace-one/event-contracts';
+import { getTraceContextHeaders } from '@teamspace-one/opentelemetry';
+import { MetricsService } from '@teamspace-one/metrics';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { NatsClientService } from './nats-client.service.js';
 
@@ -26,7 +26,7 @@ export class ReplayService {
     private readonly metrics: MetricsService,
   ) {
     this.replayCounter = this.metrics.counter(
-      'reactify_events_replayed_total',
+      'teamspaceone_events_replayed_total',
       'Total events replayed by the audit service',
       ['subject'],
     );

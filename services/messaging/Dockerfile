@@ -1,7 +1,7 @@
-FROM reactify-base AS builder
+FROM teamspace-one-base AS builder
 WORKDIR /app
-RUN pnpm --filter @reactify/messaging-service db:generate
-RUN pnpm --filter "@reactify/messaging-service..." build
+RUN pnpm --filter @teamspace-one/messaging-service db:generate
+RUN pnpm --filter "@teamspace-one/messaging-service..." build
 
 FROM node:20 AS runner
 WORKDIR /app

@@ -1,5 +1,5 @@
 import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
-import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
+import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { SearchService } from './search.service.js';
 import { SearchQueryDto } from './dto/search-query.dto.js';
 

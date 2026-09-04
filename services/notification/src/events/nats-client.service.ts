@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { connect, NatsError, nanos, RetentionPolicy, type NatsConnection, type JetStreamClient } from 'nats';
-import { streamConfigs } from '@reactify/event-contracts';
+import { streamConfigs } from '@teamspace-one/event-contracts';
 
 @Injectable()
 export class NatsClientService implements OnModuleInit, OnModuleDestroy {
@@ -73,7 +73,18 @@ export class NatsClientService implements OnModuleInit, OnModuleDestroy {
         this.logger.log(`Created JetStream stream ${config.name}`);
       } catch (err) {
         if (err instanceof NatsError && err.message?.includes('already in use')) {
-          this.logger.log(`JetStream stream ${config.name} already exists`);
+          try {
+            await jsm.streams.update(config.name, {
+              subjects: config.subjects,
+              retention: this.toRetentionPolicy(config.retention),
+              max_msgs: config.maxMsgs,
+              max_age: config.maxAge ? nanos(config.maxAge) : undefined,
+              num_replicas: config.replicas ?? 1,
+            });
+            this.logger.log(`Updated JetStream stream ${config.name}`);
+          } catch (updateErr) {
+            this.logger.error(`Failed to update stream ${config.name}: ${(updateErr as Error).message}`);
+          }
         } else {
           this.logger.error(`Failed to create stream ${config.name}: ${(err as Error).message}`);
         }

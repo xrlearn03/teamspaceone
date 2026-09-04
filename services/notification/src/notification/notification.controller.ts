@@ -9,7 +9,7 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
-import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
+import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { NotificationService, type NotificationPreferenceInput } from './notification.service.js';
 
 class UpdatePreferenceDto {

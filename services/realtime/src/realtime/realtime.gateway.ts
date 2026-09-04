@@ -9,8 +9,8 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { verify } from 'jsonwebtoken';
 import { type Server, type Socket } from 'socket.io';
-import { type EventEnvelope } from '@reactify/event-contracts';
-import { Subjects } from '@reactify/event-contracts';
+import { type EventEnvelope } from '@teamspace-one/event-contracts';
+import { Subjects } from '@teamspace-one/event-contracts';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -138,7 +138,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       case Subjects.PROJECT_UPDATED:
       case Subjects.PROJECT_DELETED: {
         const projectId = (payload.id ?? envelope.resourceId) as string;
-        const eventName = envelope.eventType.replace('reactify.', '');
+        const eventName = envelope.eventType.replace('teamspace-one.', '');
         this.server.to(`organisation:${envelope.organisationId}`).to(`project:${projectId}`).emit(eventName, payload);
         break;
       }
@@ -155,7 +155,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       case Subjects.APPROVAL_REJECTED: {
         const projectId = payload.projectId as string | undefined;
         if (projectId) {
-          this.server.to(`project:${projectId}`).emit(envelope.eventType.replace('reactify.', ''), payload);
+          this.server.to(`project:${projectId}`).emit(envelope.eventType.replace('teamspace-one.', ''), payload);
         }
         break;
       }
@@ -164,7 +164,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       case Subjects.CHANNEL_DELETED:
       case Subjects.CHANNEL_MEMBERS_UPDATED: {
         const organisationId = envelope.organisationId;
-        const eventName = envelope.eventType.replace('reactify.', '');
+        const eventName = envelope.eventType.replace('teamspace-one.', '');
         this.server.to(`organisation:${organisationId}`).emit(eventName, payload);
         break;
       }

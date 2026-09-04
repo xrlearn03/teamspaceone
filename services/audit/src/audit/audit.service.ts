@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { type EventEnvelope } from '@reactify/event-contracts';
+import { type EventEnvelope } from '@teamspace-one/event-contracts';
 import { Prisma } from '#prisma';
 
 @Injectable()

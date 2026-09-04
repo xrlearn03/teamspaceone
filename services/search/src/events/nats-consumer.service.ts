@@ -9,13 +9,13 @@ import {
   type JetStreamClient,
   type JsMsg,
 } from 'nats';
-import { isEventEnvelope, streamConfigs, type EventEnvelope, type StreamName } from '@reactify/event-contracts';
+import { isEventEnvelope, streamConfigs, type EventEnvelope, type StreamName } from '@teamspace-one/event-contracts';
 import { InboxService } from '../inbox/inbox.service.js';
 import { SearchService } from '../search/search.service.js';
 import { NatsClientService } from './nats-client.service.js';
 
 const MAX_DELIVERY = 5;
-const DLQ_SUBJECT = 'reactify.dlq.search';
+const DLQ_SUBJECT = 'teamspace-one.dlq.search';
 const SEARCH_STREAMS: StreamName[] = ['MESSAGING', 'PROJECTS', 'FILES', 'MEETINGS', 'AI', 'ORGANISATION', 'USERS'];
 
 @Injectable()
@@ -66,7 +66,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
   ): Promise<Consumer> {
     const durableName = `search-service-${stream.toLowerCase()}`;
     const streamConfig = streamConfigs.find((c) => c.name === stream);
-    const filterSubjects = streamConfig?.subjects ?? [`reactify.${stream.toLowerCase()}.>`];
+    const filterSubjects = streamConfig?.subjects ?? [`teamspace-one.${stream.toLowerCase()}.>`];
 
     const config: Partial<ConsumerConfig> = {
       durable_name: durableName,

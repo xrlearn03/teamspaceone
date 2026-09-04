@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { connect, NatsError, nanos, RetentionPolicy, type NatsConnection, type JetStreamClient } from 'nats';
-import { streamConfigs } from '@reactify/event-contracts';
+import { streamConfigs } from '@teamspace-one/event-contracts';
 
 @Injectable()
 export class NatsClientService implements OnModuleInit, OnModuleDestroy {

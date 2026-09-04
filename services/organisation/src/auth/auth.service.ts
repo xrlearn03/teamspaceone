@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
-import { createEventEnvelope, Subjects } from '@reactify/event-contracts';
+import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { Prisma, type User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';

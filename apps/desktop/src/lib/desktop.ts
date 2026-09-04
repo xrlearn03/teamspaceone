@@ -23,7 +23,7 @@ export interface Draft {
 
 export async function initLocalDb(): Promise<Database> {
   if (db) return db;
-  db = await Database.load('sqlite:reactify.db');
+  db = await Database.load('sqlite:teamspace-one.db');
   return db;
 }
 

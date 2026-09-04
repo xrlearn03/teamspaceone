@@ -5,8 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { createEventEnvelope, Subjects, type Subject } from '@reactify/event-contracts';
-import { type OrganisationContextValue } from '@reactify/organisation-context';
+import { createEventEnvelope, Subjects, type Subject } from '@teamspace-one/event-contracts';
+import { type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';

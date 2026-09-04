@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, ConflictException, ForbiddenException, GoneException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { createEventEnvelope, Subjects } from '@reactify/event-contracts';
+import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { Prisma, type Organisation } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';

@@ -27,7 +27,7 @@ export class StorageService implements OnModuleInit {
   private readonly publicBaseUrl: string | undefined;
 
   constructor(private readonly config: ConfigService) {
-    this.bucket = this.config.get<string>('S3_BUCKET', 'reactify');
+    this.bucket = this.config.get<string>('S3_BUCKET', 'teamspace-one');
     const endpoint = this.config.get<string>('S3_ENDPOINT');
     const region = this.config.get<string>('S3_REGION', 'us-east-1');
     const accessKeyId = this.config.get<string>('S3_ACCESS_KEY', 'minioadmin');

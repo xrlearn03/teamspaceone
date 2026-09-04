@@ -21,7 +21,7 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
 const config = {
   get: (key: string, defaultValue?: unknown) => {
     const values: Record<string, unknown> = {
-      S3_BUCKET: 'reactify',
+      S3_BUCKET: 'teamspace-one',
       S3_ENDPOINT: 'http://localhost:9000',
       S3_REGION: 'us-east-1',
       S3_ACCESS_KEY: 'minioadmin',
@@ -60,6 +60,6 @@ describe('StorageService', () => {
 
   it('should return a public url using the configured endpoint', () => {
     const url = service.getPublicUrl('organisations/org-1/attachments/f.png');
-    expect(url).toBe('http://localhost:9000/reactify/organisations/org-1/attachments/f.png');
+    expect(url).toBe('http://localhost:9000/teamspace-one/organisations/org-1/attachments/f.png');
   });
 });

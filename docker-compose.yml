@@ -1,7 +1,7 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: reactify-postgres
+    container_name: teamspace-one-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -20,7 +20,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: reactify-redis
+    container_name: teamspace-one-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -32,7 +32,7 @@ services:
 
   nats:
     image: nats:2-alpine
-    container_name: reactify-nats
+    container_name: teamspace-one-nats
     restart: unless-stopped
     command:
       - "--js"
@@ -52,7 +52,7 @@ services:
 
   minio:
     image: minio/minio:RELEASE.2024-08-17T01-24-54Z
-    container_name: reactify-minio
+    container_name: teamspace-one-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -71,7 +71,7 @@ services:
 
   jaeger:
     image: jaegertracing/all-in-one:1.59
-    container_name: reactify-jaeger
+    container_name: teamspace-one-jaeger
     restart: unless-stopped
     ports:
       - "16686:16686"
@@ -81,7 +81,7 @@ services:
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.109.0
-    container_name: reactify-otel-collector
+    container_name: teamspace-one-otel-collector
     restart: unless-stopped
     command: ["--config=/etc/otel-collector.yaml"]
     volumes:
@@ -92,21 +92,21 @@ services:
       - jaeger
 
   base:
-    image: reactify-base
+    image: teamspace-one-base
     build:
       context: .
       dockerfile: docker/Dockerfile.base
-    container_name: reactify-base-builder
+    container_name: teamspace-one-base-builder
     command: ["true"]
     restart: "no"
 
   auth-service:
     build:
       additional_contexts:
-        reactify-base: "service:base"
+        teamspace-one-base: "service:base"
       context: .
       dockerfile: services/auth/Dockerfile
-    container_name: reactify-auth-service
+    container_name: teamspace-one-auth-service
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -115,7 +115,7 @@ services:
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: reactify-auth-service
+      OTEL_SERVICE_NAME: teamspace-one-auth-service
     ports:
       - "3002:3002"
     depends_on:
@@ -127,10 +127,10 @@ services:
   organisation-service:
     build:
       additional_contexts:
-        reactify-base: "service:base"
+        teamspace-one-base: "service:base"
       context: .
       dockerfile: services/organisation/Dockerfile
-    container_name: reactify-organisation-service
+    container_name: teamspace-one-organisation-service
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -139,7 +139,7 @@ services:
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: reactify-organisation-service
+      OTEL_SERVICE_NAME: teamspace-one-organisation-service
     ports:
       - "3003:3003"
     depends_on:
@@ -151,10 +151,10 @@ services:
   messaging-service:
     build:
       additional_contexts:
-        reactify-base: "service:base"
+        teamspace-one-base: "service:base"
       context: .
       dockerfile: services/messaging/Dockerfile
-    container_name: reactify-messaging-service
+    container_name: teamspace-one-messaging-service
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -163,7 +163,7 @@ services:
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: reactify-messaging-service
+      OTEL_SERVICE_NAME: teamspace-one-messaging-service
     ports:
       - "3004:3004"
     depends_on:
@@ -175,10 +175,10 @@ services:
   realtime-service:
     build:
       additional_contexts:
-        reactify-base: "service:base"
+        teamspace-one-base: "service:base"
       context: .
       dockerfile: services/realtime/Dockerfile
-    container_name: reactify-realtime-service
+    container_name: teamspace-one-realtime-service
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -191,7 +191,7 @@ services:
       PROJECTS_SERVICE_URL: http://projects-service:3006
       MEETING_SERVICE_URL: http://meeting-service:3009
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: reactify-realtime-service
+      OTEL_SERVICE_NAME: teamspace-one-realtime-service
     ports:
       - "3005:3005"
     depends_on:
@@ -202,10 +202,10 @@ services:
   projects-service:
     build:
       additional_contexts:
-        reactify-base: "service:base"
+        teamspace-one-base: "service:base"
       context: .
       dockerfile: services/projects/Dockerfile
-    container_name: reactify-projects-service
+    container_name: teamspace-one-projects-service
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -214,7 +214,7 @@ services:
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: reactify-projects-service
+      OTEL_SERVICE_NAME: teamspace-one-projects-service
     ports:
       - "3006:3006"
     depends_on:
@@ -226,10 +226,10 @@ services:
   audit-service:
     build:
       additional_contexts:
-        reactify-base: "service:base"
+        teamspace-one-base: "service:base"
       context: .
       dockerfile: services/audit/Dockerfile
-    container_name: reactify-audit-service
+    container_name: teamspace-one-audit-service
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -237,7 +237,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/audit_db?schema=public
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: reactify-audit-service
+      OTEL_SERVICE_NAME: teamspace-one-audit-service
     ports:
       - "3007:3007"
     depends_on:
@@ -248,10 +248,10 @@ services:
   notification-service:
     build:
       additional_contexts:
-        reactify-base: "service:base"
+        teamspace-one-base: "service:base"
       context: .
       dockerfile: services/notification/Dockerfile
-    container_name: reactify-notification-service
+    container_name: teamspace-one-notification-service
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -260,7 +260,7 @@ services:
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: reactify-notification-service
+      OTEL_SERVICE_NAME: teamspace-one-notification-service
     ports:
       - "3008:3008"
     depends_on:
@@ -271,7 +271,7 @@ services:
 
   livekit:
     image: livekit/livekit-server:v1.7.2
-    container_name: reactify-livekit
+    container_name: teamspace-one-livekit
     restart: unless-stopped
     command: ["--dev", "--bind", "0.0.0.0"]
     ports:
@@ -287,10 +287,10 @@ services:
   meeting-service:
     build:
       additional_contexts:
-        reactify-base: "service:base"
+        teamspace-one-base: "service:base"
       context: .
       dockerfile: services/meeting/Dockerfile
-    container_name: reactify-meeting-service
+    container_name: teamspace-one-meeting-service
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -302,7 +302,7 @@ services:
       LIVEKIT_API_KEY: devkey
       LIVEKIT_API_SECRET: secret
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: reactify-meeting-service
+      OTEL_SERVICE_NAME: teamspace-one-meeting-service
     ports:
       - "3009:3009"
     depends_on:
@@ -315,10 +315,10 @@ services:
   file-storage-service:
     build:
       additional_contexts:
-        reactify-base: "service:base"
+        teamspace-one-base: "service:base"
       context: .
       dockerfile: services/file-storage/Dockerfile
-    container_name: reactify-file-storage-service
+    container_name: teamspace-one-file-storage-service
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -330,9 +330,9 @@ services:
       S3_REGION: us-east-1
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
-      S3_BUCKET: reactify
+      S3_BUCKET: teamspace-one
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: reactify-file-storage-service
+      OTEL_SERVICE_NAME: teamspace-one-file-storage-service
     ports:
       - "3010:3010"
     depends_on:
@@ -344,10 +344,10 @@ services:
   search-service:
     build:
       additional_contexts:
-        reactify-base: "service:base"
+        teamspace-one-base: "service:base"
       context: .
       dockerfile: services/search/Dockerfile
-    container_name: reactify-search-service
+    container_name: teamspace-one-search-service
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -356,7 +356,7 @@ services:
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: reactify-search-service
+      OTEL_SERVICE_NAME: teamspace-one-search-service
     ports:
       - "3011:3011"
     depends_on:
@@ -368,10 +368,10 @@ services:
   ai-service:
     build:
       additional_contexts:
-        reactify-base: "service:base"
+        teamspace-one-base: "service:base"
       context: .
       dockerfile: services/ai/Dockerfile
-    container_name: reactify-ai-service
+    container_name: teamspace-one-ai-service
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -381,7 +381,7 @@ services:
       REDIS_URL: redis://redis:6379
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: reactify-ai-service
+      OTEL_SERVICE_NAME: teamspace-one-ai-service
     ports:
       - "3012:3012"
     depends_on:
@@ -393,10 +393,10 @@ services:
   api-gateway:
     build:
       additional_contexts:
-        reactify-base: "service:base"
+        teamspace-one-base: "service:base"
       context: .
       dockerfile: services/api-gateway/Dockerfile
-    container_name: reactify-api-gateway
+    container_name: teamspace-one-api-gateway
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -415,7 +415,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-auth}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: reactify-api-gateway
+      OTEL_SERVICE_NAME: teamspace-one-api-gateway
     ports:
       - "3000:3000"
     depends_on:

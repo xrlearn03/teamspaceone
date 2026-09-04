@@ -43,4 +43,4 @@ export function createLogger(options: CreateLoggerOptions): Logger {
   return pino(pinoOptions);
 }
 
-export const rootLogger = createLogger({ name: 'reactify' });
+export const rootLogger = createLogger({ name: 'teamspace-one' });

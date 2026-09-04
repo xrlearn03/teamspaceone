@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { AckPolicy, DeliverPolicy, type JsMsg, type JetStreamSubscription } from 'nats';
-import { isEventEnvelope, type EventEnvelope } from '@reactify/event-contracts';
+import { isEventEnvelope, type EventEnvelope } from '@teamspace-one/event-contracts';
 import { NatsClientService } from './nats-client.service.js';
 import { InboxService } from '../inbox/inbox.service.js';
 
@@ -33,7 +33,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     const js = await this.natsClient.getJetStream();
 
-    this.subscription = await js.subscribe('reactify.template.>', {
+    this.subscription = await js.subscribe('teamspace-one.template.>', {
       config: {
         durable_name: 'template-consumer',
         deliver_subject: 'template-consumer',
@@ -99,7 +99,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async sendToDeadLetter(jsMsg: JsMsg, envelope: EventEnvelope, reason: string) {
-    const dlqSubject = `reactify.dead-letter.${envelope.eventType}`;
+    const dlqSubject = `teamspace-one.dead-letter.${envelope.eventType}`;
     const js = await this.natsClient.getJetStream();
 
     try {

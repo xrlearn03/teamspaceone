@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { type EventEnvelope } from '@reactify/event-contracts';
+import { type EventEnvelope } from '@teamspace-one/event-contracts';
 import { type PrismaClient, type Prisma } from '#prisma';
 import { NatsClientService } from '../events/nats-client.service.js';
 

@@ -18,7 +18,7 @@ const suggestions = [
 
 function savedResponses(): string[] {
   try {
-    const value = JSON.parse(localStorage.getItem("reactify:savedAiResponses") ?? "[]");
+    const value = JSON.parse(localStorage.getItem("teamspace-one:savedAiResponses") ?? "[]");
     return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
   } catch {
     return [];
@@ -86,7 +86,7 @@ export function AIAssistantScreen() {
   function saveResponse(content: string) {
     const next = saved.includes(content) ? saved.filter((item) => item !== content) : [...saved, content];
     setSaved(next);
-    localStorage.setItem("reactify:savedAiResponses", JSON.stringify(next));
+    localStorage.setItem("teamspace-one:savedAiResponses", JSON.stringify(next));
   }
 
   function createTaskFrom(content: string) {

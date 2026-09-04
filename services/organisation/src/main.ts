@@ -3,9 +3,9 @@ import { NestFactory } from '@nestjs/core';
 import { type LoggerService } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module.js';
-import { createLogger, type Logger } from '@reactify/logger';
-import { initTelemetry } from '@reactify/opentelemetry';
-import { OrganisationContextMiddleware } from '@reactify/organisation-context';
+import { createLogger, type Logger } from '@teamspace-one/logger';
+import { initTelemetry } from '@teamspace-one/opentelemetry';
+import { OrganisationContextMiddleware } from '@teamspace-one/organisation-context';
 
 function adaptLogger(pino: Logger): LoggerService {
   return {
@@ -23,7 +23,7 @@ function adaptLogger(pino: Logger): LoggerService {
 }
 
 async function bootstrap() {
-  initTelemetry({ serviceName: 'reactify-organisation-service' });
+  initTelemetry({ serviceName: 'teamspace-one-organisation-service' });
 
   const pino = createLogger({ name: 'organisation-service' });
   const app = await NestFactory.create(AppModule, { logger: adaptLogger(pino) });

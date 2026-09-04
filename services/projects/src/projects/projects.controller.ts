@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query } from '@nestjs/common';
-import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
+import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { ProjectsService } from './projects.service.js';
 import { type AddAttachmentDto } from './dto/add-attachment.dto.js';
 import { type CreateApprovalDto } from './dto/create-approval.dto.js';

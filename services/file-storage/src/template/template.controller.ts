@@ -3,7 +3,7 @@ import {
   CurrentOrganisation,
   OrganisationContext,
   type OrganisationContextValue,
-} from '@reactify/organisation-context';
+} from '@teamspace-one/organisation-context';
 import { TemplateService, type CreateEntityInput } from './template.service.js';
 
 export class CreateEntityDto {

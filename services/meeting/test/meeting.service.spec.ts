@@ -4,7 +4,7 @@ import { MeetingService } from '../src/meeting/meeting.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { OutboxService } from '../src/outbox/outbox.service.js';
 import { LiveKitService } from '../src/livekit/livekit.service.js';
-import { Subjects } from '@reactify/event-contracts';
+import { Subjects } from '@teamspace-one/event-contracts';
 
 describe('MeetingService', () => {
   let service: MeetingService;

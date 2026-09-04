@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { AckPolicy, DeliverPolicy, nanos, type JsMsg } from 'nats';
-import { isEventEnvelope, Subjects, type EventEnvelope, Streams } from '@reactify/event-contracts';
+import { isEventEnvelope, Subjects, type EventEnvelope, Streams } from '@teamspace-one/event-contracts';
 import { InboxService } from '../inbox/inbox.service.js';
 import { NotificationService, type CreatedNotification } from '../notification/notification.service.js';
 import { NatsClientService } from './nats-client.service.js';
@@ -25,16 +25,24 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     const js = await this.natsClient.getJetStream();
+    const nc = await this.natsClient.getConnection();
+    const jsm = await nc.jetstreamManager();
 
     const consumers: ConsumerDefinition[] = [
-      { stream: Streams.MESSAGING, subject: 'reactify.message.>', durable: 'notification-messaging-consumer' },
-      { stream: Streams.PROJECTS, subject: 'reactify.task.>', durable: 'notification-projects-consumer' },
-      { stream: Streams.MEETINGS, subject: 'reactify.meeting.>', durable: 'notification-meetings-consumer' },
-      { stream: Streams.FILES, subject: 'reactify.file.>', durable: 'notification-files-consumer' },
+      { stream: Streams.MESSAGING, subject: 'teamspace-one.message.>', durable: 'notification-messaging-consumer' },
+      { stream: Streams.PROJECTS, subject: 'teamspace-one.task.>', durable: 'notification-projects-consumer' },
+      { stream: Streams.MEETINGS, subject: 'teamspace-one.meeting.>', durable: 'notification-meetings-consumer' },
+      { stream: Streams.FILES, subject: 'teamspace-one.file.>', durable: 'notification-files-consumer' },
       { stream: Streams.AI, subject: Subjects.AI_SUMMARY_COMPLETED, durable: 'notification-ai-consumer' },
     ];
 
     for (const c of consumers) {
+      try {
+        await jsm.consumers.delete(c.stream, c.durable);
+      } catch {
+        // consumer may not exist
+      }
+
       const subscription = await js.subscribe(c.subject, {
         stream: c.stream,
         mack: true,
@@ -134,7 +142,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
         deliveryCount: jsMsg.info.deliveryCount,
         occurredAt: new Date().toISOString(),
       };
-      await js.publish('reactify.notification.dead', JSON.stringify(payload));
+      await js.publish('teamspace-one.notification.dead', JSON.stringify(payload));
     } catch (publishErr) {
       this.logger.error(
         { error: (publishErr as Error).message },

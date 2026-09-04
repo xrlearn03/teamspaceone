@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { type EventEnvelope, isEventEnvelope } from '@reactify/event-contracts';
+import { type EventEnvelope, isEventEnvelope } from '@teamspace-one/event-contracts';
 import { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -49,10 +49,10 @@ export class InboxService {
     );
 
     switch (envelope.eventType) {
-      case 'reactify.organisation.created':
-      case 'reactify.organisation.member_added':
-      case 'reactify.workspace.created':
-      case 'reactify.user.created':
+      case 'teamspace-one.organisation.created':
+      case 'teamspace-one.organisation.member_added':
+      case 'teamspace-one.workspace.created':
+      case 'teamspace-one.user.created':
         // Meeting service keeps these as read-only context for validation.
         // No local projection required for Phase 5.
         break;

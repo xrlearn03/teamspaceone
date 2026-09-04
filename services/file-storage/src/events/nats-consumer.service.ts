@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { AckPolicy, type JsMsg, type JetStreamSubscription } from 'nats';
-import { isEventEnvelope, type EventEnvelope } from '@reactify/event-contracts';
+import { isEventEnvelope, type EventEnvelope } from '@teamspace-one/event-contracts';
 import { NatsClientService } from './nats-client.service.js';
 import { InboxService } from '../inbox/inbox.service.js';
 
@@ -17,7 +17,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     const js = await this.natsClient.getJetStream();
-    this.subscription = await js.subscribe('reactify.file.>', {
+    this.subscription = await js.subscribe('teamspace-one.file.>', {
       config: {
         durable_name: 'file-storage-consumer',
         deliver_subject: 'file-storage-consumer',

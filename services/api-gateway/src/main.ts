@@ -6,10 +6,10 @@ import type { Request, Response, NextFunction } from 'express';
 import { legacyCreateProxyMiddleware as createProxyMiddleware } from 'http-proxy-middleware';
 import { verify } from 'jsonwebtoken';
 import { AppModule } from './app.module.js';
-import { createLogger, type Logger } from '@reactify/logger';
-import { initTelemetry } from '@reactify/opentelemetry';
-import { OrganisationContextMiddleware } from '@reactify/organisation-context';
-import { MetricsService } from '@reactify/metrics';
+import { createLogger, type Logger } from '@teamspace-one/logger';
+import { initTelemetry } from '@teamspace-one/opentelemetry';
+import { OrganisationContextMiddleware } from '@teamspace-one/organisation-context';
+import { MetricsService } from '@teamspace-one/metrics';
 
 function adaptLogger(pino: Logger): LoggerService {
   return {
@@ -55,7 +55,7 @@ function securityHeaders(_req: Request, res: Response, next: NextFunction) {
 }
 
 async function bootstrap() {
-  initTelemetry({ serviceName: 'reactify-api-gateway' });
+  initTelemetry({ serviceName: 'teamspace-one-api-gateway' });
 
   const pino = createLogger({ name: 'api-gateway' });
   const app = await NestFactory.create(AppModule, { logger: adaptLogger(pino) });
@@ -66,12 +66,12 @@ async function bootstrap() {
 
   const metrics = app.get(MetricsService);
   const requestCounter = metrics.counter(
-    'reactify_http_requests_total',
+    'teamspaceone_http_requests_total',
     'HTTP requests handled by the gateway',
     ['method', 'status'],
   );
   const requestDuration = metrics.histogram(
-    'reactify_http_request_duration_seconds',
+    'teamspaceone_http_request_duration_seconds',
     'HTTP request duration in seconds',
     ['method'],
     [0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5],

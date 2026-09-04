@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { MetricsModule } from '@reactify/metrics';
+import { MetricsModule } from '@teamspace-one/metrics';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { InboxModule } from '../inbox/inbox.module.js';
 import { AuditModule } from '../audit/audit.module.js';

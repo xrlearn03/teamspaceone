@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { AckPolicy, DeliverPolicy, type JsMsg } from 'nats';
-import { isEventEnvelope, streamConfigs, type EventEnvelope } from '@reactify/event-contracts';
-import { withTraceContextHeaders } from '@reactify/opentelemetry';
+import { isEventEnvelope, streamConfigs, type EventEnvelope } from '@teamspace-one/event-contracts';
+import { withTraceContextHeaders } from '@teamspace-one/opentelemetry';
 import { InboxService } from '../inbox/inbox.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NatsClientService } from './nats-client.service.js';

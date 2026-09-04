@@ -1,5 +1,5 @@
 {
-  "name": "@reactify/api-client",
+  "name": "@teamspace-one/api-client",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -10,8 +10,8 @@
     }
   },
   "dependencies": {
-    "@reactify/types": "workspace:*",
-    "@reactify/validation": "workspace:*"
+    "@teamspace-one/types": "workspace:*",
+    "@teamspace-one/validation": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

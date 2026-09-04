@@ -109,7 +109,7 @@ jobs:
           file: services/${{ matrix.service }}/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/reactify-${{ matrix.service }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository_owner }}/reactify-${{ matrix.service }}:latest
+            ghcr.io/${{ github.repository_owner }}/teamspace-one-${{ matrix.service }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/teamspace-one-${{ matrix.service }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

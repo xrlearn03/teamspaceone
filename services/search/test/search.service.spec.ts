@@ -1,7 +1,7 @@
 /// <reference types="jest" />
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { Subjects, createEventEnvelope } from '@reactify/event-contracts';
+import { Subjects, createEventEnvelope } from '@teamspace-one/event-contracts';
 import { SearchController } from '../src/search/search.controller.js';
 import { SearchService } from '../src/search/search.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';

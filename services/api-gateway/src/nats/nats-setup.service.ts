@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { NatsError, RetentionPolicy } from 'nats';
-import { streamConfigs, type StreamConfig } from '@reactify/event-contracts';
+import { streamConfigs, type StreamConfig } from '@teamspace-one/event-contracts';
 import { NatsClientService } from './nats-client.service.js';
 
 @Injectable()

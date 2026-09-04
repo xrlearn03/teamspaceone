@@ -50,7 +50,7 @@ describe('TemplateService', () => {
     expect(result.entity).toBeDefined();
     expect(result.event).toBeDefined();
     expect(result.event.organisationId).toBe('org-1');
-    expect(result.event.eventType).toBe('reactify.template.created');
+    expect(result.event.eventType).toBe('teamspace-one.template.created');
     expect(mockOutbox.createEvent).toHaveBeenCalled();
   });
 });

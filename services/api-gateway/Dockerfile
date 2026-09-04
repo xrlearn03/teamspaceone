@@ -1,6 +1,6 @@
-FROM reactify-base AS builder
+FROM teamspace-one-base AS builder
 WORKDIR /app
-RUN pnpm --filter "@reactify/api-gateway..." build
+RUN pnpm --filter "@teamspace-one/api-gateway..." build
 
 FROM node:20 AS runner
 WORKDIR /app

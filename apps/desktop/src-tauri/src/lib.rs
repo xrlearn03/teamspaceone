@@ -41,7 +41,7 @@ fn setup_global_shortcut(app: &AppHandle) -> Result<(), Box<dyn std::error::Erro
 fn setup_deep_link(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(any(windows, target_os = "linux"))]
     {
-        app.deep_link().register("reactify")?;
+        app.deep_link().register("teamspace-one")?;
     }
 
     app.deep_link().on_open_url(|event| {
@@ -108,7 +108,7 @@ pub fn run() {
     builder
         .plugin(
             tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:reactify.db", migrations)
+                .add_migrations("sqlite:teamspace-one.db", migrations)
                 .build(),
         )
         .plugin(tauri_plugin_http::init())

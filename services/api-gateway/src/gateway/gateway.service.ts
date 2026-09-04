@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { createEventEnvelope, type EventEnvelope, type Subject } from '@reactify/event-contracts';
+import { createEventEnvelope, type EventEnvelope, type Subject } from '@teamspace-one/event-contracts';
 import { NatsClientService } from '../nats/nats-client.service.js';
 
 export interface PublishEventInput {

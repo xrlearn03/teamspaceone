@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { type Queue, type Job } from 'bullmq';
-import { createEventEnvelope, type EventEnvelope } from '@reactify/event-contracts';
+import { createEventEnvelope, type EventEnvelope } from '@teamspace-one/event-contracts';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SearchService } from '../search/search.service.js';
 

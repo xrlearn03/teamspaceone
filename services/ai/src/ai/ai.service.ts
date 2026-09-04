@@ -6,8 +6,8 @@ import { Queue } from 'bullmq';
 import { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
-import { createEventEnvelope, Subjects, type EventEnvelope } from '@reactify/event-contracts';
-import { type OrganisationContextValue } from '@reactify/organisation-context';
+import { createEventEnvelope, Subjects, type EventEnvelope } from '@teamspace-one/event-contracts';
+import { type OrganisationContextValue } from '@teamspace-one/organisation-context';
 
 interface IndexDocumentInput {
   organisationId: string;
@@ -663,8 +663,8 @@ export class AiService {
   }
 
   private toResourceType(eventType: string): string | undefined {
-    if (eventType.startsWith('reactify.message')) return 'message';
-    if (eventType.startsWith('reactify.task')) return 'task';
+    if (eventType.startsWith('teamspace-one.message')) return 'message';
+    if (eventType.startsWith('teamspace-one.task')) return 'task';
     if (eventType === Subjects.FILE_PROCESSED) return 'file';
     if (eventType === Subjects.MEETING_ENDED) return 'meeting';
     return undefined;

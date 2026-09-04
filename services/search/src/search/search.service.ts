@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { type EventEnvelope, Subjects } from '@reactify/event-contracts';
+import { type EventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { type Prisma } from '#prisma';
-import { type OrganisationContextValue } from '@reactify/organisation-context';
+import { type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 export interface DocumentPermissions {
@@ -460,16 +460,16 @@ export class SearchService {
   }
 
   private toResourceType(eventType: string): string | null {
-    if (eventType.startsWith('reactify.message')) return 'message';
-    if (eventType.startsWith('reactify.channel')) return 'channel';
-    if (eventType.startsWith('reactify.task')) return 'task';
-    if (eventType.startsWith('reactify.project')) return 'project';
-    if (eventType.startsWith('reactify.file')) return 'file';
-    if (eventType.startsWith('reactify.meeting')) return 'meeting';
-    if (eventType.startsWith('reactify.ai')) return 'ai-summary';
+    if (eventType.startsWith('teamspace-one.message')) return 'message';
+    if (eventType.startsWith('teamspace-one.channel')) return 'channel';
+    if (eventType.startsWith('teamspace-one.task')) return 'task';
+    if (eventType.startsWith('teamspace-one.project')) return 'project';
+    if (eventType.startsWith('teamspace-one.file')) return 'file';
+    if (eventType.startsWith('teamspace-one.meeting')) return 'meeting';
+    if (eventType.startsWith('teamspace-one.ai')) return 'ai-summary';
     if (eventType === Subjects.WORKSPACE_CREATED) return 'workspace';
-    if (eventType.startsWith('reactify.organisation')) return 'organisation';
-    if (eventType.startsWith('reactify.user')) return 'user';
+    if (eventType.startsWith('teamspace-one.organisation')) return 'organisation';
+    if (eventType.startsWith('teamspace-one.user')) return 'user';
     return null;
   }
 }

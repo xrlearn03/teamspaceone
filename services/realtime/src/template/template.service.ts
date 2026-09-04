@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '#prisma';
-import { createEventEnvelope, type EventEnvelope } from '@reactify/event-contracts';
+import { createEventEnvelope, type EventEnvelope } from '@teamspace-one/event-contracts';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 
@@ -23,7 +23,7 @@ export class TemplateService {
     const id = randomUUID();
 
     const envelope = createEventEnvelope({
-      eventType: 'reactify.template.created',
+      eventType: 'teamspace-one.template.created',
       organisationId: input.organisationId,
       actorId: input.actorId,
       resourceType: 'template-entity',

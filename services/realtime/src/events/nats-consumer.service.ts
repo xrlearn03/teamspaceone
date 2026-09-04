@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { AckPolicy, DeliverPolicy, nanos, type JsMsg } from 'nats';
-import { isEventEnvelope, Subjects, type EventEnvelope, Streams } from '@reactify/event-contracts';
+import { isEventEnvelope, Subjects, type EventEnvelope, Streams } from '@teamspace-one/event-contracts';
 import { InboxService } from '../inbox/inbox.service.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { NatsClientService } from './nats-client.service.js';
@@ -25,19 +25,27 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     const js = await this.natsClient.getJetStream();
+    const nc = await this.natsClient.getConnection();
+    const jsm = await nc.jetstreamManager();
 
     const consumers: ConsumerDefinition[] = [
-      { stream: Streams.MESSAGING, subject: 'reactify.message.>', durable: 'realtime-message-consumer' },
-      { stream: Streams.MESSAGING, subject: 'reactify.channel.>', durable: 'realtime-channel-consumer' },
-      { stream: Streams.PROJECTS, subject: 'reactify.project.>', durable: 'realtime-project-consumer' },
-      { stream: Streams.PROJECTS, subject: 'reactify.task.>', durable: 'realtime-task-consumer' },
-      { stream: Streams.PROJECTS, subject: 'reactify.approval.>', durable: 'realtime-approval-consumer' },
-      { stream: Streams.NOTIFICATIONS, subject: 'reactify.notification.>', durable: 'realtime-notification-consumer' },
-      { stream: Streams.MEETINGS, subject: 'reactify.meeting.>', durable: 'realtime-meeting-consumer' },
-      { stream: Streams.MEETINGS, subject: 'reactify.voice.>', durable: 'realtime-voice-consumer' },
+      { stream: Streams.MESSAGING, subject: 'teamspace-one.message.>', durable: 'realtime-message-consumer' },
+      { stream: Streams.MESSAGING, subject: 'teamspace-one.channel.>', durable: 'realtime-channel-consumer' },
+      { stream: Streams.PROJECTS, subject: 'teamspace-one.project.>', durable: 'realtime-project-consumer' },
+      { stream: Streams.PROJECTS, subject: 'teamspace-one.task.>', durable: 'realtime-task-consumer' },
+      { stream: Streams.PROJECTS, subject: 'teamspace-one.approval.>', durable: 'realtime-approval-consumer' },
+      { stream: Streams.NOTIFICATIONS, subject: 'teamspace-one.notification.>', durable: 'realtime-notification-consumer' },
+      { stream: Streams.MEETINGS, subject: 'teamspace-one.meeting.>', durable: 'realtime-meeting-consumer' },
+      { stream: Streams.MEETINGS, subject: 'teamspace-one.voice.>', durable: 'realtime-voice-consumer' },
     ];
 
     for (const c of consumers) {
+      try {
+        await jsm.consumers.delete(c.stream, c.durable);
+      } catch {
+        // consumer may not exist
+      }
+
       const subscription = await js.subscribe(c.subject, {
         stream: c.stream,
         mack: true,
@@ -125,7 +133,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
         deliveryCount: jsMsg.info.deliveryCount,
         occurredAt: new Date().toISOString(),
       };
-      await js.publish('reactify.realtime.dead', JSON.stringify(payload));
+      await js.publish('teamspace-one.realtime.dead', JSON.stringify(payload));
     } catch (publishErr) {
       this.logger.error(
         { error: (publishErr as Error).message },

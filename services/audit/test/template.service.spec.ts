@@ -7,7 +7,7 @@ describe('AuditController', () => {
 
   const mockPrisma = {
     auditEvent: {
-      findMany: jest.fn().mockResolvedValue([{ id: 'a1', eventType: 'reactify.message.created' }]),
+      findMany: jest.fn().mockResolvedValue([{ id: 'a1', eventType: 'teamspace-one.message.created' }]),
     },
   };
 

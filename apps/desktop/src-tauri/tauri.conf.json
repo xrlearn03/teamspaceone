@@ -1,7 +1,7 @@
 {
   "productName": "Teamspace One",
   "version": "0.1.0",
-  "identifier": "com.reactify.connect",
+  "identifier": "com.edutapxr.teamspaceone",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -28,17 +28,17 @@
   },
   "plugins": {
     "sql": {
-      "preload": ["sqlite:reactify.db"]
+      "preload": ["sqlite:teamspace-one.db"]
     },
     "deep-link": {
       "desktop": {
-        "schemes": ["reactify"]
+        "schemes": ["teamspace-one"]
       }
     },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFERTcxNTkzNDNBM0I3RDcK",
       "endpoints": [
-        "https://releases.reactify.dev/update.json"
+        "https://releases.teamspace-one.dev/update.json"
       ],
       "windows": {
         "installMode": "passive"

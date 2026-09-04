@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Put, Query } from '@nestjs/common';
-import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
+import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { MessagingService } from './messaging.service.js';
 import { type CreateChannelDto } from './dto/create-channel.dto.js';
 import { type CreateDirectChannelDto } from './dto/create-direct-channel.dto.js';

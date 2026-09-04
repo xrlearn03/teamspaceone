@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { AckPolicy, type JsMsg } from 'nats';
-import { isEventEnvelope, type EventEnvelope } from '@reactify/event-contracts';
+import { isEventEnvelope, type EventEnvelope } from '@teamspace-one/event-contracts';
 import { NatsClientService } from './nats-client.service.js';
 import { InboxService } from '../inbox/inbox.service.js';
 
@@ -11,9 +11,9 @@ interface ConsumerConfig {
 }
 
 const CONSUMERS: ConsumerConfig[] = [
-  { stream: 'ORGANISATION', subject: 'reactify.organisation.>', durable: 'meeting-organisation-consumer' },
-  { stream: 'ORGANISATION', subject: 'reactify.workspace.>', durable: 'meeting-workspace-consumer' },
-  { stream: 'USERS', subject: 'reactify.user.>', durable: 'meeting-user-consumer' },
+  { stream: 'ORGANISATION', subject: 'teamspace-one.organisation.>', durable: 'meeting-organisation-consumer' },
+  { stream: 'ORGANISATION', subject: 'teamspace-one.workspace.>', durable: 'meeting-workspace-consumer' },
+  { stream: 'USERS', subject: 'teamspace-one.user.>', durable: 'meeting-user-consumer' },
 ];
 
 @Injectable()

@@ -4,7 +4,7 @@ import { AuthGuard } from './auth.guard.js';
 import { type RegisterDto } from './dto/register.dto.js';
 import { type LoginDto } from './dto/login.dto.js';
 import { type RefreshDto } from './dto/refresh.dto.js';
-import { OrganisationContext } from '@reactify/organisation-context';
+import { OrganisationContext } from '@teamspace-one/organisation-context';
 
 @Controller('auth')
 export class AuthController {

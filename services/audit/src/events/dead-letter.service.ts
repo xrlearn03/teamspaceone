@@ -1,8 +1,8 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { headers } from 'nats';
-import { MetricsService } from '@reactify/metrics';
-import { getTraceContextHeaders } from '@reactify/opentelemetry';
-import { type EventEnvelope } from '@reactify/event-contracts';
+import { MetricsService } from '@teamspace-one/metrics';
+import { getTraceContextHeaders } from '@teamspace-one/opentelemetry';
+import { type EventEnvelope } from '@teamspace-one/event-contracts';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { NatsClientService } from './nats-client.service.js';
 
@@ -45,19 +45,19 @@ export class DeadLetterService {
     private readonly metrics: MetricsService,
   ) {
     this.dlqCounter = this.metrics.counter(
-      'reactify_dead_letter_events_total',
+      'teamspaceone_dead_letter_events_total',
       'Total dead-letter events received',
       ['subject'],
     );
     this.retryCounter = this.metrics.counter(
-      'reactify_dead_letter_retries_total',
+      'teamspaceone_dead_letter_retries_total',
       'Total dead-letter retry attempts',
       ['success'],
     );
   }
 
   isDeadLetterSubject(subject: string): boolean {
-    return subject.startsWith('reactify.dead-letter.') || subject.startsWith('reactify.dlq.');
+    return subject.startsWith('teamspace-one.dead-letter.') || subject.startsWith('teamspace-one.dlq.');
   }
 
   async store(subject: string, raw: DeadLetterPayload): Promise<void> {

@@ -1,5 +1,5 @@
 import { Body, Controller, Headers, Post } from '@nestjs/common';
-import { OrganisationContext, CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
+import { OrganisationContext, CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { GatewayService } from './gateway.service.js';
 
 export interface PublishEventDto {

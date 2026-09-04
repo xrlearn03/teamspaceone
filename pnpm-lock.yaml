@@ -123,10 +123,10 @@ importers:
 
   packages/api-client:
     dependencies:
-      '@reactify/types':
+      '@teamspace-one/types':
         specifier: workspace:*
         version: link:../types
-      '@reactify/validation':
+      '@teamspace-one/validation':
         specifier: workspace:*
         version: link:../validation
     devDependencies:
@@ -283,16 +283,16 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
-      '@reactify/event-contracts':
+      '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
-      '@reactify/logger':
+      '@teamspace-one/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@reactify/opentelemetry':
+      '@teamspace-one/opentelemetry':
         specifier: workspace:*
         version: link:../../packages/opentelemetry
-      '@reactify/organisation-context':
+      '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
       bullmq:
@@ -368,16 +368,16 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
-      '@reactify/event-contracts':
+      '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
-      '@reactify/logger':
+      '@teamspace-one/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@reactify/opentelemetry':
+      '@teamspace-one/opentelemetry':
         specifier: workspace:*
         version: link:../../packages/opentelemetry
-      '@reactify/organisation-context':
+      '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
       axios:
@@ -450,19 +450,19 @@ importers:
       '@nestjs/platform-express':
         specifier: ^10.4.0
         version: 10.4.22(@nestjs/common@10.4.22(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)
-      '@reactify/event-contracts':
+      '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
-      '@reactify/logger':
+      '@teamspace-one/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@reactify/metrics':
+      '@teamspace-one/metrics':
         specifier: workspace:*
         version: link:../../packages/metrics
-      '@reactify/opentelemetry':
+      '@teamspace-one/opentelemetry':
         specifier: workspace:*
         version: link:../../packages/opentelemetry
-      '@reactify/organisation-context':
+      '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
       http-proxy-middleware:
@@ -541,19 +541,19 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
-      '@reactify/event-contracts':
+      '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
-      '@reactify/logger':
+      '@teamspace-one/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@reactify/metrics':
+      '@teamspace-one/metrics':
         specifier: workspace:*
         version: link:../../packages/metrics
-      '@reactify/opentelemetry':
+      '@teamspace-one/opentelemetry':
         specifier: workspace:*
         version: link:../../packages/opentelemetry
-      '@reactify/organisation-context':
+      '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
       nats:
@@ -623,16 +623,16 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
-      '@reactify/event-contracts':
+      '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
-      '@reactify/logger':
+      '@teamspace-one/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@reactify/opentelemetry':
+      '@teamspace-one/opentelemetry':
         specifier: workspace:*
         version: link:../../packages/opentelemetry
-      '@reactify/organisation-context':
+      '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
       bcryptjs:
@@ -720,16 +720,16 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
-      '@reactify/event-contracts':
+      '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
-      '@reactify/logger':
+      '@teamspace-one/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@reactify/opentelemetry':
+      '@teamspace-one/opentelemetry':
         specifier: workspace:*
         version: link:../../packages/opentelemetry
-      '@reactify/organisation-context':
+      '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
       bullmq:
@@ -814,16 +814,16 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
-      '@reactify/event-contracts':
+      '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
-      '@reactify/logger':
+      '@teamspace-one/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@reactify/opentelemetry':
+      '@teamspace-one/opentelemetry':
         specifier: workspace:*
         version: link:../../packages/opentelemetry
-      '@reactify/organisation-context':
+      '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
       bullmq:
@@ -899,16 +899,16 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
-      '@reactify/event-contracts':
+      '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
-      '@reactify/logger':
+      '@teamspace-one/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@reactify/opentelemetry':
+      '@teamspace-one/opentelemetry':
         specifier: workspace:*
         version: link:../../packages/opentelemetry
-      '@reactify/organisation-context':
+      '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
       bullmq:
@@ -981,16 +981,16 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
-      '@reactify/event-contracts':
+      '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
-      '@reactify/logger':
+      '@teamspace-one/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@reactify/opentelemetry':
+      '@teamspace-one/opentelemetry':
         specifier: workspace:*
         version: link:../../packages/opentelemetry
-      '@reactify/organisation-context':
+      '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
       bullmq:
@@ -1063,16 +1063,16 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
-      '@reactify/event-contracts':
+      '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
-      '@reactify/logger':
+      '@teamspace-one/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@reactify/opentelemetry':
+      '@teamspace-one/opentelemetry':
         specifier: workspace:*
         version: link:../../packages/opentelemetry
-      '@reactify/organisation-context':
+      '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
       bullmq:
@@ -1145,16 +1145,16 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
-      '@reactify/event-contracts':
+      '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
-      '@reactify/logger':
+      '@teamspace-one/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@reactify/opentelemetry':
+      '@teamspace-one/opentelemetry':
         specifier: workspace:*
         version: link:../../packages/opentelemetry
-      '@reactify/organisation-context':
+      '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
       bullmq:
@@ -1233,16 +1233,16 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
-      '@reactify/event-contracts':
+      '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
-      '@reactify/logger':
+      '@teamspace-one/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@reactify/opentelemetry':
+      '@teamspace-one/opentelemetry':
         specifier: workspace:*
         version: link:../../packages/opentelemetry
-      '@reactify/organisation-context':
+      '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
       jsonwebtoken:
@@ -1318,16 +1318,16 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
-      '@reactify/event-contracts':
+      '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
-      '@reactify/logger':
+      '@teamspace-one/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@reactify/opentelemetry':
+      '@teamspace-one/opentelemetry':
         specifier: workspace:*
         version: link:../../packages/opentelemetry
-      '@reactify/organisation-context':
+      '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
       bullmq:

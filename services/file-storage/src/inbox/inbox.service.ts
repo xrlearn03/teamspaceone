@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { type EventEnvelope, isEventEnvelope } from '@reactify/event-contracts';
+import { type EventEnvelope, isEventEnvelope } from '@teamspace-one/event-contracts';
 import { type PrismaClient, Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -44,7 +44,7 @@ export class InboxService {
   ): Promise<void> {
     this.logger.log({ eventId: envelope.eventId, eventType: envelope.eventType }, 'Processing event');
 
-    if (envelope.eventType === 'reactify.template.created') {
+    if (envelope.eventType === 'teamspace-one.template.created') {
       const payload = envelope.payload as { name?: string } | undefined;
       if (payload?.name) {
         await tx.templateEntity.upsert({
