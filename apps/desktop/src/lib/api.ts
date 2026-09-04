@@ -381,6 +381,8 @@ export interface FileRecord {
   status: string;
   url?: string | null;
   downloadUrl?: string | null;
+  previewUrl?: string | null;
+  thumbnailUrl?: string | null;
   storageKey?: string | null;
   createdAt: string;
 }
@@ -780,6 +782,23 @@ export function uploadFile(file: File) {
   });
 }
 
+export async function downloadFile(fileId: string): Promise<Blob> {
+  const { downloadUrl } = await apiRequest<{ downloadUrl: string }>(`/files/${fileId}/download?redirect=false`);
+  const response = await fetch(downloadUrl);
+  if (!response.ok) {
+    throw new Error(`Download error ${response.status}: ${response.statusText}`);
+  }
+  return response.blob();
+}
+
+export async function fetchFileBlob(url: string): Promise<Blob> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Fetch error ${response.status}: ${response.statusText}`);
+  }
+  return response.blob();
+}
+
 // Search
 export interface SearchFilters {
   types?: string[];
@@ -936,4 +955,40 @@ export function askAI(question: string, workspaceId?: string, resourceTypes?: st
       body: { question, workspaceId, resourceTypes },
     },
   );
+}
+
+export function dailyDigest(workspaceId?: string, hours?: number) {
+  return apiRequest<{ result: string; model: string }>("/ai/daily-digest", {
+    method: "POST",
+    body: { workspaceId, hours },
+  });
+}
+
+export interface AIPendingAction {
+  id: string;
+  actionType: string;
+  payload: Record<string, unknown>;
+  status: string;
+  createdAt: string;
+  confirmedAt: string | null;
+}
+
+export function getPendingAIActions(workspaceId?: string, limit?: number, cursor?: string) {
+  const params = new URLSearchParams();
+  if (workspaceId) params.set("workspaceId", workspaceId);
+  if (limit) params.set("limit", String(limit));
+  if (cursor) params.set("cursor", cursor);
+  const query = params.toString();
+  return apiRequest<AIPendingAction[]>(`/ai/actions/pending${query ? `?${query}` : ""}`);
+}
+
+export function confirmAIAction(id: string, edits?: Record<string, unknown>) {
+  return apiRequest<AIPendingAction>(`/ai/actions/${encodeURIComponent(id)}/confirm`, {
+    method: "POST",
+    body: { edits },
+  });
+}
+
+export function declineAIAction(id: string) {
+  return apiRequest<AIPendingAction>(`/ai/actions/${encodeURIComponent(id)}/decline`, { method: "POST" });
 }

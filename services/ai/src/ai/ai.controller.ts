@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { AiService } from './ai.service.js';
 
@@ -18,11 +18,18 @@ export class ExtractDto {
   text!: string;
   sourceType?: string;
   sourceId?: string;
+  projectId?: string;
+  autoCreate?: boolean;
+}
+
+export class DailyDigestDto {
+  workspaceId?: string;
+  hours?: number;
 }
 
 export class ConfirmActionDto {
-  actionType!: string;
-  payload!: Record<string, unknown>;
+  id!: string;
+  edits?: Record<string, unknown>;
 }
 
 @Controller('ai')
@@ -54,7 +61,7 @@ export class AiController {
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: ExtractDto,
   ) {
-    return this.ai.extractTasks(ctx, dto.text, dto.sourceType ?? 'manual', dto.sourceId);
+    return this.ai.extractTasks(ctx, dto.text, dto.sourceType ?? 'manual', dto.sourceId, { projectId: dto.projectId, autoCreate: dto.autoCreate });
   }
 
   @Post('extract/decisions')
@@ -65,11 +72,42 @@ export class AiController {
     return this.ai.extractDecisions(ctx, dto.text, dto.sourceType ?? 'manual', dto.sourceId);
   }
 
-  @Post('actions/confirm')
+  @Post('daily-digest')
+  async dailyDigest(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: DailyDigestDto,
+  ) {
+    return this.ai.dailyDigest(ctx, dto.workspaceId, dto.hours);
+  }
+
+  @Get('actions/pending')
+  async listPendingActions(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Query('workspaceId') workspaceId?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.ai.listPendingActions(ctx, {
+      workspaceId,
+      limit: limit ? Number(limit) : undefined,
+      cursor,
+    });
+  }
+
+  @Post('actions/:id/confirm')
   async confirmAction(
     @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') id: string,
     @Body() dto: ConfirmActionDto,
   ) {
-    return this.ai.confirmAction(ctx, dto.actionType, dto.payload);
+    return this.ai.confirmAction(ctx, id, dto.edits);
+  }
+
+  @Post('actions/:id/decline')
+  async declineAction(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') id: string,
+  ) {
+    return this.ai.declineAction(ctx, id);
   }
 }

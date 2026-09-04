@@ -112,7 +112,7 @@ export class ProjectsService {
 
   async createTask(ctx: OrganisationContextValue, dto: CreateTaskDto) {
     const actorId = this.actor(ctx);
-    await this.memberProject(ctx, dto.projectId);
+    const project = await this.memberProject(ctx, dto.projectId);
     const title = this.required(dto.title, 'Task title', 300);
     const status = this.status(dto.status);
     const priority = this.priority(dto.priority);
@@ -136,7 +136,7 @@ export class ProjectsService {
         },
       });
       await this.activity(tx, ctx, dto.projectId, 'task.created', 'task', id, { title, status, assigneeId: dto.assigneeId ?? actorId });
-      await this.event(tx, ctx, Subjects.TASK_CREATED, 'task', id, task);
+      await this.event(tx, ctx, Subjects.TASK_CREATED, 'task', id, { ...task, memberIds: project.members.map((m) => m.userId) });
       return task;
     });
   }
@@ -148,6 +148,7 @@ export class ProjectsService {
 
   async updateTask(ctx: OrganisationContextValue, taskId: string, dto: UpdateTaskDto) {
     const task = await this.task(ctx, taskId);
+    const project = await this.memberProject(ctx, task.projectId);
     const data: Prisma.TaskUpdateInput = {};
     if (dto.title !== undefined) data.title = this.required(dto.title, 'Task title', 300);
     if (dto.description !== undefined) data.description = dto.description === null ? null : this.optional(dto.description, 10000);
@@ -165,17 +166,18 @@ export class ProjectsService {
       const updated = await tx.task.update({ where: { id: taskId }, data });
       const completed = updated.status === 'done' && task.status !== 'done';
       await this.activity(tx, ctx, task.projectId, completed ? 'task.completed' : 'task.updated', 'task', taskId, dto);
-      await this.event(tx, ctx, completed ? Subjects.TASK_COMPLETED : Subjects.TASK_UPDATED, 'task', taskId, updated);
+      await this.event(tx, ctx, completed ? Subjects.TASK_COMPLETED : Subjects.TASK_UPDATED, 'task', taskId, { ...updated, memberIds: project.members.map((m) => m.userId) });
       return updated;
     });
   }
 
   async deleteTask(ctx: OrganisationContextValue, taskId: string) {
     const task = await this.task(ctx, taskId);
+    const project = await this.memberProject(ctx, task.projectId);
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.task.delete({ where: { id: taskId } });
       await this.activity(tx, ctx, task.projectId, 'task.deleted', 'task', taskId, { title: task.title });
-      await this.event(tx, ctx, Subjects.TASK_UPDATED, 'task', taskId, { id: taskId, projectId: task.projectId, deleted: true });
+      await this.event(tx, ctx, Subjects.TASK_UPDATED, 'task', taskId, { id: taskId, projectId: task.projectId, deleted: true, memberIds: project.members.map((m) => m.userId) });
     });
   }
 

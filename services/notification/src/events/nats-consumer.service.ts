@@ -33,7 +33,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
       { stream: Streams.PROJECTS, subject: 'teamspace-one.task.>', durable: 'notification-projects-consumer' },
       { stream: Streams.MEETINGS, subject: 'teamspace-one.meeting.>', durable: 'notification-meetings-consumer' },
       { stream: Streams.FILES, subject: 'teamspace-one.file.>', durable: 'notification-files-consumer' },
-      { stream: Streams.AI, subject: Subjects.AI_SUMMARY_COMPLETED, durable: 'notification-ai-consumer' },
+      { stream: Streams.AI, subject: Subjects.AI_SUMMARY_CONFIRMED, durable: 'notification-ai-consumer' },
     ];
 
     for (const c of consumers) {

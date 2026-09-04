@@ -191,10 +191,20 @@ export class MeetingService {
     const meeting = await this.getById(ctx, id);
     if (meeting.status === 'ended') throw new ConflictException('Meeting already ended');
 
+    const messages = await this.prisma.meetingMessage.findMany({
+      where: { meetingId: id, organisationId: ctx.organisationId },
+      orderBy: { createdAt: 'asc' },
+    });
+    const transcript = messages.map((m) => `[${m.userId}] ${m.content}`).join('\n');
+    const participantIds = meeting.participants.map((p) => p.userId);
+
     const payload = {
       id,
       organisationId: ctx.organisationId,
       roomName: meeting.roomName,
+      title: meeting.title,
+      transcript,
+      participantIds,
       endedAt: new Date().toISOString(),
     };
 

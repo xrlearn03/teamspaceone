@@ -42,6 +42,9 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
+  "optionalDependencies": {
+    "nodemailer": "^6.9.0"
+  },
   "devDependencies": {
     "@nestjs/cli": "^10.4.0",
     "@nestjs/schematics": "^10.1.0",

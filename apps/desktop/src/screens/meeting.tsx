@@ -24,6 +24,7 @@ export interface MediaJoinOptions {
   audioInputId?: string;
   videoInputId?: string;
   audioOutputId?: string;
+  stream?: MediaStream;
 }
 
 export function MeetingScreen() {
@@ -38,6 +39,12 @@ export function MeetingScreen() {
   const [mediaOptions, setMediaOptions] = useState<MediaJoinOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      mediaOptions?.stream?.getTracks().forEach((track) => track.stop());
+    };
+  }, [mediaOptions]);
 
   useEffect(() => {
     if (!activeMeetingId) return;
@@ -194,6 +201,7 @@ export function MeetingScreen() {
       audioInputId={mediaOptions.audioInputId}
       videoInputId={mediaOptions.videoInputId}
       audioOutputId={mediaOptions.audioOutputId}
+      previewStream={mediaOptions.stream}
       onLeave={handleLeave}
       onEnd={meeting.createdBy === user?.id ? handleEnd : undefined}
       onScreenShare={handleScreenShare}

@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from "react";
-import { Sparkles, Send, ThumbsUp, RotateCcw, Save, CheckSquare, Copy, Check, BookOpen } from "lucide-react";
+import { AlertCircle, Sparkles, Send, ThumbsUp, RotateCcw, Save, CheckSquare, Copy, Check, BookOpen } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Card } from "../components/ui/card";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Badge } from "../components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { useAskAI, useCreateTask, useMe, useOrganisations, useProjects } from "../hooks/api";
+import { useAskAI, useConfirmAIAction, useCreateTask, useDeclineAIAction, useMe, useOrganisations, usePendingAIActions, useProjects } from "../hooks/api";
 import { useUIStore } from "../stores/ui";
 import { cn } from "../lib/utils";
 
@@ -57,18 +57,31 @@ export function AIAssistantScreen() {
   const [saved, setSaved] = useState<string[]>(savedResponses);
   const [copied, setCopied] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [pendingActionsDialogOpen, setPendingActionsDialogOpen] = useState(false);
+  const [editingSummaries, setEditingSummaries] = useState<Record<string, string>>({});
+  const hasAutoOpened = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const { data: user } = useMe();
   const askAI = useAskAI();
   const createTask = useCreateTask();
   const { data: projects } = useProjects();
   const { data: organisations } = useOrganisations();
+  const { data: pendingActions } = usePendingAIActions();
+  const confirmAIAction = useConfirmAIAction();
+  const declineAIAction = useDeclineAIAction();
   const organisationId = useUIStore((s) => s.organisationId);
   const organisation = organisations?.find((o) => o.id === organisationId);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (pendingActions?.length && !hasAutoOpened.current && !pendingActionsDialogOpen) {
+      hasAutoOpened.current = true;
+      setPendingActionsDialogOpen(true);
+    }
+  }, [pendingActions, pendingActionsDialogOpen]);
 
   async function ask(prompt: string) {
     if (!prompt.trim()) return;
@@ -156,9 +169,17 @@ export function AIAssistantScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center gap-3 border-b px-6">
-        <Sparkles className="h-5 w-5 text-primary" />
-        <h1 className="text-lg font-semibold text-text">AI Assistant</h1>
+      <header className="flex h-14 items-center justify-between gap-3 border-b px-6">
+        <div className="flex items-center gap-3">
+          <Sparkles className="h-5 w-5 text-primary" />
+          <h1 className="text-lg font-semibold text-text">AI Assistant</h1>
+        </div>
+        {pendingActions && pendingActions.length > 0 && (
+          <Button variant="secondary" size="sm" onClick={() => setPendingActionsDialogOpen(true)}>
+            <AlertCircle className="mr-1.5 h-4 w-4" />
+            {pendingActions.length} pending action{pendingActions.length === 1 ? "" : "s"}
+          </Button>
+        )}
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
@@ -307,6 +328,48 @@ export function AIAssistantScreen() {
                 {createTask.isPending ? "Creating…" : "Confirm"}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={pendingActionsDialogOpen} onOpenChange={(open) => { if (!open) setPendingActionsDialogOpen(false); }}>
+        <DialogContent className="max-w-lg p-0">
+          <DialogHeader>
+            <DialogTitle>Confirm AI actions</DialogTitle>
+            <DialogDescription>Review and edit before the assistant creates or sends anything.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[70vh] space-y-3 overflow-y-auto px-4 pb-4">
+            {pendingActions?.length === 0 && <p className="text-sm text-text-secondary">No pending actions.</p>}
+            {pendingActions?.map((action) => (
+              <div key={action.id} className="rounded-md border bg-surface-elevated p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <Badge variant="secondary" className="capitalize">{action.actionType.replace(/_/g, " ")}</Badge>
+                  <span className="text-xs text-text-muted">{new Date(action.createdAt).toLocaleString()}</span>
+                </div>
+                <p className="mt-2 font-medium text-text">
+                  {action.actionType === "create_task" ? (action.payload.title as string) ?? "Untitled task" : (action.payload.title as string) ?? "Meeting summary email"}
+                </p>
+                {action.actionType === "create_task" && action.payload.description ? (
+                  <p className="mt-1 line-clamp-2 text-text-secondary">{action.payload.description as string}</p>
+                ) : null}
+                {action.actionType === "send_meeting_summary_email" && (
+                  <div className="mt-2">
+                    <label className="text-xs text-text-secondary">Summary email</label>
+                    <textarea
+                      className="mt-1 w-full min-h-[120px] rounded-md border bg-background px-3 py-2 text-sm text-text outline-none focus:ring-2 focus:ring-primary"
+                      value={editingSummaries[action.id] ?? (action.payload.summary as string) ?? ""}
+                      onChange={(e) => setEditingSummaries((prev) => ({ ...prev, [action.id]: e.target.value }))}
+                    />
+                  </div>
+                )}
+                <div className="mt-3 flex justify-end gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => declineAIAction.mutate(action.id)} disabled={declineAIAction.isPending}>Decline</Button>
+                  <Button size="sm" disabled={confirmAIAction.isPending} onClick={() => confirmAIAction.mutate({ id: action.id, edits: action.actionType === "send_meeting_summary_email" ? { summary: editingSummaries[action.id] ?? action.payload.summary } : undefined })}>
+                    {confirmAIAction.isPending ? "Confirming…" : "Confirm"}
+                  </Button>
+                </div>
+              </div>
+            ))}
           </div>
         </DialogContent>
       </Dialog>

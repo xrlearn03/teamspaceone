@@ -40,10 +40,12 @@ export const Subjects = {
   MEETING_RECORDING_STOPPED: 'teamspace-one.meeting.recording.stopped',
   VOICE_ROOM_CREATED: 'teamspace-one.voice.room.created',
   AI_SUMMARY_COMPLETED: 'teamspace-one.ai.summary_completed',
+  AI_SUMMARY_CONFIRMED: 'teamspace-one.ai.summary_confirmed',
   AI_DOCUMENT_INDEXED: 'teamspace-one.ai.document_indexed',
   AI_QUESTION_ANSWERED: 'teamspace-one.ai.question_answered',
   AI_TASK_EXTRACTED: 'teamspace-one.ai.task_extracted',
   AI_DECISION_EXTRACTED: 'teamspace-one.ai.decision_extracted',
+  AI_ACTION_REQUESTED: 'teamspace-one.ai.action_requested',
   AI_ACTION_CONFIRMED: 'teamspace-one.ai.action_confirmed',
   NOTIFICATION_CREATED: 'teamspace-one.notification.created',
 

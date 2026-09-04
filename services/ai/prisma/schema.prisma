@@ -70,6 +70,7 @@ model AiExtractedTask {
   description    String?
   dueDate        DateTime?
   assigneeHint   String?
+  assigneeId     String?
   status         String    @default("suggested")
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt

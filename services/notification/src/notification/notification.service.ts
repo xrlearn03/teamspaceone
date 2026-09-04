@@ -65,6 +65,7 @@ export class NotificationService {
         Subjects.MEETING_PARTICIPANT_JOINED,
         Subjects.FILE_UPLOADED,
         Subjects.FILE_PROCESSED,
+        Subjects.AI_SUMMARY_CONFIRMED,
       ] as string[]
     ).includes(eventType);
   }
@@ -216,11 +217,15 @@ export class NotificationService {
       case Subjects.TASK_CREATED:
       case Subjects.TASK_UPDATED:
       case Subjects.TASK_COMPLETED: {
-        const userId = (payload.assigneeId as string) || actorId;
-        if (!userId || userId === actorId) return [];
+        const memberIds = Array.isArray(payload.memberIds) ? (payload.memberIds as string[]) : [];
+        const assigneeId = (payload.assigneeId as string) || undefined;
+        const recipientIds = Array.from(new Set([...memberIds, ...(assigneeId ? [assigneeId] : [])]));
+        if (!recipientIds.length) return [];
         const isCompleted = eventType === Subjects.TASK_COMPLETED;
-        return [
-          {
+        const deleted = payload.deleted === true;
+        return recipientIds
+          .filter((userId) => userId !== actorId)
+          .map((userId) => ({
             organisationId,
             workspaceId,
             userId,
@@ -229,11 +234,10 @@ export class NotificationService {
             eventType,
             resourceType: 'task',
             resourceId: payload.id as string,
-            title: isCompleted ? 'Task completed' : 'Task updated',
-            body: `Task ${payload.title || payload.id} ${isCompleted ? 'was completed' : 'was updated'}`,
+            title: deleted ? 'Task deleted' : isCompleted ? 'Task completed' : 'Task updated',
+            body: `Task ${payload.title || payload.id} ${deleted ? 'was deleted' : isCompleted ? 'was completed' : 'was updated'}`,
             link: this.taskLink(organisationId, payload.projectId as string, payload.id as string),
-          },
-        ];
+          }));
       }
       case Subjects.MEETING_STARTED: {
         const attendees = Array.isArray(payload.attendeeIds) ? (payload.attendeeIds as string[]) : [];
@@ -272,6 +276,25 @@ export class NotificationService {
             link: this.fileLink(organisationId, payload.id as string),
           },
         ];
+      }
+      case Subjects.AI_SUMMARY_CONFIRMED: {
+        const participantIds = Array.isArray(payload.participantIds) ? (payload.participantIds as string[]) : [];
+        if (!participantIds.length) return [];
+        return participantIds
+          .filter((userId) => userId !== actorId)
+          .map((userId) => ({
+            organisationId,
+            workspaceId,
+            userId,
+            actorId,
+            eventId: envelope.eventId,
+            eventType,
+            resourceType: 'ai-summary',
+            resourceId: payload.resourceId as string,
+            title: 'Meeting minutes ready',
+            body: `The AI summary for meeting "${payload.title || payload.resourceId}" is ready.`,
+            link: this.meetingLink(organisationId, payload.resourceId as string),
+          }));
       }
       default:
         return [];
@@ -313,23 +336,34 @@ export class NotificationService {
     organisationId: string,
     userId: string,
     eventType: string,
-  ): Promise<ChannelFlags> {
+  ): Promise<ChannelFlags | null> {
     const preference = await tx.notificationPreference.findUnique({
       where: { organisationId_userId_eventType: { organisationId, userId, eventType } },
     });
-    if (preference) {
-      return {
-        inApp: preference.inApp,
-        email: preference.email,
-        desktop: preference.desktop,
-        push: preference.push,
-      };
-    }
-    return { inApp: true, email: false, desktop: true, push: false };
+    if (!preference) return null;
+    return {
+      inApp: preference.inApp,
+      email: preference.email,
+      desktop: preference.desktop,
+      push: preference.push,
+    };
   }
 
-  private selectChannels(preference: ChannelFlags, _eventType: string): ChannelFlags {
-    return preference;
+  private selectChannels(preference: ChannelFlags | null, eventType: string): ChannelFlags {
+    if (eventType === Subjects.AI_SUMMARY_CONFIRMED) {
+      return {
+        inApp: preference?.inApp ?? true,
+        email: preference?.email ?? true,
+        desktop: preference?.desktop ?? true,
+        push: preference?.push ?? false,
+      };
+    }
+    return {
+      inApp: preference?.inApp ?? true,
+      email: preference?.email ?? false,
+      desktop: preference?.desktop ?? true,
+      push: preference?.push ?? false,
+    };
   }
 
   async list(

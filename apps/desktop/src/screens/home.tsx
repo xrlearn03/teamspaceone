@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Calendar,
   CheckSquare,
@@ -18,6 +18,7 @@ import {
   useCreateMeeting,
   useCreateProject,
   useCreateTask,
+  useDailyDigest,
   useMe,
   useMeetings,
   useMembers,
@@ -82,6 +83,16 @@ export function HomeScreen() {
   const { data: messages } = useMessages(firstChannelId);
   const firstProjectId = projects?.[0]?.id;
   const { data: tasks } = useTasks(firstProjectId);
+  const dailyDigest = useDailyDigest();
+  const [digest, setDigest] = useState("");
+
+  useEffect(() => {
+    if (digest || dailyDigest.isPending) return;
+    dailyDigest
+      .mutateAsync({ hours: 24 })
+      .then((result) => setDigest(result.result))
+      .catch(() => setDigest(""));
+  }, [digest, dailyDigest]);
 
   const [dialog, setDialog] = useState<"message" | "task" | "project" | null>(null);
 
@@ -266,9 +277,11 @@ export function HomeScreen() {
           </CardHeader>
           <CardContent>
             <p className="text-sm leading-relaxed text-text-secondary">
-              {unread.length > 0
-                ? `You have ${unread.length} unread notification${unread.length === 1 ? "" : "s"}. Open the Inbox to review them.`
-                : "No new notifications. You're all caught up."}
+              {dailyDigest.isPending
+                ? "Generating daily brief..."
+                : digest || (unread.length > 0
+                  ? `You have ${unread.length} unread notification${unread.length === 1 ? "" : "s"}. Open the Inbox to review them.`
+                  : "No new notifications. You're all caught up.")}
             </p>
             <Button
               variant="secondary"

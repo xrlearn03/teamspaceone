@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FileText,
   Grid,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { FileRecord } from "../lib/api";
+import { downloadFile, fetchFileBlob } from "../lib/api";
 import { useCreateExternalShare, useDeleteFile, useFiles, useUploadFile } from "../hooks/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -54,6 +55,10 @@ function getFileUrl(file: FileRecord) {
   return file.url ?? file.downloadUrl ?? null;
 }
 
+function getPreviewUrl(file: FileRecord) {
+  return file.previewUrl ?? file.url ?? file.downloadUrl ?? null;
+}
+
 function matchesFilter(file: { originalName: string; mimeType: string }, filter: string) {
   if (filter === "All") return true;
   const name = file.originalName.toLowerCase();
@@ -78,6 +83,113 @@ function matchesFilter(file: { originalName: string; mimeType: string }, filter:
     default:
       return true;
   }
+}
+
+function useObjectUrl(file: FileRecord, sourceUrl: string | null | undefined, enabled = true) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setUrl(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    let objectUrl: string | null = null;
+    let active = true;
+    setLoading(true);
+    setError(null);
+
+    async function load() {
+      let blob: Blob;
+      if (sourceUrl) {
+        try {
+          blob = await fetchFileBlob(sourceUrl);
+        } catch {
+          blob = await downloadFile(file.id);
+        }
+      } else {
+        blob = await downloadFile(file.id);
+      }
+      if (!active) return;
+      objectUrl = URL.createObjectURL(blob);
+      setUrl(objectUrl);
+    }
+
+    load()
+      .catch((err) => { if (active) setError(err instanceof Error ? err.message : "Failed to load file"); })
+      .finally(() => { if (active) setLoading(false); });
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [enabled, file.id, sourceUrl]);
+
+  return { url, loading, error };
+}
+
+function FileThumbnail({ file, className, fallbackClassName }: { file: FileRecord; className?: string; fallbackClassName?: string }) {
+  const source = isImage(file) ? (file.thumbnailUrl ?? file.url ?? file.downloadUrl) : null;
+  const { url, loading } = useObjectUrl(file, source, isImage(file));
+
+  if (loading) {
+    return <div className={cn("animate-pulse rounded bg-surface-elevated", className)} />;
+  }
+
+  if (url) {
+    return <img src={url} alt={file.originalName} className={cn("rounded object-cover", className)} />;
+  }
+
+  return <FileText className={cn("text-text-muted", fallbackClassName ?? className)} />;
+}
+
+function FilePreview({ file }: { file: FileRecord }) {
+  const imageSource = isImage(file) ? getPreviewUrl(file) : null;
+  const { url: imageUrl, loading: imageLoading, error: imageError } = useObjectUrl(file, imageSource, isImage(file));
+  const videoSource = isVideo(file) ? getFileUrl(file) : null;
+  const { url: videoUrl, loading: videoLoading, error: videoError } = useObjectUrl(file, videoSource, isVideo(file));
+
+  return (
+    <div className="flex min-h-[16rem] items-center justify-center p-4 pt-0">
+      {isImage(file) ? (
+        imageLoading ? (
+          <div className="h-32 w-32 animate-pulse rounded bg-surface-elevated" />
+        ) : imageUrl ? (
+          <img src={imageUrl} alt={file.originalName} className="max-h-[70vh] max-w-full rounded-md object-contain" />
+        ) : (
+          <div className="flex flex-col items-center gap-3 text-center text-error">
+            <FileText className="h-16 w-16 text-text-muted" />
+            <p className="text-sm">{imageError ?? "Unable to load image"}</p>
+          </div>
+        )
+      ) : isVideo(file) ? (
+        videoLoading ? (
+          <div className="h-32 w-32 animate-pulse rounded bg-surface-elevated" />
+        ) : videoUrl ? (
+          <video src={videoUrl} controls className="max-h-[70vh] max-w-full rounded-md" />
+        ) : (
+          <div className="flex flex-col items-center gap-3 text-center text-error">
+            <FileText className="h-16 w-16 text-text-muted" />
+            <p className="text-sm">{videoError ?? "Unable to load video"}</p>
+          </div>
+        )
+      ) : (
+        <div className="flex flex-col items-center gap-4 text-center">
+          <FileText className="h-16 w-16 text-text-muted" />
+          <div>
+            <p className="font-medium text-text">{file.originalName}</p>
+            <p className="text-sm text-text-muted">{formatBytes(file.size)} · {file.mimeType}</p>
+          </div>
+          <Button disabled={!getFileUrl(file)} onClick={() => { const url = getFileUrl(file); if (url) void openUrl(url); }}>
+            <ExternalLink className="mr-1.5 h-4 w-4" /> Open file
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function FileBrowserScreen() {
@@ -192,8 +304,8 @@ export function FileBrowserScreen() {
               <tbody>
                 {filtered.map((f) => (
                   <tr key={f.id} className="cursor-pointer border-b last:border-0 hover:bg-surface-elevated/50" onClick={() => setPreviewFile(f)}>
-                    <td className="flex items-center gap-2 px-4 py-3">
-                      <FileText className="h-4 w-4 text-text-muted" />
+                    <td className="flex items-center gap-3 px-4 py-3">
+                      <FileThumbnail file={f} className="h-8 w-8 shrink-0" />
                       <span className="text-text">{f.originalName}</span>
                     </td>
                     <td className="px-4 py-3 text-text-secondary">{formatBytes(f.size)}</td>
@@ -223,8 +335,8 @@ export function FileBrowserScreen() {
                 className="cursor-pointer flex flex-col gap-2 rounded-lg border bg-surface p-4 hover:border-primary/30"
                 onClick={() => setPreviewFile(f)}
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-surface-elevated text-primary">
-                  <FileText className="h-5 w-5" />
+                <div className="flex h-24 w-full items-center justify-center overflow-hidden rounded-md bg-surface-elevated text-primary">
+                  <FileThumbnail file={f} className="h-full w-full" fallbackClassName="h-10 w-10" />
                 </div>
                 <p className="truncate text-sm font-medium text-text">{f.originalName}</p>
                 <p className="text-xs text-text-muted">{formatBytes(f.size)} · {f.status}</p>
@@ -249,24 +361,7 @@ export function FileBrowserScreen() {
               <DialogTitle>{previewFile.originalName}</DialogTitle>
               <DialogDescription>{formatBytes(previewFile.size)} · {previewFile.mimeType}</DialogDescription>
             </DialogHeader>
-            <div className="flex min-h-[16rem] items-center justify-center p-4 pt-0">
-              {isImage(previewFile) ? (
-                <img src={previewFile.url ?? previewFile.downloadUrl ?? undefined} alt={previewFile.originalName} className="max-h-[70vh] max-w-full rounded-md object-contain" />
-              ) : isVideo(previewFile) ? (
-                <video src={previewFile.url ?? previewFile.downloadUrl ?? undefined} controls className="max-h-[70vh] max-w-full rounded-md" />
-              ) : (
-                <div className="flex flex-col items-center gap-4 text-center">
-                  <FileText className="h-16 w-16 text-text-muted" />
-                  <div>
-                    <p className="font-medium text-text">{previewFile.originalName}</p>
-                    <p className="text-sm text-text-muted">{formatBytes(previewFile.size)} · {previewFile.mimeType}</p>
-                  </div>
-                  <Button disabled={!getFileUrl(previewFile)} onClick={() => { const url = getFileUrl(previewFile); if (url) void openUrl(url); }}>
-                    <ExternalLink className="mr-1.5 h-4 w-4" /> Open file
-                  </Button>
-                </div>
-              )}
-            </div>
+            <FilePreview file={previewFile} />
           </>
         )}
       </DialogContent>

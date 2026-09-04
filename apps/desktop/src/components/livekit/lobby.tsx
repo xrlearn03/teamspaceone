@@ -13,6 +13,7 @@ interface MeetingLobbyProps {
     audioInputId?: string;
     videoInputId?: string;
     audioOutputId?: string;
+    stream?: MediaStream;
   }) => void;
   onCancel: () => void;
 }
@@ -30,6 +31,7 @@ export function MeetingLobby({ meeting, user, onJoin, onCancel }: MeetingLobbyPr
     setAudioDevice,
     setVideoDevice,
     setSpeakerDevice,
+    releaseStream,
     applyAudioOutput,
     error: mediaError,
     videoDevices,
@@ -189,6 +191,7 @@ export function MeetingLobby({ meeting, user, onJoin, onCancel }: MeetingLobbyPr
                 audioInputId,
                 videoInputId,
                 audioOutputId,
+                stream: releaseStream() ?? undefined,
               })
             }
           >

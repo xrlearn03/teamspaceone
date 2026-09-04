@@ -80,6 +80,7 @@ interface LiveKitConferenceProps {
   audioInputId?: string;
   videoInputId?: string;
   audioOutputId?: string;
+  previewStream?: MediaStream;
   onLeave: () => Promise<void>;
   onEnd?: () => Promise<void>;
   onScreenShare?: (enabled: boolean) => Promise<void>;
@@ -94,6 +95,7 @@ export function LiveKitConference({
   audioInputId,
   videoInputId,
   audioOutputId,
+  previewStream,
   onLeave,
   onEnd,
   onScreenShare,
@@ -151,6 +153,7 @@ export function LiveKitConference({
     localVideoEnabled,
     localScreenShare,
     localTrackVersion,
+    mediaError,
     toggleMicrophone,
     toggleCamera,
     toggleScreenShare,
@@ -166,6 +169,7 @@ export function LiveKitConference({
     audioInputId,
     videoInputId,
     audioOutputId,
+    previewStream,
     rtcConfig: buildRtcConfig(),
   });
 
@@ -337,6 +341,12 @@ export function LiveKitConference({
               ))}
             </div>
           )}
+
+          {mediaError ? (
+            <div className="shrink-0 bg-error/90 p-2 text-center text-xs text-white">
+              Media error: {mediaError}
+            </div>
+          ) : null}
 
           <div className="flex h-16 shrink-0 items-center justify-between border-t px-4">
             <div className="flex items-center gap-2">

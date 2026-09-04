@@ -192,6 +192,7 @@ export class AiService {
           metadata: {
             workspaceId: payload.workspaceId ?? envelope.workspaceId,
             visibility: 'private',
+            createdBy,
             actorIds: Array.from(new Set([createdBy, ...participantIds].filter((id): id is string => typeof id === 'string' && id.length > 0))),
           },
         });
@@ -322,17 +323,24 @@ export class AiService {
   }
 
   async processSummarizeJob(data: { organisationId: string; resourceType: string; resourceId: string }): Promise<void> {
-    const rows = await this.prisma.$queryRaw<Array<{ id: string; text: string }>>`
-      SELECT "id", "text" FROM "ai_documents"
+    const rows = await this.prisma.$queryRaw<
+      Array<{ id: string; text: string; title: string | null; workspaceId: string | null; metadata: Record<string, unknown> }>
+    >`
+      SELECT "id", "text", "title", "workspaceId", "metadata" FROM "ai_documents"
       WHERE "organisationId" = ${data.organisationId}
         AND "resourceType" = ${data.resourceType}
         AND "resourceId" = ${data.resourceId}
       LIMIT 1
     `;
 
-    const text = rows[0]?.text ?? '';
+    const doc = rows[0];
+    const text = doc?.text ?? '';
     const prompt = `Summarize the following meeting context for meeting ${data.resourceId}.`;
     const { result, model } = await this.summarize(prompt, text);
+
+    const metadata = doc?.metadata ?? {};
+    const participantIds = Array.isArray(metadata.actorIds) ? (metadata.actorIds as string[]) : [];
+    const createdBy = (metadata.createdBy as string) ?? 'unknown';
 
     await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.aiSummary.upsert({
@@ -352,17 +360,57 @@ export class AiService {
         eventType: Subjects.AI_SUMMARY_COMPLETED,
         eventVersion: 1,
         organisationId: data.organisationId,
+        workspaceId: doc?.workspaceId ?? undefined,
         resourceType: 'ai_summary',
         resourceId: data.resourceId,
         correlationId: randomUUID(),
         payload: {
           resourceType: data.resourceType,
           resourceId: data.resourceId,
-          result,
+          title: doc?.title ?? undefined,
+          summary: result,
           model,
+          participantIds,
+          sourceType: data.resourceType,
+          sourceId: data.resourceId,
         },
       });
       await this.outbox.createEvent(tx, outbox, Subjects.AI_SUMMARY_COMPLETED);
+
+      await tx.aiActionConfirmation.create({
+        data: {
+          organisationId: data.organisationId,
+          workspaceId: doc?.workspaceId ?? null,
+          actorId: createdBy,
+          actionType: 'send_meeting_summary_email',
+          payload: {
+            resourceType: data.resourceType,
+            resourceId: data.resourceId,
+            title: doc?.title ?? undefined,
+            summary: result,
+            participantIds,
+            workspaceId: doc?.workspaceId ?? undefined,
+          } as any,
+          status: 'pending',
+        },
+      });
+
+      const requestOutbox = createEventEnvelope({
+        eventType: Subjects.AI_ACTION_REQUESTED,
+        eventVersion: 1,
+        organisationId: data.organisationId,
+        workspaceId: doc?.workspaceId ?? undefined,
+        actorId: createdBy,
+        resourceType: 'ai_action_confirmation',
+        resourceId: data.resourceId,
+        correlationId: randomUUID(),
+        payload: {
+          actionType: 'send_meeting_summary_email',
+          resourceType: data.resourceType,
+          resourceId: data.resourceId,
+        },
+      });
+      await this.outbox.createEvent(tx, requestOutbox, Subjects.AI_ACTION_REQUESTED);
     });
   }
 
@@ -479,21 +527,57 @@ export class AiService {
     return { answer, sources };
   }
 
+  async dailyDigest(
+    ctx: OrganisationContextValue,
+    workspaceId?: string,
+    hours = 24,
+  ): Promise<{ result: string; model: string }> {
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+    const rows = await this.prisma.$queryRaw<
+      Array<{ resourceType: string; resourceId: string; title: string | null; text: string; updatedAt: Date }>
+    >`
+      SELECT "resourceType", "resourceId", "title", "text", "updatedAt"
+      FROM "ai_documents"
+      WHERE "organisationId" = ${ctx.organisationId}
+        AND "updatedAt" > ${since}::timestamp
+        AND ( ${workspaceId ?? null} IS NULL OR "workspaceId" = ${workspaceId ?? null} )
+      ORDER BY "updatedAt" DESC
+      LIMIT 100
+    `;
+
+    const context = (rows ?? [])
+      .map((row) => `[${row.resourceType}:${row.resourceId}] ${row.title ? row.title + '\n' : ''}${row.text}`)
+      .join('\n\n');
+
+    const prompt = `Summarize the following workspace activity from the last ${hours} hours into a concise daily digest. Highlight key updates, decisions, and blockers.`;
+    return this.summarize(prompt, context.slice(0, 12000));
+  }
+
   async extractTasks(
     ctx: OrganisationContextValue,
     text: string,
     sourceType: string,
     sourceId?: string,
-  ): Promise<Prisma.AiExtractedTaskGetPayload<{ select: { id: true; title: true; description: true; dueDate: true; assigneeHint: true; status: true } }>[]> {
+    options: { projectId?: string; autoCreate?: boolean } = {},
+  ): Promise<Prisma.AiExtractedTaskGetPayload<{ select: { id: true; title: true; description: true; dueDate: true; assigneeHint: true; assigneeId: true; status: true } }>[]> {
+    let candidates: Array<{ userId: string; name: string; role?: string }> = [];
+    if (options.projectId) {
+      candidates = await this.fetchProjectMembers(ctx, options.projectId);
+    }
+
+    const instruction = candidates.length
+      ? 'Extract actionable tasks from the following text. Choose the most appropriate assignee from the candidate list based on role, department, or context.'
+      : 'Extract actionable tasks from the following text.';
+
     const items = await this.runExtraction<{
       title: string;
       description?: string | null;
       dueDate?: string | null;
-      assignee?: string | null;
-    }>(text, 'tasks', 'Extract actionable tasks from the following text.');
+      assigneeId?: string | null;
+    }>(text, 'tasks', instruction, candidates);
 
     const workspaceId = ctx.workspaceId ?? null;
-    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const records = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const records = await Promise.all(
         items.map((item) =>
           tx.aiExtractedTask.create({
@@ -506,10 +590,11 @@ export class AiService {
               title: item.title,
               description: item.description ?? null,
               dueDate: item.dueDate ? new Date(item.dueDate) : null,
-              assigneeHint: item.assignee ?? null,
+              assigneeHint: null,
+              assigneeId: item.assigneeId ?? null,
               status: 'suggested',
             },
-            select: { id: true, title: true, description: true, dueDate: true, assigneeHint: true, status: true },
+            select: { id: true, title: true, description: true, dueDate: true, assigneeHint: true, assigneeId: true, status: true },
           }),
         ),
       );
@@ -527,6 +612,7 @@ export class AiService {
           sourceType,
           sourceId,
           workspaceId,
+          projectId: options.projectId,
           tasks: records,
         },
       });
@@ -534,6 +620,20 @@ export class AiService {
 
       return records;
     });
+
+    if (options.projectId && options.autoCreate) {
+      for (const record of records) {
+        await this.createPendingAction(ctx, 'create_task', {
+          projectId: options.projectId,
+          title: record.title,
+          description: record.description,
+          dueDate: record.dueDate ? record.dueDate.toISOString() : null,
+          assigneeId: record.assigneeId,
+        }, sourceId);
+      }
+    }
+
+    return records;
   }
 
   async extractDecisions(
@@ -589,23 +689,105 @@ export class AiService {
     });
   }
 
-  async confirmAction(
+  private async createPendingAction(
     ctx: OrganisationContextValue,
     actionType: string,
     payload: Record<string, unknown>,
-  ): Promise<Prisma.AiActionConfirmationGetPayload<{ select: { id: true; actionType: true; payload: true; status: true; confirmedAt: true } }>> {
+    sourceId?: string,
+  ): Promise<void> {
     const workspaceId = ctx.workspaceId ?? null;
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const confirmation = await tx.aiActionConfirmation.create({
+      const rec = await tx.aiActionConfirmation.create({
         data: {
           organisationId: ctx.organisationId,
           workspaceId,
           actorId: ctx.actorId ?? 'unknown',
           actionType,
           payload: payload as any,
-          status: 'confirmed',
-          confirmedAt: new Date(),
+          status: 'pending',
         },
+        select: { id: true },
+      });
+
+      const outbox = createEventEnvelope({
+        eventType: Subjects.AI_ACTION_REQUESTED,
+        eventVersion: 1,
+        organisationId: ctx.organisationId,
+        workspaceId: ctx.workspaceId,
+        actorId: ctx.actorId,
+        resourceType: 'ai_action_confirmation',
+        resourceId: rec.id,
+        correlationId: ctx.correlationId,
+        payload: {
+          confirmationId: rec.id,
+          actionType,
+          sourceId,
+        },
+      });
+      await this.outbox.createEvent(tx, outbox, Subjects.AI_ACTION_REQUESTED);
+    });
+  }
+
+  async listPendingActions(
+    ctx: OrganisationContextValue,
+    options: { workspaceId?: string; limit?: number; cursor?: string } = {},
+  ): Promise<Prisma.AiActionConfirmationGetPayload<{ select: { id: true; actionType: true; payload: true; status: true; createdAt: true; confirmedAt: true } }>[]> {
+    return this.prisma.aiActionConfirmation.findMany({
+      where: {
+        organisationId: ctx.organisationId,
+        actorId: ctx.actorId ?? '',
+        status: 'pending',
+        workspaceId: options.workspaceId ?? undefined,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: options.limit ?? 50,
+      skip: options.cursor ? 1 : 0,
+      cursor: options.cursor ? { id: options.cursor } : undefined,
+      select: { id: true, actionType: true, payload: true, status: true, createdAt: true, confirmedAt: true },
+    });
+  }
+
+  async confirmAction(
+    ctx: OrganisationContextValue,
+    id: string,
+    edits?: Record<string, unknown>,
+  ): Promise<Prisma.AiActionConfirmationGetPayload<{ select: { id: true; actionType: true; payload: true; status: true; confirmedAt: true } }>> {
+    const confirmation = await this.prisma.aiActionConfirmation.findFirst({
+      where: { id, organisationId: ctx.organisationId, actorId: ctx.actorId ?? '', status: 'pending' },
+    });
+    if (!confirmation) throw new Error('Confirmation not found or already processed');
+
+    const payload = { ...(confirmation.payload as Record<string, unknown> ?? {}), ...(edits ?? {}) } as Record<string, unknown>;
+
+    if (confirmation.actionType === 'create_task') {
+      await this.executeCreateTask(ctx, payload);
+    }
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      if (confirmation.actionType === 'send_meeting_summary_email') {
+        const summaryOutbox = createEventEnvelope({
+          eventType: Subjects.AI_SUMMARY_CONFIRMED,
+          eventVersion: 1,
+          organisationId: ctx.organisationId,
+          workspaceId: payload.workspaceId as string | undefined,
+          actorId: ctx.actorId,
+          resourceType: 'ai_summary',
+          resourceId: (payload.resourceId as string) ?? 'unknown',
+          correlationId: ctx.correlationId,
+          payload: {
+            resourceType: payload.resourceType,
+            resourceId: payload.resourceId,
+            title: payload.title,
+            summary: payload.summary,
+            participantIds: payload.participantIds,
+          },
+        });
+        await this.outbox.createEvent(tx, summaryOutbox, Subjects.AI_SUMMARY_CONFIRMED);
+      }
+
+      const updated = await tx.aiActionConfirmation.update({
+        where: { id },
+        data: { status: 'confirmed', confirmedAt: new Date(), payload: payload as any },
         select: { id: true, actionType: true, payload: true, status: true, confirmedAt: true },
       });
 
@@ -613,21 +795,72 @@ export class AiService {
         eventType: Subjects.AI_ACTION_CONFIRMED,
         eventVersion: 1,
         organisationId: ctx.organisationId,
-        workspaceId: ctx.workspaceId,
+        workspaceId: confirmation.workspaceId ?? undefined,
         actorId: ctx.actorId,
         resourceType: 'ai_action_confirmation',
-        resourceId: confirmation.id,
+        resourceId: updated.id,
         correlationId: ctx.correlationId,
         payload: {
-          confirmationId: confirmation.id,
-          actionType,
-          payload,
-          workspaceId,
+          confirmationId: updated.id,
+          actionType: updated.actionType,
+          payload: updated.payload,
+          workspaceId: confirmation.workspaceId,
         },
       });
       await this.outbox.createEvent(tx, outbox, Subjects.AI_ACTION_CONFIRMED);
 
-      return confirmation;
+      return updated;
+    });
+  }
+
+  async declineAction(
+    ctx: OrganisationContextValue,
+    id: string,
+  ): Promise<Prisma.AiActionConfirmationGetPayload<{ select: { id: true; actionType: true; payload: true; status: true; confirmedAt: true } }>> {
+    const confirmation = await this.prisma.aiActionConfirmation.findFirst({
+      where: { id, organisationId: ctx.organisationId, actorId: ctx.actorId ?? '', status: 'pending' },
+    });
+    if (!confirmation) throw new Error('Confirmation not found or already processed');
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.aiActionConfirmation.update({
+        where: { id },
+        data: { status: 'declined', confirmedAt: new Date() },
+        select: { id: true, actionType: true, payload: true, status: true, confirmedAt: true },
+      });
+
+      const outbox = createEventEnvelope({
+        eventType: Subjects.AI_ACTION_CONFIRMED,
+        eventVersion: 1,
+        organisationId: ctx.organisationId,
+        workspaceId: confirmation.workspaceId ?? undefined,
+        actorId: ctx.actorId,
+        resourceType: 'ai_action_confirmation',
+        resourceId: updated.id,
+        correlationId: ctx.correlationId,
+        payload: {
+          confirmationId: updated.id,
+          actionType: updated.actionType,
+          payload: updated.payload,
+          workspaceId: confirmation.workspaceId,
+          declined: true,
+        },
+      });
+      await this.outbox.createEvent(tx, outbox, Subjects.AI_ACTION_CONFIRMED);
+
+      return updated;
+    });
+  }
+
+  private async executeCreateTask(ctx: OrganisationContextValue, payload: Record<string, unknown>): Promise<void> {
+    const projectId = payload.projectId as string | undefined;
+    const title = payload.title as string | undefined;
+    if (!projectId || !title) return;
+    await this.createProjectTask(ctx, projectId, {
+      title,
+      description: payload.description as string | undefined,
+      dueDate: payload.dueDate ? new Date(payload.dueDate as string) : null,
+      assigneeId: payload.assigneeId as string | undefined,
     });
   }
 
@@ -674,19 +907,26 @@ export class AiService {
     text: string,
     field: 'tasks' | 'decisions',
     instruction: string,
+    candidates: Array<{ userId: string; name: string; role?: string }> = [],
   ): Promise<T[]> {
     const apiKey = this.config.get<string>('OPENAI_API_KEY');
     const model = this.config.get<string>('OPENAI_MODEL', 'gpt-4o-mini');
 
     if (!apiKey) {
       return field === 'tasks'
-        ? ([{ title: 'Placeholder extracted task', description: 'OpenAI is not configured' }] as unknown as T[])
+        ? ([{ title: 'Placeholder extracted task', description: 'OpenAI is not configured', assigneeId: null }] as unknown as T[])
         : ([{ decision: 'Placeholder decision: OpenAI is not configured.' }] as unknown as T[]);
+    }
+
+    let taskSchema = '{ "tasks": [ { "title": string, "description": string | null, "dueDate": string | null (ISO 8601), "assigneeId": string | null } ] }';
+    if (candidates.length) {
+      const candidateList = candidates.map((c) => `- ${c.userId}: ${c.name}${c.role ? ` (${c.role})` : ''}`).join('\n');
+      instruction += `\n\nCandidates:\n${candidateList}\nUse one of the candidate userIds for "assigneeId" or leave it null.`;
     }
 
     const schema =
       field === 'tasks'
-        ? '{ "tasks": [ { "title": string, "description": string | null, "dueDate": string | null (ISO 8601), "assignee": string | null } ] }'
+        ? taskSchema
         : '{ "decisions": [ { "decision": string, "stakeholders": string[] | null } ] }';
 
     try {
@@ -712,6 +952,63 @@ export class AiService {
     } catch (err) {
       this.logger.error(`Extraction failed for ${field}: ${(err as Error).message}`);
       return [];
+    }
+  }
+
+  private async fetchProjectMembers(
+    ctx: OrganisationContextValue,
+    projectId: string,
+  ): Promise<Array<{ userId: string; name: string; role?: string }>> {
+    const projectsUrl = this.config.get<string>('PROJECTS_SERVICE_URL');
+    if (!projectsUrl) return [];
+    try {
+      const response = await fetch(`${projectsUrl}/projects/${encodeURIComponent(projectId)}`, {
+        headers: {
+          'x-organisation-id': ctx.organisationId,
+          'x-actor-id': ctx.actorId ?? '',
+          'content-type': 'application/json',
+        },
+      });
+      if (!response.ok) return [];
+      const project = (await response.json()) as {
+        members?: Array<{ userId: string; role?: string }>;
+      };
+      return (project.members ?? []).map((m) => ({
+        userId: m.userId,
+        name: m.userId,
+        role: m.role,
+      }));
+    } catch (err) {
+      this.logger.error({ projectId, error: (err as Error).message }, 'Failed to fetch project members');
+      return [];
+    }
+  }
+
+  private async createProjectTask(
+    ctx: OrganisationContextValue,
+    projectId: string,
+    task: { title: string; description?: string | null; dueDate?: Date | null; assigneeId?: string | null },
+  ): Promise<void> {
+    const projectsUrl = this.config.get<string>('PROJECTS_SERVICE_URL');
+    if (!projectsUrl) return;
+    const response = await fetch(`${projectsUrl}/tasks`, {
+      method: 'POST',
+      headers: {
+        'x-organisation-id': ctx.organisationId,
+        'x-actor-id': ctx.actorId ?? '',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        projectId,
+        title: task.title,
+        description: task.description ?? '',
+        status: 'todo',
+        assigneeId: task.assigneeId,
+        dueDate: task.dueDate ? task.dueDate.toISOString() : undefined,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Projects service returned ${response.status}`);
     }
   }
 }

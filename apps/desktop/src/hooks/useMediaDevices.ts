@@ -21,11 +21,17 @@ export function useMediaDevices(options: UseMediaDevicesOptions = {}) {
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const releasedRef = useRef(false);
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setStream(null);
+  }, []);
+
+  const releaseStream = useCallback(() => {
+    releasedRef.current = true;
+    return streamRef.current;
   }, []);
 
   const startPreview = useCallback(
@@ -84,9 +90,12 @@ export function useMediaDevices(options: UseMediaDevicesOptions = {}) {
   }, [enumerate]);
 
   useEffect(() => {
+    releasedRef.current = false;
     void startPreview(audioInputId, videoInputId);
     return () => {
-      stopStream();
+      if (!releasedRef.current) {
+        stopStream();
+      }
     };
   }, [startPreview, stopStream, audioInputId, videoInputId, audioEnabled, videoEnabled]);
 
@@ -133,6 +142,7 @@ export function useMediaDevices(options: UseMediaDevicesOptions = {}) {
     setAudioDevice,
     setVideoDevice,
     setSpeakerDevice,
+    releaseStream,
     applyAudioOutput,
     videoDevices: devices.filter((d) => d.kind === "videoinput"),
     audioInputDevices: devices.filter((d) => d.kind === "audioinput"),

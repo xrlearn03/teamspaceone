@@ -715,3 +715,34 @@ export function useAskAI() {
     }) => api.askAI(args.question, args.workspaceId, args.resourceTypes),
   });
 }
+
+export function useDailyDigest() {
+  return useMutation({
+    mutationFn: (args: { workspaceId?: string; hours?: number }) =>
+      api.dailyDigest(args.workspaceId, args.hours),
+  });
+}
+
+export function usePendingAIActions() {
+  return useQuery({
+    queryKey: ["ai-pending-actions"],
+    queryFn: () => api.getPendingAIActions(),
+    refetchInterval: 10000,
+  });
+}
+
+export function useConfirmAIAction() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; edits?: Record<string, unknown> }) => api.confirmAIAction(args.id, args.edits),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["ai-pending-actions"] }),
+  });
+}
+
+export function useDeclineAIAction() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.declineAIAction(id),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["ai-pending-actions"] }),
+  });
+}

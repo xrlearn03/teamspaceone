@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Room, RoomEvent, type RemoteParticipant, type Room as LKRoom } from "livekit-client";
+import { Room, RoomEvent, type RemoteParticipant, type Room as LKRoom, Track } from "livekit-client";
 
 export interface UseLiveKitOptions {
   url: string;
@@ -11,6 +11,7 @@ export interface UseLiveKitOptions {
   audioInputId?: string;
   videoInputId?: string;
   audioOutputId?: string;
+  previewStream?: MediaStream;
   rtcConfig?: RTCConfiguration;
 }
 
@@ -38,8 +39,8 @@ type MeetingData =
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-function encodeData(data: MeetingData): Uint8Array {
-  return encoder.encode(JSON.stringify(data));
+function encodeData(data: MeetingData): Uint8Array<ArrayBuffer> {
+  return encoder.encode(JSON.stringify(data)) as Uint8Array<ArrayBuffer>;
 }
 
 function decodeData(payload: Uint8Array): MeetingData | null {
@@ -59,6 +60,7 @@ export function useLiveKit({
   audioInputId,
   videoInputId,
   audioOutputId,
+  previewStream,
   rtcConfig,
 }: UseLiveKitOptions) {
   const roomRef = useRef<LKRoom | null>(null);
@@ -73,6 +75,7 @@ export function useLiveKit({
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [raiseHands, setRaiseHands] = useState<Set<string>>(new Set());
   const [isRecording, setIsRecording] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
 
   const localName = displayName ?? "You";
 
@@ -184,13 +187,49 @@ export function useLiveKit({
     room
       .connect(url, token, { rtcConfig })
       .then(async () => {
-        try {
-          await room.localParticipant.setMicrophoneEnabled(audioEnabled);
-          await room.localParticipant.setCameraEnabled(videoEnabled);
-        } catch (err) {
-          // Camera/mic permission errors are non-fatal; user can enable later.
-          console.warn("Failed to enable camera/microphone:", err);
+        let publishErr: unknown;
+        if (previewStream) {
+          try {
+            const audioTrack = previewStream.getAudioTracks()[0];
+            const videoTrack = previewStream.getVideoTracks()[0];
+            if (audioTrack) {
+              await room.localParticipant.publishTrack(audioTrack, { name: "microphone", source: Track.Source.Microphone });
+            }
+            if (videoTrack) {
+              await room.localParticipant.publishTrack(videoTrack, { name: "camera", source: Track.Source.Camera });
+            }
+          } catch (err) {
+            publishErr = err;
+            console.warn("Failed to publish preview tracks:", err);
+          }
         }
+
+        if (!room.localParticipant.isCameraEnabled || !room.localParticipant.isMicrophoneEnabled) {
+          try {
+            // Preview tracks could not be published (or were off in the lobby). Stop the preview
+            // so the device is released, then let LiveKit acquire and manage fresh tracks.
+            if (previewStream) {
+              previewStream.getTracks().forEach((t) => t.stop());
+              await new Promise((r) => setTimeout(r, 300));
+            }
+            if (audioEnabled && !room.localParticipant.isMicrophoneEnabled) {
+              await room.localParticipant.setMicrophoneEnabled(true);
+            }
+            if (videoEnabled && !room.localParticipant.isCameraEnabled) {
+              await room.localParticipant.setCameraEnabled(true);
+            }
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            setMediaError(message);
+            console.warn("Failed to enable camera/microphone:", err);
+          }
+        }
+
+        if (publishErr && !room.localParticipant.isCameraEnabled && !room.localParticipant.isMicrophoneEnabled) {
+          const message = publishErr instanceof Error ? publishErr.message : String(publishErr);
+          setMediaError(`Preview publish failed: ${message}`);
+        }
+
         setLocalAudioEnabled(room.localParticipant.isMicrophoneEnabled);
         setLocalVideoEnabled(room.localParticipant.isCameraEnabled);
         updateLocalParticipant();
@@ -201,13 +240,20 @@ export function useLiveKit({
       room.disconnect().catch(() => {});
       roomRef.current = null;
     };
-  }, [url, token, audioEnabled, videoEnabled, audioInputId, videoInputId, audioOutputId, rtcConfig]);
+  }, [url, token, audioEnabled, videoEnabled, audioInputId, videoInputId, audioOutputId, previewStream, rtcConfig]);
 
   const toggleMicrophone = useCallback(async () => {
     const room = roomRef.current;
     if (!room) return;
     const enabled = !room.localParticipant.isMicrophoneEnabled;
-    await room.localParticipant.setMicrophoneEnabled(enabled);
+    try {
+      await room.localParticipant.setMicrophoneEnabled(enabled);
+      setMediaError(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setMediaError(`Microphone: ${message}`);
+      console.warn("Failed to toggle microphone:", err);
+    }
     setLocalAudioEnabled(room.localParticipant.isMicrophoneEnabled);
     setLocalTrackVersion((v) => v + 1);
   }, []);
@@ -216,7 +262,14 @@ export function useLiveKit({
     const room = roomRef.current;
     if (!room) return;
     const enabled = !room.localParticipant.isCameraEnabled;
-    await room.localParticipant.setCameraEnabled(enabled);
+    try {
+      await room.localParticipant.setCameraEnabled(enabled);
+      setMediaError(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setMediaError(`Camera: ${message}`);
+      console.warn("Failed to toggle camera:", err);
+    }
     setLocalVideoEnabled(room.localParticipant.isCameraEnabled);
     setLocalTrackVersion((v) => v + 1);
   }, []);
@@ -306,6 +359,7 @@ export function useLiveKit({
     localVideoEnabled,
     localScreenShare,
     localTrackVersion,
+    mediaError,
     chatMessages,
     reactions,
     raiseHands,
