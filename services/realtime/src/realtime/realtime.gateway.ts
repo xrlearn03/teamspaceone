@@ -69,6 +69,15 @@ export class RealtimeGateway implements OnGatewayInit {
     if (!payload) return;
 
     switch (envelope.eventType) {
+      case Subjects.CHANNEL_CREATED:
+      case Subjects.CHANNEL_UPDATED:
+      case Subjects.CHANNEL_DELETED:
+      case Subjects.CHANNEL_MEMBERS_UPDATED: {
+        const organisationId = envelope.organisationId;
+        const eventName = envelope.eventType.replace('reactify.', '');
+        this.server.to(`organisation:${organisationId}`).emit(eventName, payload);
+        break;
+      }
       case Subjects.MESSAGE_CREATED: {
         const channelId = payload.channelId as string | undefined;
         if (channelId) {

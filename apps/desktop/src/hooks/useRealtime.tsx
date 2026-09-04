@@ -1,14 +1,19 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { io, type Socket } from "socket.io-client";
+import { useQueryClient } from "@tanstack/react-query";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { getAccessToken, getActiveOrganisation, getMe } from "../lib/api";
+import { getAccessToken, getActiveOrganisation, getMe, type Message, type MessagePage } from "../lib/api";
 
 const REALTIME_URL = (import.meta.env.VITE_REALTIME_URL as string | undefined) ?? "http://localhost:3005";
 
 export interface RealtimeEventPayloads {
-  "message.created": { id: string; channelId: string; content: string; senderId: string; createdAt: string };
-  "message.updated": { id: string; channelId: string; content: string; editedAt: string };
-  "message.deleted": { id: string; channelId: string };
+  "channel.created": { id: string };
+  "channel.updated": { id: string };
+  "channel.deleted": { id: string };
+  "channel.members_updated": { id: string };
+  "message.created": Message;
+  "message.updated": Message;
+  "message.deleted": { id: string; channelId: string; deletedAt: string };
   "notification.created": { id: string; title: string; body: string; userId: string };
   "meeting.created": { id: string; title: string; organisationId: string };
   "meeting.started": { id: string; roomName: string };
@@ -24,6 +29,8 @@ export type RealtimeEvent = keyof RealtimeEventPayloads;
 interface RealtimeContextValue {
   socket: Socket | null;
   connected: boolean;
+  joinRealtimeChannel: (channelId: string) => void;
+  leaveRealtimeChannel: (channelId: string) => void;
   joinRealtimeMeeting: (meetingId: string) => void;
   leaveRealtimeMeeting: (meetingId: string) => void;
   onRealtimeEvent: <E extends RealtimeEvent>(event: E, handler: (payload: RealtimeEventPayloads[E]) => void) => () => void;
@@ -32,6 +39,7 @@ interface RealtimeContextValue {
 const RealtimeContext = createContext<RealtimeContextValue | null>(null);
 
 export function RealtimeProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const handlersRef = useRef<Map<string, Set<(payload: unknown) => void>>>(new Map());
@@ -79,6 +87,10 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       });
 
       const eventNames: RealtimeEvent[] = [
+        "channel.created",
+        "channel.updated",
+        "channel.deleted",
+        "channel.members_updated",
         "message.created",
         "message.updated",
         "message.deleted",
@@ -94,6 +106,28 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
       for (const event of eventNames) {
         socket.on(event, (payload: unknown) => {
+          if (event.startsWith("channel.")) {
+            void queryClient.invalidateQueries({ queryKey: ["channels"] });
+          }
+          if (event === "message.created") {
+            const message = payload as Message;
+            queryClient.setQueryData<MessagePage>(["messages", message.channelId], (page) => {
+              if (!page || page.items.some((item) => item.id === message.id)) return page;
+              return { ...page, items: [...page.items, message] };
+            });
+          }
+          if (event === "message.updated") {
+            const message = payload as Message;
+            queryClient.setQueryData<MessagePage>(["messages", message.channelId], (page) =>
+              page ? { ...page, items: page.items.map((item) => item.id === message.id ? message : item) } : page,
+            );
+          }
+          if (event === "message.deleted") {
+            const deleted = payload as RealtimeEventPayloads["message.deleted"];
+            queryClient.setQueryData<MessagePage>(["messages", deleted.channelId], (page) =>
+              page ? { ...page, items: page.items.map((item) => item.id === deleted.id ? { ...item, content: "", deletedAt: deleted.deletedAt, attachments: [] } : item) } : page,
+            );
+          }
           if (event === "notification.created") {
             const n = payload as RealtimeEventPayloads["notification.created"];
             try {
@@ -116,15 +150,23 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       socketRef.current?.disconnect();
       socketRef.current = null;
     };
+  }, [queryClient]);
+
+  const joinRealtimeChannel = useCallback((channelId: string) => {
+    socketRef.current?.emit("join", channelId);
   }, []);
 
-  const joinRealtimeMeeting = (meetingId: string) => {
-    socketRef.current?.emit("join-meeting", meetingId);
-  };
+  const leaveRealtimeChannel = useCallback((channelId: string) => {
+    socketRef.current?.emit("leave", `channel:${channelId}`);
+  }, []);
 
-  const leaveRealtimeMeeting = (meetingId: string) => {
+  const joinRealtimeMeeting = useCallback((meetingId: string) => {
+    socketRef.current?.emit("join-meeting", meetingId);
+  }, []);
+
+  const leaveRealtimeMeeting = useCallback((meetingId: string) => {
     socketRef.current?.emit("leave", `meeting:${meetingId}`);
-  };
+  }, []);
 
   const onRealtimeEvent = <E extends RealtimeEvent>(event: E, handler: (payload: RealtimeEventPayloads[E]) => void) => {
     const typedHandler = (payload: unknown) => handler(payload as RealtimeEventPayloads[E]);
@@ -139,7 +181,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
   return (
     <RealtimeContext.Provider
-      value={{ socket: socketRef.current, connected, joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent }}
+      value={{ socket: socketRef.current, connected, joinRealtimeChannel, leaveRealtimeChannel, joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent }}
     >
       {children}
     </RealtimeContext.Provider>

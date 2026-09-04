@@ -27,7 +27,8 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
     const js = await this.natsClient.getJetStream();
 
     const consumers: ConsumerDefinition[] = [
-      { stream: Streams.MESSAGING, subject: 'reactify.message.>', durable: 'realtime-messaging-consumer' },
+      { stream: Streams.MESSAGING, subject: 'reactify.message.>', durable: 'realtime-message-consumer' },
+      { stream: Streams.MESSAGING, subject: 'reactify.channel.>', durable: 'realtime-channel-consumer' },
       { stream: Streams.NOTIFICATIONS, subject: 'reactify.notification.>', durable: 'realtime-notification-consumer' },
       { stream: Streams.MEETINGS, subject: 'reactify.meeting.>', durable: 'realtime-meeting-consumer' },
       { stream: Streams.MEETINGS, subject: 'reactify.voice.>', durable: 'realtime-voice-consumer' },

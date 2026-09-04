@@ -120,6 +120,22 @@ export interface Workspace {
   createdAt: string;
 }
 
+export interface OrganisationMember {
+  id: string;
+  userId: string;
+  organisationId: string;
+  role: { id: string; name: string };
+  createdAt: string;
+}
+
+export interface ChannelMember {
+  id: string;
+  channelId: string;
+  userId: string;
+  role: string;
+  joinedAt: string;
+}
+
 export interface Channel {
   id: string;
   organisationId: string;
@@ -128,6 +144,15 @@ export interface Channel {
   type: string;
   createdBy: string;
   createdAt: string;
+  updatedAt: string;
+  members: ChannelMember[];
+}
+
+export interface MessageAttachment {
+  id: string;
+  messageId: string;
+  fileId: string;
+  createdAt: string;
 }
 
 export interface Message {
@@ -135,7 +160,16 @@ export interface Message {
   channelId: string;
   senderId: string;
   content: string;
+  editedAt?: string | null;
+  deletedAt?: string | null;
   createdAt: string;
+  updatedAt: string;
+  attachments: MessageAttachment[];
+}
+
+export interface MessagePage {
+  items: Message[];
+  nextCursor: string | null;
 }
 
 export interface Project {
@@ -282,7 +316,7 @@ export function getWorkspaces(organisationId: string) {
 }
 
 export function getMembers(organisationId: string) {
-  return apiRequest<UserDto[]>(`/organisations/${organisationId}/members`);
+  return apiRequest<OrganisationMember[]>(`/organisations/${organisationId}/members`);
 }
 
 // Messaging
@@ -290,22 +324,48 @@ export function getChannels() {
   return apiRequest<Channel[]>("/channels");
 }
 
-export function createChannel(name: string, workspaceId?: string, type = "public") {
+export function createChannel(name: string, workspaceId?: string, type = "public", memberIds?: string[]) {
   return apiRequest<Channel>("/channels", {
     method: "POST",
-    body: { name, workspaceId, type },
+    body: { name, workspaceId, type, memberIds },
   });
 }
 
-export function getMessages(channelId: string) {
-  return apiRequest<Message[]>(`/channels/${channelId}/messages`);
+export function createDirectChannel(memberIds: string[]) {
+  return apiRequest<Channel>("/channels/direct", { method: "POST", body: { memberIds } });
 }
 
-export function sendMessage(channelId: string, content: string) {
+export function updateChannel(channelId: string, body: { name?: string; type?: "public" | "private" }) {
+  return apiRequest<Channel>(`/channels/${channelId}`, { method: "PATCH", body });
+}
+
+export function replaceChannelMembers(channelId: string, memberIds: string[]) {
+  return apiRequest<Channel>(`/channels/${channelId}/members`, { method: "PUT", body: { memberIds } });
+}
+
+export function deleteChannel(channelId: string) {
+  return apiRequest<void>(`/channels/${channelId}`, { method: "DELETE" });
+}
+
+export function getMessages(channelId: string, cursor?: string, limit = 50) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  return apiRequest<MessagePage>(`/channels/${channelId}/messages?${params.toString()}`);
+}
+
+export function sendMessage(channelId: string, content: string, attachmentIds?: string[]) {
   return apiRequest<Message>("/messages", {
     method: "POST",
-    body: { channelId, content },
+    body: { channelId, content, attachmentIds },
   });
+}
+
+export function updateMessage(messageId: string, content: string) {
+  return apiRequest<Message>(`/messages/${messageId}`, { method: "PATCH", body: { content } });
+}
+
+export function deleteMessage(messageId: string) {
+  return apiRequest<Message>(`/messages/${messageId}`, { method: "DELETE" });
 }
 
 // Projects

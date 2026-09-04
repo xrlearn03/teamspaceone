@@ -9,36 +9,66 @@ datasource db {
 }
 
 model Channel {
-  id             String    @id @default(cuid())
+  id             String          @id @default(cuid())
   organisationId String
   workspaceId    String?
   name           String
-  type           String    @default("public")
+  type           String          @default("public")
+  directKey      String?
   createdBy      String
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
   messages       Message[]
+  members        ChannelMember[]
 
+  @@unique([organisationId, directKey])
   @@index([organisationId])
   @@index([workspaceId])
   @@map("channels")
 }
 
+model ChannelMember {
+  id        String   @id @default(cuid())
+  channelId String
+  userId    String
+  role      String   @default("member")
+  joinedAt  DateTime @default(now())
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@index([userId])
+  @@map("channel_members")
+}
+
 model Message {
-  id             String   @id @default(cuid())
+  id             String              @id @default(cuid())
   organisationId String
   channelId      String
   senderId       String
   content        String
   editedAt       DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  channel        Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  deletedAt      DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  channel        Channel             @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  attachments    MessageAttachment[]
 
   @@index([organisationId])
-  @@index([channelId])
+  @@index([channelId, createdAt])
   @@index([senderId])
   @@map("messages")
+}
+
+model MessageAttachment {
+  id        String   @id @default(cuid())
+  messageId String
+  fileId    String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, fileId])
+  @@index([fileId])
+  @@map("message_attachments")
 }
 
 model OutboxEvent {

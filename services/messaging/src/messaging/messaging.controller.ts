@@ -1,41 +1,96 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
 import { MessagingService } from './messaging.service.js';
 import { type CreateChannelDto } from './dto/create-channel.dto.js';
+import { type CreateDirectChannelDto } from './dto/create-direct-channel.dto.js';
 import { type CreateMessageDto } from './dto/create-message.dto.js';
+import { type UpdateChannelDto } from './dto/update-channel.dto.js';
+import { type UpdateChannelMembersDto } from './dto/update-channel-members.dto.js';
+import { type UpdateMessageDto } from './dto/update-message.dto.js';
 
 @Controller()
 export class MessagingController {
   constructor(private readonly messaging: MessagingService) {}
 
   @Get('channels')
-  async listChannels(
-    @CurrentOrganisation() ctx: OrganisationContextValue,
-  ) {
+  listChannels(@CurrentOrganisation() ctx: OrganisationContextValue) {
     return this.messaging.listChannels(ctx);
   }
 
   @Post('channels')
-  async createChannel(
+  createChannel(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: CreateChannelDto,
   ) {
     return this.messaging.createChannel(ctx, dto);
   }
 
-  @Get('channels/:id/messages')
-  async listMessages(
+  @Post('channels/direct')
+  createDirectChannel(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: CreateDirectChannelDto,
+  ) {
+    return this.messaging.createDirectChannel(ctx, dto);
+  }
+
+  @Patch('channels/:id')
+  updateChannel(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') channelId: string,
+    @Body() dto: UpdateChannelDto,
+  ) {
+    return this.messaging.updateChannel(ctx, channelId, dto);
+  }
+
+  @Put('channels/:id/members')
+  replaceMembers(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') channelId: string,
+    @Body() dto: UpdateChannelMembersDto,
+  ) {
+    return this.messaging.replaceMembers(ctx, channelId, dto.memberIds);
+  }
+
+  @Delete('channels/:id')
+  async deleteChannel(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') channelId: string,
   ) {
-    return this.messaging.listMessages(ctx, channelId);
+    await this.messaging.deleteChannel(ctx, channelId);
+  }
+
+  @Get('channels/:id/messages')
+  listMessages(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') channelId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.messaging.listMessages(ctx, channelId, cursor, limit ? Number(limit) : 50);
   }
 
   @Post('messages')
-  async createMessage(
+  createMessage(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: CreateMessageDto,
   ) {
     return this.messaging.createMessage(ctx, dto);
+  }
+
+  @Patch('messages/:id')
+  updateMessage(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') messageId: string,
+    @Body() dto: UpdateMessageDto,
+  ) {
+    return this.messaging.updateMessage(ctx, messageId, dto);
+  }
+
+  @Delete('messages/:id')
+  deleteMessage(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') messageId: string,
+  ) {
+    return this.messaging.deleteMessage(ctx, messageId);
   }
 }

@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "../lib/api";
+import { useRealtime } from "./useRealtime";
 import { getActiveOrganisation, setActiveOrganisation } from "../lib/api";
 
 function orgId() {
@@ -47,6 +49,15 @@ export function useWorkspaces(organisationId?: string) {
   });
 }
 
+export function useMembers(organisationId?: string) {
+  return useQuery({
+    queryKey: ["members", organisationId],
+    queryFn: () => api.getMembers(organisationId as string),
+    enabled: Boolean(organisationId),
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useChannels() {
   return useQuery({
     queryKey: ["channels", orgId()],
@@ -60,17 +71,49 @@ export function useChannels() {
 export function useCreateChannel() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { name: string; workspaceId?: string; type?: string }) =>
-      api.createChannel(args.name, args.workspaceId, args.type),
-    onSuccess: () =>
-      client.invalidateQueries({ queryKey: ["channels", orgId()] }),
+    mutationFn: (args: { name: string; workspaceId?: string; type?: string; memberIds?: string[] }) =>
+      api.createChannel(args.name, args.workspaceId, args.type, args.memberIds),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["channels", orgId()] }),
+  });
+}
+
+export function useCreateDirectChannel() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createDirectChannel,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["channels", orgId()] }),
+  });
+}
+
+export function useUpdateChannel() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { channelId: string; body: { name?: string; type?: "public" | "private" } }) =>
+      api.updateChannel(args.channelId, args.body),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["channels", orgId()] }),
+  });
+}
+
+export function useDeleteChannel() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteChannel,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["channels", orgId()] }),
   });
 }
 
 export function useMessages(channelId?: string) {
+  const { joinRealtimeChannel, leaveRealtimeChannel, connected } = useRealtime();
+  useEffect(() => {
+    if (!channelId || !connected) return;
+    joinRealtimeChannel(channelId);
+    return () => leaveRealtimeChannel(channelId);
+  }, [channelId, connected, joinRealtimeChannel, leaveRealtimeChannel]);
+
   return useQuery({
     queryKey: ["messages", channelId],
     queryFn: () => api.getMessages(channelId as string),
+    select: (page) => page.items,
     enabled: Boolean(channelId),
     staleTime: 10 * 1000,
     retry: 2,
@@ -80,10 +123,27 @@ export function useMessages(channelId?: string) {
 export function useSendMessage() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { channelId: string; content: string }) =>
-      api.sendMessage(args.channelId, args.content),
+    mutationFn: (args: { channelId: string; content: string; attachmentIds?: string[] }) =>
+      api.sendMessage(args.channelId, args.content, args.attachmentIds),
     onSuccess: (_, args) =>
       client.invalidateQueries({ queryKey: ["messages", args.channelId] }),
+  });
+}
+
+export function useUpdateMessage() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { messageId: string; channelId: string; content: string }) =>
+      api.updateMessage(args.messageId, args.content),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["messages", args.channelId] }),
+  });
+}
+
+export function useDeleteMessage() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { messageId: string; channelId: string }) => api.deleteMessage(args.messageId),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["messages", args.channelId] }),
   });
 }
 
