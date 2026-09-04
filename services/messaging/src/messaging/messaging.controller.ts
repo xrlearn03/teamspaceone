@@ -75,6 +75,16 @@ export class MessagingController {
     return this.messaging.listMessages(ctx, channelId, cursor, limit ? Number(limit) : 50);
   }
 
+  @Get('messages/:id/thread')
+  listThreadMessages(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') messageId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.messaging.listThreadMessages(ctx, messageId, cursor, limit ? Number(limit) : 50);
+  }
+
   @Post('messages')
   createMessage(
     @CurrentOrganisation() ctx: OrganisationContextValue,

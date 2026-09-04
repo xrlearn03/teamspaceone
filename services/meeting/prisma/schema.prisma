@@ -20,10 +20,15 @@ model Meeting {
   startedAt      DateTime?
   endedAt        DateTime?
   status         String              @default("scheduled")
+  isRecording    Boolean             @default(false)
+  recordingEgressId String?
   createdBy      String
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   participants   MeetingParticipant[]
+  messages       MeetingMessage[]
+  reactions      MeetingReaction[]
+  raiseHands     MeetingRaiseHand[]
 
   @@index([organisationId])
   @@index([workspaceId])
@@ -49,6 +54,55 @@ model MeetingParticipant {
   @@index([userId])
   @@unique([meetingId, userId])
   @@map("meeting_participants")
+}
+
+model MeetingMessage {
+  id             String   @id @default(cuid())
+  meetingId      String
+  organisationId String
+  userId         String
+  content        String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([organisationId])
+  @@index([createdAt])
+  @@map("meeting_messages")
+}
+
+model MeetingReaction {
+  id             String   @id @default(cuid())
+  meetingId      String
+  organisationId String
+  userId         String
+  emoji          String
+  createdAt      DateTime @default(now())
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([organisationId])
+  @@map("meeting_reactions")
+}
+
+model MeetingRaiseHand {
+  id             String   @id @default(cuid())
+  meetingId      String
+  organisationId String
+  userId         String
+  raised         Boolean @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@index([meetingId])
+  @@index([organisationId])
+  @@map("meeting_raise_hands")
 }
 
 model OutboxEvent {

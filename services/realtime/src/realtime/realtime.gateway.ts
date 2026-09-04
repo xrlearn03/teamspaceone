@@ -239,6 +239,35 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
         }
         break;
       }
+      case Subjects.MEETING_CHAT_CREATED: {
+        const meetingId = payload.meetingId as string | undefined;
+        if (meetingId) {
+          this.server.to(`meeting:${meetingId}`).emit('meeting.chat.created', payload);
+        }
+        break;
+      }
+      case Subjects.MEETING_REACTION_CREATED: {
+        const meetingId = payload.meetingId as string | undefined;
+        if (meetingId) {
+          this.server.to(`meeting:${meetingId}`).emit('meeting.reaction.created', payload);
+        }
+        break;
+      }
+      case Subjects.MEETING_RAISE_HAND_CHANGED: {
+        const meetingId = payload.meetingId as string | undefined;
+        if (meetingId) {
+          this.server.to(`meeting:${meetingId}`).emit('meeting.raise_hand.changed', payload);
+        }
+        break;
+      }
+      case Subjects.MEETING_RECORDING_STARTED:
+      case Subjects.MEETING_RECORDING_STOPPED: {
+        const meetingId = payload.meetingId as string | undefined;
+        if (meetingId) {
+          this.server.to(`meeting:${meetingId}`).emit('meeting.recording.changed', { isRecording: payload.isRecording, recordedBy: payload.recordedBy });
+        }
+        break;
+      }
       case Subjects.VOICE_ROOM_CREATED: {
         const workspaceId = envelope.workspaceId as string | undefined;
         if (workspaceId) {

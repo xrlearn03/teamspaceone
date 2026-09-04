@@ -90,6 +90,10 @@ body,
   height: 100%;
 }
 
+#root {
+  background-color: #02040a;
+}
+
 body {
   background-color: var(--background);
   color: var(--text);

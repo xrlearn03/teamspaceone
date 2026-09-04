@@ -220,12 +220,14 @@ export interface Message {
   id: string;
   channelId: string;
   senderId: string;
+  parentMessageId?: string | null;
   content: string;
   editedAt?: string | null;
   deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   attachments: MessageAttachment[];
+  _count?: { replies: number };
 }
 
 export interface MessagePage {
@@ -392,6 +394,7 @@ export interface Meeting {
   description?: string | null;
   status: string;
   type: string;
+  isRecording?: boolean;
   createdBy: string;
   scheduledAt?: string | null;
   participants?: MeetingParticipant[];
@@ -413,6 +416,35 @@ export interface JoinMeetingResult {
 export interface MeetingTokenResult {
   token: string;
   roomName: string;
+}
+
+export interface MeetingMessage {
+  id: string;
+  meetingId: string;
+  userId: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MeetingReaction {
+  id: string;
+  meetingId: string;
+  userId: string;
+  emoji: string;
+  createdAt: string;
+}
+
+export interface MeetingRaiseHand {
+  id: string;
+  meetingId: string;
+  userId: string;
+  raised: boolean;
+}
+
+export interface MeetingRecordingState {
+  isRecording: boolean;
+  recordedBy?: string;
 }
 
 // Auth
@@ -578,10 +610,16 @@ export function getMessages(channelId: string, cursor?: string, limit = 50) {
   return apiRequest<MessagePage>(`/channels/${channelId}/messages?${params.toString()}`);
 }
 
-export function sendMessage(channelId: string, content: string, attachmentIds?: string[]) {
+export function getThreadMessages(parentMessageId: string, cursor?: string, limit = 50) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  return apiRequest<MessagePage>(`/messages/${parentMessageId}/thread?${params.toString()}`);
+}
+
+export function sendMessage(channelId: string, content: string, attachmentIds?: string[], parentMessageId?: string) {
   return apiRequest<Message>("/messages", {
     method: "POST",
-    body: { channelId, content, attachmentIds },
+    body: { channelId, content, attachmentIds, parentMessageId },
   });
 }
 
@@ -734,10 +772,15 @@ export function getMeeting(id: string) {
   return apiRequest<Meeting>(`/meetings/${id}`);
 }
 
-export function createMeeting(title: string, description?: string, workspaceId?: string) {
+export function createMeeting(
+  title: string,
+  description?: string,
+  workspaceId?: string,
+  scheduledAt?: string,
+) {
   return apiRequest<Meeting>("/meetings", {
     method: "POST",
-    body: { title, description, workspaceId },
+    body: { title, description, workspaceId, scheduledAt },
   });
 }
 
@@ -773,6 +816,36 @@ export function setScreenShare(id: string, isScreenSharing: boolean) {
 
 export function getMeetingToken(id: string) {
   return apiRequest<MeetingTokenResult>(`/meetings/${id}/token`);
+}
+
+export function getMeetingMessages(id: string, cursor?: string, limit = 50) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  return apiRequest<{ items: MeetingMessage[]; nextCursor: string | null }>(`/meetings/${id}/messages?${params.toString()}`);
+}
+
+export function createMeetingMessage(id: string, content: string) {
+  return apiRequest<MeetingMessage>(`/meetings/${id}/messages`, { method: "POST", body: { content } });
+}
+
+export function getMeetingReactions(id: string) {
+  return apiRequest<MeetingReaction[]>(`/meetings/${id}/reactions`);
+}
+
+export function createMeetingReaction(id: string, emoji: string) {
+  return apiRequest<MeetingReaction>(`/meetings/${id}/reactions`, { method: "POST", body: { emoji } });
+}
+
+export function getMeetingRaiseHands(id: string) {
+  return apiRequest<MeetingRaiseHand[]>(`/meetings/${id}/raise-hands`);
+}
+
+export function updateMeetingRaiseHand(id: string, raised: boolean) {
+  return apiRequest<MeetingRaiseHand>(`/meetings/${id}/raise-hand`, { method: "POST", body: { raised } });
+}
+
+export function setMeetingRecording(id: string, recording: boolean) {
+  return apiRequest<Meeting>(`/meetings/${id}/recording`, { method: "POST", body: { recording } });
 }
 
 // Notifications

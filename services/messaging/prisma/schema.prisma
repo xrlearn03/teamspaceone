@@ -45,17 +45,21 @@ model Message {
   organisationId String
   channelId      String
   senderId       String
+  parentMessageId String?
   content        String
   editedAt       DateTime?
   deletedAt      DateTime?
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   channel        Channel             @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  parent         Message?            @relation("ThreadReplies", fields: [parentMessageId], references: [id], onDelete: Cascade)
+  replies        Message[]           @relation("ThreadReplies")
   attachments    MessageAttachment[]
 
   @@index([organisationId])
   @@index([channelId, createdAt])
   @@index([senderId])
+  @@index([parentMessageId])
   @@map("messages")
 }
 

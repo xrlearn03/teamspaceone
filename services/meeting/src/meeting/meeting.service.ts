@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { type OrganisationContextValue } from '@teamspace-one/organisation-context';
@@ -394,5 +394,174 @@ export class MeetingService {
     });
 
     return { token, roomName: meeting.roomName };
+  }
+
+  async createMeetingMessage(ctx: OrganisationContextValue, meetingId: string, content: string) {
+    const userId = ctx.actorId;
+    if (!userId) throw new ForbiddenException('Missing actor');
+    const text = content.trim();
+    if (!text) throw new BadRequestException('Message content is required');
+    if (text.length > 10000) throw new BadRequestException('Message content is too long');
+
+    const meeting = await this.getById(ctx, meetingId);
+    const participant = await this.prisma.meetingParticipant.findFirst({
+      where: { meetingId, userId, leftAt: null },
+    });
+    if (!participant) throw new ForbiddenException('Join the meeting to chat');
+
+    const id = randomUUID();
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const message = await tx.meetingMessage.create({
+        data: {
+          id,
+          meetingId,
+          organisationId: ctx.organisationId,
+          userId,
+          content: text,
+        },
+      });
+      const payload = { ...message, meetingId, roomName: meeting.roomName };
+      const envelope = createEventEnvelope({
+        eventType: Subjects.MEETING_CHAT_CREATED,
+        organisationId: ctx.organisationId,
+        actorId: userId,
+        resourceType: 'meeting_message',
+        resourceId: id,
+        correlationId: ctx.correlationId,
+        payload,
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.MEETING_CHAT_CREATED);
+      return message;
+    });
+  }
+
+  async listMeetingMessages(ctx: OrganisationContextValue, meetingId: string, cursor?: string, limit = 50) {
+    await this.getById(ctx, meetingId);
+    const take = Math.min(Math.max(Number.isFinite(limit) ? limit : 50, 1), 100);
+    const rows = await this.prisma.meetingMessage.findMany({
+      where: { meetingId, organisationId: ctx.organisationId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      cursor: cursor ? { id: cursor } : undefined,
+      skip: cursor ? 1 : 0,
+      take: take + 1,
+    });
+    const hasMore = rows.length > take;
+    const items = (hasMore ? rows.slice(0, take) : rows).reverse();
+    return { items, nextCursor: hasMore ? rows[take - 1]?.id ?? null : null };
+  }
+
+  async createMeetingReaction(ctx: OrganisationContextValue, meetingId: string, emoji: string) {
+    const userId = ctx.actorId;
+    if (!userId) throw new ForbiddenException('Missing actor');
+    if (!emoji) throw new BadRequestException('Emoji is required');
+
+    const meeting = await this.getById(ctx, meetingId);
+    const participant = await this.prisma.meetingParticipant.findFirst({
+      where: { meetingId, userId, leftAt: null },
+    });
+    if (!participant) throw new ForbiddenException('Join the meeting to react');
+
+    const id = randomUUID();
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const reaction = await tx.meetingReaction.create({
+        data: { id, meetingId, organisationId: ctx.organisationId, userId, emoji },
+      });
+      const payload = { ...reaction, meetingId, roomName: meeting.roomName };
+      const envelope = createEventEnvelope({
+        eventType: Subjects.MEETING_REACTION_CREATED,
+        organisationId: ctx.organisationId,
+        actorId: userId,
+        resourceType: 'meeting_reaction',
+        resourceId: id,
+        correlationId: ctx.correlationId,
+        payload,
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.MEETING_REACTION_CREATED);
+      return reaction;
+    });
+  }
+
+  async listMeetingReactions(ctx: OrganisationContextValue, meetingId: string) {
+    await this.getById(ctx, meetingId);
+    return this.prisma.meetingReaction.findMany({
+      where: { meetingId, organisationId: ctx.organisationId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  async updateRaiseHand(ctx: OrganisationContextValue, meetingId: string, raised: boolean) {
+    const userId = ctx.actorId;
+    if (!userId) throw new ForbiddenException('Missing actor');
+
+    const meeting = await this.getById(ctx, meetingId);
+    const participant = await this.prisma.meetingParticipant.findFirst({
+      where: { meetingId, userId, leftAt: null },
+    });
+    if (!participant) throw new ForbiddenException('Join the meeting to raise hand');
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const record = await tx.meetingRaiseHand.upsert({
+        where: { meetingId_userId: { meetingId, userId } },
+        create: { id: randomUUID(), meetingId, organisationId: ctx.organisationId, userId, raised },
+        update: { raised, updatedAt: new Date() },
+      });
+      const payload = { ...record, meetingId, roomName: meeting.roomName };
+      const envelope = createEventEnvelope({
+        eventType: Subjects.MEETING_RAISE_HAND_CHANGED,
+        organisationId: ctx.organisationId,
+        actorId: userId,
+        resourceType: 'meeting_raise_hand',
+        resourceId: record.id,
+        correlationId: ctx.correlationId,
+        payload,
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.MEETING_RAISE_HAND_CHANGED);
+      return record;
+    });
+  }
+
+  async listRaiseHands(ctx: OrganisationContextValue, meetingId: string) {
+    await this.getById(ctx, meetingId);
+    return this.prisma.meetingRaiseHand.findMany({
+      where: { meetingId, organisationId: ctx.organisationId, raised: true },
+    });
+  }
+
+  async setRecording(ctx: OrganisationContextValue, meetingId: string, recording: boolean) {
+    const userId = ctx.actorId;
+    if (!userId) throw new ForbiddenException('Missing actor');
+
+    const meeting = await this.getById(ctx, meetingId);
+    if (userId !== meeting.createdBy) throw new ForbiddenException('Only the meeting creator can control recording');
+
+    const eventType = recording ? Subjects.MEETING_RECORDING_STARTED : Subjects.MEETING_RECORDING_STOPPED;
+
+    let egressId: string | undefined | null = meeting.recordingEgressId;
+    if (recording && !egressId) {
+      egressId = await this.livekit.startRecording(meeting.roomName);
+    } else if (!recording && egressId) {
+      await this.livekit.stopRecording(egressId);
+      egressId = null;
+    }
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.meeting.update({
+        where: { id: meetingId },
+        data: { isRecording: recording, recordingEgressId: egressId, updatedAt: new Date() },
+      });
+      const payload = { meetingId, roomName: meeting.roomName, isRecording: recording, recordedBy: userId, egressId };
+      const envelope = createEventEnvelope({
+        eventType,
+        organisationId: ctx.organisationId,
+        actorId: userId,
+        resourceType: 'meeting',
+        resourceId: meetingId,
+        correlationId: ctx.correlationId,
+        payload,
+      });
+      await this.outbox.createEvent(tx, envelope, eventType);
+      return updated;
+    });
   }
 }

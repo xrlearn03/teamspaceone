@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Video, Loader2 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
+import { MeetingLobby } from "../components/livekit/lobby";
 import { LiveKitConference } from "../components/livekit/conference";
 import { Button } from "../components/ui/button";
 import { useRealtime } from "../hooks/useRealtime";
@@ -12,9 +13,18 @@ import {
   joinMeeting,
   leaveMeeting,
   setScreenShare,
+  startMeeting,
   type Meeting,
 } from "../lib/api";
 import { useMe } from "../hooks/api";
+
+export interface MediaJoinOptions {
+  audioEnabled: boolean;
+  videoEnabled: boolean;
+  audioInputId?: string;
+  videoInputId?: string;
+  audioOutputId?: string;
+}
 
 export function MeetingScreen() {
   const { activeMeetingId, setActiveView } = useUIStore(
@@ -25,6 +35,7 @@ export function MeetingScreen() {
 
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [mediaOptions, setMediaOptions] = useState<MediaJoinOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,37 +55,60 @@ export function MeetingScreen() {
     setLoading(true);
     setError(null);
 
-    async function join() {
+    async function fetchMeeting() {
       try {
-        const m = await getMeeting(activeMeetingId!);
-        let t: string;
-        try {
-          const result = await getMeetingToken(activeMeetingId!);
-          t = result.token;
-        } catch {
-          const result = await joinMeeting(activeMeetingId!);
-          t = result.token;
+        let m = await getMeeting(activeMeetingId!);
+        if (m.status === "scheduled") {
+          try {
+            m = await startMeeting(activeMeetingId!);
+          } catch {
+            m = await getMeeting(activeMeetingId!);
+          }
+        }
+        if (m.status === "ended") {
+          throw new Error("Meeting has ended");
         }
         if (!cancelled) {
           setMeeting(m);
-          setToken(t);
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to join meeting");
+          setError(err instanceof Error ? err.message : "Failed to load meeting");
         }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    void join();
+    void fetchMeeting();
     return () => {
       cancelled = true;
       leaveRealtimeMeeting(activeMeetingId);
       unsubscribe();
     };
   }, [activeMeetingId]);
+
+  async function handleJoin(opts: MediaJoinOptions) {
+    if (!activeMeetingId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      let t: string;
+      try {
+        const result = await getMeetingToken(activeMeetingId);
+        t = result.token;
+      } catch {
+        const result = await joinMeeting(activeMeetingId);
+        t = result.token;
+      }
+      setMediaOptions(opts);
+      setToken(t);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to join meeting");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleLeave() {
     if (activeMeetingId) {
@@ -86,6 +120,7 @@ export function MeetingScreen() {
     }
     setToken(null);
     setMeeting(null);
+    setMediaOptions(null);
     setActiveView("home");
   }
 
@@ -111,11 +146,11 @@ export function MeetingScreen() {
     );
   }
 
-  if (loading) {
+  if (loading && !meeting) {
     return (
       <div className="flex h-full flex-col items-center justify-center text-text-muted">
         <Loader2 className="h-8 w-8 animate-spin" />
-        <p className="mt-2 text-sm">Joining meeting...</p>
+        <p className="mt-2 text-sm">Loading meeting...</p>
       </div>
     );
   }
@@ -131,13 +166,34 @@ export function MeetingScreen() {
     );
   }
 
-  if (!meeting || !token) return null;
+  if (!meeting) return null;
+
+  if (!token || !mediaOptions) {
+    return (
+      <MeetingLobby
+        meeting={meeting}
+        user={user}
+        onJoin={handleJoin}
+        onCancel={() => setActiveView("home")}
+      />
+    );
+  }
+
+  const displayName =
+    user
+      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
+      : "Guest";
 
   return (
     <LiveKitConference
       meeting={meeting}
       token={token}
-      videoEnabled={meeting.type !== "voice_room"}
+      displayName={displayName}
+      videoEnabled={mediaOptions.videoEnabled}
+      audioEnabled={mediaOptions.audioEnabled}
+      audioInputId={mediaOptions.audioInputId}
+      videoInputId={mediaOptions.videoInputId}
+      audioOutputId={mediaOptions.audioOutputId}
       onLeave={handleLeave}
       onEnd={meeting.createdBy === user?.id ? handleEnd : undefined}
       onScreenShare={handleScreenShare}

@@ -17,7 +17,7 @@ import { type UpdateChannelDto } from './dto/update-channel.dto.js';
 import { type UpdateMessageDto } from './dto/update-message.dto.js';
 
 const channelInclude = { members: { orderBy: { joinedAt: 'asc' as const } } };
-const messageInclude = { attachments: true };
+const messageInclude = { attachments: true, _count: { select: { replies: { where: { deletedAt: null } } } } };
 
 @Injectable()
 export class MessagingService {
@@ -171,6 +171,15 @@ export class MessagingService {
     if (content.length > 10000) throw new BadRequestException('Message content is too long');
     if (attachmentIds.length > 10) throw new BadRequestException('A message can contain at most 10 attachments');
 
+    let parentMessageId: string | undefined;
+    if (dto.parentMessageId) {
+      const parent = await this.accessibleMessage(ctx, dto.parentMessageId);
+      if (parent.channelId !== dto.channelId) throw new BadRequestException('Thread reply must be in the same channel');
+      if (parent.parentMessageId) throw new BadRequestException('Cannot reply to a thread reply');
+      if (parent.deletedAt) throw new BadRequestException('Cannot reply to a deleted message');
+      parentMessageId = parent.id;
+    }
+
     const id = randomUUID();
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const message = await tx.message.create({
@@ -179,6 +188,7 @@ export class MessagingService {
           organisationId: ctx.organisationId,
           channelId: dto.channelId,
           senderId,
+          parentMessageId,
           content,
           attachments: { create: attachmentIds.map((fileId) => ({ id: randomUUID(), fileId })) },
         },
@@ -194,7 +204,23 @@ export class MessagingService {
     await this.accessibleChannel(ctx, channelId);
     const take = Math.min(Math.max(Number.isFinite(limit) ? limit : 50, 1), 100);
     const rows = await this.prisma.message.findMany({
-      where: { channelId, organisationId: ctx.organisationId },
+      where: { channelId, organisationId: ctx.organisationId, parentMessageId: null },
+      include: messageInclude,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      cursor: cursor ? { id: cursor } : undefined,
+      skip: cursor ? 1 : 0,
+      take: take + 1,
+    });
+    const hasMore = rows.length > take;
+    const items = (hasMore ? rows.slice(0, take) : rows).reverse();
+    return { items, nextCursor: hasMore ? rows[take - 1]?.id ?? null : null };
+  }
+
+  async listThreadMessages(ctx: OrganisationContextValue, parentMessageId: string, cursor?: string, limit = 50) {
+    const parent = await this.accessibleMessage(ctx, parentMessageId);
+    const take = Math.min(Math.max(Number.isFinite(limit) ? limit : 50, 1), 100);
+    const rows = await this.prisma.message.findMany({
+      where: { parentMessageId: parent.id, organisationId: ctx.organisationId, deletedAt: null },
       include: messageInclude,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       cursor: cursor ? { id: cursor } : undefined,
@@ -278,6 +304,20 @@ export class MessagingService {
     });
     if (!channel) throw new NotFoundException('Channel not found or not owned by actor');
     return channel;
+  }
+
+  private async accessibleMessage(ctx: OrganisationContextValue, messageId: string) {
+    const actorId = this.actor(ctx);
+    const message = await this.prisma.message.findFirst({
+      where: {
+        id: messageId,
+        organisationId: ctx.organisationId,
+        deletedAt: null,
+        channel: { OR: [{ type: 'public' }, { members: { some: { userId: actorId } } }] },
+      },
+    });
+    if (!message) throw new NotFoundException('Message not found or not accessible');
+    return message;
   }
 
   private async ownedMessage(ctx: OrganisationContextValue, messageId: string) {

@@ -1,0 +1,200 @@
+.splash-screen {
+  /* Animation timing — adjust these values to customize the entrance sequence */
+  --splash-bg-fade: 400ms;
+  --splash-bg-ease: cubic-bezier(0, 0, 0.2, 1);
+
+  --splash-logo-delay: 400ms;
+  --splash-logo-duration: 700ms;
+  --splash-logo-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --splash-name-delay: 900ms;
+  --splash-name-duration: 600ms;
+
+  --splash-tagline-delay: 1200ms;
+  --splash-tagline-duration: 500ms;
+
+  --splash-loader-delay: 1500ms;
+  --splash-loader-duration: 400ms;
+
+  --splash-loading-text-delay: 1700ms;
+  --splash-loading-text-duration: 400ms;
+
+  --splash-secondary-delay: 1700ms;
+  --splash-secondary-duration: 500ms;
+
+  --splash-spinner-size: 24px;
+  --splash-spinner-color-start: #0ab2fe;
+  --splash-spinner-color-end: #a063fc;
+
+  /* Shared easings */
+  --splash-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --splash-ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+
+  color-scheme: dark;
+}
+
+@keyframes splash-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes splash-logo-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes splash-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes splash-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes splash-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Background layer --------------------------------------------------------- */
+
+.splash-background {
+  position: absolute;
+  inset: 0;
+  background-color: #02040a;
+  background-image: url('/Splash-background.png');
+  background-size: cover;
+  background-position: center bottom;
+  background-repeat: no-repeat;
+  opacity: 0;
+  animation: splash-fade-in var(--splash-bg-fade) var(--splash-bg-ease) forwards;
+}
+
+.splash-background-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 80% 40% at 50% 100%,
+    rgba(59, 130, 246, 0.12),
+    transparent 70%
+  );
+  opacity: 0;
+  animation: splash-fade-in var(--splash-bg-fade) var(--splash-bg-ease) forwards;
+}
+
+/* Center branding ---------------------------------------------------------- */
+
+.splash-logo {
+  display: block;
+  height: clamp(80px, 16vh, 112px);
+  width: auto;
+  opacity: 0;
+  transform-origin: center center;
+  will-change: opacity, transform;
+  animation: splash-logo-in var(--splash-logo-duration) var(--splash-logo-delay)
+    var(--splash-logo-ease) forwards;
+}
+
+.splash-product-name {
+  display: block;
+  width: clamp(260px, 40vw, 420px);
+  height: auto;
+  aspect-ratio: 845 / 106.5;
+  object-fit: cover;
+  object-position: center bottom;
+  opacity: 0;
+  transform-origin: center bottom;
+  will-change: opacity, transform;
+  animation: splash-slide-up var(--splash-name-duration) var(--splash-name-delay)
+    var(--splash-ease-out) forwards;
+}
+
+.splash-tagline {
+  opacity: 0;
+  will-change: opacity, transform;
+  animation: splash-slide-up var(--splash-tagline-duration) var(--splash-tagline-delay)
+    var(--splash-ease-out) forwards;
+}
+
+/* Loading indicator -------------------------------------------------------- */
+
+.splash-loader {
+  opacity: 0;
+  will-change: opacity;
+  animation: splash-fade-in var(--splash-loader-duration) var(--splash-loader-delay)
+    var(--splash-ease-out) forwards;
+}
+
+.splash-spinner {
+  display: block;
+  width: var(--splash-spinner-size);
+  height: var(--splash-spinner-size);
+  animation: splash-spin 1s linear var(--splash-loader-delay) infinite;
+  transform-origin: center;
+}
+
+.splash-spinner circle {
+  fill: none;
+  stroke: url(#splash-spinner-gradient);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 28 100;
+}
+
+.splash-loading-text {
+  opacity: 0;
+  will-change: opacity, transform;
+  animation: splash-slide-up var(--splash-loading-text-duration)
+    var(--splash-loading-text-delay) var(--splash-ease-out) forwards;
+}
+
+/* Secondary text ----------------------------------------------------------- */
+
+.splash-upper-right {
+  opacity: 0;
+  will-change: opacity, transform;
+  animation: splash-slide-in-right var(--splash-secondary-duration)
+    var(--splash-secondary-delay) var(--splash-ease-out) forwards;
+}
+
+.splash-bottom {
+  opacity: 0;
+  will-change: opacity, transform;
+  animation: splash-slide-up var(--splash-secondary-duration)
+    var(--splash-secondary-delay) var(--splash-ease-out) forwards;
+}
+
+.splash-bottom-line {
+  width: 40px;
+  height: 1px;
+  background-color: rgba(255, 255, 255, 0.4);
+  opacity: 0;
+  animation: splash-fade-in var(--splash-secondary-duration)
+    var(--splash-secondary-delay) var(--splash-ease-out) forwards;
+}

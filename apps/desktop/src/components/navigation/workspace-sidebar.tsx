@@ -24,7 +24,9 @@ import {
   useChannels,
   useCreateChannel,
   useCreateDirectChannel,
+  useCreateMeeting,
   useCreateProject,
+  useCreateVoiceRoom,
   useMeetings,
   useMembers,
   useOrganisations,
@@ -32,7 +34,7 @@ import {
   useUnreadCount,
   useWorkspaces,
 } from "../../hooks/api";
-import { getActiveOrganisation, setActiveOrganisation } from "../../lib/api";
+import { getActiveOrganisation, setActiveOrganisation, type Meeting } from "../../lib/api";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Avatar, AvatarFallback } from "../ui/avatar";
@@ -132,6 +134,18 @@ function SidebarSection({
   );
 }
 
+function formatMeetingSubtext(m: Meeting) {
+  if (m.status === "started") return "Live";
+  if (m.status === "ended") return "Ended";
+  if (m.scheduledAt) {
+    return new Date(m.scheduledAt).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+  return "Upcoming";
+}
+
 function CalendarIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg
@@ -155,10 +169,13 @@ function CalendarIcon(props: React.SVGProps<SVGSVGElement>) {
 export function WorkspaceSidebar() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
-  const [createMode, setCreateMode] = useState<"channel" | "direct" | "project" | null>(null);
+  const [createMode, setCreateMode] = useState<"channel" | "direct" | "project" | "meeting" | null>(null);
   const [channelName, setChannelName] = useState("");
   const [privateChannel, setPrivateChannel] = useState(false);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [meetingTitle, setMeetingTitle] = useState("");
+  const [meetingDescription, setMeetingDescription] = useState("");
+  const [meetingScheduledAt, setMeetingScheduledAt] = useState("");
   const {
     sidebarCollapsed,
     sidebarWidth,
@@ -191,6 +208,8 @@ export function WorkspaceSidebar() {
   const createChannel = useCreateChannel();
   const createDirectChannel = useCreateDirectChannel();
   const createProject = useCreateProject();
+  const createMeeting = useCreateMeeting();
+  const createVoiceRoom = useCreateVoiceRoom();
   const { data: projects } = useProjects();
   const { data: meetings } = useMeetings();
   const { data: unread } = useUnreadCount();
@@ -234,6 +253,27 @@ export function WorkspaceSidebar() {
     setChannelName("");
     setPrivateChannel(false);
     setSelectedMembers([]);
+    setMeetingTitle("");
+    setMeetingDescription("");
+    setMeetingScheduledAt("");
+  }
+
+  function submitCreateMeeting(instant = false) {
+    if (!meetingTitle.trim()) return;
+    createMeeting.mutate(
+      {
+        title: meetingTitle.trim(),
+        description: meetingDescription || undefined,
+        workspaceId: currentWorkspace?.id,
+        scheduledAt: instant ? undefined : meetingScheduledAt || undefined,
+      },
+      {
+        onSuccess: (meeting) => {
+          closeCreate();
+          navigate(meeting.type === "voice_room" ? "voice" : "meeting", { meetingId: meeting.id });
+        },
+      },
+    );
   }
 
   function submitCreate() {
@@ -330,8 +370,8 @@ export function WorkspaceSidebar() {
             <DropdownMenuItem onClick={() => setCreateMode("project")}>
               Create project
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("meeting")}>
-              Start meeting
+            <DropdownMenuItem onClick={() => setCreateMode("meeting")}>
+              Schedule meeting
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -432,16 +472,10 @@ export function WorkspaceSidebar() {
             meetings.map((m) => (
               <SidebarItem
                 key={m.id}
-                icon={m.status === "live" ? Video : CalendarIcon}
+                icon={m.type === "voice_room" ? Mic : m.status === "started" ? Video : CalendarIcon}
                 label={m.title}
-                onClick={() => navigate("meeting", { meetingId: m.id })}
-                subtext={
-                  m.status === "live"
-                    ? "Live"
-                    : m.scheduledAt
-                      ? new Date(m.scheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                      : "Upcoming"
-                }
+                onClick={() => navigate(m.type === "voice_room" ? "voice" : "meeting", { meetingId: m.id })}
+                subtext={formatMeetingSubtext(m)}
               />
             ))
           ) : (
@@ -450,7 +484,12 @@ export function WorkspaceSidebar() {
           <SidebarItem
             icon={Mic}
             label="General voice"
-            onClick={() => navigate("voice")}
+            onClick={() =>
+              createVoiceRoom.mutate(
+                { title: "General voice", workspaceId: currentWorkspace?.id },
+                { onSuccess: (meeting) => navigate("voice", { meetingId: meeting.id }) },
+              )
+            }
           />
         </SidebarSection>
 
@@ -487,9 +526,9 @@ export function WorkspaceSidebar() {
     <Dialog open={createMode !== null} onOpenChange={(open) => { if (!open) closeCreate(); }}>
       <DialogContent className="max-w-md p-0">
         <DialogHeader>
-          <DialogTitle>{createMode === "channel" ? "Create channel" : createMode === "project" ? "Create project" : "New direct message"}</DialogTitle>
+          <DialogTitle>{createMode === "channel" ? "Create channel" : createMode === "project" ? "Create project" : createMode === "meeting" ? "Schedule meeting" : "New direct message"}</DialogTitle>
           <DialogDescription>
-            {createMode === "channel" ? "Create a public or private space for your team." : createMode === "project" ? "Create a project and choose its initial members." : "Choose one or more organisation members."}
+            {createMode === "channel" ? "Create a public or private space for your team." : createMode === "project" ? "Create a project and choose its initial members." : createMode === "meeting" ? "Start an instant meeting or schedule one for later." : "Choose one or more organisation members."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 px-4 pb-4">
@@ -500,6 +539,13 @@ export function WorkspaceSidebar() {
                 <input type="checkbox" checked={privateChannel} onChange={(e) => setPrivateChannel(e.target.checked)} />
                 Private channel
               </label> : null}
+            </>
+          ) : null}
+          {createMode === "meeting" ? (
+            <>
+              <Input value={meetingTitle} onChange={(e) => setMeetingTitle(e.target.value)} placeholder="Meeting title" autoFocus />
+              <Input value={meetingDescription} onChange={(e) => setMeetingDescription(e.target.value)} placeholder="Description (optional)" />
+              <Input type="datetime-local" value={meetingScheduledAt} onChange={(e) => setMeetingScheduledAt(e.target.value)} />
             </>
           ) : null}
           {(createMode === "direct" || createMode === "project" || privateChannel) ? (
@@ -514,14 +560,25 @@ export function WorkspaceSidebar() {
               {!members?.length ? <p className="p-2 text-sm text-text-muted">No organisation members available.</p> : null}
             </div>
           ) : null}
-          {(createChannel.error || createDirectChannel.error || createProject.error) ? (
-            <p className="text-sm text-error">{(createChannel.error ?? createDirectChannel.error ?? createProject.error)?.message}</p>
+          {(createChannel.error || createDirectChannel.error || createProject.error || createMeeting.error || createVoiceRoom.error) ? (
+            <p className="text-sm text-error">{(createChannel.error ?? createDirectChannel.error ?? createProject.error ?? createMeeting.error ?? createVoiceRoom.error)?.message}</p>
           ) : null}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={closeCreate}>Cancel</Button>
-            <Button onClick={submitCreate} disabled={createChannel.isPending || createDirectChannel.isPending || createProject.isPending || (createMode === "direct" ? selectedMembers.length === 0 : !channelName.trim())}>
-              Create
-            </Button>
+            {createMode === "meeting" ? (
+              <>
+                <Button variant="secondary" onClick={() => submitCreateMeeting(true)} disabled={!meetingTitle.trim() || createMeeting.isPending}>
+                  Start now
+                </Button>
+                <Button onClick={() => submitCreateMeeting(false)} disabled={!meetingTitle.trim() || !meetingScheduledAt || createMeeting.isPending}>
+                  Schedule
+                </Button>
+              </>
+            ) : (
+              <Button onClick={submitCreate} disabled={createChannel.isPending || createDirectChannel.isPending || createProject.isPending || (createMode === "direct" ? selectedMembers.length === 0 : !channelName.trim())}>
+                Create
+              </Button>
+            )}
           </div>
         </div>
       </DialogContent>

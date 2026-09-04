@@ -29,11 +29,6 @@ interface SearchResult {
 
 const filters = ["All", "Messages", "Channels", "Files", "Projects", "Meetings"];
 
-function formatTime(iso?: string | null) {
-  if (!iso) return "";
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
 export function CommandMenu({
   open,
   onOpenChange,
@@ -89,9 +84,16 @@ export function CommandMenu({
         id: m.id,
         type: "Meeting",
         title: m.title,
-        subtitle: m.scheduledAt ? `Today at ${formatTime(m.scheduledAt)}` : m.status,
+        subtitle:
+          m.status === "started"
+            ? "Live"
+            : m.status === "ended"
+              ? "Ended"
+              : m.scheduledAt
+                ? new Date(m.scheduledAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                : "Upcoming",
         icon: Calendar,
-        view: "meeting",
+        view: m.type === "voice_room" ? "voice" : "meeting",
         params: { meetingId: m.id },
       })),
       ...(files ?? []).map((f) => ({

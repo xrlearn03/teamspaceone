@@ -3,31 +3,36 @@ import {
   Hash,
   Info,
   MoreHorizontal,
-  Check,
   Paperclip,
-  Pencil,
   Phone,
   Search,
   Send,
-  Trash2,
   Video,
-  X,
 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
-import { useChannels, useCreateMeeting, useCreateVoiceRoom, useDeleteChannel, useDeleteMessage, useMe, useMembers, useMessages, useReplaceChannelMembers, useSendMessage, useUpdateChannel, useUpdateMessage, useUploadFile } from "../hooks/api";
+import {
+  useChannels,
+  useCreateMeeting,
+  useCreateVoiceRoom,
+  useDeleteChannel,
+  useDeleteMessage,
+  useMe,
+  useMembers,
+  useMessages,
+  useReplaceChannelMembers,
+  useSendMessage,
+  useUpdateChannel,
+  useUpdateMessage,
+  useUploadFile,
+} from "../hooks/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { MessageAttachment } from "../components/ui/message-attachment";
+import { MessageItem } from "../components/chat/message";
+import { ThreadPanel } from "../components/chat/thread-panel";
 import { getActiveOrganisation } from "../lib/api";
-import { cn } from "../lib/utils";
-
-function formatTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
+import type { Message } from "../lib/api";
 
 export function ChannelScreen() {
   const { activeChannelId, toggleRightPanel, setActiveView } = useUIStore(
@@ -60,8 +65,7 @@ export function ChannelScreen() {
   const [channelName, setChannelName] = useState("");
   const [privateChannel, setPrivateChannel] = useState(false);
   const [channelMemberIds, setChannelMemberIds] = useState<string[]>([]);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState("");
+  const [threadMessage, setThreadMessage] = useState<Message | null>(null);
 
   function send() {
     if (!channel || !draft.trim()) return;
@@ -86,15 +90,17 @@ export function ChannelScreen() {
     createMeeting.mutate({ title: `${channel.name} video call` }, { onSuccess: (meeting) => setActiveView("meeting", { meetingId: meeting.id }) });
   }
 
-  function saveEdit() {
-    if (!channel || !editingId || !editDraft.trim()) return;
-    updateMessage.mutate(
-      { messageId: editingId, channelId: channel.id, content: editDraft.trim() },
-      { onSuccess: () => setEditingId(null) },
-    );
+  const visibleMessages = searchQuery.trim() ? messages?.filter((message) => message.content.toLowerCase().includes(searchQuery.trim().toLowerCase())) : messages;
+
+  function handleEdit(messageId: string, content: string) {
+    if (!channel) return;
+    updateMessage.mutate({ messageId, channelId: channel.id, content });
   }
 
-  const visibleMessages = searchQuery.trim() ? messages?.filter((message) => message.content.toLowerCase().includes(searchQuery.trim().toLowerCase())) : messages;
+  function handleDelete(messageId: string) {
+    if (!channel) return;
+    deleteMessage.mutate({ messageId, channelId: channel.id });
+  }
 
   return (
     <>
@@ -131,110 +137,79 @@ export function ChannelScreen() {
       </header>
       {searchOpen ? <div className="border-b p-2"><Input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search messages in this channel" /></div> : null}
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        {hasNextPage ? (
-          <div className="mb-3 text-center"><Button variant="ghost" size="sm" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>{isFetchingNextPage ? "Loading…" : "Load older messages"}</Button></div>
-        ) : null}
-        <div className="mb-4 flex items-center gap-2 text-xs text-text-muted">
-          <span className="h-px flex-1 bg-border" />
-          <span>Today</span>
-          <span className="h-px flex-1 bg-border" />
-        </div>
-
-        <div className="space-y-4">
-          {visibleMessages && visibleMessages.length > 0 ? (
-            visibleMessages.map((m) => {
-              const isMe = m.senderId === user?.id;
-              const author = m.senderId.slice(0, 8);
-              return (
-                <div key={m.id} className={cn("flex gap-3", isMe && "flex-row-reverse")}>
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback>{author.charAt(0).toUpperCase()}</AvatarFallback>
-                  </Avatar>
-                  <div className={cn("flex max-w-[80%] flex-col", isMe && "items-end")}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-text">{author}</span>
-                      <span className="text-xs text-text-muted">{formatTime(m.createdAt)}</span>
-                    </div>
-                    {editingId === m.id ? (
-                      <div className="mt-1 flex items-center gap-1">
-                        <Input
-                          value={editDraft}
-                          onChange={(e) => setEditDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") saveEdit();
-                            if (e.key === "Escape") setEditingId(null);
-                          }}
-                          className="h-8"
-                          autoFocus
-                        />
-                        <Button size="icon" variant="ghost" onClick={saveEdit} aria-label="Save message"><Check className="h-4 w-4" /></Button>
-                        <Button size="icon" variant="ghost" onClick={() => setEditingId(null)} aria-label="Cancel edit"><X className="h-4 w-4" /></Button>
-                      </div>
-                    ) : (
-                      <div className="group flex items-center gap-1">
-                        <div
-                          className={cn(
-                            "mt-0.5 rounded-lg px-3 py-2 text-sm",
-                            isMe ? "bg-primary text-white" : "bg-surface-elevated text-text",
-                            m.deletedAt && "italic opacity-60",
-                          )}
-                        >
-                          {m.deletedAt ? "Message deleted" : m.content}
-                          {m.editedAt && !m.deletedAt ? <span className="ml-1 text-[10px] opacity-70">(edited)</span> : null}
-                          {m.attachments.map((attachment) => <MessageAttachment key={attachment.id} fileId={attachment.fileId} />)}
-                        </div>
-                        {isMe && !m.deletedAt ? (
-                          <div className="flex opacity-0 transition-opacity group-hover:opacity-100">
-                            <Button size="icon" variant="ghost" onClick={() => { setEditingId(m.id); setEditDraft(m.content); }} aria-label="Edit message"><Pencil className="h-3.5 w-3.5" /></Button>
-                            <Button size="icon" variant="ghost" onClick={() => channel && deleteMessage.mutate({ messageId: m.id, channelId: channel.id })} aria-label="Delete message"><Trash2 className="h-3.5 w-3.5" /></Button>
-                          </div>
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          ) : (
-            <div className="py-8 text-center text-sm text-text-muted">
-              No messages yet. Say hello.
+      <div className="flex min-h-0 flex-1">
+        <div className="flex flex-1 flex-col">
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            {hasNextPage ? (
+              <div className="mb-3 text-center"><Button variant="ghost" size="sm" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>{isFetchingNextPage ? "Loading…" : "Load older messages"}</Button></div>
+            ) : null}
+            <div className="mb-4 flex items-center gap-2 text-xs text-text-muted">
+              <span className="h-px flex-1 bg-border" />
+              <span>Today</span>
+              <span className="h-px flex-1 bg-border" />
             </div>
-          )}
-        </div>
-      </div>
 
-      <div className="border-t p-3">
-        <div className="flex items-end gap-2 rounded-lg border bg-surface p-2">
-          <div className="flex-1">
-            <Input
-              placeholder={`Message #${channel?.name ?? "channel"}`}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-              className="border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0"
-            />
+            <div className="space-y-4">
+              {visibleMessages && visibleMessages.length > 0 ? (
+                visibleMessages.map((m) => (
+                  <MessageItem
+                    key={m.id}
+                    message={m}
+                    user={user}
+                    onReply={() => setThreadMessage(m)}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
+                ))
+              ) : (
+                <div className="py-8 text-center text-sm text-text-muted">
+                  No messages yet. Say hello.
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" asChild>
-              <label aria-label="Attach file" className="cursor-pointer">
-                <Paperclip className="h-4 w-4" />
-                <input type="file" className="hidden" onChange={(e) => { attach(e.target.files?.[0]); e.currentTarget.value = ""; }} />
-              </label>
-            </Button>
-            <Button size="icon" onClick={send} disabled={!channel || sendMessage.isPending}>
-              <Send className="h-4 w-4" />
-            </Button>
+
+          <div className="border-t p-3">
+            <div className="flex items-end gap-2 rounded-lg border bg-surface p-2">
+              <div className="flex-1">
+                <Input
+                  placeholder={`Message #${channel?.name ?? "channel"}`}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      send();
+                    }
+                  }}
+                  className="border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon" asChild>
+                  <label aria-label="Attach file" className="cursor-pointer">
+                    <Paperclip className="h-4 w-4" />
+                    <input type="file" className="hidden" onChange={(e) => { attach(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+                  </label>
+                </Button>
+                <Button size="icon" onClick={send} disabled={!channel || sendMessage.isPending}>
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <p className="mt-1.5 px-1 text-[11px] text-text-muted">
+              Enter to send · Shift + Enter for new line
+            </p>
           </div>
         </div>
-        <p className="mt-1.5 px-1 text-[11px] text-text-muted">
-          Enter to send · Shift + Enter for new line
-        </p>
+
+        {threadMessage && channel ? (
+          <ThreadPanel
+            channelId={channel.id}
+            parentMessage={threadMessage}
+            onClose={() => setThreadMessage(null)}
+          />
+        ) : null}
       </div>
     </div>
     <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>

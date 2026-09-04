@@ -198,13 +198,32 @@ export function useMessages(channelId?: string) {
   });
 }
 
+export function useThreadMessages(parentMessageId?: string) {
+  return useInfiniteQuery({
+    queryKey: ["thread", parentMessageId],
+    queryFn: ({ pageParam }) => api.getThreadMessages(parentMessageId as string, pageParam ?? undefined),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    select: (data) => data.pages.slice().reverse().flatMap((page) => page.items),
+    enabled: Boolean(parentMessageId),
+    staleTime: 10 * 1000,
+    retry: 2,
+  });
+}
+
 export function useSendMessage() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { channelId: string; content: string; attachmentIds?: string[] }) =>
-      api.sendMessage(args.channelId, args.content, args.attachmentIds),
-    onSuccess: (_, args) =>
-      client.invalidateQueries({ queryKey: ["messages", args.channelId] }),
+    mutationFn: (args: { channelId: string; content: string; attachmentIds?: string[]; parentMessageId?: string }) =>
+      api.sendMessage(args.channelId, args.content, args.attachmentIds, args.parentMessageId),
+    onSuccess: (message, args) => {
+      client.invalidateQueries({ queryKey: ["messages", args.channelId] });
+      if (args.parentMessageId) {
+        client.invalidateQueries({ queryKey: ["thread", args.parentMessageId] });
+      } else if (message.parentMessageId) {
+        client.invalidateQueries({ queryKey: ["thread", message.parentMessageId] });
+      }
+    },
   });
 }
 
@@ -389,10 +408,30 @@ export function useMeetings() {
 export function useCreateMeeting() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { title: string; description?: string; workspaceId?: string }) =>
-      api.createMeeting(args.title, args.description, args.workspaceId),
+    mutationFn: (args: {
+      title: string;
+      description?: string;
+      workspaceId?: string;
+      scheduledAt?: string;
+    }) =>
+      api.createMeeting(
+        args.title,
+        args.description,
+        args.workspaceId,
+        args.scheduledAt,
+      ),
     onSuccess: () =>
       client.invalidateQueries({ queryKey: ["meetings", orgId()] }),
+  });
+}
+
+export function useMeeting(meetingId?: string) {
+  return useQuery({
+    queryKey: ["meeting", meetingId],
+    queryFn: () => api.getMeeting(meetingId as string),
+    enabled: Boolean(meetingId),
+    staleTime: 10 * 1000,
+    retry: 2,
   });
 }
 
@@ -401,6 +440,72 @@ export function useCreateVoiceRoom() {
   return useMutation({
     mutationFn: (args: { title: string; workspaceId?: string }) => api.createVoiceRoom(args.title, args.workspaceId),
     onSuccess: () => client.invalidateQueries({ queryKey: ["meetings", orgId()] }),
+  });
+}
+
+export function useMeetingMessages(meetingId?: string) {
+  return useInfiniteQuery({
+    queryKey: ["meeting-messages", meetingId],
+    queryFn: ({ pageParam }) => api.getMeetingMessages(meetingId as string, pageParam ?? undefined),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    select: (data) => data.pages.slice().reverse().flatMap((page) => page.items),
+    enabled: Boolean(meetingId),
+    staleTime: 10 * 1000,
+    retry: 2,
+  });
+}
+
+export function useCreateMeetingMessage() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { meetingId: string; content: string }) => api.createMeetingMessage(args.meetingId, args.content),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["meeting-messages", args.meetingId] }),
+  });
+}
+
+export function useMeetingReactions(meetingId?: string) {
+  return useQuery({
+    queryKey: ["meeting-reactions", meetingId],
+    queryFn: () => api.getMeetingReactions(meetingId as string),
+    enabled: Boolean(meetingId),
+    staleTime: 10 * 1000,
+  });
+}
+
+export function useCreateMeetingReaction() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { meetingId: string; emoji: string }) => api.createMeetingReaction(args.meetingId, args.emoji),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["meeting-reactions", args.meetingId] }),
+  });
+}
+
+export function useMeetingRaiseHands(meetingId?: string) {
+  return useQuery({
+    queryKey: ["meeting-raise-hands", meetingId],
+    queryFn: () => api.getMeetingRaiseHands(meetingId as string),
+    enabled: Boolean(meetingId),
+    staleTime: 10 * 1000,
+  });
+}
+
+export function useUpdateMeetingRaiseHand() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { meetingId: string; raised: boolean }) => api.updateMeetingRaiseHand(args.meetingId, args.raised),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["meeting-raise-hands", args.meetingId] }),
+  });
+}
+
+export function useSetMeetingRecording() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { meetingId: string; recording: boolean }) => api.setMeetingRecording(args.meetingId, args.recording),
+    onSuccess: (_, args) => {
+      void client.invalidateQueries({ queryKey: ["meeting", args.meetingId] });
+      void client.invalidateQueries({ queryKey: ["meetings", orgId()], exact: false });
+    },
   });
 }
 

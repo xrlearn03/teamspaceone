@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Calendar,
   CheckSquare,
@@ -12,17 +13,27 @@ import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
 import {
   useChannels,
+  useClients,
+  useCreateDirectChannel,
+  useCreateMeeting,
+  useCreateProject,
+  useCreateTask,
   useMe,
   useMeetings,
+  useMembers,
   useMessages,
   useNotifications,
   useProjects,
   useTasks,
+  useWorkspaces,
 } from "../hooks/api";
+import { getActiveOrganisation } from "../lib/api";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { EmptyState } from "../components/ui/empty-state";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { Input } from "../components/ui/input";
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -54,14 +65,25 @@ export function HomeScreen() {
   );
 
   const { data: user } = useMe();
+  const organisationId = getActiveOrganisation() ?? undefined;
   const { data: projects } = useProjects();
   const { data: meetings } = useMeetings();
   const { data: notifications } = useNotifications();
   const { data: channels } = useChannels();
+  const { data: workspaces } = useWorkspaces(organisationId);
+  const { data: clients } = useClients(organisationId);
+  const { data: members } = useMembers(organisationId);
+  const createMeeting = useCreateMeeting();
+  const createDirectChannel = useCreateDirectChannel();
+  const createTask = useCreateTask();
+  const createProject = useCreateProject();
+
   const firstChannelId = channels?.[0]?.id;
   const { data: messages } = useMessages(firstChannelId);
   const firstProjectId = projects?.[0]?.id;
   const { data: tasks } = useTasks(firstProjectId);
+
+  const [dialog, setDialog] = useState<"message" | "task" | "project" | null>(null);
 
   const firstName =
     user?.firstName ?? user?.email?.split("@")[0] ?? "there";
@@ -85,19 +107,31 @@ export function HomeScreen() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => setActiveView("dm")}>
+              <Button onClick={() => setDialog("message")}>
                 <MessageSquare className="mr-1.5 h-4 w-4" />
                 New message
               </Button>
-              <Button variant="secondary" onClick={() => setActiveView("project")}>
+              <Button variant="secondary" onClick={() => setDialog("task")}>
                 <CheckSquare className="mr-1.5 h-4 w-4" />
                 Create task
               </Button>
-              <Button variant="secondary" onClick={() => setActiveView("project")}>
+              <Button variant="secondary" onClick={() => setDialog("project")}>
                 <Folder className="mr-1.5 h-4 w-4" />
                 Create project
               </Button>
-              <Button variant="secondary" onClick={() => setActiveView("meeting")}>
+              <Button
+                variant="secondary"
+                disabled={createMeeting.isPending}
+                onClick={() =>
+                  createMeeting.mutate(
+                    { title: "Instant meeting" },
+                    {
+                      onSuccess: (meeting) =>
+                        setActiveView("meeting", { meetingId: meeting.id }),
+                    },
+                  )
+                }
+              >
                 <Video className="mr-1.5 h-4 w-4" />
                 Start meeting
               </Button>
@@ -153,12 +187,12 @@ export function HomeScreen() {
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => setActiveView("meeting", { meetingId: m.id })}
+                    onClick={() => setActiveView(m.type === "voice_room" ? "voice" : "meeting", { meetingId: m.id })}
                     className="flex w-full items-center justify-between rounded-md p-1.5 text-left hover:bg-surface-elevated"
                   >
                     <span className="text-sm text-text">{m.title}</span>
                     <span className="text-xs text-text-muted">
-                      {m.status === "live" ? "Live" : m.scheduledAt ? formatTime(m.scheduledAt) : "Upcoming"}
+                      {m.status === "started" ? "Live" : m.status === "ended" ? "Ended" : m.scheduledAt ? formatTime(m.scheduledAt) : "Upcoming"}
                     </span>
                   </button>
                 ))}
@@ -283,6 +317,257 @@ export function HomeScreen() {
           </CardContent>
         </Card>
       </div>
+
+      <NewMessageDialog
+        open={dialog === "message"}
+        onOpenChange={(open) => { if (!open) setDialog(null); }}
+        members={members ?? []}
+        createDirectChannel={createDirectChannel}
+        onSuccess={(channel) => { setDialog(null); setActiveView("dm", { channelId: channel.id }); }}
+      />
+
+      <CreateTaskDialog
+        open={dialog === "task"}
+        onOpenChange={(open) => { if (!open) setDialog(null); }}
+        projects={projects ?? []}
+        createTask={createTask}
+        onSuccess={(task) => { setDialog(null); setActiveView("project", { projectId: task.projectId }); }}
+      />
+
+      <CreateProjectDialog
+        open={dialog === "project"}
+        onOpenChange={(open) => { if (!open) setDialog(null); }}
+        workspaces={workspaces ?? []}
+        clients={clients ?? []}
+        members={members ?? []}
+        createProject={createProject}
+        onSuccess={(project) => { setDialog(null); setActiveView("project", { projectId: project.id }); }}
+      />
     </div>
+  );
+}
+
+function NewMessageDialog({
+  open,
+  onOpenChange,
+  members,
+  createDirectChannel,
+  onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  members: { userId: string; id: string }[];
+  createDirectChannel: ReturnType<typeof useCreateDirectChannel>;
+  onSuccess: (channel: { id: string }) => void;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md p-0">
+        <DialogHeader>
+          <DialogTitle>New direct message</DialogTitle>
+          <DialogDescription>Select one or more organisation members.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 px-4 pb-4">
+          <div className="max-h-60 space-y-1 overflow-y-auto rounded-md border p-2">
+            {members.map((member) => (
+              <label key={member.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-surface-elevated">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(member.userId)}
+                  onChange={(e) => {
+                    setSelected((prev) =>
+                      e.target.checked
+                        ? [...prev, member.userId]
+                        : prev.filter((id) => id !== member.userId),
+                    );
+                  }}
+                  className="h-4 w-4 accent-primary"
+                />
+                <span className="text-sm">{member.userId}</span>
+              </label>
+            ))}
+            {!members.length && <p className="text-sm text-text-muted">No members found.</p>}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button
+              disabled={selected.length === 0 || createDirectChannel.isPending}
+              onClick={() => createDirectChannel.mutate(selected, { onSuccess })}
+            >
+              Start conversation
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateTaskDialog({
+  open,
+  onOpenChange,
+  projects,
+  createTask,
+  onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projects: { id: string; name: string }[];
+  createTask: ReturnType<typeof useCreateTask>;
+  onSuccess: (task: { id: string; projectId: string }) => void;
+}) {
+  const [projectId, setProjectId] = useState("");
+  const [title, setTitle] = useState("");
+  const [status, setStatus] = useState("todo");
+  const [priority, setPriority] = useState("medium");
+
+  const selectClass = "h-9 w-full rounded-md border bg-surface px-3 text-sm text-text";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md p-0">
+        <DialogHeader>
+          <DialogTitle>Create task</DialogTitle>
+          <DialogDescription>Add a new task to a project.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 px-4 pb-4">
+          <select
+            className={selectClass}
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+          >
+            <option value="">Select a project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Task title" />
+          <div className="grid grid-cols-2 gap-2">
+            <select className={selectClass} value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="backlog">Backlog</option>
+              <option value="todo">Todo</option>
+              <option value="in_progress">In Progress</option>
+              <option value="in_review">In Review</option>
+              <option value="blocked">Blocked</option>
+              <option value="done">Done</option>
+            </select>
+            <select className={selectClass} value={priority} onChange={(e) => setPriority(e.target.value)}>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button
+              disabled={!projectId || !title.trim() || createTask.isPending}
+              onClick={() =>
+                createTask.mutate(
+                  { projectId, title: title.trim(), status, priority },
+                  { onSuccess },
+                )
+              }
+            >
+              Create task
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateProjectDialog({
+  open,
+  onOpenChange,
+  workspaces,
+  clients,
+  members,
+  createProject,
+  onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  workspaces: { id: string; name: string }[];
+  clients: { id: string; name: string }[];
+  members: { userId: string; id: string }[];
+  createProject: ReturnType<typeof useCreateProject>;
+  onSuccess: (project: { id: string }) => void;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [workspaceId, setWorkspaceId] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [memberIds, setMemberIds] = useState<string[]>([]);
+
+  const selectClass = "h-9 w-full rounded-md border bg-surface px-3 text-sm text-text";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md p-0">
+        <DialogHeader>
+          <DialogTitle>Create project</DialogTitle>
+          <DialogDescription>Set up a new project for your workspace.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 px-4 pb-4">
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Project name" />
+          <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" />
+          <select className={selectClass} value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)}>
+            <option value="">No workspace</option>
+            {workspaces.map((w) => (
+              <option key={w.id} value={w.id}>{w.name}</option>
+            ))}
+          </select>
+          <select className={selectClass} value={clientId} onChange={(e) => setClientId(e.target.value)}>
+            <option value="">No client</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <div className="max-h-36 space-y-1 overflow-y-auto rounded-md border p-2">
+            {members.map((member) => (
+              <label key={member.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-surface-elevated">
+                <input
+                  type="checkbox"
+                  checked={memberIds.includes(member.userId)}
+                  onChange={(e) => {
+                    setMemberIds((prev) =>
+                      e.target.checked
+                        ? [...prev, member.userId]
+                        : prev.filter((id) => id !== member.userId),
+                    );
+                  }}
+                  className="h-4 w-4 accent-primary"
+                />
+                <span className="text-sm">{member.userId}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button
+              disabled={!name.trim() || createProject.isPending}
+              onClick={() =>
+                createProject.mutate(
+                  {
+                    name: name.trim(),
+                    description: description.trim() || undefined,
+                    workspaceId: workspaceId || undefined,
+                    clientId: clientId || undefined,
+                    memberIds,
+                  },
+                  { onSuccess },
+                )
+              }
+            >
+              Create project
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Mic, Loader2 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
+import { MeetingLobby } from "../components/livekit/lobby";
 import { LiveKitConference } from "../components/livekit/conference";
 import { Button } from "../components/ui/button";
 import { useRealtime } from "../hooks/useRealtime";
@@ -14,6 +15,7 @@ import {
   type Meeting,
 } from "../lib/api";
 import { useMe } from "../hooks/api";
+import type { MediaJoinOptions } from "./meeting";
 
 export function VoiceRoomScreen() {
   const { activeMeetingId, setActiveView } = useUIStore(
@@ -24,6 +26,7 @@ export function VoiceRoomScreen() {
 
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [mediaOptions, setMediaOptions] = useState<MediaJoinOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,40 +46,56 @@ export function VoiceRoomScreen() {
     setLoading(true);
     setError(null);
 
-    async function join() {
+    async function fetchMeeting() {
       try {
         const m = await getMeeting(activeMeetingId!);
         if (m.type !== "voice_room") {
           throw new Error("Selected item is not a voice room");
         }
-        let t: string;
-        try {
-          const result = await getMeetingToken(activeMeetingId!);
-          t = result.token;
-        } catch {
-          const result = await joinMeeting(activeMeetingId!);
-          t = result.token;
+        if (m.status === "ended") {
+          throw new Error("Voice room has ended");
         }
         if (!cancelled) {
           setMeeting(m);
-          setToken(t);
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to join voice room");
+          setError(err instanceof Error ? err.message : "Failed to load voice room");
         }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    void join();
+    void fetchMeeting();
     return () => {
       cancelled = true;
       leaveRealtimeMeeting(activeMeetingId);
       unsubscribe();
     };
   }, [activeMeetingId]);
+
+  async function handleJoin(opts: MediaJoinOptions) {
+    if (!activeMeetingId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      let t: string;
+      try {
+        const result = await getMeetingToken(activeMeetingId);
+        t = result.token;
+      } catch {
+        const result = await joinMeeting(activeMeetingId);
+        t = result.token;
+      }
+      setMediaOptions({ ...opts, videoEnabled: false });
+      setToken(t);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to join voice room");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleLeave() {
     if (activeMeetingId) {
@@ -88,6 +107,7 @@ export function VoiceRoomScreen() {
     }
     setToken(null);
     setMeeting(null);
+    setMediaOptions(null);
     setActiveView("home");
   }
 
@@ -107,11 +127,11 @@ export function VoiceRoomScreen() {
     );
   }
 
-  if (loading) {
+  if (loading && !meeting) {
     return (
       <div className="flex h-full flex-col items-center justify-center text-text-muted">
         <Loader2 className="h-8 w-8 animate-spin" />
-        <p className="mt-2 text-sm">Joining voice room...</p>
+        <p className="mt-2 text-sm">Loading voice room...</p>
       </div>
     );
   }
@@ -127,13 +147,33 @@ export function VoiceRoomScreen() {
     );
   }
 
-  if (!meeting || !token) return null;
+  if (!meeting) return null;
+
+  if (!token || !mediaOptions) {
+    return (
+      <MeetingLobby
+        meeting={meeting}
+        user={user}
+        onJoin={handleJoin}
+        onCancel={() => setActiveView("home")}
+      />
+    );
+  }
+
+  const displayName =
+    user
+      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
+      : "Guest";
 
   return (
     <LiveKitConference
       meeting={meeting}
       token={token}
+      displayName={displayName}
+      audioEnabled={mediaOptions.audioEnabled}
       videoEnabled={false}
+      audioInputId={mediaOptions.audioInputId}
+      audioOutputId={mediaOptions.audioOutputId}
       onLeave={handleLeave}
       onEnd={meeting.createdBy === user?.id ? handleEnd : undefined}
     />

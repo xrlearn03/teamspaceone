@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AccessToken, RoomServiceClient, type VideoGrant } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient, EgressClient, type VideoGrant } from 'livekit-server-sdk';
 
 export interface MeetingTokenOptions {
   roomName: string;
@@ -25,6 +25,7 @@ export interface CreateRoomOptions {
 export class LiveKitService {
   private readonly logger = new Logger(LiveKitService.name);
   private readonly roomClient: RoomServiceClient;
+  private readonly egressClient: EgressClient | undefined;
   private readonly apiKey: string;
   private readonly apiSecret: string;
 
@@ -33,6 +34,11 @@ export class LiveKitService {
     this.apiKey = this.config.get<string>('LIVEKIT_API_KEY', 'devkey');
     this.apiSecret = this.config.get<string>('LIVEKIT_API_SECRET', 'secret');
     this.roomClient = new RoomServiceClient(host, this.apiKey, this.apiSecret);
+
+    const egressHost = this.config.get<string>('LIVEKIT_EGRESS_URL')?.replace(/^wss?:\/\//, 'http://');
+    if (egressHost) {
+      this.egressClient = new EgressClient(egressHost, this.apiKey, this.apiSecret);
+    }
   }
 
   async generateToken(options: MeetingTokenOptions): Promise<string> {
@@ -88,5 +94,40 @@ export class LiveKitService {
     await this.roomClient.updateParticipant(roomName, identity, {
       attributes: { isScreenSharing: String(isScreenSharing) },
     });
+  }
+
+  private s3Output(): { bucket: string; accessKey?: string; secret?: string; endpoint?: string; region?: string } | undefined {
+    const bucket = this.config.get<string>('LIVEKIT_EGRESS_S3_BUCKET');
+    if (!bucket) return undefined;
+    return {
+      bucket,
+      accessKey: this.config.get<string>('LIVEKIT_EGRESS_S3_ACCESS_KEY') ?? undefined,
+      secret: this.config.get<string>('LIVEKIT_EGRESS_S3_SECRET_KEY') ?? undefined,
+      endpoint: this.config.get<string>('LIVEKIT_EGRESS_S3_ENDPOINT') ?? undefined,
+      region: this.config.get<string>('LIVEKIT_EGRESS_S3_REGION') ?? undefined,
+    };
+  }
+
+  async startRecording(roomName: string): Promise<string | undefined> {
+    if (!this.egressClient) {
+      this.logger.warn({ roomName }, 'LiveKit Egress client not configured; skipping actual recording');
+      return undefined;
+    }
+    const s3 = this.s3Output();
+    if (!s3) {
+      this.logger.warn({ roomName }, 'LiveKit Egress S3 output not configured; skipping actual recording');
+      return undefined;
+    }
+
+    const output = { s3: s3 as unknown };
+    const info = await this.egressClient.startRoomCompositeEgress(roomName, output as any);
+    this.logger.log({ roomName, egressId: info.egressId }, 'Started LiveKit Egress recording');
+    return info.egressId ?? undefined;
+  }
+
+  async stopRecording(egressId: string): Promise<void> {
+    if (!this.egressClient) return;
+    await this.egressClient.stopEgress(egressId);
+    this.logger.log({ egressId }, 'Stopped LiveKit Egress recording');
   }
 }

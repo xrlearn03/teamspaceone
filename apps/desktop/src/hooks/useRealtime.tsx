@@ -35,6 +35,10 @@ export interface RealtimeEventPayloads {
   "meeting.participant.joined": { meetingId: string; userId: string; identity: string };
   "meeting.participant.left": { meetingId: string; userId: string };
   "meeting.screen.shared": { meetingId: string; userId: string; isScreenSharing: boolean };
+  "meeting.chat.created": { id: string; meetingId: string; userId: string; content: string; createdAt: string };
+  "meeting.reaction.created": { id: string; meetingId: string; userId: string; emoji: string; createdAt: string };
+  "meeting.raise_hand.changed": { id: string; meetingId: string; userId: string; raised: boolean };
+  "meeting.recording.changed": { meetingId: string; isRecording: boolean; recordedBy?: string };
   "voice.room.created": { id: string; title: string; workspaceId: string };
 }
 
@@ -128,6 +132,10 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         "meeting.participant.joined",
         "meeting.participant.left",
         "meeting.screen.shared",
+        "meeting.chat.created",
+        "meeting.reaction.created",
+        "meeting.raise_hand.changed",
+        "meeting.recording.changed",
         "voice.room.created",
       ];
 
@@ -151,24 +159,42 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           }
           if (event === "message.created") {
             const message = payload as Message;
-            queryClient.setQueryData<InfiniteData<MessagePage, string | null>>(["messages", message.channelId], (data) => {
-              if (!data || data.pages.some((page) => page.items.some((item) => item.id === message.id))) return data;
-              const pages = data.pages.slice();
-              pages[0] = { ...pages[0], items: [...pages[0].items, message] };
-              return { ...data, pages };
-            });
+            if (!message.parentMessageId) {
+              queryClient.setQueryData<InfiniteData<MessagePage, string | null>>(["messages", message.channelId], (data) => {
+                if (!data || data.pages.some((page) => page.items.some((item) => item.id === message.id))) return data;
+                const pages = data.pages.slice();
+                pages[0] = { ...pages[0], items: [...pages[0].items, message] };
+                return { ...data, pages };
+              });
+            } else {
+              queryClient.setQueryData<InfiniteData<MessagePage, string | null>>(["thread", message.parentMessageId], (data) => {
+                if (!data || data.pages.some((page) => page.items.some((item) => item.id === message.id))) return data;
+                const pages = data.pages.slice();
+                pages[0] = { ...pages[0], items: [...pages[0].items, message] };
+                return { ...data, pages };
+              });
+              // Also update the parent message reply count if cached.
+              void queryClient.invalidateQueries({ queryKey: ["messages", message.channelId], exact: true });
+            }
           }
           if (event === "message.updated") {
             const message = payload as Message;
             queryClient.setQueryData<InfiniteData<MessagePage, string | null>>(["messages", message.channelId], (data) =>
               data ? { ...data, pages: data.pages.map((page) => ({ ...page, items: page.items.map((item) => item.id === message.id ? message : item) })) } : data,
             );
+            if (message.parentMessageId) {
+              queryClient.setQueryData<InfiniteData<MessagePage, string | null>>(["thread", message.parentMessageId], (data) =>
+                data ? { ...data, pages: data.pages.map((page) => ({ ...page, items: page.items.map((item) => item.id === message.id ? message : item) })) } : data,
+              );
+            }
           }
           if (event === "message.deleted") {
             const deleted = payload as RealtimeEventPayloads["message.deleted"];
             queryClient.setQueryData<InfiniteData<MessagePage, string | null>>(["messages", deleted.channelId], (data) =>
               data ? { ...data, pages: data.pages.map((page) => ({ ...page, items: page.items.map((item) => item.id === deleted.id ? { ...item, content: "", deletedAt: deleted.deletedAt, attachments: [] } : item) })) } : data,
             );
+            // Parent id is not included in delete payload, so invalidate all thread queries.
+            void queryClient.invalidateQueries({ queryKey: ["thread"] });
           }
           if (event === "notification.created") {
             const n = payload as RealtimeEventPayloads["notification.created"];
@@ -177,6 +203,32 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
             } catch {
               // Ignore notification errors in browser/dev.
             }
+          }
+          if (event === "meeting.chat.created") {
+            const message = payload as RealtimeEventPayloads["meeting.chat.created"];
+            queryClient.setQueryData<InfiniteData<{ items: typeof message[]; nextCursor: string | null }, string | null>>(["meeting-messages", message.meetingId], (data) => {
+              if (!data || data.pages.some((page) => page.items.some((item) => item.id === message.id))) return data;
+              const pages = data.pages.slice();
+              pages[0] = { ...pages[0], items: [...pages[0].items, message] };
+              return { ...data, pages };
+            });
+          }
+          if (event === "meeting.reaction.created") {
+            const reaction = payload as RealtimeEventPayloads["meeting.reaction.created"];
+            queryClient.setQueryData<RealtimeEventPayloads["meeting.reaction.created"][]>(["meeting-reactions", reaction.meetingId], (data) => {
+              if (!data || data.some((item) => item.id === reaction.id)) return data;
+              return [reaction, ...data];
+            });
+          }
+          if (event === "meeting.raise_hand.changed") {
+            const hand = payload as RealtimeEventPayloads["meeting.raise_hand.changed"];
+            void queryClient.invalidateQueries({ queryKey: ["meeting-raise-hands", hand.meetingId] });
+          }
+          if (event === "meeting.recording.changed") {
+            const recording = payload as RealtimeEventPayloads["meeting.recording.changed"];
+            void queryClient.invalidateQueries({ queryKey: ["meetings"] });
+            const handlers = handlersRef.current.get(event);
+            if (handlers) handlers.forEach((h) => h(recording));
           }
           const handlers = handlersRef.current.get(event);
           if (handlers) {
