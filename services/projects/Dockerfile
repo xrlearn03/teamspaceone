@@ -10,4 +10,4 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/services/projects ./services/projects
 EXPOSE 3006
-CMD ["node", "services/projects/dist/main"]
+CMD ["sh", "-c", "node services/projects/node_modules/prisma/build/index.js migrate deploy --schema services/projects/prisma/schema.prisma && node services/projects/dist/main"]
