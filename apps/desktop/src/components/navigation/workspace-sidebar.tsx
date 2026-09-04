@@ -24,6 +24,7 @@ import {
   useChannels,
   useCreateChannel,
   useCreateDirectChannel,
+  useCreateProject,
   useMeetings,
   useMembers,
   useOrganisations,
@@ -154,7 +155,7 @@ function CalendarIcon(props: React.SVGProps<SVGSVGElement>) {
 export function WorkspaceSidebar() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
-  const [createMode, setCreateMode] = useState<"channel" | "direct" | null>(null);
+  const [createMode, setCreateMode] = useState<"channel" | "direct" | "project" | null>(null);
   const [channelName, setChannelName] = useState("");
   const [privateChannel, setPrivateChannel] = useState(false);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
@@ -189,6 +190,7 @@ export function WorkspaceSidebar() {
   const { data: channels } = useChannels();
   const createChannel = useCreateChannel();
   const createDirectChannel = useCreateDirectChannel();
+  const createProject = useCreateProject();
   const { data: projects } = useProjects();
   const { data: meetings } = useMeetings();
   const { data: unread } = useUnreadCount();
@@ -245,6 +247,11 @@ export function WorkspaceSidebar() {
       createDirectChannel.mutate(selectedMembers, {
         onSuccess: (channel) => { closeCreate(); navigate("dm", { channelId: channel.id }); },
       });
+    } else if (createMode === "project" && channelName.trim()) {
+      createProject.mutate(
+        { name: channelName.trim(), workspaceId: currentWorkspace?.id, memberIds: selectedMembers },
+        { onSuccess: (project) => { closeCreate(); navigate("project", { projectId: project.id }); } },
+      );
     }
   }
 
@@ -320,7 +327,7 @@ export function WorkspaceSidebar() {
             <DropdownMenuItem onClick={() => setCreateMode("channel")}>
               Create channel
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("project")}>
+            <DropdownMenuItem onClick={() => setCreateMode("project")}>
               Create project
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate("meeting")}>
@@ -480,22 +487,22 @@ export function WorkspaceSidebar() {
     <Dialog open={createMode !== null} onOpenChange={(open) => { if (!open) closeCreate(); }}>
       <DialogContent className="max-w-md p-0">
         <DialogHeader>
-          <DialogTitle>{createMode === "channel" ? "Create channel" : "New direct message"}</DialogTitle>
+          <DialogTitle>{createMode === "channel" ? "Create channel" : createMode === "project" ? "Create project" : "New direct message"}</DialogTitle>
           <DialogDescription>
-            {createMode === "channel" ? "Create a public or private space for your team." : "Choose one or more organisation members."}
+            {createMode === "channel" ? "Create a public or private space for your team." : createMode === "project" ? "Create a project and choose its initial members." : "Choose one or more organisation members."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 px-4 pb-4">
-          {createMode === "channel" ? (
+          {(createMode === "channel" || createMode === "project") ? (
             <>
-              <Input value={channelName} onChange={(e) => setChannelName(e.target.value)} placeholder="Channel name" autoFocus />
-              <label className="flex items-center gap-2 text-sm text-text-secondary">
+              <Input value={channelName} onChange={(e) => setChannelName(e.target.value)} placeholder={createMode === "project" ? "Project name" : "Channel name"} autoFocus />
+              {createMode === "channel" ? <label className="flex items-center gap-2 text-sm text-text-secondary">
                 <input type="checkbox" checked={privateChannel} onChange={(e) => setPrivateChannel(e.target.checked)} />
                 Private channel
-              </label>
+              </label> : null}
             </>
           ) : null}
-          {(createMode === "direct" || privateChannel) ? (
+          {(createMode === "direct" || createMode === "project" || privateChannel) ? (
             <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border p-2">
               {members?.map((member) => (
                 <label key={member.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-surface-elevated">
@@ -507,12 +514,12 @@ export function WorkspaceSidebar() {
               {!members?.length ? <p className="p-2 text-sm text-text-muted">No organisation members available.</p> : null}
             </div>
           ) : null}
-          {(createChannel.error || createDirectChannel.error) ? (
-            <p className="text-sm text-error">{(createChannel.error ?? createDirectChannel.error)?.message}</p>
+          {(createChannel.error || createDirectChannel.error || createProject.error) ? (
+            <p className="text-sm text-error">{(createChannel.error ?? createDirectChannel.error ?? createProject.error)?.message}</p>
           ) : null}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={closeCreate}>Cancel</Button>
-            <Button onClick={submitCreate} disabled={createChannel.isPending || createDirectChannel.isPending || (createMode === "channel" ? !channelName.trim() : selectedMembers.length === 0)}>
+            <Button onClick={submitCreate} disabled={createChannel.isPending || createDirectChannel.isPending || createProject.isPending || (createMode === "direct" ? selectedMembers.length === 0 : !channelName.trim())}>
               Create
             </Button>
           </div>
