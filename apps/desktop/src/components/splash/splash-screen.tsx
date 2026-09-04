@@ -2,7 +2,7 @@ import './splash-screen.css';
 
 export function SplashScreen() {
   return (
-    <div className="splash-screen fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-[#02040a]">
+    <div className="splash-screen fixed inset-0 z-50 flex items-center justify-center overflow-hidden">
       {/* Background */}
       <div className="splash-background" aria-hidden="true" />
       <div className="splash-background-overlay" aria-hidden="true" />

@@ -2,7 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { io, type Socket } from "socket.io-client";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { getAccessToken, getActiveOrganisation, type Message, type MessagePage } from "../lib/api";
+import { getAccessToken, getActiveOrganisation, type Message, type MessagePage, type MessageReaction } from "../lib/api";
+import { useUIStore } from "../stores/ui";
+import { flushQueue, queuedMessageCount } from "../lib/offline-queue";
 
 const REALTIME_URL = (import.meta.env.VITE_REALTIME_URL as string | undefined) ?? "http://localhost:3005";
 
@@ -40,6 +42,10 @@ export interface RealtimeEventPayloads {
   "meeting.raise_hand.changed": { id: string; meetingId: string; userId: string; raised: boolean };
   "meeting.recording.changed": { meetingId: string; isRecording: boolean; recordedBy?: string };
   "voice.room.created": { id: string; title: string; workspaceId: string };
+  "message.reaction.updated": { id: string; channelId: string; reactions: MessageReaction[] };
+  "typing": { userId: string; isTyping: boolean; room: string };
+  "presence": { userId: string; status: string; room: string };
+  "read-receipt": { userId: string; messageId: string; room: string; readAt: string };
 }
 
 export type RealtimeEvent = keyof RealtimeEventPayloads;
@@ -53,6 +59,9 @@ interface RealtimeContextValue {
   leaveRealtimeProject: (projectId: string) => void;
   joinRealtimeMeeting: (meetingId: string) => void;
   leaveRealtimeMeeting: (meetingId: string) => void;
+  sendTyping: (channelId: string, isTyping: boolean) => void;
+  sendPresence: (channelId: string, status: string) => void;
+  sendReadReceipt: (channelId: string, messageId: string) => void;
   onRealtimeEvent: <E extends RealtimeEvent>(event: E, handler: (payload: RealtimeEventPayloads[E]) => void) => () => void;
 }
 
@@ -78,7 +87,6 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
     async function connect() {
       const token = await getAccessToken();
-      const organisationId = getActiveOrganisation();
       const socket = io(`${REALTIME_URL}/realtime`, {
         transports: ["websocket", "polling"],
         auth: token ? { token } : undefined,
@@ -88,14 +96,30 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
       socket.on("connect", () => {
         setConnected(true);
+        useUIStore.getState().setConnection(navigator.onLine ? "connected" : "offline");
+        const organisationId = getActiveOrganisation();
         if (organisationId) {
           socket.emit("join-organisation", organisationId);
         }
         socket.emit("join-user");
+        // Flush anything queued while offline, then reflect the count.
+        void (async () => {
+          const pending = await queuedMessageCount();
+          useUIStore.getState().setPendingCount(pending);
+          if (pending > 0) {
+            useUIStore.getState().setConnection("syncing");
+            await flushQueue();
+            useUIStore.getState().setConnection("connected");
+            useUIStore.getState().setPendingCount(await queuedMessageCount());
+            // Queued sends bypassed the mutation cache — refresh message lists.
+            void queryClient.invalidateQueries({ queryKey: ["messages"] });
+          }
+        })();
       });
 
       socket.on("disconnect", () => {
         setConnected(false);
+        useUIStore.getState().setConnection("offline");
       });
 
       socket.on("connect_error", (err) => {
@@ -137,6 +161,10 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         "meeting.raise_hand.changed",
         "meeting.recording.changed",
         "voice.room.created",
+        "message.reaction.updated",
+        "typing",
+        "presence",
+        "read-receipt",
       ];
 
       for (const event of eventNames) {
@@ -194,6 +222,21 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
               data ? { ...data, pages: data.pages.map((page) => ({ ...page, items: page.items.map((item) => item.id === deleted.id ? { ...item, content: "", deletedAt: deleted.deletedAt, attachments: [] } : item) })) } : data,
             );
             // Parent id is not included in delete payload, so invalidate all thread queries.
+            void queryClient.invalidateQueries({ queryKey: ["thread"] });
+          }
+          if (event === "message.reaction.updated") {
+            const update = payload as RealtimeEventPayloads["message.reaction.updated"];
+            queryClient.setQueryData<InfiniteData<MessagePage, string | null>>(["messages", update.channelId], (data) =>
+              data
+                ? {
+                    ...data,
+                    pages: data.pages.map((page) => ({
+                      ...page,
+                      items: page.items.map((item) => (item.id === update.id ? { ...item, reactions: update.reactions } : item)),
+                    })),
+                  }
+                : data,
+            );
             void queryClient.invalidateQueries({ queryKey: ["thread"] });
           }
           if (event === "notification.created") {
@@ -270,6 +313,18 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     socketRef.current?.emit("leave", `meeting:${meetingId}`);
   }, []);
 
+  const sendTyping = useCallback((channelId: string, isTyping: boolean) => {
+    socketRef.current?.emit("typing", { room: `channel:${channelId}`, isTyping });
+  }, []);
+
+  const sendPresence = useCallback((channelId: string, status: string) => {
+    socketRef.current?.emit("presence", { room: `channel:${channelId}`, status });
+  }, []);
+
+  const sendReadReceipt = useCallback((channelId: string, messageId: string) => {
+    socketRef.current?.emit("message.read", { room: `channel:${channelId}`, messageId });
+  }, []);
+
   const onRealtimeEvent = <E extends RealtimeEvent>(event: E, handler: (payload: RealtimeEventPayloads[E]) => void) => {
     const typedHandler = (payload: unknown) => handler(payload as RealtimeEventPayloads[E]);
     if (!handlersRef.current.has(event)) {
@@ -283,7 +338,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
   return (
     <RealtimeContext.Provider
-      value={{ socket: socketRef.current, connected, joinRealtimeChannel, leaveRealtimeChannel, joinRealtimeProject, leaveRealtimeProject, joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent }}
+      value={{ socket: socketRef.current, connected, joinRealtimeChannel, leaveRealtimeChannel, joinRealtimeProject, leaveRealtimeProject, joinRealtimeMeeting, leaveRealtimeMeeting, sendTyping, sendPresence, sendReadReceipt, onRealtimeEvent }}
     >
       {children}
     </RealtimeContext.Provider>

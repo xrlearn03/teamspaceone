@@ -86,13 +86,10 @@
 .splash-background {
   position: absolute;
   inset: 0;
-  background-color: #02040a;
   background-image: url('/Splash-background.png');
   background-size: cover;
   background-position: center bottom;
   background-repeat: no-repeat;
-  opacity: 0;
-  animation: splash-fade-in var(--splash-bg-fade) var(--splash-bg-ease) forwards;
 }
 
 .splash-background-overlay {
@@ -104,8 +101,6 @@
     rgba(59, 130, 246, 0.12),
     transparent 70%
   );
-  opacity: 0;
-  animation: splash-fade-in var(--splash-bg-fade) var(--splash-bg-ease) forwards;
 }
 
 /* Center branding ---------------------------------------------------------- */

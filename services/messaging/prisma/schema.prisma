@@ -55,6 +55,7 @@ model Message {
   parent         Message?            @relation("ThreadReplies", fields: [parentMessageId], references: [id], onDelete: Cascade)
   replies        Message[]           @relation("ThreadReplies")
   attachments    MessageAttachment[]
+  reactions      MessageReaction[]
 
   @@index([organisationId])
   @@index([channelId, createdAt])
@@ -73,6 +74,19 @@ model MessageAttachment {
   @@unique([messageId, fileId])
   @@index([fileId])
   @@map("message_attachments")
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@map("message_reactions")
 }
 
 model OutboxEvent {

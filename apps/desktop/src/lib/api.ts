@@ -216,6 +216,14 @@ export interface MessageAttachment {
   createdAt: string;
 }
 
+export interface MessageReaction {
+  id: string;
+  messageId: string;
+  userId: string;
+  emoji: string;
+  createdAt: string;
+}
+
 export interface Message {
   id: string;
   channelId: string;
@@ -227,7 +235,10 @@ export interface Message {
   createdAt: string;
   updatedAt: string;
   attachments: MessageAttachment[];
+  reactions?: MessageReaction[];
   _count?: { replies: number };
+  /** Set client-side for messages queued while offline. */
+  pending?: boolean;
 }
 
 export interface MessagePage {
@@ -631,6 +642,13 @@ export function deleteMessage(messageId: string) {
   return apiRequest<Message>(`/messages/${messageId}`, { method: "DELETE" });
 }
 
+export function toggleMessageReaction(messageId: string, emoji: string) {
+  return apiRequest<{ id: string; channelId: string; reactions: MessageReaction[] }>(
+    `/messages/${messageId}/reactions`,
+    { method: "POST", body: { emoji } },
+  );
+}
+
 // Projects
 export function getProjects() {
   return apiRequest<Project[]>("/projects");
@@ -754,12 +772,24 @@ export function uploadFile(file: File) {
 }
 
 // Search
-export function search(query: string, filters?: string[]) {
+export interface SearchFilters {
+  types?: string[];
+  workspaceId?: string;
+  authorId?: string;
+  from?: string;
+  to?: string;
+}
+
+export function search(query: string, filters?: SearchFilters) {
   const params = new URLSearchParams();
   params.set("q", query);
-  if (filters) {
-    for (const f of filters) params.append("type", f);
+  if (filters?.types) {
+    for (const f of filters.types) params.append("type", f);
   }
+  if (filters?.workspaceId) params.set("workspaceId", filters.workspaceId);
+  if (filters?.authorId) params.set("authorId", filters.authorId);
+  if (filters?.from) params.set("from", filters.from);
+  if (filters?.to) params.set("to", filters.to);
   return apiRequest<SearchResult[]>(`/search?${params.toString()}`);
 }
 

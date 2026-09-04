@@ -15,6 +15,7 @@ import {
   Settings,
   Sparkles,
   Star,
+  Users,
   Video,
 } from "lucide-react";
 import * as CollapsiblePrimitive from "@radix-ui/react-collapsible";
@@ -30,11 +31,14 @@ import {
   useMeetings,
   useMembers,
   useOrganisations,
+  useAcceptInvitation,
+  useCreateOrganisation,
   useProjects,
   useUnreadCount,
   useWorkspaces,
 } from "../../hooks/api";
-import { getActiveOrganisation, setActiveOrganisation, type Meeting } from "../../lib/api";
+import { type Meeting } from "../../lib/api";
+import { useSwitchOrganisation } from "../../hooks/useOrganisationSwitch";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Avatar, AvatarFallback } from "../ui/avatar";
@@ -43,6 +47,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
@@ -61,6 +66,7 @@ interface SidebarItemData {
   onClick?: () => void;
   subtext?: string;
   isPrivate?: boolean;
+  external?: boolean;
 }
 
 function SidebarItem({
@@ -72,6 +78,7 @@ function SidebarItem({
   onClick,
   subtext,
   isPrivate,
+  external,
 }: SidebarItemData) {
   return (
     <button
@@ -93,6 +100,7 @@ function SidebarItem({
       {subtext ? (
         <span className="text-xs text-text-muted">{subtext}</span>
       ) : null}
+      {external ? <Badge variant="warning">Client</Badge> : null}
       {badge ? (
         <Badge variant={mention ? "mention" : "default"}>{badge}</Badge>
       ) : null}
@@ -176,6 +184,9 @@ export function WorkspaceSidebar() {
   const [meetingTitle, setMeetingTitle] = useState("");
   const [meetingDescription, setMeetingDescription] = useState("");
   const [meetingScheduledAt, setMeetingScheduledAt] = useState("");
+  const [orgDialog, setOrgDialog] = useState<"create" | "join" | null>(null);
+  const [orgName, setOrgName] = useState("");
+  const [inviteToken, setInviteToken] = useState("");
   const {
     sidebarCollapsed,
     sidebarWidth,
@@ -200,7 +211,10 @@ export function WorkspaceSidebar() {
     })),
   );
 
-  const activeOrgId = getActiveOrganisation();
+  const activeOrgId = useUIStore((s) => s.organisationId);
+  const activeWorkspaceId = useUIStore((s) => s.activeWorkspaceId);
+  const setActiveWorkspace = useUIStore((s) => s.setActiveWorkspace);
+  const switchOrganisation = useSwitchOrganisation();
   const { data: organisations } = useOrganisations();
   const { data: workspaces } = useWorkspaces(activeOrgId ?? undefined);
   const { data: members } = useMembers(activeOrgId ?? undefined);
@@ -213,9 +227,12 @@ export function WorkspaceSidebar() {
   const { data: projects } = useProjects();
   const { data: meetings } = useMeetings();
   const { data: unread } = useUnreadCount();
+  const createOrganisation = useCreateOrganisation();
+  const acceptInvitation = useAcceptInvitation();
 
   const currentOrganisation = organisations?.find((o) => o.id === activeOrgId);
-  const currentWorkspace = workspaces?.[0];
+  const currentWorkspace =
+    workspaces?.find((w) => w.id === activeWorkspaceId) ?? workspaces?.[0];
 
   useEffect(() => {
     if (!dragging) return;
@@ -237,11 +254,6 @@ export function WorkspaceSidebar() {
 
   function navigate(view: View, params?: { channelId?: string; projectId?: string; meetingId?: string }) {
     setActiveView(view, params);
-  }
-
-  function switchOrganisation(id: string) {
-    setActiveOrganisation(id);
-    navigate("home");
   }
 
   function toggleMember(userId: string) {
@@ -301,8 +313,12 @@ export function WorkspaceSidebar() {
 
   const workspaceName = currentWorkspace?.name ?? currentOrganisation?.name ?? "Workspace";
 
-  const publicChannels = channels?.filter((c) => c.type !== "direct") ?? [];
+  const inWorkspace = (workspaceId?: string | null) =>
+    !activeWorkspaceId || !workspaceId || workspaceId === activeWorkspaceId;
+  const publicChannels = channels?.filter((c) => c.type !== "direct" && inWorkspace(c.workspaceId)) ?? [];
   const directMessages = channels?.filter((c) => c.type === "direct") ?? [];
+  const visibleProjects = projects?.filter((p) => inWorkspace(p.workspaceId)) ?? [];
+  const visibleMeetings = meetings?.filter((m) => inWorkspace((m as { workspaceId?: string }).workspaceId)) ?? [];
 
   return (
     <>
@@ -351,6 +367,37 @@ export function WorkspaceSidebar() {
             {(!organisations || organisations.length === 0) && (
               <DropdownMenuItem disabled>No organisations</DropdownMenuItem>
             )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setOrgDialog("create")}>
+              Create organisation
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setOrgDialog("join")}>
+              Join organisation
+            </DropdownMenuItem>
+            {workspaces && workspaces.length > 0 ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled className="text-xs uppercase tracking-wide text-text-muted">
+                  Workspaces
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setActiveWorkspace(null)}>
+                  <span className="flex flex-1 items-center justify-between">
+                    All workspaces
+                    {!activeWorkspaceId && <span className="text-xs text-text-muted">current</span>}
+                  </span>
+                </DropdownMenuItem>
+                {workspaces.map((workspace) => (
+                  <DropdownMenuItem key={workspace.id} onClick={() => setActiveWorkspace(workspace.id)}>
+                    <span className="flex flex-1 items-center justify-between">
+                      {workspace.name}
+                      {workspace.id === currentWorkspace?.id && activeWorkspaceId ? (
+                        <span className="text-xs text-text-muted">current</span>
+                      ) : null}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -403,8 +450,24 @@ export function WorkspaceSidebar() {
             active={activeView === "inbox"}
             onClick={() => navigate("inbox")}
           />
-          <SidebarItem icon={Menu} label="Drafts" />
-          <SidebarItem icon={Star} label="Saved items" />
+          <SidebarItem
+            icon={Users}
+            label="Members"
+            active={activeView === "members"}
+            onClick={() => navigate("members")}
+          />
+          <SidebarItem
+            icon={Menu}
+            label="Drafts"
+            active={activeView === "drafts"}
+            onClick={() => navigate("drafts")}
+          />
+          <SidebarItem
+            icon={Star}
+            label="Saved items"
+            active={activeView === "saved"}
+            onClick={() => navigate("saved")}
+          />
         </SidebarSection>
 
         <SidebarSection title="Channels">
@@ -451,8 +514,8 @@ export function WorkspaceSidebar() {
         </SidebarSection>
 
         <SidebarSection title="Projects">
-          {projects && projects.length > 0 ? (
-            projects.map((p) => (
+          {visibleProjects.length > 0 ? (
+            visibleProjects.map((p) => (
               <SidebarItem
                 key={p.id}
                 icon={Folder}
@@ -460,6 +523,7 @@ export function WorkspaceSidebar() {
                 active={activeView === "project" && activeProjectId === p.id}
                 onClick={() => navigate("project", { projectId: p.id })}
                 subtext={p.status}
+                external={Boolean(p.clientId)}
               />
             ))
           ) : (
@@ -468,14 +532,18 @@ export function WorkspaceSidebar() {
         </SidebarSection>
 
         <SidebarSection title="Meetings & voice">
-          {meetings && meetings.length > 0 ? (
-            meetings.map((m) => (
+          {visibleMeetings.length > 0 ? (
+            visibleMeetings.map((m) => (
               <SidebarItem
                 key={m.id}
                 icon={m.type === "voice_room" ? Mic : m.status === "started" ? Video : CalendarIcon}
                 label={m.title}
                 onClick={() => navigate(m.type === "voice_room" ? "voice" : "meeting", { meetingId: m.id })}
-                subtext={formatMeetingSubtext(m)}
+                subtext={
+                  m.type === "voice_room" && m.status === "started"
+                    ? `${m.participants?.filter((p) => !p.leftAt).length ?? 0} in room`
+                    : formatMeetingSubtext(m)
+                }
               />
             ))
           ) : (
@@ -579,6 +647,57 @@ export function WorkspaceSidebar() {
                 Create
               </Button>
             )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={orgDialog !== null} onOpenChange={(open) => { if (!open) { setOrgDialog(null); setOrgName(""); setInviteToken(""); } }}>
+      <DialogContent className="max-w-md p-0">
+        <DialogHeader>
+          <DialogTitle>{orgDialog === "create" ? "Create organisation" : "Join organisation"}</DialogTitle>
+          <DialogDescription>
+            {orgDialog === "create" ? "Create a new organisation and switch to it." : "Paste an invitation token to join an organisation."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 px-4 pb-4">
+          {orgDialog === "create" ? (
+            <Input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="Organisation name" autoFocus />
+          ) : (
+            <Input value={inviteToken} onChange={(e) => setInviteToken(e.target.value)} placeholder="Invitation token" autoFocus />
+          )}
+          {(createOrganisation.error || acceptInvitation.error) ? (
+            <p className="text-sm text-error">{(createOrganisation.error ?? acceptInvitation.error)?.message}</p>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setOrgDialog(null)}>Cancel</Button>
+            <Button
+              disabled={
+                orgDialog === "create"
+                  ? !orgName.trim() || createOrganisation.isPending
+                  : !inviteToken.trim() || acceptInvitation.isPending
+              }
+              onClick={() => {
+                if (orgDialog === "create") {
+                  createOrganisation.mutate(orgName.trim(), {
+                    onSuccess: (org) => {
+                      setOrgDialog(null);
+                      setOrgName("");
+                      switchOrganisation(org.id);
+                    },
+                  });
+                } else {
+                  acceptInvitation.mutate(inviteToken.trim(), {
+                    onSuccess: (member) => {
+                      setOrgDialog(null);
+                      setInviteToken("");
+                      switchOrganisation(member.organisationId);
+                    },
+                  });
+                }
+              }}
+            >
+              {orgDialog === "create" ? "Create" : "Join"}
+            </Button>
           </div>
         </div>
       </DialogContent>

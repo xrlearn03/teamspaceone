@@ -1,6 +1,8 @@
-import { useEffect } from "react";
-import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect } from "react";
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import * as api from "../lib/api";
+import { enqueueMessage, queuedMessageCount } from "../lib/offline-queue";
+import { useUIStore } from "../stores/ui";
 import { useRealtime } from "./useRealtime";
 import { getActiveOrganisation, setActiveOrganisation } from "../lib/api";
 
@@ -234,6 +236,77 @@ export function useUpdateMessage() {
       api.updateMessage(args.messageId, args.content),
     onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["messages", args.channelId] }),
   });
+}
+
+export function useToggleReaction() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { messageId: string; channelId: string; emoji: string }) =>
+      api.toggleMessageReaction(args.messageId, args.emoji),
+    onSuccess: (result) => {
+      client.setQueryData<InfiniteData<api.MessagePage, string | null>>(["messages", result.channelId], (data) =>
+        data
+          ? {
+              ...data,
+              pages: data.pages.map((page) => ({
+                ...page,
+                items: page.items.map((item) => (item.id === result.id ? { ...item, reactions: result.reactions } : item)),
+              })),
+            }
+          : data,
+      );
+      void client.invalidateQueries({ queryKey: ["thread"] });
+    },
+  });
+}
+
+/**
+ * Offline-aware message send. When offline, the message is persisted to the
+ * local outbox (SQLite via Tauri, localStorage in dev) and inserted into the
+ * message cache as a pending item. The realtime provider flushes the queue on
+ * reconnect.
+ */
+export function useSendMessageOrQueue() {
+  const client = useQueryClient();
+  const send = useSendMessage();
+
+  const sendOrQueue = useCallback(
+    async (args: { channelId: string; content: string; attachmentIds?: string[]; parentMessageId?: string; senderId?: string }) => {
+      if (navigator.onLine) {
+        send.mutate(args);
+        return;
+      }
+      await enqueueMessage({
+        channelId: args.channelId,
+        content: args.content,
+        attachmentIds: args.attachmentIds,
+        parentMessageId: args.parentMessageId,
+      });
+      const pending: api.Message = {
+        id: `local-${crypto.randomUUID()}`,
+        channelId: args.channelId,
+        senderId: args.senderId ?? "me",
+        parentMessageId: args.parentMessageId ?? null,
+        content: args.content,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        attachments: [],
+        pending: true,
+      };
+      const key = args.parentMessageId ? ["thread", args.parentMessageId] : ["messages", args.channelId];
+      client.setQueryData<InfiniteData<api.MessagePage, string | null>>(key, (data) => {
+        if (!data) return data;
+        const pages = data.pages.slice();
+        pages[0] = { ...pages[0], items: [...pages[0].items, pending] };
+        return { ...data, pages };
+      });
+      useUIStore.getState().setPendingCount(await queuedMessageCount());
+      useUIStore.getState().setConnection("offline");
+    },
+    [client, send],
+  );
+
+  return { sendOrQueue, isPending: send.isPending };
 }
 
 export function useDeleteMessage() {
@@ -611,7 +684,7 @@ export function useUploadFile() {
 
 export function useSearch() {
   return useMutation({
-    mutationFn: (args: { query: string; filters?: string[] }) =>
+    mutationFn: (args: { query: string; filters?: api.SearchFilters }) =>
       api.search(args.query, args.filters),
   });
 }

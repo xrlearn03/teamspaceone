@@ -1,15 +1,16 @@
-import { Check, RefreshCw, WifiOff } from "lucide-react";
+import { Check, CloudUpload, RefreshCw, WifiOff } from "lucide-react";
 import { useUIStore } from "../../stores/ui";
 import { useOrganisations, useWorkspaces } from "../../hooks/api";
-import { getActiveOrganisation } from "../../lib/api";
 
 export function StatusBar() {
   const connection = useUIStore((s) => s.connection);
-  const activeOrgId = getActiveOrganisation();
+  const pendingCount = useUIStore((s) => s.pendingCount);
+  const activeWorkspaceId = useUIStore((s) => s.activeWorkspaceId);
+  const activeOrgId = useUIStore((s) => s.organisationId);
   const { data: organisations } = useOrganisations();
   const { data: workspaces } = useWorkspaces(activeOrgId ?? undefined);
   const organisation = organisations?.find((o) => o.id === activeOrgId);
-  const workspace = workspaces?.[0];
+  const workspace = workspaces?.find((w) => w.id === activeWorkspaceId) ?? workspaces?.[0];
 
   return (
     <div className="flex h-7 shrink-0 items-center justify-between border-t bg-surface px-3 text-xs text-text-muted">
@@ -43,8 +44,15 @@ export function StatusBar() {
             <span>Syncing</span>
           </>
         )}
+        {pendingCount > 0 ? (
+          <>
+            <span className="text-text-muted">·</span>
+            <CloudUpload className="h-3 w-3 text-warning" />
+            <span className="text-warning">{pendingCount} pending</span>
+          </>
+        ) : null}
         <span className="text-text-muted">·</span>
-        <span>Last synced just now</span>
+        <span>{connection === "offline" ? "Not synced" : "Synced"}</span>
       </div>
     </div>
   );

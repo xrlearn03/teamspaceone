@@ -17,7 +17,11 @@ import { type UpdateChannelDto } from './dto/update-channel.dto.js';
 import { type UpdateMessageDto } from './dto/update-message.dto.js';
 
 const channelInclude = { members: { orderBy: { joinedAt: 'asc' as const } } };
-const messageInclude = { attachments: true, _count: { select: { replies: { where: { deletedAt: null } } } } };
+const messageInclude = {
+  attachments: true,
+  reactions: { orderBy: { createdAt: 'asc' as const } },
+  _count: { select: { replies: { where: { deletedAt: null } } } },
+};
 
 @Injectable()
 export class MessagingService {
@@ -257,6 +261,38 @@ export class MessagingService {
       });
       await this.event(tx, ctx, Subjects.MESSAGE_DELETED, 'message', messageId, { id: messageId, channelId: message.channelId, deletedAt });
       return deleted;
+    });
+  }
+
+  async toggleReaction(ctx: OrganisationContextValue, messageId: string, emoji: string) {
+    const actorId = this.actor(ctx);
+    const message = await this.accessibleMessage(ctx, messageId);
+    const cleanEmoji = emoji?.trim();
+    if (!cleanEmoji || cleanEmoji.length > 32) {
+      throw new BadRequestException('A valid emoji is required');
+    }
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const existing = await tx.messageReaction.findUnique({
+        where: { messageId_userId_emoji: { messageId: message.id, userId: actorId, emoji: cleanEmoji } },
+      });
+      if (existing) {
+        await tx.messageReaction.delete({ where: { id: existing.id } });
+      } else {
+        await tx.messageReaction.create({
+          data: { id: randomUUID(), messageId: message.id, userId: actorId, emoji: cleanEmoji },
+        });
+      }
+      const reactions = await tx.messageReaction.findMany({
+        where: { messageId: message.id },
+        orderBy: { createdAt: 'asc' },
+      });
+      await this.event(tx, ctx, Subjects.MESSAGE_REACTION_UPDATED, 'message', message.id, {
+        id: message.id,
+        channelId: message.channelId,
+        reactions,
+      });
+      return { id: message.id, channelId: message.channelId, reactions };
     });
   }
 

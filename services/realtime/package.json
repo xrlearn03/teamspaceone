@@ -38,6 +38,7 @@
     "@teamspace-one/logger": "workspace:*",
     "@teamspace-one/opentelemetry": "workspace:*",
     "@teamspace-one/organisation-context": "workspace:*",
+    "ioredis": "^5.4.0",
     "jsonwebtoken": "9.0.2",
     "nats": "^2.28.0",
     "reflect-metadata": "^0.2.2",

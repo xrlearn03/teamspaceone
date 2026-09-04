@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { getActiveOrganisation } from "../lib/api";
 
 export type View =
   | "home"
@@ -10,9 +11,13 @@ export type View =
   | "voice"
   | "files"
   | "ai"
+  | "members"
+  | "saved"
+  | "drafts"
   | "settings";
 
 interface UIState {
+  organisationId: string | null;
   theme: "light" | "dark" | "system";
   activeView: View;
   activeChannelId: string | null;
@@ -24,6 +29,11 @@ interface UIState {
   rightPanelWidth: number;
   searchOpen: boolean;
   connection: "connected" | "connecting" | "offline" | "syncing";
+  pendingCount: number;
+  activeWorkspaceId: string | null;
+  setOrganisation: (organisationId: string) => void;
+  setPendingCount: (count: number) => void;
+  setActiveWorkspace: (workspaceId: string | null) => void;
   setTheme: (theme: "light" | "dark" | "system") => void;
   setActiveView: (
     view: View,
@@ -39,6 +49,7 @@ interface UIState {
 }
 
 export const useUIStore = create<UIState>((set) => ({
+  organisationId: getActiveOrganisation(),
   theme: "system",
   activeView: "home",
   activeChannelId: null,
@@ -50,6 +61,29 @@ export const useUIStore = create<UIState>((set) => ({
   rightPanelWidth: 320,
   searchOpen: false,
   connection: "connected",
+  pendingCount: 0,
+  activeWorkspaceId: localStorage.getItem(
+    `teamspace-one:${getActiveOrganisation() ?? "none"}:activeWorkspace`,
+  ),
+  setOrganisation: (organisationId) =>
+    set({
+      organisationId,
+      activeView: "home",
+      activeChannelId: null,
+      activeProjectId: null,
+      activeMeetingId: null,
+      rightPanelOpen: false,
+      searchOpen: false,
+      pendingCount: 0,
+      activeWorkspaceId: localStorage.getItem(`teamspace-one:${organisationId}:activeWorkspace`),
+    }),
+  setPendingCount: (pendingCount) => set({ pendingCount }),
+  setActiveWorkspace: (workspaceId) => {
+    const key = `teamspace-one:${getActiveOrganisation() ?? "none"}:activeWorkspace`;
+    if (workspaceId) localStorage.setItem(key, workspaceId);
+    else localStorage.removeItem(key);
+    set({ activeWorkspaceId: workspaceId });
+  },
   setTheme: (theme) => set({ theme }),
   setActiveView: (view, params) =>
     set({

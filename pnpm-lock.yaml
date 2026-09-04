@@ -1279,6 +1279,9 @@ importers:
       '@teamspace-one/organisation-context':
         specifier: workspace:*
         version: link:../../packages/organisation-context
+      ioredis:
+        specifier: ^5.4.0
+        version: 5.11.1
       jsonwebtoken:
         specifier: 9.0.2
         version: 9.0.2

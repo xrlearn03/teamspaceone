@@ -11,6 +11,8 @@ import { verify } from 'jsonwebtoken';
 import { type Server, type Socket } from 'socket.io';
 import { type EventEnvelope } from '@teamspace-one/event-contracts';
 import { Subjects } from '@teamspace-one/event-contracts';
+import { AccessService } from './access.service.js';
+import { PresenceService } from './presence.service.js';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -19,11 +21,19 @@ import { Subjects } from '@teamspace-one/event-contracts';
 export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   private readonly logger = new Logger(RealtimeGateway.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly access: AccessService,
+    private readonly presence: PresenceService,
+  ) {}
 
   @WebSocketServer() server!: Server;
 
   afterInit() {
+    this.presence.onMessage((room, event, payload) => {
+      if (!this.server) return;
+      this.server.to(room).emit(event, payload);
+    });
     this.logger.log('Realtime WebSocket gateway initialized');
   }
 
@@ -44,8 +54,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
 
   @SubscribeMessage('join')
   async handleJoin(client: Socket, channelId: string): Promise<void> {
-    const access = await this.resolveResource(this.config.get('MESSAGING_SERVICE_URL', 'http://localhost:3004'), `channels/${channelId}/access`, client);
-    if (!access || !(await this.canAccessOrganisation(access.organisationId, client))) return;
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !(await this.access.canAccess(userId, 'channel', channelId))) return;
     const room = `channel:${channelId}`;
     await client.join(room);
     this.logger.log(`Client ${client.id} joined channel room ${room}`);
@@ -62,15 +72,15 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
 
   @SubscribeMessage('join-project')
   async handleJoinProject(client: Socket, projectId: string): Promise<void> {
-    const access = await this.resolveResource(this.config.get('PROJECTS_SERVICE_URL', 'http://localhost:3006'), `projects/${projectId}/access`, client);
-    if (!access || !(await this.canAccessOrganisation(access.organisationId, client))) return;
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !(await this.access.canAccess(userId, 'project', projectId))) return;
     await client.join(`project:${projectId}`);
   }
 
   @SubscribeMessage('join-meeting')
   async handleJoinMeeting(client: Socket, meetingId: string): Promise<void> {
-    const access = await this.resolveResource(this.config.get('MEETING_SERVICE_URL', 'http://localhost:3009'), `meetings/${meetingId}/access`, client);
-    if (!access || !(await this.canAccessOrganisation(access.organisationId, client))) return;
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !(await this.access.canAccess(userId, 'meeting', meetingId))) return;
     const room = `meeting:${meetingId}`;
     await client.join(room);
     this.logger.log(`Client ${client.id} joined meeting room ${room}`);
@@ -78,7 +88,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
 
   @SubscribeMessage('join-organisation')
   async handleJoinOrganisation(client: Socket, organisationId: string): Promise<void> {
-    if (!(await this.canAccessOrganisation(organisationId, client))) return;
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !(await this.access.canAccess(userId, 'organisation', organisationId))) return;
     const room = `organisation:${organisationId}`;
     await client.join(room);
     this.logger.log(`Client ${client.id} joined organisation room ${room}`);
@@ -86,9 +97,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
 
   @SubscribeMessage('join-workspace')
   async handleJoinWorkspace(client: Socket, workspaceId: string): Promise<void> {
-    const baseUrl = this.config.get('ORGANISATION_SERVICE_URL', 'http://localhost:3003');
-    const access = await this.resolveResource(baseUrl, `organisations/workspaces/${workspaceId}/access`, client);
-    if (!access) return;
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !(await this.access.canAccess(userId, 'workspace', workspaceId))) return;
     const room = `workspace:${workspaceId}`;
     await client.join(room);
     this.logger.log(`Client ${client.id} joined workspace room ${room}`);
@@ -99,30 +109,37 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
     client.leave(room);
   }
 
-  private async resolveResource(baseUrl: string, path: string, client: Socket): Promise<{ organisationId: string } | null> {
-    const actorId = client.data.userId as string | undefined;
-    if (!actorId) return null;
-    try {
-      const response = await fetch(`${baseUrl}/${path}`, { headers: { 'x-actor-id': actorId } });
-      return response.ok ? await response.json() as { organisationId: string } : null;
-    } catch (error) {
-      this.logger.warn(`Resource authorization failed: ${(error as Error).message}`);
-      return null;
-    }
+  @SubscribeMessage('typing')
+  handleTyping(client: Socket, data: { room: string; isTyping: boolean }): void {
+    const userId = client.data.userId as string | undefined;
+    if (!userId) return;
+    this.presence.publish('realtime:typing', data.room, 'typing', { userId, isTyping: data.isTyping, room: data.room });
   }
 
-  private async canAccessOrganisation(organisationId: string, client: Socket): Promise<boolean> {
-    const actorId = client.data.userId as string | undefined;
-    if (!actorId) return false;
-    const baseUrl = this.config.get('ORGANISATION_SERVICE_URL', 'http://localhost:3003');
-    try {
-      const response = await fetch(`${baseUrl}/organisations/${organisationId}/access`, { headers: { 'x-actor-id': actorId } });
-      if (!response.ok) return false;
-      return Boolean((await response.json() as { allowed?: boolean }).allowed);
-    } catch (error) {
-      this.logger.warn(`Organisation authorization failed: ${(error as Error).message}`);
-      return false;
-    }
+  @SubscribeMessage('presence')
+  handlePresence(client: Socket, data: { room: string; status: string }): void {
+    const userId = client.data.userId as string | undefined;
+    if (!userId) return;
+    this.presence.publish('realtime:presence', data.room, 'presence', { userId, status: data.status, room: data.room });
+  }
+
+  @SubscribeMessage('connection-state')
+  handleConnectionState(client: Socket, data: { room: string; state: string }): void {
+    const userId = client.data.userId as string | undefined;
+    if (!userId) return;
+    this.presence.publish('realtime:connection', data.room, 'connection-state', { userId, state: data.state, room: data.room });
+  }
+
+  @SubscribeMessage('message.read')
+  handleMessageRead(client: Socket, data: { room: string; messageId: string }): void {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !data.room || !data.messageId) return;
+    this.presence.publish('realtime:presence', data.room, 'read-receipt', {
+      userId,
+      messageId: data.messageId,
+      room: data.room,
+      readAt: new Date().toISOString(),
+    });
   }
 
   broadcast(envelope: EventEnvelope): void {
@@ -186,6 +203,13 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
         const channelId = payload.channelId as string | undefined;
         if (channelId) {
           this.server.to(`channel:${channelId}`).emit('message.deleted', payload);
+        }
+        break;
+      }
+      case Subjects.MESSAGE_REACTION_UPDATED: {
+        const channelId = payload.channelId as string | undefined;
+        if (channelId) {
+          this.server.to(`channel:${channelId}`).emit('message.reaction.updated', payload);
         }
         break;
       }

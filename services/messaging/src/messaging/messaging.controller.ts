@@ -102,6 +102,15 @@ export class MessagingController {
     return this.messaging.updateMessage(ctx, messageId, dto);
   }
 
+  @Post('messages/:id/reactions')
+  toggleReaction(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') messageId: string,
+    @Body() dto: { emoji: string },
+  ) {
+    return this.messaging.toggleReaction(ctx, messageId, dto.emoji);
+  }
+
   @Delete('messages/:id')
   deleteMessage(
     @CurrentOrganisation() ctx: OrganisationContextValue,

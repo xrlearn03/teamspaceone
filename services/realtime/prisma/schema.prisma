@@ -20,3 +20,18 @@ model InboxEvent {
   @@index([eventId])
   @@index([organisationId])
 }
+
+model ResourceAccess {
+  id             String   @id @default(cuid())
+  userId         String
+  resourceType   String
+  resourceId     String
+  organisationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, resourceType, resourceId])
+  @@index([resourceType, resourceId])
+  @@index([organisationId])
+  @@map("resource_access")
+}

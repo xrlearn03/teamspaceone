@@ -185,11 +185,8 @@ services:
       PORT: 3005
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/realtime_db?schema=public
       NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-auth}
-      ORGANISATION_SERVICE_URL: http://organisation-service:3003
-      MESSAGING_SERVICE_URL: http://messaging-service:3004
-      PROJECTS_SERVICE_URL: http://projects-service:3006
-      MEETING_SERVICE_URL: http://meeting-service:3009
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: teamspace-one-realtime-service
     ports:

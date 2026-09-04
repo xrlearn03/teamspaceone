@@ -29,6 +29,17 @@ export interface SearchResult {
   updatedAt: Date;
 }
 
+export interface SearchOptions {
+  resourceType?: string;
+  resourceId?: string;
+  workspaceId?: string;
+  authorId?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export interface SearchDocumentInput {
   resourceType: string;
   resourceId: string;
@@ -96,7 +107,7 @@ export class SearchService {
   async search(
     ctx: OrganisationContextValue,
     query: string,
-    options?: { resourceType?: string; workspaceId?: string; limit?: number; offset?: number },
+    options?: SearchOptions,
   ): Promise<SearchResult[]> {
     const q = query.trim();
     if (!q) {
@@ -127,7 +138,7 @@ export class SearchService {
 
   private async listPermitted(
     ctx: OrganisationContextValue,
-    options?: { resourceType?: string; workspaceId?: string; limit?: number; offset?: number },
+    options?: SearchOptions,
   ): Promise<SearchResult[]> {
     const builder = new SearchSqlBuilder(ctx, options);
     const limit = options?.limit ?? 50;
@@ -148,7 +159,7 @@ export class SearchService {
 
   private buildSearchSql(
     ctx: OrganisationContextValue,
-    options: { resourceType?: string; workspaceId?: string; limit?: number; offset?: number } | undefined,
+    options: SearchOptions | undefined,
     escapedQuery: string,
   ): { sql: string; params: (string | number)[] } {
     const builder = new SearchSqlBuilder(ctx, options);
@@ -481,12 +492,20 @@ class SearchSqlBuilder {
 
   constructor(
     ctx: OrganisationContextValue,
-    options?: { resourceType?: string; workspaceId?: string; resourceId?: string },
+    options?: SearchOptions,
   ) {
     this.where('"organisationId" = $?', ctx.organisationId);
     if (options?.resourceType) this.where('"resourceType" = $?', options.resourceType);
     if (options?.workspaceId) this.where('"workspaceId" = $?', options.workspaceId);
     if (options?.resourceId) this.where('"resourceId" = $?', options.resourceId);
+    if (options?.authorId) {
+      this.where(
+        `COALESCE("metadata"->>'senderId', "metadata"->>'authorId', "permissions"->>'ownerId', "permissions"->>'assigneeId') = $?`,
+        options.authorId,
+      );
+    }
+    if (options?.from) this.where('"createdAt" >= $?::timestamptz', options.from);
+    if (options?.to) this.where('"createdAt" <= $?::timestamptz', options.to);
     this.addPermissionFilter(ctx.actorId ?? '');
   }
 

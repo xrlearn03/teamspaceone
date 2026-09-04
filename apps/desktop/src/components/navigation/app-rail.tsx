@@ -15,11 +15,8 @@ import {
 import { useUIStore, type View } from "../../stores/ui";
 import { useShallow } from "zustand/shallow";
 import { useMe, useOrganisations, useUnreadCount } from "../../hooks/api";
-import {
-  getActiveOrganisation,
-  setActiveOrganisation,
-  logout,
-} from "../../lib/api";
+import { useSwitchOrganisation } from "../../hooks/useOrganisationSwitch";
+import { logout } from "../../lib/api";
 import { Avatar, AvatarFallback } from "../ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -45,15 +42,11 @@ export function AppRail() {
   const { data: user, isLoading: userLoading } = useMe();
   const { data: organisations } = useOrganisations();
   const { data: unread } = useUnreadCount();
-  const activeOrgId = getActiveOrganisation();
+  const activeOrgId = useUIStore((s) => s.organisationId);
+  const switchOrganisation = useSwitchOrganisation();
 
   function navigate(view: View) {
     setActiveView(view);
-  }
-
-  async function switchOrganisation(id: string) {
-    setActiveOrganisation(id);
-    navigate("home");
   }
 
   async function signOut() {

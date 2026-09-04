@@ -20,6 +20,7 @@ export const Subjects = {
   MESSAGE_CREATED: 'teamspace-one.message.created',
   MESSAGE_UPDATED: 'teamspace-one.message.updated',
   MESSAGE_DELETED: 'teamspace-one.message.deleted',
+  MESSAGE_REACTION_UPDATED: 'teamspace-one.message.reaction.updated',
   TASK_CREATED: 'teamspace-one.task.created',
   TASK_UPDATED: 'teamspace-one.task.updated',
   TASK_COMPLETED: 'teamspace-one.task.completed',

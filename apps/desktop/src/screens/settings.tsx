@@ -283,7 +283,16 @@ function AboutSettings() {
 }
 
 function ShortcutSettings() {
-  const shortcuts = [{ shortcut: "⌘K", action: "Global search" }, { shortcut: "Esc", action: "Close panels" }];
+  const shortcuts = [
+    { shortcut: "⌘/Ctrl K", action: "Global search" },
+    { shortcut: "⌘/Ctrl ⇧ ]", action: "Open inbox" },
+    { shortcut: "Enter", action: "Send message" },
+    { shortcut: "Shift Enter", action: "New line in composer" },
+    { shortcut: "@", action: "Mention autocomplete" },
+    { shortcut: "/", action: "Slash commands" },
+    { shortcut: "↑ ↓", action: "Navigate autocomplete & search results" },
+    { shortcut: "Esc", action: "Close menus, dialogs, and panels" },
+  ];
   return <SettingsSection title="Keyboard shortcuts"><div className="grid grid-cols-2 gap-3">{shortcuts.map((item) => <div key={item.action} className="flex items-center justify-between rounded-md border p-3"><span className="text-sm">{item.action}</span><kbd className="rounded bg-surface-elevated px-2 py-0.5 text-xs font-mono">{item.shortcut}</kbd></div>)}</div></SettingsSection>;
 }
 

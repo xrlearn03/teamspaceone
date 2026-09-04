@@ -1,11 +1,16 @@
 import { useState } from "react";
-import { Check, MessageCircle, Pencil, Trash2, X } from "lucide-react";
+import { Bookmark, Check, MessageCircle, Pencil, Smile, Trash2, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Avatar, AvatarFallback } from "../ui/avatar";
 import { MessageAttachment } from "../ui/message-attachment";
+import { MessageContent } from "./message-content";
+import { isSaved, toggleSavedMessage } from "../../lib/message-local";
+import { useToggleReaction } from "../../hooks/api";
 import { cn } from "../../lib/utils";
 import type { Message as MessageType, UserDto } from "../../lib/api";
+
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "👀", "🙏", "✅", "🔥"];
 
 function formatTime(iso: string) {
   const d = new Date(iso);
@@ -19,6 +24,7 @@ export interface MessageItemProps {
   onReply?: () => void;
   onEdit?: (messageId: string, content: string) => void;
   onDelete?: (messageId: string) => void;
+  /** Grouped under the previous message — hides avatar and author name. */
   compact?: boolean;
 }
 
@@ -33,8 +39,12 @@ export function MessageItem({
 }: MessageItemProps) {
   const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content);
+  const [reactionPicker, setReactionPicker] = useState(false);
+  const toggleReaction = useToggleReaction();
+  const [saved, setSaved] = useState(() => isSaved(message.id));
   const isMe = message.senderId === user?.id;
   const author = isMe ? "You" : message.senderId.slice(0, 8);
+  const mentionName = user?.firstName ?? user?.id ?? null;
 
   function saveEdit() {
     if (onEdit && editDraft.trim() && editDraft.trim() !== message.content) {
@@ -43,18 +53,50 @@ export function MessageItem({
     setEditing(false);
   }
 
+  function react(emoji: string) {
+    if (!user || message.pending) return;
+    toggleReaction.mutate({ messageId: message.id, channelId: message.channelId, emoji });
+    setReactionPicker(false);
+  }
+
+  function toggleSaved() {
+    if (message.pending) return;
+    setSaved(
+      toggleSavedMessage({
+        id: message.id,
+        channelId: message.channelId,
+        content: message.content,
+        senderId: message.senderId,
+        createdAt: message.createdAt,
+      }),
+    );
+  }
+
   const replyCount = message._count?.replies ?? 0;
+  const reactions: Record<string, string[]> = {};
+  for (const reaction of message.reactions ?? []) {
+    (reactions[reaction.emoji] ??= []).push(reaction.userId);
+  }
+  const reactionEntries = Object.entries(reactions);
 
   return (
     <div className={cn("flex gap-3", isMe && !compact && "flex-row-reverse")}>
-      <Avatar className="h-8 w-8 shrink-0">
-        <AvatarFallback>{author.charAt(0).toUpperCase()}</AvatarFallback>
-      </Avatar>
+      {compact ? (
+        <span className="w-8 shrink-0" />
+      ) : (
+        <Avatar className="h-8 w-8 shrink-0">
+          <AvatarFallback>{author.charAt(0).toUpperCase()}</AvatarFallback>
+        </Avatar>
+      )}
       <div className={cn("flex max-w-[80%] flex-col", isMe && !compact && "items-end")}>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-text">{author}</span>
-          <span className="text-xs text-text-muted">{formatTime(message.createdAt)}</span>
-        </div>
+        {!compact && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-text">{author}</span>
+            <span className="text-xs text-text-muted">{formatTime(message.createdAt)}</span>
+            {message.pending ? <span className="text-[10px] text-warning">Sending when online…</span> : null}
+            {saved ? <Bookmark className="h-3 w-3 fill-warning text-warning" aria-label="Saved" /> : null}
+          </div>
+        )}
         {editing ? (
           <div className="mt-1 flex items-center gap-1">
             <Input
@@ -78,23 +120,48 @@ export function MessageItem({
             </Button>
           </div>
         ) : (
-          <div className="group flex items-center gap-1">
+          <div className="group flex items-start gap-1">
             <div
               className={cn(
                 "mt-0.5 rounded-lg px-3 py-2 text-sm",
                 isMe && !compact ? "bg-primary text-white" : "bg-surface-elevated text-text",
                 message.deletedAt && "italic opacity-60",
+                message.pending && "opacity-70",
               )}
             >
-              {message.deletedAt ? "Message deleted" : message.content}
+              {message.deletedAt ? (
+                "Message deleted"
+              ) : (
+                <MessageContent content={message.content} mentionName={mentionName} />
+              )}
               {message.editedAt && !message.deletedAt ? <span className="ml-1 text-[10px] opacity-70">(edited)</span> : null}
               {message.attachments.map((attachment) => <MessageAttachment key={attachment.id} fileId={attachment.fileId} />)}
             </div>
-            {!message.deletedAt && (isMe || onEdit || onDelete || onReply) ? (
-              <div className="flex opacity-0 transition-opacity group-hover:opacity-100">
+            {!message.deletedAt && !message.pending && (isMe || onEdit || onDelete || onReply || user) ? (
+              <div className="relative flex opacity-0 transition-opacity group-hover:opacity-100">
+                {user ? (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => setReactionPicker((open) => !open)}
+                    aria-label="Add reaction"
+                  >
+                    <Smile className="h-3.5 w-3.5" />
+                  </Button>
+                ) : null}
                 {showReplyButton && onReply ? (
                   <Button size="icon" variant="ghost" onClick={onReply} aria-label="Reply in thread">
                     <MessageCircle className="h-3.5 w-3.5" />
+                  </Button>
+                ) : null}
+                {user ? (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={toggleSaved}
+                    aria-label={saved ? "Remove from saved items" : "Save message"}
+                  >
+                    <Bookmark className={cn("h-3.5 w-3.5", saved && "fill-warning text-warning")} />
                   </Button>
                 ) : null}
                 {isMe && onEdit ? (
@@ -107,10 +174,45 @@ export function MessageItem({
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 ) : null}
+                {reactionPicker ? (
+                  <div className="absolute bottom-full left-0 z-10 mb-1 flex gap-0.5 rounded-md border bg-surface p-1 shadow-lg">
+                    {QUICK_REACTIONS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => react(emoji)}
+                        className="rounded p-1 text-base hover:bg-surface-elevated"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
         )}
+        {reactionEntries.length > 0 && !message.deletedAt ? (
+          <div className={cn("mt-1 flex flex-wrap gap-1", isMe && !compact && "justify-end")}>
+            {reactionEntries.map(([emoji, users]) => {
+              const mine = user ? users.includes(user.id) : false;
+              return (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => react(emoji)}
+                  className={cn(
+                    "flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+                    mine ? "border-primary bg-primary-subtle text-primary" : "bg-surface text-text-secondary hover:bg-surface-elevated",
+                  )}
+                >
+                  <span>{emoji}</span>
+                  <span>{users.length}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         {!message.deletedAt && replyCount > 0 && showReplyButton ? (
           <button
             type="button"

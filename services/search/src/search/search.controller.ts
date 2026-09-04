@@ -15,6 +15,9 @@ export class SearchController {
     return this.searchService.search(ctx, query.q ?? '', {
       resourceType: query.type,
       workspaceId: query.workspaceId,
+      authorId: query.authorId,
+      from: query.from,
+      to: query.to,
       limit: query.limit ? Number(query.limit) : undefined,
       offset: query.offset ? Number(query.offset) : undefined,
     });

@@ -3,7 +3,7 @@ import { type EventEnvelope } from '@teamspace-one/event-contracts';
 import { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 
-export type EventHandler = (envelope: EventEnvelope) => Promise<void> | void;
+export type EventHandler = (tx: Prisma.TransactionClient, envelope: EventEnvelope) => Promise<void> | void;
 
 @Injectable()
 export class InboxService {
@@ -35,7 +35,7 @@ export class InboxService {
         },
       });
 
-      await handler(envelope);
+      await handler(tx, envelope);
     });
   }
 }

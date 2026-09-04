@@ -1,12 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Hash,
   Info,
   MoreHorizontal,
-  Paperclip,
   Phone,
   Search,
-  Send,
   Video,
 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
@@ -21,7 +19,7 @@ import {
   useMembers,
   useMessages,
   useReplaceChannelMembers,
-  useSendMessage,
+  useSendMessageOrQueue,
   useUpdateChannel,
   useUpdateMessage,
   useUploadFile,
@@ -30,8 +28,10 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { MessageItem } from "../components/chat/message";
+import { Composer } from "../components/chat/composer";
 import { ThreadPanel } from "../components/chat/thread-panel";
 import { getActiveOrganisation } from "../lib/api";
+import { useRealtime } from "../hooks/useRealtime";
 import type { Message } from "../lib/api";
 
 export function ChannelScreen() {
@@ -49,7 +49,7 @@ export function ChannelScreen() {
   const channel =
     channels?.find((c) => c.id === activeChannelId) ?? channels?.[0];
   const { data: messages, fetchNextPage, hasNextPage, isFetchingNextPage } = useMessages(channel?.id);
-  const sendMessage = useSendMessage();
+  const { sendOrQueue, isPending: sending } = useSendMessageOrQueue();
   const updateMessage = useUpdateMessage();
   const deleteMessage = useDeleteMessage();
   const uploadFile = useUploadFile();
@@ -58,7 +58,6 @@ export function ChannelScreen() {
   const updateChannel = useUpdateChannel();
   const replaceMembers = useReplaceChannelMembers();
   const deleteChannel = useDeleteChannel();
-  const [draft, setDraft] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -66,17 +65,32 @@ export function ChannelScreen() {
   const [privateChannel, setPrivateChannel] = useState(false);
   const [channelMemberIds, setChannelMemberIds] = useState<string[]>([]);
   const [threadMessage, setThreadMessage] = useState<Message | null>(null);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const { onRealtimeEvent, sendPresence } = useRealtime();
 
-  function send() {
-    if (!channel || !draft.trim()) return;
-    sendMessage.mutate({ channelId: channel.id, content: draft.trim() });
-    setDraft("");
+  useEffect(() => {
+    if (!channel) return;
+    sendPresence(channel.id, "online");
+    return onRealtimeEvent("typing", (payload) => {
+      if (payload.room !== `channel:${channel.id}` || payload.userId === user?.id) return;
+      setTypingUsers((prev) =>
+        payload.isTyping ? [...new Set([...prev, payload.userId])] : prev.filter((id) => id !== payload.userId),
+      );
+      if (payload.isTyping) {
+        setTimeout(() => setTypingUsers((prev) => prev.filter((id) => id !== payload.userId)), 4000);
+      }
+    });
+  }, [channel?.id, user?.id, onRealtimeEvent, sendPresence]);
+
+  function send(content: string) {
+    if (!channel) return;
+    void sendOrQueue({ channelId: channel.id, content, senderId: user?.id });
   }
 
   function attach(file?: File) {
     if (!file || !channel) return;
     uploadFile.mutate(file, {
-      onSuccess: (uploaded) => sendMessage.mutate({ channelId: channel.id, content: "", attachmentIds: [uploaded.id] }),
+      onSuccess: (uploaded) => void sendOrQueue({ channelId: channel.id, content: "", attachmentIds: [uploaded.id], senderId: user?.id }),
     });
   }
 
@@ -151,16 +165,26 @@ export function ChannelScreen() {
 
             <div className="space-y-4">
               {visibleMessages && visibleMessages.length > 0 ? (
-                visibleMessages.map((m) => (
-                  <MessageItem
-                    key={m.id}
-                    message={m}
-                    user={user}
-                    onReply={() => setThreadMessage(m)}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                  />
-                ))
+                visibleMessages.map((m, index) => {
+                  const prev = visibleMessages[index - 1];
+                  const compact =
+                    !searchQuery.trim() &&
+                    prev !== undefined &&
+                    prev.senderId === m.senderId &&
+                    !prev.deletedAt &&
+                    new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() < 5 * 60 * 1000;
+                  return (
+                    <MessageItem
+                      key={m.id}
+                      message={m}
+                      user={user}
+                      compact={compact}
+                      onReply={() => setThreadMessage(m)}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                    />
+                  );
+                })
               ) : (
                 <div className="py-8 text-center text-sm text-text-muted">
                   No messages yet. Say hello.
@@ -170,36 +194,21 @@ export function ChannelScreen() {
           </div>
 
           <div className="border-t p-3">
-            <div className="flex items-end gap-2 rounded-lg border bg-surface p-2">
-              <div className="flex-1">
-                <Input
-                  placeholder={`Message #${channel?.name ?? "channel"}`}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      send();
-                    }
-                  }}
-                  className="border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0"
-                />
-              </div>
-              <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" asChild>
-                  <label aria-label="Attach file" className="cursor-pointer">
-                    <Paperclip className="h-4 w-4" />
-                    <input type="file" className="hidden" onChange={(e) => { attach(e.target.files?.[0]); e.currentTarget.value = ""; }} />
-                  </label>
-                </Button>
-                <Button size="icon" onClick={send} disabled={!channel || sendMessage.isPending}>
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <p className="mt-1.5 px-1 text-[11px] text-text-muted">
-              Enter to send · Shift + Enter for new line
-            </p>
+            {typingUsers.length > 0 ? (
+              <p className="px-1 pb-1 text-xs italic text-text-muted">
+                {typingUsers.map((id) => id.slice(0, 8)).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing…
+              </p>
+            ) : null}
+            <Composer
+              placeholder={`Message #${channel?.name ?? "channel"}`}
+              draftKey={channel ? `channel:${channel.id}` : undefined}
+              channelId={channel?.id}
+              members={(members ?? []).map((m) => ({ id: m.userId, name: m.userId.slice(0, 8) }))}
+              sending={sending}
+              disabled={!channel}
+              onSend={send}
+              onAttach={attach}
+            />
           </div>
         </div>
 
@@ -236,7 +245,11 @@ export function ChannelScreen() {
                     onChange={() => setChannelMemberIds((ids) => ids.includes(member.userId) ? ids.filter((id) => id !== member.userId) : [...ids, member.userId])}
                   />
                   <span className="flex-1 truncate">{member.userId}</span>
-                  <span className="text-xs text-text-muted">{member.role.name}</span>
+                  {/client|external/i.test(member.role.name) ? (
+                    <span className="rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">External</span>
+                  ) : (
+                    <span className="text-xs text-text-muted">{member.role.name}</span>
+                  )}
                 </label>
               ))}
             </div>

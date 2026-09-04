@@ -3,6 +3,7 @@ import { AckPolicy, DeliverPolicy, nanos, type JsMsg } from 'nats';
 import { isEventEnvelope, Subjects, type EventEnvelope, Streams } from '@teamspace-one/event-contracts';
 import { InboxService } from '../inbox/inbox.service.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
+import { AccessService } from '../realtime/access.service.js';
 import { NatsClientService } from './nats-client.service.js';
 
 interface ConsumerDefinition {
@@ -21,6 +22,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
     private readonly natsClient: NatsClientService,
     private readonly inbox: InboxService,
     private readonly realtime: RealtimeGateway,
+    private readonly access: AccessService,
   ) {}
 
   async onModuleInit() {
@@ -96,7 +98,8 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
           continue;
         }
 
-        await this.inbox.handle(data, (envelope) => {
+        await this.inbox.handle(data, async (tx, envelope) => {
+          await this.access.applyEvent(tx, envelope);
           this.realtime.broadcast(envelope);
         });
 
