@@ -842,6 +842,11 @@ export function joinMeeting(id: string, name?: string) {
   });
 }
 
+export function getMeetingToken(id: string, name?: string) {
+  const query = name ? `?name=${encodeURIComponent(name)}` : "";
+  return apiRequest<MeetingTokenResult>(`/meetings/${id}/token${query}`);
+}
+
 export function leaveMeeting(id: string) {
   return apiRequest<MeetingParticipant>(`/meetings/${id}/leave`, { method: "POST" });
 }
@@ -851,10 +856,6 @@ export function setScreenShare(id: string, isScreenSharing: boolean) {
     method: "POST",
     body: { isScreenSharing },
   });
-}
-
-export function getMeetingToken(id: string) {
-  return apiRequest<MeetingTokenResult>(`/meetings/${id}/token`);
 }
 
 export function getMeetingMessages(id: string, cursor?: string, limit = 50) {

@@ -150,6 +150,7 @@ export function LiveKitConference({
     localAudioEnabled,
     localVideoEnabled,
     localScreenShare,
+    localTrackVersion,
     toggleMicrophone,
     toggleCamera,
     toggleScreenShare,
@@ -230,7 +231,7 @@ export function LiveKitConference({
       });
     }
     return items;
-  }, [localParticipant, remoteParticipants]);
+  }, [localParticipant, remoteParticipants, localTrackVersion]);
 
   const activeScreenShare = allParticipants.find((p) => p.screenTrack);
   const sidePanelOpen = chatOpen || notesOpen || participantsOpen;

@@ -5,11 +5,13 @@ import {
   List,
   Search,
   Download,
+  ExternalLink,
   Link,
   Trash2,
   Upload,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import type { FileRecord } from "../lib/api";
 import { useCreateExternalShare, useDeleteFile, useFiles, useUploadFile } from "../hooks/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -38,6 +40,18 @@ function formatRelative(iso: string) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h`;
   return d.toLocaleDateString();
+}
+
+function isImage(file: { mimeType: string }) {
+  return file.mimeType.startsWith("image/");
+}
+
+function isVideo(file: { mimeType: string }) {
+  return file.mimeType.startsWith("video/");
+}
+
+function getFileUrl(file: FileRecord) {
+  return file.url ?? file.downloadUrl ?? null;
 }
 
 function matchesFilter(file: { originalName: string; mimeType: string }, filter: string) {
@@ -75,6 +89,7 @@ export function FileBrowserScreen() {
   const deleteFile = useDeleteFile();
   const createShare = useCreateExternalShare();
   const [shareToken, setShareToken] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<FileRecord | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const filtered = (files ?? []).filter((file) =>
@@ -89,7 +104,13 @@ export function FileBrowserScreen() {
   function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    uploadFile.mutate(file);
+    uploadFile.mutate(file, {
+      onSuccess: (record) => {
+        if (isImage(record) || isVideo(record)) {
+          setPreviewFile(record);
+        }
+      },
+    });
     e.target.value = "";
   }
 
@@ -170,7 +191,7 @@ export function FileBrowserScreen() {
               </thead>
               <tbody>
                 {filtered.map((f) => (
-                  <tr key={f.id} className="border-b last:border-0 hover:bg-surface-elevated/50">
+                  <tr key={f.id} className="cursor-pointer border-b last:border-0 hover:bg-surface-elevated/50" onClick={() => setPreviewFile(f)}>
                     <td className="flex items-center gap-2 px-4 py-3">
                       <FileText className="h-4 w-4 text-text-muted" />
                       <span className="text-text">{f.originalName}</span>
@@ -180,11 +201,11 @@ export function FileBrowserScreen() {
                     <td className="px-4 py-3 text-text-secondary">{formatRelative(f.createdAt)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" disabled={!f.downloadUrl && !f.url} onClick={() => { const url = f.downloadUrl ?? f.url; if (url) void openUrl(url); }} aria-label={`Download ${f.originalName}`}>
+                        <Button variant="ghost" size="icon" disabled={!f.downloadUrl && !f.url} onClick={(e) => { e.stopPropagation(); const url = f.downloadUrl ?? f.url; if (url) void openUrl(url); }} aria-label={`Download ${f.originalName}`}>
                           <Download className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" disabled={createShare.isPending} onClick={() => share(f.id)} aria-label={`Share ${f.originalName}`}><Link className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="text-error" disabled={deleteFile.isPending} onClick={() => deleteFile.mutate(f.id)} aria-label={`Delete ${f.originalName}`}>
+                        <Button variant="ghost" size="icon" disabled={createShare.isPending} onClick={(e) => { e.stopPropagation(); share(f.id); }} aria-label={`Share ${f.originalName}`}><Link className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-error" disabled={deleteFile.isPending} onClick={(e) => { e.stopPropagation(); deleteFile.mutate(f.id); }} aria-label={`Delete ${f.originalName}`}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -199,7 +220,8 @@ export function FileBrowserScreen() {
             {filtered.map((f) => (
               <div
                 key={f.id}
-                className="flex flex-col gap-2 rounded-lg border bg-surface p-4 hover:border-primary/30"
+                className="cursor-pointer flex flex-col gap-2 rounded-lg border bg-surface p-4 hover:border-primary/30"
+                onClick={() => setPreviewFile(f)}
               >
                 <div className="flex h-10 w-10 items-center justify-center rounded-md bg-surface-elevated text-primary">
                   <FileText className="h-5 w-5" />
@@ -207,8 +229,8 @@ export function FileBrowserScreen() {
                 <p className="truncate text-sm font-medium text-text">{f.originalName}</p>
                 <p className="text-xs text-text-muted">{formatBytes(f.size)} · {f.status}</p>
                 <div className="mt-auto flex gap-1">
-                  <Button variant="ghost" size="sm" disabled={!f.downloadUrl && !f.url} onClick={() => { const url = f.downloadUrl ?? f.url; if (url) void openUrl(url); }}><Download className="mr-1 h-3.5 w-3.5" />Download</Button>
-                  <Button variant="ghost" size="icon" onClick={() => share(f.id)}><Link className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="text-error" onClick={() => deleteFile.mutate(f.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="sm" disabled={!f.downloadUrl && !f.url} onClick={(e) => { e.stopPropagation(); const url = f.downloadUrl ?? f.url; if (url) void openUrl(url); }}><Download className="mr-1 h-3.5 w-3.5" />Download</Button>
+                  <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); share(f.id); }}><Link className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="text-error" onClick={(e) => { e.stopPropagation(); deleteFile.mutate(f.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
                 </div>
               </div>
             ))}
@@ -218,6 +240,36 @@ export function FileBrowserScreen() {
     </div>
     <Dialog open={Boolean(shareToken)} onOpenChange={(open) => { if (!open) setShareToken(null); }}>
       <DialogContent className="max-w-md p-0"><DialogHeader><DialogTitle>External share created</DialogTitle><DialogDescription>This token expires in seven days. Send it only to the intended recipient.</DialogDescription></DialogHeader><div className="space-y-3 px-4 pb-4"><Input readOnly value={shareToken ?? ""} /><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => { if (shareToken) void navigator.clipboard.writeText(shareToken); }}>Copy token</Button><Button onClick={() => setShareToken(null)}>Done</Button></div></div></DialogContent>
+    </Dialog>
+    <Dialog open={Boolean(previewFile)} onOpenChange={(open) => { if (!open) setPreviewFile(null); }}>
+      <DialogContent className="max-w-4xl top-1/2">
+        {previewFile && (
+          <>
+            <DialogHeader>
+              <DialogTitle>{previewFile.originalName}</DialogTitle>
+              <DialogDescription>{formatBytes(previewFile.size)} · {previewFile.mimeType}</DialogDescription>
+            </DialogHeader>
+            <div className="flex min-h-[16rem] items-center justify-center p-4 pt-0">
+              {isImage(previewFile) ? (
+                <img src={previewFile.url ?? previewFile.downloadUrl ?? undefined} alt={previewFile.originalName} className="max-h-[70vh] max-w-full rounded-md object-contain" />
+              ) : isVideo(previewFile) ? (
+                <video src={previewFile.url ?? previewFile.downloadUrl ?? undefined} controls className="max-h-[70vh] max-w-full rounded-md" />
+              ) : (
+                <div className="flex flex-col items-center gap-4 text-center">
+                  <FileText className="h-16 w-16 text-text-muted" />
+                  <div>
+                    <p className="font-medium text-text">{previewFile.originalName}</p>
+                    <p className="text-sm text-text-muted">{formatBytes(previewFile.size)} · {previewFile.mimeType}</p>
+                  </div>
+                  <Button disabled={!getFileUrl(previewFile)} onClick={() => { const url = getFileUrl(previewFile); if (url) void openUrl(url); }}>
+                    <ExternalLink className="mr-1.5 h-4 w-4" /> Open file
+                  </Button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </DialogContent>
     </Dialog>
     </>
   );

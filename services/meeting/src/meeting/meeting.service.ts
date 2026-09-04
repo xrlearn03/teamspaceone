@@ -238,7 +238,7 @@ export class MeetingService {
       roomName: meeting.roomName,
       identity,
       userId,
-      name: dto.name,
+      name: dto.name || identity,
       canPublish: true,
       canSubscribe: true,
       canScreenShare: true,
@@ -373,7 +373,7 @@ export class MeetingService {
     });
   }
 
-  async getToken(ctx: OrganisationContextValue, id: string) {
+  async getToken(ctx: OrganisationContextValue, id: string, name?: string) {
     const userId = ctx.actorId;
     if (!userId) throw new ForbiddenException('Missing actor');
 
@@ -387,6 +387,7 @@ export class MeetingService {
       roomName: meeting.roomName,
       identity: `user-${userId}`,
       userId,
+      name: name || `user-${userId}`,
       isAdmin: userId === meeting.createdBy,
       canPublish: true,
       canSubscribe: true,

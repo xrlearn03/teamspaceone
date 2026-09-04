@@ -88,6 +88,11 @@ export function MeetingScreen() {
     };
   }, [activeMeetingId]);
 
+  const displayName =
+    user
+      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
+      : "Guest";
+
   async function handleJoin(opts: MediaJoinOptions) {
     if (!activeMeetingId) return;
     setLoading(true);
@@ -95,10 +100,10 @@ export function MeetingScreen() {
     try {
       let t: string;
       try {
-        const result = await getMeetingToken(activeMeetingId);
+        const result = await getMeetingToken(activeMeetingId, displayName);
         t = result.token;
       } catch {
-        const result = await joinMeeting(activeMeetingId);
+        const result = await joinMeeting(activeMeetingId, displayName);
         t = result.token;
       }
       setMediaOptions(opts);
@@ -178,11 +183,6 @@ export function MeetingScreen() {
       />
     );
   }
-
-  const displayName =
-    user
-      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
-      : "Guest";
 
   return (
     <LiveKitConference

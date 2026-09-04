@@ -65,9 +65,10 @@ export function useLiveKit({
   const [connectionState, setConnectionState] = useState<"disconnected" | "connecting" | "connected" | "reconnecting">("disconnected");
   const [error, setError] = useState<Error | null>(null);
   const [remoteParticipants, setRemoteParticipants] = useState<RemoteParticipant[]>([]);
-  const [localAudioEnabled, setLocalAudioEnabled] = useState(audioEnabled);
-  const [localVideoEnabled, setLocalVideoEnabled] = useState(videoEnabled);
+  const [localAudioEnabled, setLocalAudioEnabled] = useState(false);
+  const [localVideoEnabled, setLocalVideoEnabled] = useState(false);
   const [localScreenShare, setLocalScreenShare] = useState(false);
+  const [localTrackVersion, setLocalTrackVersion] = useState(0);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [raiseHands, setRaiseHands] = useState<Set<string>>(new Set());
@@ -89,11 +90,17 @@ export function useLiveKit({
 
     function updateParticipants() {
       setRemoteParticipants(Array.from(room.remoteParticipants.values()));
+      setLocalTrackVersion((v) => v + 1);
+    }
+
+    function updateLocalParticipant() {
+      setLocalTrackVersion((v) => v + 1);
     }
 
     room.on(RoomEvent.Connected, () => {
       setConnectionState("connected");
       updateParticipants();
+      updateLocalParticipant();
     });
     room.on(RoomEvent.Disconnected, () => setConnectionState("disconnected"));
     room.on(RoomEvent.Reconnecting, () => setConnectionState("reconnecting"));
@@ -108,8 +115,14 @@ export function useLiveKit({
     });
     room.on(RoomEvent.TrackSubscribed, updateParticipants);
     room.on(RoomEvent.TrackUnsubscribed, updateParticipants);
-    room.on(RoomEvent.LocalTrackPublished, updateParticipants);
-    room.on(RoomEvent.LocalTrackUnpublished, updateParticipants);
+    room.on(RoomEvent.LocalTrackPublished, () => {
+      updateParticipants();
+      updateLocalParticipant();
+    });
+    room.on(RoomEvent.LocalTrackUnpublished, () => {
+      updateParticipants();
+      updateLocalParticipant();
+    });
 
     room.on(RoomEvent.DataReceived, (payload, _participant) => {
       const data = decodeData(payload);
@@ -167,17 +180,20 @@ export function useLiveKit({
     setReactions([]);
     setRaiseHands(new Set());
     setIsRecording(false);
+    setLocalTrackVersion(0);
     room
       .connect(url, token, { rtcConfig })
       .then(async () => {
         try {
           await room.localParticipant.setMicrophoneEnabled(audioEnabled);
           await room.localParticipant.setCameraEnabled(videoEnabled);
-          setLocalAudioEnabled(audioEnabled);
-          setLocalVideoEnabled(videoEnabled);
         } catch (err) {
           // Camera/mic permission errors are non-fatal; user can enable later.
+          console.warn("Failed to enable camera/microphone:", err);
         }
+        setLocalAudioEnabled(room.localParticipant.isMicrophoneEnabled);
+        setLocalVideoEnabled(room.localParticipant.isCameraEnabled);
+        updateLocalParticipant();
       })
       .catch((err) => setError(err as Error));
 
@@ -192,7 +208,8 @@ export function useLiveKit({
     if (!room) return;
     const enabled = !room.localParticipant.isMicrophoneEnabled;
     await room.localParticipant.setMicrophoneEnabled(enabled);
-    setLocalAudioEnabled(enabled);
+    setLocalAudioEnabled(room.localParticipant.isMicrophoneEnabled);
+    setLocalTrackVersion((v) => v + 1);
   }, []);
 
   const toggleCamera = useCallback(async () => {
@@ -200,7 +217,8 @@ export function useLiveKit({
     if (!room) return;
     const enabled = !room.localParticipant.isCameraEnabled;
     await room.localParticipant.setCameraEnabled(enabled);
-    setLocalVideoEnabled(enabled);
+    setLocalVideoEnabled(room.localParticipant.isCameraEnabled);
+    setLocalTrackVersion((v) => v + 1);
   }, []);
 
   const toggleScreenShare = useCallback(async () => {
@@ -287,6 +305,7 @@ export function useLiveKit({
     localAudioEnabled,
     localVideoEnabled,
     localScreenShare,
+    localTrackVersion,
     chatMessages,
     reactions,
     raiseHands,

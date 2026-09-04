@@ -95,8 +95,9 @@ export class MeetingController {
   async getToken(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
+    @Query('name') name?: string,
   ) {
-    return this.meeting.getToken(ctx, id);
+    return this.meeting.getToken(ctx, id, name);
   }
 
   @Post(':id/messages')

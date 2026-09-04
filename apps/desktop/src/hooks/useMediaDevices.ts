@@ -19,11 +19,13 @@ export function useMediaDevices(options: UseMediaDevicesOptions = {}) {
   const [videoInputId, setVideoInputId] = useState<string>("");
   const [audioOutputId, setAudioOutputId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    setStream(null);
   }, []);
 
   const startPreview = useCallback(
@@ -46,8 +48,9 @@ export function useMediaDevices(options: UseMediaDevicesOptions = {}) {
       }
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        streamRef.current = stream;
+        const nextStream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = nextStream;
+        setStream(nextStream);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not access camera or microphone.");
       }
@@ -117,7 +120,7 @@ export function useMediaDevices(options: UseMediaDevicesOptions = {}) {
   }, [audioOutputId]);
 
   return {
-    stream: streamRef.current,
+    stream,
     audioEnabled,
     videoEnabled,
     devices,
