@@ -53,7 +53,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         </h1>
         <p className="mt-1 text-sm text-text-muted">
           {mode === "login"
-            ? "Welcome back to Reactify Connect."
+            ? "Welcome back to Teamspace One."
             : "Get started with your workspace."}
         </p>
 

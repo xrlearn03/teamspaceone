@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Reactify Connect — native desktop collaboration platform",
+  "description": "Teamspace One — native desktop collaboration platform",
   "scripts": {
     "build:desktop": "pnpm --filter @reactify/desktop tauri:build",
     "dev:desktop": "pnpm --filter @reactify/desktop tauri dev",

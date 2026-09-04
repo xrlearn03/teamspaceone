@@ -93,13 +93,22 @@ export function AppRail() {
           <TooltipTrigger asChild>
             <button
               type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-white"
-              aria-label="Reactify Connect"
+              className="flex h-9 w-9 items-center justify-center rounded-lg"
+              aria-label="Teamspace One"
             >
-              <span className="text-xs font-bold">R</span>
+              <img
+                src="/Teamspace%20One_light.svg"
+                alt="Teamspace One"
+                className="h-6 w-auto dark:hidden"
+              />
+              <img
+                src="/Teamspace%20One_dark.svg"
+                alt="Teamspace One"
+                className="hidden h-6 w-auto dark:block"
+              />
             </button>
           </TooltipTrigger>
-          <TooltipContent>Reactify Connect</TooltipContent>
+          <TooltipContent>Teamspace One</TooltipContent>
         </Tooltip>
 
         <DropdownMenu>

@@ -14,7 +14,7 @@ export function StatusBar() {
   return (
     <div className="flex h-7 shrink-0 items-center justify-between border-t bg-surface px-3 text-xs text-text-muted">
       <div className="flex items-center gap-3">
-        <span className="font-medium text-text">{workspace?.name ?? organisation?.name ?? "Reactify"}</span>
+        <span className="font-medium text-text">{workspace?.name ?? organisation?.name ?? "Teamspace One"}</span>
         <span className="text-text-muted">·</span>
         <span>{organisation?.slug ?? "workspace"}</span>
       </div>

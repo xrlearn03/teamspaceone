@@ -230,7 +230,7 @@ export function SettingsScreen() {
 
           {section === "integrations" && (
             <SettingsSection title="Integrations">
-              <p className="text-sm text-text-secondary">Connect tools to Reactify.</p>
+              <p className="text-sm text-text-secondary">Connect tools to Teamspace One.</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 {["Slack", "GitHub", "Figma", "Linear", "Notion"].map((tool) => (
                   <Button key={tool} variant="secondary" size="sm">

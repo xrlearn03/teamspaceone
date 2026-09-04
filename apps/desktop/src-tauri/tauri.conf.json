@@ -1,5 +1,5 @@
 {
-  "productName": "Reactify Connect",
+  "productName": "Teamspace One",
   "version": "0.1.0",
   "identifier": "com.reactify.connect",
   "build": {
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Reactify Connect",
+        "title": "Teamspace One",
         "width": 1200,
         "height": 800,
         "minWidth": 800,

@@ -1,8 +1,8 @@
 [package]
 name = "reactify-connect"
 version = "0.1.0"
-description = "Reactify Connect native desktop client"
-authors = ["Reactify"]
+description = "Teamspace One native desktop client"
+authors = ["Teamspace"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
