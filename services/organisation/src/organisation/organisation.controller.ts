@@ -1,10 +1,12 @@
-import { Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
 import { OrganisationService } from './organisation.service.js';
 import { type CreateOrganisationDto } from './dto/create-organisation.dto.js';
 import { type CreateMemberDto } from './dto/create-member.dto.js';
 import { type CreateInvitationDto } from './dto/create-invitation.dto.js';
 import { type CreateWorkspaceDto } from './dto/create-workspace.dto.js';
+import { type CreateClientDto } from './dto/create-client.dto.js';
+import { type UpdateClientDto } from './dto/update-client.dto.js';
 
 @Controller('organisations')
 export class OrganisationController {
@@ -30,6 +32,17 @@ export class OrganisationController {
       throw new Error('Missing x-actor-id header');
     }
     return this.organisation.create(dto, actorId, correlationId);
+  }
+
+  @Get('workspaces/:workspaceId/access')
+  resolveWorkspaceAccess(@Param('workspaceId') workspaceId: string, @Headers('x-actor-id') actorId?: string) {
+    if (!actorId) return null;
+    return this.organisation.resolveWorkspaceAccess(workspaceId, actorId);
+  }
+
+  @Get(':id/access')
+  async canAccess(@Param('id') id: string, @Headers('x-actor-id') actorId?: string) {
+    return { allowed: actorId ? await this.organisation.canAccess(id, actorId) : false };
   }
 
   @Post(':id/members')
@@ -69,6 +82,58 @@ export class OrganisationController {
   ) {
     this.assertOrg(id, ctx);
     return this.organisation.listWorkspaces(ctx.organisationId, ctx.actorId as string);
+  }
+
+  @Get(':id/clients')
+  listClients(@Param('id') id: string, @CurrentOrganisation() ctx: OrganisationContextValue) {
+    this.assertOrg(id, ctx);
+    return this.organisation.listClients(ctx.organisationId, ctx.actorId as string);
+  }
+
+  @Post(':id/clients')
+  createClient(@Param('id') id: string, @CurrentOrganisation() ctx: OrganisationContextValue, @Body() dto: CreateClientDto) {
+    this.assertOrg(id, ctx);
+    return this.organisation.createClient(ctx.organisationId, ctx.actorId as string, dto);
+  }
+
+  @Patch(':id/clients/:clientId')
+  updateClient(@Param('id') id: string, @Param('clientId') clientId: string, @CurrentOrganisation() ctx: OrganisationContextValue, @Body() dto: UpdateClientDto) {
+    this.assertOrg(id, ctx);
+    return this.organisation.updateClient(ctx.organisationId, clientId, ctx.actorId as string, dto);
+  }
+
+  @Delete(':id/clients/:clientId')
+  async deleteClient(@Param('id') id: string, @Param('clientId') clientId: string, @CurrentOrganisation() ctx: OrganisationContextValue) {
+    this.assertOrg(id, ctx);
+    await this.organisation.deleteClient(ctx.organisationId, clientId, ctx.actorId as string);
+  }
+
+  @Post('invitations/accept')
+  acceptInvitation(
+    @Body() dto: { token: string },
+    @Headers('x-actor-id') actorId?: string,
+  ) {
+    if (!actorId) throw new Error('Missing x-actor-id header');
+    return this.organisation.acceptInvitation(dto.token, actorId);
+  }
+
+  @Get(':id/invitations')
+  listInvitations(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.listInvitations(ctx.organisationId, ctx.actorId as string);
+  }
+
+  @Delete(':id/invitations/:invitationId')
+  async revokeInvitation(
+    @Param('id') id: string,
+    @Param('invitationId') invitationId: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    await this.organisation.revokeInvitation(ctx.organisationId, invitationId, ctx.actorId as string);
   }
 
   @Get(':id/roles')

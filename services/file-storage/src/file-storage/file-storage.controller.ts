@@ -16,6 +16,7 @@ import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/or
 import { FileStorageService } from './file-storage.service.js';
 import { PresignUploadDto } from './dto/presign-upload.dto.js';
 import { CompleteUploadDto } from './dto/complete-upload.dto.js';
+import { CreateExternalShareDto } from './dto/create-external-share.dto.js';
 
 @Controller('files')
 export class FileStorageController {
@@ -72,6 +73,21 @@ export class FileStorageController {
     @UploadedFile() file: any,
   ) {
     return this.fileStorage.upload(ctx, file);
+  }
+
+  @Get(':id/shares')
+  listShares(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') id: string) {
+    return this.fileStorage.listExternalShares(ctx, id);
+  }
+
+  @Post(':id/shares')
+  createShare(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') id: string, @Body() dto: CreateExternalShareDto) {
+    return this.fileStorage.createExternalShare(ctx, id, dto);
+  }
+
+  @Delete('shares/:shareId')
+  async revokeShare(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('shareId') shareId: string) {
+    await this.fileStorage.revokeExternalShare(ctx, shareId);
   }
 
   @Delete(':id')

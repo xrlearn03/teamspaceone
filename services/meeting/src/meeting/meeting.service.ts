@@ -23,6 +23,14 @@ export class MeetingService {
     private readonly livekit: LiveKitService,
   ) {}
 
+  async resolveAccess(meetingId: string, actorId: string) {
+    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
+    if (!meeting) return null;
+    const participant = await this.prisma.meetingParticipant.findUnique({ where: { meetingId_userId: { meetingId, userId: actorId } } });
+    if (meeting.status === 'ended' && !participant && meeting.createdBy !== actorId) return null;
+    return { organisationId: meeting.organisationId, workspaceId: meeting.workspaceId };
+  }
+
   async create(ctx: OrganisationContextValue, dto: CreateMeetingDto) {
     const organisationId = ctx.organisationId;
     const createdBy = ctx.actorId;

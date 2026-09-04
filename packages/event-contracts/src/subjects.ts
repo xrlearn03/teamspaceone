@@ -45,6 +45,8 @@ export const Subjects = {
   GUEST_CREATED: 'reactify.guest.created',
   GUEST_INVITED: 'reactify.guest.invited',
   CLIENT_CREATED: 'reactify.client.created',
+  CLIENT_UPDATED: 'reactify.client.updated',
+  CLIENT_DELETED: 'reactify.client.deleted',
   CLIENT_PROJECT_CREATED: 'reactify.client_project.created',
   APPROVAL_CREATED: 'reactify.approval.created',
   APPROVAL_APPROVED: 'reactify.approval.approved',

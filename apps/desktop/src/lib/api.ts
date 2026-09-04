@@ -162,6 +162,16 @@ export interface OrganisationRole {
   isDefault: boolean;
 }
 
+export interface Client {
+  id: string;
+  organisationId: string;
+  clientOrganisationId?: string | null;
+  name: string;
+  email?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Invitation {
   id: string;
   organisationId: string;
@@ -235,6 +245,7 @@ export interface Project {
   id: string;
   organisationId: string;
   workspaceId?: string | null;
+  clientId?: string | null;
   name: string;
   description?: string | null;
   ownerId: string;
@@ -283,6 +294,20 @@ export interface ProjectAttachment {
   createdAt: string;
 }
 
+export interface Approval {
+  id: string;
+  organisationId: string;
+  projectId?: string | null;
+  resourceType: string;
+  resourceId: string;
+  requestedBy: string;
+  requestedAt: string;
+  status: string;
+  resolvedBy?: string | null;
+  resolvedAt?: string | null;
+  message?: string | null;
+}
+
 export interface ProjectActivity {
   id: string;
   organisationId: string;
@@ -320,6 +345,16 @@ export interface Notification {
   body: string;
   link?: string | null;
   read: boolean;
+  createdAt: string;
+}
+
+export interface ExternalShare {
+  id: string;
+  fileId: string;
+  token: string;
+  expiresAt?: string | null;
+  maxViews?: number | null;
+  viewCount: number;
   createdAt: string;
 }
 
@@ -462,6 +497,34 @@ export function createInvitation(organisationId: string, email: string, roleId: 
   return apiRequest<Invitation>(`/organisations/${organisationId}/invitations`, { method: "POST", body: { email, roleId } });
 }
 
+export function getInvitations(organisationId: string) {
+  return apiRequest<Invitation[]>(`/organisations/${organisationId}/invitations`);
+}
+
+export function revokeInvitation(organisationId: string, invitationId: string) {
+  return apiRequest<void>(`/organisations/${organisationId}/invitations/${invitationId}`, { method: "DELETE" });
+}
+
+export function acceptInvitation(token: string) {
+  return apiRequest<OrganisationMember>("/organisations/invitations/accept", { method: "POST", body: { token }, org: null });
+}
+
+export function getClients(organisationId: string) {
+  return apiRequest<Client[]>(`/organisations/${organisationId}/clients`);
+}
+
+export function createClient(organisationId: string, body: { name: string; email?: string; clientOrganisationId?: string }) {
+  return apiRequest<Client>(`/organisations/${organisationId}/clients`, { method: "POST", body });
+}
+
+export function updateClient(organisationId: string, clientId: string, body: { name?: string; email?: string | null; clientOrganisationId?: string | null }) {
+  return apiRequest<Client>(`/organisations/${organisationId}/clients/${clientId}`, { method: "PATCH", body });
+}
+
+export function deleteClient(organisationId: string, clientId: string) {
+  return apiRequest<void>(`/organisations/${organisationId}/clients/${clientId}`, { method: "DELETE" });
+}
+
 // Messaging
 export function getChannels() {
   return apiRequest<Channel[]>("/channels");
@@ -520,11 +583,11 @@ export function getProject(projectId: string) {
   return apiRequest<Project>(`/projects/${projectId}`);
 }
 
-export function createProject(body: { name: string; description?: string; workspaceId?: string; memberIds?: string[]; startDate?: string; targetDate?: string }) {
+export function createProject(body: { name: string; description?: string; workspaceId?: string; clientId?: string; memberIds?: string[]; startDate?: string; targetDate?: string }) {
   return apiRequest<Project>("/projects", { method: "POST", body });
 }
 
-export function updateProject(projectId: string, body: { name?: string; description?: string | null; status?: string; startDate?: string | null; targetDate?: string | null; memberIds?: string[] }) {
+export function updateProject(projectId: string, body: { name?: string; description?: string | null; status?: string; clientId?: string | null; startDate?: string | null; targetDate?: string | null; memberIds?: string[] }) {
   return apiRequest<Project>(`/projects/${projectId}`, { method: "PATCH", body });
 }
 
@@ -578,6 +641,21 @@ export function removeProjectAttachment(projectId: string, fileId: string) {
   return apiRequest<void>(`/projects/${projectId}/attachments/${fileId}`, { method: "DELETE" });
 }
 
+export function getApprovals(projectId?: string, status?: string) {
+  const params = new URLSearchParams();
+  if (projectId) params.set("projectId", projectId);
+  if (status) params.set("status", status);
+  return apiRequest<Approval[]>(`/approvals?${params.toString()}`);
+}
+
+export function createApproval(body: { projectId?: string; resourceType: "task" | "file" | "deliverable"; resourceId: string; message?: string }) {
+  return apiRequest<Approval>("/approvals", { method: "POST", body });
+}
+
+export function resolveApproval(approvalId: string, status: "approved" | "rejected", message?: string) {
+  return apiRequest<Approval>(`/approvals/${approvalId}`, { method: "PATCH", body: { status, message } });
+}
+
 export function getProjectActivity(projectId: string, cursor?: string) {
   const params = new URLSearchParams();
   if (cursor) params.set("cursor", cursor);
@@ -591,6 +669,18 @@ export function getFiles() {
 
 export function getFile(fileId: string) {
   return apiRequest<FileRecord>(`/files/${fileId}`);
+}
+
+export function getExternalShares(fileId: string) {
+  return apiRequest<ExternalShare[]>(`/files/${fileId}/shares`);
+}
+
+export function createExternalShare(fileId: string, body: { expiresAt?: string; maxViews?: number }) {
+  return apiRequest<ExternalShare>(`/files/${fileId}/shares`, { method: "POST", body });
+}
+
+export function revokeExternalShare(shareId: string) {
+  return apiRequest<void>(`/files/shares/${shareId}`, { method: "DELETE" });
 }
 
 export function deleteFile(fileId: string) {
@@ -630,6 +720,10 @@ export function createMeeting(title: string, description?: string, workspaceId?:
     method: "POST",
     body: { title, description, workspaceId },
   });
+}
+
+export function createVoiceRoom(title: string, workspaceId?: string) {
+  return apiRequest<Meeting>("/meetings/voice-rooms", { method: "POST", body: { title, workspaceId } });
 }
 
 export function startMeeting(id: string) {

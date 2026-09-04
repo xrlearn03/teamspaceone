@@ -4,7 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Card } from "../components/ui/card";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
-import { useAskAI, useMe } from "../hooks/api";
+import { useAskAI, useCreateTask, useMe, useProjects } from "../hooks/api";
 import { cn } from "../lib/utils";
 
 const suggestions = [
@@ -16,6 +16,15 @@ const suggestions = [
   "Create tasks from this discussion.",
 ];
 
+function savedResponses(): string[] {
+  try {
+    const value = JSON.parse(localStorage.getItem("reactify:savedAiResponses") ?? "[]");
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -26,9 +35,13 @@ export function AIAssistantScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [helpful, setHelpful] = useState<string[]>([]);
+  const [saved, setSaved] = useState<string[]>(savedResponses);
   const bottomRef = useRef<HTMLDivElement>(null);
   const { data: user } = useMe();
   const askAI = useAskAI();
+  const createTask = useCreateTask();
+  const { data: projects } = useProjects();
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -62,6 +75,25 @@ export function AIAssistantScreen() {
     } finally {
       setStreaming(false);
     }
+  }
+
+  function regenerate(messageId: string) {
+    const index = messages.findIndex((message) => message.id === messageId);
+    const prompt = messages.slice(0, index).reverse().find((message) => message.role === "user")?.content;
+    if (prompt) void ask(prompt);
+  }
+
+  function saveResponse(content: string) {
+    const next = saved.includes(content) ? saved.filter((item) => item !== content) : [...saved, content];
+    setSaved(next);
+    localStorage.setItem("reactify:savedAiResponses", JSON.stringify(next));
+  }
+
+  function createTaskFrom(content: string) {
+    const project = projects?.[0];
+    if (!project) return;
+    const title = content.split("\n").find(Boolean)?.replace(/^[-*#\s]+/, "").slice(0, 300) || "AI-generated task";
+    createTask.mutate({ projectId: project.id, title, description: content });
   }
 
   const userName =
@@ -103,16 +135,16 @@ export function AIAssistantScreen() {
                 </p>
                 {m.role === "assistant" && (
                   <div className="mt-3 flex items-center gap-1">
-                    <Button variant="ghost" size="icon">
+                    <Button variant={helpful.includes(m.id) ? "secondary" : "ghost"} size="icon" onClick={() => setHelpful((items) => items.includes(m.id) ? items.filter((id) => id !== m.id) : [...items, m.id])} aria-label="Mark response helpful">
                       <ThumbsUp className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon">
+                    <Button variant="ghost" size="icon" onClick={() => regenerate(m.id)} disabled={streaming} aria-label="Regenerate response">
                       <RotateCcw className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon">
+                    <Button variant={saved.includes(m.content) ? "secondary" : "ghost"} size="icon" onClick={() => saveResponse(m.content)} aria-label="Save response">
                       <Save className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon">
+                    <Button variant="ghost" size="icon" onClick={() => createTaskFrom(m.content)} disabled={!projects?.length || createTask.isPending} aria-label="Create task from response">
                       <CheckSquare className="h-3.5 w-3.5" />
                     </Button>
                   </div>

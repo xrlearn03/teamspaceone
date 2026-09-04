@@ -11,7 +11,7 @@ const categories = [
   { id: "message", label: "Messages" },
   { id: "task", label: "Tasks" },
   { id: "meeting", label: "Meetings" },
-  { id: "file", label: "Approvals" },
+  { id: "approval", label: "Approvals" },
 ];
 
 function formatTime(iso: string) {
@@ -28,7 +28,8 @@ function formatTime(iso: string) {
 
 export function InboxScreen() {
   const [active, setActive] = useState("all");
-  const { data: notifications, isLoading } = useNotifications(active === "all" ? false : true);
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const { data: notifications, isLoading } = useNotifications(unreadOnly);
   const markRead = useMarkRead();
   const markAllRead = useMarkAllRead();
 
@@ -57,8 +58,8 @@ export function InboxScreen() {
             <Check className="mr-1.5 h-4 w-4" />
             Mark all read
           </Button>
-          <Button variant="ghost" size="icon">
-            <Filter className="h-4 w-4" />
+          <Button variant={unreadOnly ? "secondary" : "ghost"} size="sm" onClick={() => setUnreadOnly((value) => !value)}>
+            <Filter className="mr-1.5 h-4 w-4" />{unreadOnly ? "Unread" : "All states"}
           </Button>
         </div>
       </header>

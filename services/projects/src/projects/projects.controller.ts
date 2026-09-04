@@ -1,10 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
 import { ProjectsService } from './projects.service.js';
 import { type AddAttachmentDto } from './dto/add-attachment.dto.js';
+import { type CreateApprovalDto } from './dto/create-approval.dto.js';
 import { type CreateCommentDto } from './dto/create-comment.dto.js';
 import { type CreateProjectDto } from './dto/create-project.dto.js';
 import { type CreateTaskDto } from './dto/create-task.dto.js';
+import { type ResolveApprovalDto } from './dto/resolve-approval.dto.js';
 import { type UpdateCommentDto } from './dto/update-comment.dto.js';
 import { type UpdateProjectDto } from './dto/update-project.dto.js';
 import { type UpdateTaskDto } from './dto/update-task.dto.js';
@@ -13,14 +15,20 @@ import { type UpdateTaskDto } from './dto/update-task.dto.js';
 export class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
 
+  @Get('projects/:id/access')
+  resolveAccess(@Param('id') projectId: string, @Headers('x-actor-id') actorId?: string) {
+    if (!actorId) return null;
+    return this.projects.resolveAccess(projectId, actorId);
+  }
+
   @Post('projects')
   createProject(@CurrentOrganisation() ctx: OrganisationContextValue, @Body() dto: CreateProjectDto) {
     return this.projects.createProject(ctx, dto);
   }
 
   @Get('projects')
-  listProjects(@CurrentOrganisation() ctx: OrganisationContextValue) {
-    return this.projects.listProjects(ctx);
+  listProjects(@CurrentOrganisation() ctx: OrganisationContextValue, @Query('clientId') clientId?: string) {
+    return this.projects.listProjects(ctx, clientId);
   }
 
   @Get('projects/:id')
@@ -91,6 +99,21 @@ export class ProjectsController {
   @Delete('projects/:id/attachments/:fileId')
   async removeAttachment(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Param('fileId') fileId: string) {
     await this.projects.removeAttachment(ctx, projectId, fileId);
+  }
+
+  @Get('approvals')
+  listApprovals(@CurrentOrganisation() ctx: OrganisationContextValue, @Query('projectId') projectId?: string, @Query('status') status?: string) {
+    return this.projects.listApprovals(ctx, projectId, status);
+  }
+
+  @Post('approvals')
+  createApproval(@CurrentOrganisation() ctx: OrganisationContextValue, @Body() dto: CreateApprovalDto) {
+    return this.projects.createApproval(ctx, dto);
+  }
+
+  @Patch('approvals/:id')
+  resolveApproval(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') approvalId: string, @Body() dto: ResolveApprovalDto) {
+    return this.projects.resolveApproval(ctx, approvalId, dto);
   }
 
   @Get('projects/:id/activity')

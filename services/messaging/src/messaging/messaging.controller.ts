@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
 import { MessagingService } from './messaging.service.js';
 import { type CreateChannelDto } from './dto/create-channel.dto.js';
@@ -11,6 +11,12 @@ import { type UpdateMessageDto } from './dto/update-message.dto.js';
 @Controller()
 export class MessagingController {
   constructor(private readonly messaging: MessagingService) {}
+
+  @Get('channels/:id/access')
+  resolveAccess(@Param('id') channelId: string, @Headers('x-actor-id') actorId?: string) {
+    if (!actorId) return null;
+    return this.messaging.resolveAccess(channelId, actorId);
+  }
 
   @Get('channels')
   listChannels(@CurrentOrganisation() ctx: OrganisationContextValue) {

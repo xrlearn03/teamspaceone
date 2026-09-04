@@ -79,8 +79,48 @@ export function useCreateWorkspace() {
   });
 }
 
+export function useInvitations(organisationId?: string) {
+  return useQuery({ queryKey: ["invitations", organisationId], queryFn: () => api.getInvitations(organisationId as string), enabled: Boolean(organisationId) });
+}
+
 export function useCreateInvitation() {
-  return useMutation({ mutationFn: (args: { organisationId: string; email: string; roleId: string }) => api.createInvitation(args.organisationId, args.email, args.roleId) });
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; email: string; roleId: string }) => api.createInvitation(args.organisationId, args.email, args.roleId),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["invitations", args.organisationId] }),
+  });
+}
+
+export function useRevokeInvitation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; invitationId: string }) => api.revokeInvitation(args.organisationId, args.invitationId),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["invitations", args.organisationId] }),
+  });
+}
+
+export function useAcceptInvitation() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: api.acceptInvitation, onSuccess: () => client.invalidateQueries({ queryKey: ["organisations"] }) });
+}
+
+export function useClients(organisationId?: string) {
+  return useQuery({ queryKey: ["clients", organisationId], queryFn: () => api.getClients(organisationId as string), enabled: Boolean(organisationId) });
+}
+
+export function useCreateClient() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: (args: { organisationId: string; name: string; email?: string }) => api.createClient(args.organisationId, { name: args.name, email: args.email }), onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["clients", args.organisationId] }) });
+}
+
+export function useUpdateClient() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: (args: { organisationId: string; clientId: string; body: Parameters<typeof api.updateClient>[2] }) => api.updateClient(args.organisationId, args.clientId, args.body), onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["clients", args.organisationId] }) });
+}
+
+export function useDeleteClient() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: (args: { organisationId: string; clientId: string }) => api.deleteClient(args.organisationId, args.clientId), onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["clients", args.organisationId] }) });
 }
 
 export function useChannels() {
@@ -305,6 +345,23 @@ export function useRemoveProjectAttachment() {
   });
 }
 
+export function useApprovals(projectId?: string) {
+  return useQuery({ queryKey: ["approvals", projectId], queryFn: () => api.getApprovals(projectId), enabled: Boolean(projectId) });
+}
+
+export function useCreateApproval() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: api.createApproval, onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["approvals", args.projectId] }) });
+}
+
+export function useResolveApproval() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId?: string; approvalId: string; status: "approved" | "rejected"; message?: string }) => api.resolveApproval(args.approvalId, args.status, args.message),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["approvals", args.projectId] }),
+  });
+}
+
 export function useProjectActivity(projectId?: string) {
   return useInfiniteQuery({
     queryKey: ["project-activity", projectId],
@@ -333,6 +390,14 @@ export function useCreateMeeting() {
       api.createMeeting(args.title, args.description, args.workspaceId),
     onSuccess: () =>
       client.invalidateQueries({ queryKey: ["meetings", orgId()] }),
+  });
+}
+
+export function useCreateVoiceRoom() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { title: string; workspaceId?: string }) => api.createVoiceRoom(args.title, args.workspaceId),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["meetings", orgId()] }),
   });
 }
 
@@ -403,6 +468,20 @@ export function useFiles() {
     staleTime: 60 * 1000,
     retry: 2,
   });
+}
+
+export function useExternalShares(fileId?: string) {
+  return useQuery({ queryKey: ["external-shares", fileId], queryFn: () => api.getExternalShares(fileId as string), enabled: Boolean(fileId) });
+}
+
+export function useCreateExternalShare() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: (args: { fileId: string; expiresAt?: string; maxViews?: number }) => api.createExternalShare(args.fileId, { expiresAt: args.expiresAt, maxViews: args.maxViews }), onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["external-shares", args.fileId] }) });
+}
+
+export function useRevokeExternalShare() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: (args: { fileId: string; shareId: string }) => api.revokeExternalShare(args.shareId), onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["external-shares", args.fileId] }) });
 }
 
 export function useDeleteFile() {

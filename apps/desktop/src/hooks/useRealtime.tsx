@@ -18,6 +18,9 @@ export interface RealtimeEventPayloads {
   "project.comment.deleted": { id: string; projectId: string };
   "project.attachment.added": { id: string; projectId: string };
   "project.attachment.removed": { id: string; projectId: string };
+  "approval.created": { approvalId: string; projectId?: string };
+  "approval.approved": { approvalId: string; projectId?: string };
+  "approval.rejected": { approvalId: string; projectId?: string };
   "channel.created": { id: string };
   "channel.updated": { id: string };
   "channel.deleted": { id: string };
@@ -108,6 +111,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         "project.comment.deleted",
         "project.attachment.added",
         "project.attachment.removed",
+        "approval.created",
+        "approval.approved",
+        "approval.rejected",
         "channel.created",
         "channel.updated",
         "channel.deleted",
@@ -127,7 +133,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
       for (const event of eventNames) {
         socket.on(event, (payload: unknown) => {
-          if (event.startsWith("project.") || event.startsWith("task.")) {
+          if (event.startsWith("project.") || event.startsWith("task.") || event.startsWith("approval.")) {
             const resource = payload as { projectId?: string };
             if (event === "project.created" || event === "project.updated" || event === "project.deleted") {
               void queryClient.invalidateQueries({ queryKey: ["projects"] });
@@ -136,6 +142,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
               if (event.startsWith("task.")) void queryClient.invalidateQueries({ queryKey: ["tasks", resource.projectId] });
               if (event.startsWith("project.comment.")) void queryClient.invalidateQueries({ queryKey: ["project-comments", resource.projectId] });
               if (event.startsWith("project.attachment.")) void queryClient.invalidateQueries({ queryKey: ["project-attachments", resource.projectId] });
+              if (event.startsWith("approval.")) void queryClient.invalidateQueries({ queryKey: ["approvals", resource.projectId] });
               void queryClient.invalidateQueries({ queryKey: ["project-activity", resource.projectId] });
             }
           }

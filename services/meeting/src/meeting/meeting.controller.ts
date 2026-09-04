@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Put } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@reactify/organisation-context';
 import { MeetingService } from './meeting.service.js';
 import { type CreateMeetingDto } from './dto/create-meeting.dto.js';
@@ -9,6 +9,12 @@ import { type UpdateScreenShareDto } from './dto/update-screen-share.dto.js';
 @Controller('meetings')
 export class MeetingController {
   constructor(private readonly meeting: MeetingService) {}
+
+  @Get(':id/access')
+  resolveAccess(@Param('id') meetingId: string, @Headers('x-actor-id') actorId?: string) {
+    if (!actorId) return null;
+    return this.meeting.resolveAccess(meetingId, actorId);
+  }
 
   @Post()
   async create(

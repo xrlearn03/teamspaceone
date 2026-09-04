@@ -31,6 +31,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
       { stream: Streams.MESSAGING, subject: 'reactify.channel.>', durable: 'realtime-channel-consumer' },
       { stream: Streams.PROJECTS, subject: 'reactify.project.>', durable: 'realtime-project-consumer' },
       { stream: Streams.PROJECTS, subject: 'reactify.task.>', durable: 'realtime-task-consumer' },
+      { stream: Streams.PROJECTS, subject: 'reactify.approval.>', durable: 'realtime-approval-consumer' },
       { stream: Streams.NOTIFICATIONS, subject: 'reactify.notification.>', durable: 'realtime-notification-consumer' },
       { stream: Streams.MEETINGS, subject: 'reactify.meeting.>', durable: 'realtime-meeting-consumer' },
       { stream: Streams.MEETINGS, subject: 'reactify.voice.>', durable: 'realtime-voice-consumer' },

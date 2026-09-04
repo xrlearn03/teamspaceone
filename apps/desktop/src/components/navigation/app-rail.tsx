@@ -241,7 +241,6 @@ export function AppRail() {
             <DropdownMenuItem onClick={() => navigate("settings")}>
               Profile & settings
             </DropdownMenuItem>
-            <DropdownMenuItem disabled>Set status</DropdownMenuItem>
             <DropdownMenuItem onClick={signOut} className="text-danger">
               <LogOut className="mr-2 h-4 w-4" />
               Sign out

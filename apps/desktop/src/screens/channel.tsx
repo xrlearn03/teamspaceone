@@ -9,14 +9,13 @@ import {
   Phone,
   Search,
   Send,
-  Smile,
   Trash2,
   Video,
   X,
 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
-import { useChannels, useDeleteChannel, useDeleteMessage, useMe, useMembers, useMessages, useReplaceChannelMembers, useSendMessage, useUpdateChannel, useUpdateMessage, useUploadFile } from "../hooks/api";
+import { useChannels, useCreateMeeting, useCreateVoiceRoom, useDeleteChannel, useDeleteMessage, useMe, useMembers, useMessages, useReplaceChannelMembers, useSendMessage, useUpdateChannel, useUpdateMessage, useUploadFile } from "../hooks/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
@@ -31,10 +30,11 @@ function formatTime(iso: string) {
 }
 
 export function ChannelScreen() {
-  const { activeChannelId, toggleRightPanel } = useUIStore(
+  const { activeChannelId, toggleRightPanel, setActiveView } = useUIStore(
     useShallow((s) => ({
       activeChannelId: s.activeChannelId,
       toggleRightPanel: s.toggleRightPanel,
+      setActiveView: s.setActiveView,
     })),
   );
 
@@ -48,10 +48,14 @@ export function ChannelScreen() {
   const updateMessage = useUpdateMessage();
   const deleteMessage = useDeleteMessage();
   const uploadFile = useUploadFile();
+  const createMeeting = useCreateMeeting();
+  const createVoiceRoom = useCreateVoiceRoom();
   const updateChannel = useUpdateChannel();
   const replaceMembers = useReplaceChannelMembers();
   const deleteChannel = useDeleteChannel();
   const [draft, setDraft] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [channelName, setChannelName] = useState("");
   const [privateChannel, setPrivateChannel] = useState(false);
@@ -72,6 +76,16 @@ export function ChannelScreen() {
     });
   }
 
+  function startVoiceCall() {
+    if (!channel) return;
+    createVoiceRoom.mutate({ title: `${channel.name} voice` }, { onSuccess: (meeting) => setActiveView("voice", { meetingId: meeting.id }) });
+  }
+
+  function startVideoCall() {
+    if (!channel) return;
+    createMeeting.mutate({ title: `${channel.name} video call` }, { onSuccess: (meeting) => setActiveView("meeting", { meetingId: meeting.id }) });
+  }
+
   function saveEdit() {
     if (!channel || !editingId || !editDraft.trim()) return;
     updateMessage.mutate(
@@ -79,6 +93,8 @@ export function ChannelScreen() {
       { onSuccess: () => setEditingId(null) },
     );
   }
+
+  const visibleMessages = searchQuery.trim() ? messages?.filter((message) => message.content.toLowerCase().includes(searchQuery.trim().toLowerCase())) : messages;
 
   return (
     <>
@@ -96,13 +112,13 @@ export function ChannelScreen() {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon">
+          <Button variant={searchOpen ? "secondary" : "ghost"} size="icon" onClick={() => setSearchOpen((open) => !open)}>
             <Search className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" disabled={createVoiceRoom.isPending} onClick={startVoiceCall}>
             <Phone className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" disabled={createMeeting.isPending} onClick={startVideoCall}>
             <Video className="h-4 w-4" />
           </Button>
           <Button variant="ghost" size="icon" onClick={toggleRightPanel}>
@@ -113,6 +129,7 @@ export function ChannelScreen() {
           </Button>
         </div>
       </header>
+      {searchOpen ? <div className="border-b p-2"><Input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search messages in this channel" /></div> : null}
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {hasNextPage ? (
@@ -125,8 +142,8 @@ export function ChannelScreen() {
         </div>
 
         <div className="space-y-4">
-          {messages && messages.length > 0 ? (
-            messages.map((m) => {
+          {visibleMessages && visibleMessages.length > 0 ? (
+            visibleMessages.map((m) => {
               const isMe = m.senderId === user?.id;
               const author = m.senderId.slice(0, 8);
               return (
@@ -209,9 +226,6 @@ export function ChannelScreen() {
                 <Paperclip className="h-4 w-4" />
                 <input type="file" className="hidden" onChange={(e) => { attach(e.target.files?.[0]); e.currentTarget.value = ""; }} />
               </label>
-            </Button>
-            <Button variant="ghost" size="icon">
-              <Smile className="h-4 w-4" />
             </Button>
             <Button size="icon" onClick={send} disabled={!channel || sendMessage.isPending}>
               <Send className="h-4 w-4" />

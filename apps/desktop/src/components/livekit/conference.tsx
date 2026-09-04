@@ -1,4 +1,5 @@
-import { Mic, MicOff, Video, VideoOff, MonitorUp, MessageSquare, Users, PhoneOff, Settings, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { Mic, MicOff, Video, VideoOff, MonitorUp, Users, PhoneOff, Loader2 } from "lucide-react";
 import { useLiveKit } from "../../hooks/useLiveKit";
 import { VideoRenderer } from "./video-renderer";
 import { Button } from "../ui/button";
@@ -46,6 +47,7 @@ export function LiveKitConference({
   onEnd,
   onScreenShare,
 }: LiveKitConferenceProps) {
+  const [participantsOpen, setParticipantsOpen] = useState(false);
   const {
     connectionState,
     error,
@@ -123,13 +125,9 @@ export function LiveKitConference({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm">
+          <Button variant={participantsOpen ? "secondary" : "ghost"} size="sm" onClick={() => setParticipantsOpen((open) => !open)}>
             <Users className="mr-1.5 h-4 w-4" />
             Participants
-          </Button>
-          <Button variant="ghost" size="sm">
-            <MessageSquare className="mr-1.5 h-4 w-4" />
-            Chat
           </Button>
           {onEnd && (
             <Button variant="destructive" size="sm" onClick={() => void handleEnd()}>
@@ -139,6 +137,7 @@ export function LiveKitConference({
         </div>
       </header>
 
+      <div className="flex min-h-0 flex-1">
       <div className="grid flex-1 grid-cols-1 gap-4 overflow-y-auto p-6 md:grid-cols-2 lg:grid-cols-3">
         {allParticipants.map(({ participant, isLocal, screen }) => {
           const videoTrack =
@@ -173,6 +172,8 @@ export function LiveKitConference({
           );
         })}
       </div>
+      {participantsOpen ? <aside className="w-64 shrink-0 overflow-y-auto border-l bg-surface p-3"><h2 className="mb-3 text-sm font-semibold">Participants ({allParticipants.length})</h2><div className="space-y-2">{allParticipants.map(({ participant, isLocal }) => <div key={participant?.identity ?? "local-list"} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-elevated"><div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-subtle text-xs font-medium text-primary">{(participant?.name ?? "U").charAt(0).toUpperCase()}</div><span className="min-w-0 flex-1 truncate text-sm">{participant?.name ?? "You"}{isLocal ? " (You)" : ""}</span></div>)}</div></aside> : null}
+      </div>
 
       <div className="flex h-16 items-center justify-between border-t px-6">
         <div className="text-xs text-text-muted">Connection quality: Excellent</div>
@@ -197,9 +198,6 @@ export function LiveKitConference({
             onClick={() => void handleToggleScreenShare()}
           >
             <MonitorUp className="h-4 w-4" />
-          </Button>
-          <Button variant="secondary" size="icon">
-            <Settings className="h-4 w-4" />
           </Button>
         </div>
         <Button variant="destructive" size="sm" onClick={() => void handleLeave()}>

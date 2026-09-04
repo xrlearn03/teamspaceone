@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { BadRequestException, GoneException, Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { createEventEnvelope, Subjects } from '@reactify/event-contracts';
 import { type OrganisationContextValue } from '@reactify/organisation-context';
@@ -8,6 +8,7 @@ import { OutboxService } from '../outbox/outbox.service.js';
 import { StorageService } from '../storage/storage.service.js';
 import { FileProcessingService } from '../file-processing/file-processing.service.js';
 import { type PresignUploadDto } from './dto/presign-upload.dto.js';
+import { type CreateExternalShareDto } from './dto/create-external-share.dto.js';
 
 export interface MulterFile {
   originalname: string;
@@ -310,6 +311,46 @@ export class FileStorageService {
     } catch (err) {
       this.logger.error({ fileId: id, error: (err as Error).message }, 'Failed to delete storage objects');
     }
+  }
+
+  async listExternalShares(ctx: OrganisationContextValue, fileId: string) {
+    const file = await this.prisma.fileRecord.findFirst({ where: { id: fileId, organisationId: ctx.organisationId } });
+    if (!file) throw new NotFoundException('File not found');
+    return this.prisma.externalShare.findMany({ where: { fileId, organisationId: ctx.organisationId }, orderBy: { createdAt: 'desc' } });
+  }
+
+  async createExternalShare(ctx: OrganisationContextValue, fileId: string, dto: CreateExternalShareDto) {
+    const actorId = ctx.actorId;
+    if (!actorId) throw new ForbiddenException('Missing actor');
+    const file = await this.prisma.fileRecord.findFirst({ where: { id: fileId, organisationId: ctx.organisationId } });
+    if (!file) throw new NotFoundException('File not found');
+    const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
+    if (expiresAt && (Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date())) throw new BadRequestException('Expiry must be a future date');
+    if (dto.maxViews !== undefined && (!Number.isInteger(dto.maxViews) || dto.maxViews < 1 || dto.maxViews > 100000)) throw new BadRequestException('maxViews must be between 1 and 100000');
+    const id = randomUUID();
+    const token = randomUUID().replaceAll('-', '') + randomUUID().replaceAll('-', '');
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const share = await tx.externalShare.create({ data: { id, fileId, organisationId: ctx.organisationId, token, createdBy: actorId, expiresAt, maxViews: dto.maxViews } });
+      const envelope = createEventEnvelope({ eventType: Subjects.FILE_SHARED_EXTERNALLY, organisationId: ctx.organisationId, actorId, resourceType: 'external-share', resourceId: id, correlationId: ctx.correlationId, payload: { shareId: id, fileId, organisationId: ctx.organisationId, token, createdBy: actorId, expiresAt: expiresAt?.toISOString() } });
+      await this.outbox.createEvent(tx, envelope, Subjects.FILE_SHARED_EXTERNALLY);
+      return share;
+    });
+  }
+
+  async revokeExternalShare(ctx: OrganisationContextValue, shareId: string): Promise<void> {
+    const share = await this.prisma.externalShare.findFirst({ where: { id: shareId, organisationId: ctx.organisationId } });
+    if (!share) throw new NotFoundException('Share not found');
+    await this.prisma.externalShare.delete({ where: { id: shareId } });
+  }
+
+  async redeemExternalShare(token: string) {
+    const share = await this.prisma.externalShare.findUnique({ where: { token }, include: { file: true } });
+    if (!share) throw new NotFoundException('Share not found');
+    if (share.expiresAt && share.expiresAt <= new Date()) throw new GoneException('Share has expired');
+    if (share.maxViews !== null && share.viewCount >= share.maxViews) throw new GoneException('Share view limit reached');
+    const updated = await this.prisma.externalShare.updateMany({ where: { id: share.id, viewCount: share.viewCount }, data: { viewCount: { increment: 1 } } });
+    if (updated.count !== 1) throw new GoneException('Share is no longer available');
+    return { fileName: share.file.originalName, mimeType: share.file.mimeType, size: share.file.size, downloadUrl: await this.storage.getSignedDownloadUrl(share.file.storageKey), expiresAt: share.expiresAt, remainingViews: share.maxViews === null ? null : Math.max(share.maxViews - share.viewCount - 1, 0) };
   }
 
   async getSignedDownloadUrl(ctx: OrganisationContextValue, id: string): Promise<string> {

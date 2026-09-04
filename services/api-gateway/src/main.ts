@@ -134,9 +134,9 @@ async function bootstrap() {
     }),
   );
 
-  app.use(['/projects', '/tasks', '/project-comments'], createAuthMiddleware(jwtSecret));
+  app.use(['/projects', '/tasks', '/project-comments', '/approvals'], createAuthMiddleware(jwtSecret));
   app.use(
-    ['/projects', '/tasks', '/project-comments'],
+    ['/projects', '/tasks', '/project-comments', '/approvals'],
     createProxyMiddleware({
       target: projectsUrl,
       changeOrigin: true,
@@ -159,6 +159,11 @@ async function bootstrap() {
       target: meetingUrl,
       changeOrigin: true,
     }),
+  );
+
+  app.use(
+    '/shares',
+    createProxyMiddleware({ target: fileStorageUrl, changeOrigin: true }),
   );
 
   app.use('/files', createAuthMiddleware(jwtSecret));

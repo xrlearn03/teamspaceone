@@ -6,10 +6,12 @@ import { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { type AddAttachmentDto } from './dto/add-attachment.dto.js';
+import { type CreateApprovalDto } from './dto/create-approval.dto.js';
 import { type CreateCommentDto } from './dto/create-comment.dto.js';
 import { type CreateProjectDto } from './dto/create-project.dto.js';
 import { type CreateTaskDto } from './dto/create-task.dto.js';
 import { type UpdateCommentDto } from './dto/update-comment.dto.js';
+import { type ResolveApprovalDto } from './dto/resolve-approval.dto.js';
 import { type UpdateProjectDto } from './dto/update-project.dto.js';
 import { type UpdateTaskDto } from './dto/update-task.dto.js';
 
@@ -37,6 +39,7 @@ export class ProjectsService {
           id,
           organisationId: ctx.organisationId,
           workspaceId: dto.workspaceId,
+          clientId: dto.clientId,
           name,
           description: this.optional(dto.description, 5000),
           ownerId: actorId,
@@ -52,10 +55,10 @@ export class ProjectsService {
     });
   }
 
-  async listProjects(ctx: OrganisationContextValue) {
+  async listProjects(ctx: OrganisationContextValue, clientId?: string) {
     const actorId = this.actor(ctx);
     return this.prisma.project.findMany({
-      where: { organisationId: ctx.organisationId, members: { some: { userId: actorId } } },
+      where: { organisationId: ctx.organisationId, clientId: clientId || undefined, members: { some: { userId: actorId } } },
       include: projectInclude,
       orderBy: { updatedAt: 'desc' },
     });
@@ -71,6 +74,7 @@ export class ProjectsService {
     const data: Prisma.ProjectUpdateInput = {};
     if (dto.name !== undefined) data.name = this.required(dto.name, 'Project name', 120);
     if (dto.description !== undefined) data.description = dto.description === null ? null : this.optional(dto.description, 5000);
+    if (dto.clientId !== undefined) data.clientId = dto.clientId;
     if (dto.status !== undefined) {
       if (!['active', 'on_hold', 'completed', 'archived'].includes(dto.status)) throw new BadRequestException('Invalid project status');
       data.status = dto.status;
@@ -268,6 +272,57 @@ export class ProjectsService {
       take: take + 1,
     });
     return { items: rows.slice(0, take), nextCursor: rows.length > take ? rows[take - 1]?.id ?? null : null };
+  }
+
+  async listApprovals(ctx: OrganisationContextValue, projectId?: string, status?: string) {
+    const actorId = this.actor(ctx);
+    if (projectId) await this.memberProject(ctx, projectId);
+    return this.prisma.approval.findMany({
+      where: {
+        organisationId: ctx.organisationId,
+        projectId: projectId || undefined,
+        status: status || undefined,
+        OR: projectId ? undefined : [{ requestedBy: actorId }, { resolvedBy: actorId }],
+      },
+      orderBy: { requestedAt: 'desc' },
+    });
+  }
+
+  async createApproval(ctx: OrganisationContextValue, dto: CreateApprovalDto) {
+    const actorId = this.actor(ctx);
+    if (!['task', 'file', 'deliverable'].includes(dto.resourceType)) throw new BadRequestException('Invalid approval resource type');
+    if (!dto.resourceId?.trim()) throw new BadRequestException('Resource ID is required');
+    if (dto.projectId) await this.memberProject(ctx, dto.projectId);
+    const id = randomUUID();
+    const requestedAt = new Date();
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const approval = await tx.approval.create({ data: { id, organisationId: ctx.organisationId, projectId: dto.projectId, resourceType: dto.resourceType, resourceId: dto.resourceId.trim(), requestedBy: actorId, requestedAt, message: this.optional(dto.message, 2000) } });
+      if (dto.projectId) await this.activity(tx, ctx, dto.projectId, 'approval.created', 'approval', id, { resourceType: dto.resourceType, resourceId: dto.resourceId });
+      await this.event(tx, ctx, Subjects.APPROVAL_CREATED, 'approval', id, { approvalId: id, organisationId: ctx.organisationId, projectId: dto.projectId, resourceType: dto.resourceType, resourceId: dto.resourceId, requestedBy: actorId, requestedAt: requestedAt.toISOString(), message: approval.message ?? undefined });
+      return approval;
+    });
+  }
+
+  async resolveApproval(ctx: OrganisationContextValue, approvalId: string, dto: ResolveApprovalDto) {
+    const actorId = this.actor(ctx);
+    if (!['approved', 'rejected'].includes(dto.status)) throw new BadRequestException('Approval status must be approved or rejected');
+    const approval = await this.prisma.approval.findFirst({ where: { id: approvalId, organisationId: ctx.organisationId } });
+    if (!approval) throw new NotFoundException('Approval not found');
+    if (approval.status !== 'pending') throw new BadRequestException('Approval has already been resolved');
+    if (approval.projectId) await this.memberProject(ctx, approval.projectId);
+    const resolvedAt = new Date();
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.approval.update({ where: { id: approvalId }, data: { status: dto.status, resolvedBy: actorId, resolvedAt, message: dto.message === undefined ? approval.message : this.optional(dto.message, 2000) } });
+      if (approval.projectId) await this.activity(tx, ctx, approval.projectId, `approval.${dto.status}`, 'approval', approvalId);
+      const eventType = dto.status === 'approved' ? Subjects.APPROVAL_APPROVED : Subjects.APPROVAL_REJECTED;
+      await this.event(tx, ctx, eventType, 'approval', approvalId, { approvalId, organisationId: ctx.organisationId, projectId: approval.projectId ?? undefined, status: dto.status, resolvedBy: actorId, resolvedAt: resolvedAt.toISOString(), message: updated.message ?? undefined });
+      return updated;
+    });
+  }
+
+  async resolveAccess(projectId: string, actorId: string) {
+    const project = await this.prisma.project.findFirst({ where: { id: projectId, members: { some: { userId: actorId } } } });
+    return project ? { organisationId: project.organisationId, workspaceId: project.workspaceId } : null;
   }
 
   private actor(ctx: OrganisationContextValue) {

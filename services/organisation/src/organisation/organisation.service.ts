@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ConflictException, ForbiddenException, GoneException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { createEventEnvelope, Subjects } from '@reactify/event-contracts';
 import { Prisma, type Organisation } from '#prisma';
@@ -8,6 +8,8 @@ import { type CreateOrganisationDto } from './dto/create-organisation.dto.js';
 import { type CreateMemberDto } from './dto/create-member.dto.js';
 import { type CreateInvitationDto } from './dto/create-invitation.dto.js';
 import { type CreateWorkspaceDto } from './dto/create-workspace.dto.js';
+import { type CreateClientDto } from './dto/create-client.dto.js';
+import { type UpdateClientDto } from './dto/update-client.dto.js';
 
 function hoursFromNow(hours: number): Date {
   return new Date(Date.now() + hours * 60 * 60 * 1000);
@@ -172,15 +174,23 @@ export class OrganisationService {
   ): Promise<unknown> {
     await this.assertMemberOf(organisationId, actorId);
 
-    return this.prisma.invitation.create({
-      data: {
-        id: randomUUID(),
+    const id = randomUUID();
+    const token = randomUUID();
+    const expiresAt = hoursFromNow(168);
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const invitation = await tx.invitation.create({
+        data: { id, organisationId, email: dto.email.toLowerCase().trim(), roleId: dto.roleId, token, expiresAt },
+      });
+      const envelope = createEventEnvelope({
+        eventType: Subjects.GUEST_INVITED,
         organisationId,
-        email: dto.email.toLowerCase(),
-        roleId: dto.roleId,
-        token: randomUUID(),
-        expiresAt: hoursFromNow(168),
-      },
+        actorId,
+        resourceType: 'invitation',
+        resourceId: id,
+        payload: { email: invitation.email, organisationId, invitedBy: actorId, token, expiresAt: expiresAt.toISOString() },
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.GUEST_INVITED);
+      return invitation;
     });
   }
 
@@ -190,6 +200,95 @@ export class OrganisationService {
       where: { organisationId },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async listClients(organisationId: string, actorId: string): Promise<unknown[]> {
+    await this.assertMemberOf(organisationId, actorId);
+    return this.prisma.client.findMany({ where: { organisationId }, orderBy: { updatedAt: 'desc' } });
+  }
+
+  async createClient(organisationId: string, actorId: string, dto: CreateClientDto): Promise<unknown> {
+    await this.assertMemberOf(organisationId, actorId);
+    const name = dto.name?.trim();
+    if (!name || name.length > 200) throw new BadRequestException('Client name must be between 1 and 200 characters');
+    const id = randomUUID();
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const client = await tx.client.create({ data: { id, organisationId, name, email: dto.email?.trim().toLowerCase(), clientOrganisationId: dto.clientOrganisationId } });
+      const envelope = createEventEnvelope({ eventType: Subjects.CLIENT_CREATED, organisationId, actorId, resourceType: 'client', resourceId: id, payload: { clientId: id, organisationId, name, email: client.email ?? undefined, clientOrganisationId: client.clientOrganisationId ?? undefined } });
+      await this.outbox.createEvent(tx, envelope, Subjects.CLIENT_CREATED);
+      return client;
+    });
+  }
+
+  async updateClient(organisationId: string, clientId: string, actorId: string, dto: UpdateClientDto): Promise<unknown> {
+    await this.assertMemberOf(organisationId, actorId);
+    const existing = await this.prisma.client.findFirst({ where: { id: clientId, organisationId } });
+    if (!existing) throw new NotFoundException('Client not found');
+    const data: { name?: string; email?: string | null; clientOrganisationId?: string | null } = {};
+    if (dto.name !== undefined) {
+      const name = dto.name.trim();
+      if (!name || name.length > 200) throw new BadRequestException('Invalid client name');
+      data.name = name;
+    }
+    if (dto.email !== undefined) data.email = dto.email?.trim().toLowerCase() || null;
+    if (dto.clientOrganisationId !== undefined) data.clientOrganisationId = dto.clientOrganisationId;
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const client = await tx.client.update({ where: { id: clientId }, data });
+      const envelope = createEventEnvelope({ eventType: Subjects.CLIENT_UPDATED, organisationId, actorId, resourceType: 'client', resourceId: clientId, payload: client });
+      await this.outbox.createEvent(tx, envelope, Subjects.CLIENT_UPDATED);
+      return client;
+    });
+  }
+
+  async deleteClient(organisationId: string, clientId: string, actorId: string): Promise<void> {
+    await this.assertMemberOf(organisationId, actorId);
+    const client = await this.prisma.client.findFirst({ where: { id: clientId, organisationId } });
+    if (!client) throw new NotFoundException('Client not found');
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.client.delete({ where: { id: clientId } });
+      const envelope = createEventEnvelope({ eventType: Subjects.CLIENT_DELETED, organisationId, actorId, resourceType: 'client', resourceId: clientId, payload: { id: clientId } });
+      await this.outbox.createEvent(tx, envelope, Subjects.CLIENT_DELETED);
+    });
+  }
+
+  async listInvitations(organisationId: string, actorId: string): Promise<unknown[]> {
+    await this.assertMemberOf(organisationId, actorId);
+    return this.prisma.invitation.findMany({ where: { organisationId }, orderBy: { createdAt: 'desc' } });
+  }
+
+  async acceptInvitation(token: string, userId: string): Promise<unknown> {
+    if (!token?.trim()) throw new BadRequestException('Invitation token is required');
+    const invitation = await this.prisma.invitation.findUnique({ where: { token } });
+    if (!invitation || invitation.status !== 'pending') throw new NotFoundException('Invitation not found');
+    if (invitation.expiresAt <= new Date()) {
+      await this.prisma.invitation.update({ where: { id: invitation.id }, data: { status: 'expired' } });
+      throw new GoneException('Invitation has expired');
+    }
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const membership = await tx.organisationMembership.upsert({
+        where: { userId_organisationId: { userId, organisationId: invitation.organisationId } },
+        create: { id: randomUUID(), userId, organisationId: invitation.organisationId, roleId: invitation.roleId, isGuest: true },
+        update: {},
+      });
+      await tx.invitation.update({ where: { id: invitation.id }, data: { status: 'accepted' } });
+      const envelope = createEventEnvelope({
+        eventType: Subjects.GUEST_CREATED,
+        organisationId: invitation.organisationId,
+        actorId: userId,
+        resourceType: 'organisation-membership',
+        resourceId: membership.id,
+        payload: { userId, email: invitation.email, organisationId: invitation.organisationId, invitedBy: userId },
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.GUEST_CREATED);
+      return membership;
+    });
+  }
+
+  async revokeInvitation(organisationId: string, invitationId: string, actorId: string): Promise<void> {
+    await this.assertMemberOf(organisationId, actorId);
+    const invitation = await this.prisma.invitation.findFirst({ where: { id: invitationId, organisationId, status: 'pending' } });
+    if (!invitation) throw new NotFoundException('Pending invitation not found');
+    await this.prisma.invitation.update({ where: { id: invitationId }, data: { status: 'revoked' } });
   }
 
   async listRoles(organisationId: string, actorId: string): Promise<unknown[]> {
@@ -216,6 +315,19 @@ export class OrganisationService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async resolveWorkspaceAccess(workspaceId: string, actorId: string) {
+    const workspace = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
+    if (!workspace || !(await this.canAccess(workspace.organisationId, actorId))) return null;
+    return { organisationId: workspace.organisationId };
+  }
+
+  async canAccess(organisationId: string, actorId: string): Promise<boolean> {
+    const organisation = await this.prisma.organisation.findUnique({ where: { id: organisationId } });
+    if (!organisation) return false;
+    if (organisation.ownerId === actorId) return true;
+    return Boolean(await this.prisma.organisationMembership.findUnique({ where: { userId_organisationId: { userId: actorId, organisationId } } }));
   }
 
   private async assertMemberOf(organisationId: string, actorId: string): Promise<void> {

@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Calendar, Folder, MoreHorizontal, Plus, Send, Settings, Trash2 } from "lucide-react";
+import { Calendar, Folder, Plus, Send, Settings, Trash2 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import {
   useAddProjectAttachment,
+  useApprovals,
+  useClients,
+  useCreateApproval,
   useCreateProject,
   useCreateProjectComment,
   useCreateTask,
@@ -16,6 +19,7 @@ import {
   useProjectComments,
   useProjects,
   useRemoveProjectAttachment,
+  useResolveApproval,
   useTasks,
   useUpdateProject,
   useUpdateProjectComment,
@@ -32,7 +36,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { MessageAttachment } from "../components/ui/message-attachment";
 import { cn } from "../lib/utils";
 
-const tabs = ["overview", "board", "list", "timeline", "files", "discussions", "activity"] as const;
+const tabs = ["overview", "board", "list", "timeline", "files", "discussions", "approvals", "activity"] as const;
 const statuses = ["backlog", "todo", "in_progress", "in_review", "blocked", "done"];
 const priorities = ["low", "medium", "high", "urgent"];
 const labels: Record<string, string> = { backlog: "Backlog", todo: "Todo", in_progress: "In Progress", in_review: "In Review", blocked: "Blocked", done: "Done" };
@@ -44,6 +48,7 @@ export function ProjectScreen() {
   const { data: user } = useMe();
   const { data: projects } = useProjects();
   const { data: members } = useMembers(organisationId);
+  const { data: clients } = useClients(organisationId);
   const { data: workspaces } = useWorkspaces(organisationId);
   const project = projects?.find((item) => item.id === activeProjectId) ?? projects?.[0];
   const { data: tasks } = useTasks(project?.id);
@@ -69,7 +74,7 @@ export function ProjectScreen() {
         <Folder className="h-10 w-10" />
         <p>No projects yet.</p>
         <Button onClick={() => setProjectDialog("create")}><Plus className="mr-1 h-4 w-4" />Create project</Button>
-        <ProjectDialog mode="create" open={projectDialog === "create"} onOpenChange={(open) => setProjectDialog(open ? "create" : null)} members={members ?? []} workspaces={workspaces ?? []} />
+        <ProjectDialog mode="create" open={projectDialog === "create"} onOpenChange={(open) => setProjectDialog(open ? "create" : null)} members={members ?? []} workspaces={workspaces ?? []} clients={clients ?? []} />
       </div>
     );
   }
@@ -89,7 +94,6 @@ export function ProjectScreen() {
             <div className="flex items-center gap-2">
               <div className="flex -space-x-2">{project.members.slice(0, 4).map((member) => <Avatar key={member.id} className="h-7 w-7 border-2 border-surface"><AvatarFallback className="text-[10px]">{member.userId.slice(0, 2).toUpperCase()}</AvatarFallback></Avatar>)}</div>
               {project.ownerId === user?.id ? <Button variant="ghost" size="icon" onClick={() => setProjectDialog("settings")}><Settings className="h-4 w-4" /></Button> : null}
-              <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
             </div>
           </div>
           <div className="mt-4 flex items-center justify-between">
@@ -112,9 +116,10 @@ export function ProjectScreen() {
         {tab === "timeline" ? <Timeline tasks={tasks ?? []} /> : null}
         {tab === "files" ? <ProjectFiles projectId={project.id} /> : null}
         {tab === "discussions" ? <ProjectDiscussions projectId={project.id} /> : null}
+        {tab === "approvals" ? <ProjectApprovals projectId={project.id} tasks={tasks ?? []} /> : null}
         {tab === "activity" ? <ProjectActivityView projectId={project.id} /> : null}
       </div>
-      <ProjectDialog mode="settings" project={project} open={projectDialog === "settings"} onOpenChange={(open) => setProjectDialog(open ? "settings" : null)} members={members ?? []} workspaces={workspaces ?? []} />
+      <ProjectDialog mode="settings" project={project} open={projectDialog === "settings"} onOpenChange={(open) => setProjectDialog(open ? "settings" : null)} members={members ?? []} workspaces={workspaces ?? []} clients={clients ?? []} />
       <TaskDialog task={selectedTask} members={members ?? []} open={Boolean(selectedTask)} onOpenChange={(open) => { if (!open) setSelectedTask(null); }} onSave={(body) => updateTask.mutate({ taskId: selectedTask!.id, projectId: project.id, body }, { onSuccess: () => setSelectedTask(null) })} />
     </>
   );
@@ -128,25 +133,26 @@ function TaskList({ tasks, onSelect }: { tasks: Task[]; onSelect: (task: Task) =
   return <div className="flex-1 overflow-y-auto p-6"><div className="overflow-hidden rounded-lg border">{tasks.map((task) => <button key={task.id} type="button" onClick={() => onSelect(task)} className="grid w-full grid-cols-[1fr_140px_100px_120px] gap-3 border-b px-4 py-3 text-left text-sm last:border-0 hover:bg-surface-elevated"><span>{task.title}</span><span className="capitalize text-text-muted">{labels[task.status]}</span><span className="capitalize text-text-muted">{task.priority}</span><span className="text-text-muted">{task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "No due date"}</span></button>)}{!tasks.length ? <p className="p-8 text-center text-sm text-text-muted">No tasks yet.</p> : null}</div></div>;
 }
 
-function ProjectDialog({ mode, project, open, onOpenChange, members, workspaces }: { mode: "create" | "settings"; project?: Project; open: boolean; onOpenChange: (open: boolean) => void; members: { userId: string; role: { name: string } }[]; workspaces: { id: string; name: string }[] }) {
+function ProjectDialog({ mode, project, open, onOpenChange, members, workspaces, clients }: { mode: "create" | "settings"; project?: Project; open: boolean; onOpenChange: (open: boolean) => void; members: { userId: string; role: { name: string } }[]; workspaces: { id: string; name: string }[]; clients: { id: string; name: string }[] }) {
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
   const deleteProject = useDeleteProject();
   const [name, setName] = useState(project?.name ?? "");
   const [description, setDescription] = useState(project?.description ?? "");
   const [workspaceId, setWorkspaceId] = useState(project?.workspaceId ?? "");
+  const [clientId, setClientId] = useState(project?.clientId ?? "");
   const [status, setStatus] = useState(project?.status ?? "active");
   const [startDate, setStartDate] = useState(project?.startDate?.slice(0, 10) ?? "");
   const [targetDate, setTargetDate] = useState(project?.targetDate?.slice(0, 10) ?? "");
   const [memberIds, setMemberIds] = useState(project?.members.map((member) => member.userId) ?? []);
 
   function submit() {
-    const body = { name: name.trim(), description: description.trim() || undefined, startDate: startDate || undefined, targetDate: targetDate || undefined, memberIds };
+    const body = { name: name.trim(), description: description.trim() || undefined, clientId: clientId || undefined, startDate: startDate || undefined, targetDate: targetDate || undefined, memberIds };
     if (mode === "create") createProject.mutate({ ...body, workspaceId: workspaceId || undefined }, { onSuccess: (created) => { useUIStore.getState().setActiveView("project", { projectId: created.id }); onOpenChange(false); } });
-    else if (project) updateProject.mutate({ projectId: project.id, body: { ...body, status } }, { onSuccess: () => onOpenChange(false) });
+    else if (project) updateProject.mutate({ projectId: project.id, body: { ...body, clientId: clientId || null, status } }, { onSuccess: () => onOpenChange(false) });
   }
 
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-lg p-0"><DialogHeader><DialogTitle>{mode === "create" ? "Create project" : "Project settings"}</DialogTitle><DialogDescription>Configure project ownership, schedule, and access.</DialogDescription></DialogHeader><div className="space-y-3 px-4 pb-4"><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Project name" /><Input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" />{mode === "create" ? <select className={selectClass} value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}><option value="">No workspace</option>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select> : <select className={selectClass} value={status} onChange={(event) => setStatus(event.target.value)}><option value="active">Active</option><option value="on_hold">On hold</option><option value="completed">Completed</option><option value="archived">Archived</option></select>}<div className="grid grid-cols-2 gap-2"><label className="text-xs text-text-muted">Start date<Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label className="text-xs text-text-muted">Target date<Input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} /></label></div><div className="max-h-36 overflow-y-auto rounded-md border p-2">{members.map((member) => <label key={member.userId} className="flex items-center gap-2 px-2 py-1 text-sm"><input type="checkbox" checked={memberIds.includes(member.userId)} disabled={member.userId === project?.ownerId} onChange={() => setMemberIds((ids) => ids.includes(member.userId) ? ids.filter((id) => id !== member.userId) : [...ids, member.userId])} /><span className="flex-1 truncate">{member.userId}</span><span className="text-xs text-text-muted">{member.role.name}</span></label>)}</div><div className="flex justify-between">{mode === "settings" ? <Button variant="ghost" className="text-error" onClick={() => project && deleteProject.mutate(project.id, { onSuccess: () => { onOpenChange(false); useUIStore.getState().setActiveView("home"); } })}>Delete project</Button> : <span />}<div className="flex gap-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={!name.trim() || createProject.isPending || updateProject.isPending} onClick={submit}>Save</Button></div></div></div></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-lg p-0"><DialogHeader><DialogTitle>{mode === "create" ? "Create project" : "Project settings"}</DialogTitle><DialogDescription>Configure project ownership, schedule, and access.</DialogDescription></DialogHeader><div className="space-y-3 px-4 pb-4"><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Project name" /><Input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" />{mode === "create" ? <select className={selectClass} value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}><option value="">No workspace</option>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select> : <select className={selectClass} value={status} onChange={(event) => setStatus(event.target.value)}><option value="active">Active</option><option value="on_hold">On hold</option><option value="completed">Completed</option><option value="archived">Archived</option></select>}<select className={selectClass} value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">No client</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select><div className="grid grid-cols-2 gap-2"><label className="text-xs text-text-muted">Start date<Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label className="text-xs text-text-muted">Target date<Input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} /></label></div><div className="max-h-36 overflow-y-auto rounded-md border p-2">{members.map((member) => <label key={member.userId} className="flex items-center gap-2 px-2 py-1 text-sm"><input type="checkbox" checked={memberIds.includes(member.userId)} disabled={member.userId === project?.ownerId} onChange={() => setMemberIds((ids) => ids.includes(member.userId) ? ids.filter((id) => id !== member.userId) : [...ids, member.userId])} /><span className="flex-1 truncate">{member.userId}</span><span className="text-xs text-text-muted">{member.role.name}</span></label>)}</div><div className="flex justify-between">{mode === "settings" ? <Button variant="ghost" className="text-error" onClick={() => project && deleteProject.mutate(project.id, { onSuccess: () => { onOpenChange(false); useUIStore.getState().setActiveView("home"); } })}>Delete project</Button> : <span />}<div className="flex gap-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={!name.trim() || createProject.isPending || updateProject.isPending} onClick={submit}>Save</Button></div></div></div></DialogContent></Dialog>;
 }
 
 function TaskDialog({ task, members, open, onOpenChange, onSave }: { task: Task | null; members: { userId: string }[]; open: boolean; onOpenChange: (open: boolean) => void; onSave: (body: Parameters<ReturnType<typeof useUpdateTask>["mutate"]>[0]["body"]) => void }) {
@@ -192,6 +198,15 @@ function ProjectDiscussions({ projectId }: { projectId: string }) {
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState<ProjectComment | null>(null);
   return <div className="flex flex-1 flex-col overflow-hidden"><div className="flex-1 space-y-3 overflow-y-auto p-6">{hasNextPage ? <div className="text-center"><Button variant="ghost" onClick={() => void fetchNextPage()}>Load older</Button></div> : null}{comments?.map((comment) => <Card key={comment.id}><div className="flex justify-between"><span className="text-xs font-medium">{comment.authorId}</span><span className="text-xs text-text-muted">{new Date(comment.createdAt).toLocaleString()}</span></div>{editing?.id === comment.id ? <div className="mt-2 flex gap-2"><Input value={editing.content} onChange={(event) => setEditing({ ...editing, content: event.target.value })} /><Button onClick={() => update.mutate({ projectId, commentId: comment.id, content: editing.content }, { onSuccess: () => setEditing(null) })}>Save</Button></div> : <p className="mt-2 text-sm">{comment.deletedAt ? <em>Comment deleted</em> : comment.content}</p>}{!comment.deletedAt && comment.authorId === user?.id ? <div className="mt-2 flex gap-1"><Button size="sm" variant="ghost" onClick={() => setEditing(comment)}>Edit</Button><Button size="sm" variant="ghost" className="text-error" onClick={() => remove.mutate({ projectId, commentId: comment.id })}>Delete</Button></div> : null}</Card>)}{!comments?.length ? <p className="py-12 text-center text-sm text-text-muted">No discussions yet.</p> : null}</div><div className="flex gap-2 border-t p-3"><Input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Write a comment" onKeyDown={(event) => { if (event.key === "Enter" && draft.trim()) create.mutate({ projectId, content: draft.trim() }, { onSuccess: () => setDraft("") }); }} /><Button size="icon" disabled={!draft.trim()} onClick={() => create.mutate({ projectId, content: draft.trim() }, { onSuccess: () => setDraft("") })}><Send className="h-4 w-4" /></Button></div></div>;
+}
+
+function ProjectApprovals({ projectId, tasks }: { projectId: string; tasks: Task[] }) {
+  const { data: approvals } = useApprovals(projectId);
+  const create = useCreateApproval();
+  const resolve = useResolveApproval();
+  const [taskId, setTaskId] = useState("");
+  const [message, setMessage] = useState("");
+  return <div className="flex-1 overflow-y-auto p-6"><div className="mb-4 flex gap-2"><select className={selectClass} value={taskId} onChange={(event) => setTaskId(event.target.value)}><option value="">Select a task</option>{tasks.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}</select><Input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Approval note" /><Button disabled={!taskId || create.isPending} onClick={() => create.mutate({ projectId, resourceType: "task", resourceId: taskId, message: message || undefined }, { onSuccess: () => { setTaskId(""); setMessage(""); } })}>Request</Button></div><div className="space-y-2">{approvals?.map((approval) => <Card key={approval.id}><div className="flex items-start justify-between"><div><p className="text-sm font-medium">{approval.resourceType} · {approval.resourceId}</p><p className="text-xs text-text-muted">Requested by {approval.requestedBy}</p>{approval.message ? <p className="mt-2 text-sm">{approval.message}</p> : null}</div><span className="text-xs capitalize text-text-muted">{approval.status}</span></div>{approval.status === "pending" ? <div className="mt-3 flex gap-2"><Button size="sm" onClick={() => resolve.mutate({ projectId, approvalId: approval.id, status: "approved" })}>Approve</Button><Button size="sm" variant="ghost" className="text-error" onClick={() => resolve.mutate({ projectId, approvalId: approval.id, status: "rejected" })}>Reject</Button></div> : null}</Card>)}{!approvals?.length ? <p className="py-12 text-center text-sm text-text-muted">No approval requests.</p> : null}</div></div>;
 }
 
 function ProjectActivityView({ projectId }: { projectId: string }) {
