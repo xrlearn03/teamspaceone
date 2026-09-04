@@ -1,10 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
+import { fetch } from "@tauri-apps/plugin-http";
 
 const GATEWAY_URL =
   (import.meta.env.VITE_GATEWAY_URL as string | undefined) ??
   "http://localhost:3000";
-const TOKEN_SERVICE = "reactify-connect";
-const TOKEN_ACCOUNT = "access-token";
+const TOKEN_KEY = "reactify:accessToken";
 
 let activeOrganisationId: string | null = null;
 
@@ -23,25 +22,15 @@ export function getActiveOrganisation(): string | null {
 }
 
 export async function setAccessToken(token: string): Promise<void> {
-  await invoke("store_secure_token", {
-    service: TOKEN_SERVICE,
-    account: TOKEN_ACCOUNT,
-    token,
-  });
+  localStorage.setItem(TOKEN_KEY, token);
 }
 
 export async function getAccessToken(): Promise<string | null> {
-  return invoke<string | null>("get_secure_token", {
-    service: TOKEN_SERVICE,
-    account: TOKEN_ACCOUNT,
-  });
+  return localStorage.getItem(TOKEN_KEY);
 }
 
 export async function clearAccessToken(): Promise<void> {
-  await invoke("delete_secure_token", {
-    service: TOKEN_SERVICE,
-    account: TOKEN_ACCOUNT,
-  });
+  localStorage.removeItem(TOKEN_KEY);
 }
 
 interface RequestOptions {
@@ -73,7 +62,6 @@ export async function apiRequest<T>(
   const init: RequestInit = {
     method: options.method ?? "GET",
     headers,
-    credentials: "include",
   };
 
   if (options.body !== undefined) {
@@ -244,16 +232,21 @@ export interface MeetingTokenResult {
 }
 
 // Auth
-export function register(
+export async function register(
   email: string,
   password: string,
   firstName?: string,
   lastName?: string,
 ) {
-  return apiRequest<{ user: UserDto; tokens: TokenPair }>("/auth/register", {
-    method: "POST",
-    body: { email, password, firstName, lastName },
-  });
+  const result = await apiRequest<{ user: UserDto; tokens: TokenPair }>(
+    "/auth/register",
+    {
+      method: "POST",
+      body: { email, password, firstName, lastName },
+    },
+  );
+  await setAccessToken(result.tokens.accessToken);
+  return result;
 }
 
 export async function login(email: string, password: string) {

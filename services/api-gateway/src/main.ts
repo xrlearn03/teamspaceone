@@ -3,7 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { type LoggerService } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response, NextFunction } from 'express';
-import { createProxyMiddleware } from 'http-proxy-middleware';
+import { legacyCreateProxyMiddleware as createProxyMiddleware } from 'http-proxy-middleware';
 import { verify } from 'jsonwebtoken';
 import { AppModule } from './app.module.js';
 import { createLogger, type Logger } from '@reactify/logger';
@@ -59,6 +59,10 @@ async function bootstrap() {
 
   const pino = createLogger({ name: 'api-gateway' });
   const app = await NestFactory.create(AppModule, { logger: adaptLogger(pino) });
+
+  // CORS must be set up before any proxy middlewares so preflight OPTIONS
+  // are handled at the gateway, not forwarded to services.
+  app.enableCors({ origin: true, credentials: true });
 
   const metrics = app.get(MetricsService);
   const requestCounter = metrics.counter(
@@ -184,7 +188,6 @@ async function bootstrap() {
     }),
   );
 
-  app.enableCors({ origin: true, credentials: true });
   app.enableShutdownHooks();
 
   const port = config.get<number>('GATEWAY_PORT', 3000);
