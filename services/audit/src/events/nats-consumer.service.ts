@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { AckPolicy, type JsMsg } from 'nats';
-import { isEventEnvelope, type EventEnvelope } from '@reactify/event-contracts';
+import { AckPolicy, DeliverPolicy, type JsMsg } from 'nats';
+import { isEventEnvelope, streamConfigs, type EventEnvelope } from '@reactify/event-contracts';
 import { withTraceContextHeaders } from '@reactify/opentelemetry';
 import { InboxService } from '../inbox/inbox.service.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -20,17 +20,30 @@ export class NatsConsumerService implements OnModuleInit {
 
   async onModuleInit() {
     const js = await this.natsClient.getJetStream();
-    const subscription = await js.subscribe('reactify.>', {
-      config: {
-        durable_name: 'audit-consumer',
-        ack_policy: AckPolicy.Explicit,
-        deliver_policy: 'all' as any,
-      },
-    });
 
-    this.consume(subscription).catch((err) => {
-      this.logger.error(`NATS consumer error: ${(err as Error).message}`);
-    });
+    for (const stream of streamConfigs) {
+      if (stream.subjects.length === 0) continue;
+      const primary = stream.subjects[0];
+      const durable = `audit-consumer-${stream.name.toLowerCase()}`;
+
+      try {
+        const subscription = await js.subscribe(primary, {
+          config: {
+            durable_name: durable,
+            deliver_subject: durable,
+            ack_policy: AckPolicy.Explicit,
+            deliver_policy: DeliverPolicy.All,
+            filter_subjects: stream.subjects,
+          },
+        });
+
+        this.consume(subscription).catch((err) => {
+          this.logger.error(`NATS consumer error for ${stream.name}: ${(err as Error).message}`);
+        });
+      } catch (err) {
+        this.logger.error(`Failed to subscribe to ${stream.name}: ${(err as Error).message}`);
+      }
+    }
   }
 
   private async consume(subscription: any) {

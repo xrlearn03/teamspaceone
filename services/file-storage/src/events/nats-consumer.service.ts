@@ -20,6 +20,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
     this.subscription = await js.subscribe('reactify.file.>', {
       config: {
         durable_name: 'file-storage-consumer',
+        deliver_subject: 'file-storage-consumer',
         ack_policy: AckPolicy.Explicit,
         deliver_policy: 'all' as any,
       },

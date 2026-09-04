@@ -38,6 +38,7 @@ export class NatsConsumerService implements OnModuleInit {
     const subscription = await js.subscribe(subject, {
       config: {
         durable_name: durable,
+        deliver_subject: durable,
         ack_policy: AckPolicy.Explicit,
         deliver_policy: 'all' as any,
       },

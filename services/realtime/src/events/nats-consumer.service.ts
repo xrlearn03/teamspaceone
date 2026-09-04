@@ -39,6 +39,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
         mack: true,
         config: {
           durable_name: c.durable,
+          deliver_subject: c.durable,
           ack_policy: AckPolicy.Explicit,
           deliver_policy: DeliverPolicy.All,
           max_deliver: 5,

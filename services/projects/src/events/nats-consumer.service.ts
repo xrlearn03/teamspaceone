@@ -18,6 +18,7 @@ export class NatsConsumerService implements OnModuleInit {
     const subscription = await js.subscribe('reactify.template.>', {
       config: {
         durable_name: 'template-consumer',
+        deliver_subject: 'template-consumer',
         ack_policy: AckPolicy.Explicit,
         deliver_policy: 'all' as any,
       },

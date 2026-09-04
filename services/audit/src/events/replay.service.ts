@@ -1,5 +1,5 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { AckPolicy, DeliverPolicy, ReplayPolicy, headers, type JsMsg } from 'nats';
+import { AckPolicy, DeliverPolicy, ReplayPolicy, createInbox, headers, type JsMsg } from 'nats';
 import { isEventEnvelope, type EventEnvelope } from '@reactify/event-contracts';
 import { getTraceContextHeaders } from '@reactify/opentelemetry';
 import { MetricsService } from '@reactify/metrics';
@@ -52,6 +52,7 @@ export class ReplayService {
         opt_start_time: fromTime.toISOString(),
         filter_subjects: [input.subject],
         ack_policy: AckPolicy.Explicit,
+        deliver_subject: createInbox(),
         replay_policy: ReplayPolicy.Instant,
       },
     });

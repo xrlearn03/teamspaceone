@@ -36,6 +36,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
     this.subscription = await js.subscribe('reactify.template.>', {
       config: {
         durable_name: 'template-consumer',
+        deliver_subject: 'template-consumer',
         deliver_group: 'template-consumers',
         ack_policy: AckPolicy.Explicit,
         deliver_policy: DeliverPolicy.All,

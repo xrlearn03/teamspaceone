@@ -34,6 +34,7 @@ export class NatsConsumerService implements OnModuleInit {
           stream: consumer.stream,
           config: {
             durable_name: consumer.durable,
+            deliver_subject: consumer.durable,
             ack_policy: AckPolicy.Explicit,
             deliver_policy: 'all' as any,
             max_deliver: 5,
