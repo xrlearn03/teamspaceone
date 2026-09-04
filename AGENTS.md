@@ -5,6 +5,7 @@
 - Monorepo with pnpm workspaces.
 - Root: `/Volumes/SSD/MVP`.
 - `apps/desktop/` is the Tauri 2 + React + TypeScript + Tailwind CSS v4 desktop app.
+- `apps/web/` is the marketing/landing website (Vite + React + TS + Tailwind v4). Dev: `pnpm dev:web`, build: `pnpm build:web`. Installer downloads live in `apps/web/public/downloads/`; the Windows `.exe` still needs to be built on Windows/CI and placed there.
 
 ## Useful Commands
 

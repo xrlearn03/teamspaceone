@@ -6,6 +6,8 @@
   "description": "Teamspace One — native desktop collaboration platform",
   "scripts": {
     "build:desktop": "pnpm --filter @teamspace-one/desktop tauri:build",
+    "dev:web": "pnpm --filter @teamspace-one/web dev",
+    "build:web": "pnpm --filter @teamspace-one/web build",
     "dev:desktop": "pnpm --filter @teamspace-one/desktop tauri dev",
     "build:gateway": "pnpm --filter @teamspace-one/api-gateway build",
     "build:auth": "pnpm --filter @teamspace-one/auth-service build",
