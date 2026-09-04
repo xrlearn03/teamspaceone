@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { UserPlus, Users } from "lucide-react";
-import { useMembers, useRoles, useCreateInvitation, useOrganisations } from "../hooks/api";
+import { useMembers, useRoles, useCreateInvitation, useOrganisations, useUsers } from "../hooks/api";
 import { useUIStore } from "../stores/ui";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Badge } from "../components/ui/badge";
@@ -8,13 +8,28 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { EmptyState } from "../components/ui/empty-state";
+import type { OrganisationMember, UserDto } from "../lib/api";
 
 const selectClass = "h-9 w-full rounded-md border bg-surface px-3 text-sm text-text";
+
+function getDisplayName(member: OrganisationMember, user?: UserDto) {
+  if (user) {
+    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+    if (fullName) return fullName;
+    return user.email;
+  }
+  return member.userId;
+}
+
+function getInitials(member: OrganisationMember, user?: UserDto) {
+  const name = user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() : member.userId;
+  return name.slice(0, 2).toUpperCase();
+}
 
 export function MemberDirectoryScreen() {
   const organisationId = useUIStore((s) => s.organisationId) ?? undefined;
   const { data: organisations } = useOrganisations();
-  const { data: members, isLoading } = useMembers(organisationId);
+  const { data: members, isLoading: membersLoading } = useMembers(organisationId);
   const { data: roles } = useRoles(organisationId);
   const createInvitation = useCreateInvitation();
   const [query, setQuery] = useState("");
@@ -22,10 +37,19 @@ export function MemberDirectoryScreen() {
   const [email, setEmail] = useState("");
   const [roleId, setRoleId] = useState("");
 
+  const memberUserIds = useMemo(() => [...new Set((members ?? []).map((m) => m.userId))], [members]);
+  const { data: users, isLoading: usersLoading } = useUsers(memberUserIds);
+  const isLoading = membersLoading || (memberUserIds.length > 0 && usersLoading);
+  const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
+
   const organisation = organisations?.find((o) => o.id === organisationId);
-  const filtered = (members ?? []).filter(
-    (m) => !query.trim() || m.userId.toLowerCase().includes(query.trim().toLowerCase()) || m.role.name.toLowerCase().includes(query.trim().toLowerCase()),
-  );
+  const filtered = (members ?? []).filter((m) => {
+    if (!query.trim()) return true;
+    const q = query.trim().toLowerCase();
+    const user = userMap.get(m.userId);
+    const haystack = [getDisplayName(m, user), user?.email ?? ""].join(" ").toLowerCase();
+    return haystack.includes(q) || m.role.name.toLowerCase().includes(q);
+  });
   const external = filtered.filter((m) => /client|external/i.test(m.role.name));
   const internal = filtered.filter((m) => !/client|external/i.test(m.role.name));
 
@@ -65,31 +89,37 @@ export function MemberDirectoryScreen() {
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">Internal ({internal.length})</p>
               <div className="overflow-hidden rounded-lg border">
-                {internal.map((member) => (
-                  <div key={member.id} className="flex items-center gap-3 border-b px-4 py-2.5 last:border-0">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback>{member.userId.slice(0, 2).toUpperCase()}</AvatarFallback>
-                    </Avatar>
-                    <span className="flex-1 truncate text-sm text-text">{member.userId}</span>
-                    <Badge variant="secondary" className="capitalize">{member.role.name}</Badge>
-                  </div>
-                ))}
+                {internal.map((member) => {
+                  const user = userMap.get(member.userId);
+                  return (
+                    <div key={member.id} className="flex items-center gap-3 border-b px-4 py-2.5 last:border-0">
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback>{getInitials(member, user)}</AvatarFallback>
+                      </Avatar>
+                      <span className="flex-1 truncate text-sm text-text">{getDisplayName(member, user)}</span>
+                      <Badge variant="secondary" className="capitalize">{member.role.name}</Badge>
+                    </div>
+                  );
+                })}
                 {internal.length === 0 ? <p className="px-4 py-6 text-center text-sm text-text-muted">No internal members.</p> : null}
               </div>
             </div>
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">External collaborators ({external.length})</p>
               <div className="overflow-hidden rounded-lg border border-warning/40">
-                {external.map((member) => (
-                  <div key={member.id} className="flex items-center gap-3 border-b px-4 py-2.5 last:border-0">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback>{member.userId.slice(0, 2).toUpperCase()}</AvatarFallback>
-                    </Avatar>
-                    <span className="flex-1 truncate text-sm text-text">{member.userId}</span>
-                    <Badge variant="warning">External</Badge>
-                    <Badge variant="secondary" className="capitalize">{member.role.name}</Badge>
-                  </div>
-                ))}
+                {external.map((member) => {
+                  const user = userMap.get(member.userId);
+                  return (
+                    <div key={member.id} className="flex items-center gap-3 border-b px-4 py-2.5 last:border-0">
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback>{getInitials(member, user)}</AvatarFallback>
+                      </Avatar>
+                      <span className="flex-1 truncate text-sm text-text">{getDisplayName(member, user)}</span>
+                      <Badge variant="warning">External</Badge>
+                      <Badge variant="secondary" className="capitalize">{member.role.name}</Badge>
+                    </div>
+                  );
+                })}
                 {external.length === 0 ? <p className="px-4 py-6 text-center text-sm text-text-muted">No external collaborators.</p> : null}
               </div>
             </div>

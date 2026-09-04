@@ -15,6 +15,7 @@
 - Start backend services: `pnpm docker:up` then `pnpm dev:gateway` etc.
 - Run tests: `pnpm test`
 - Lint/typecheck: `pnpm lint` / `pnpm typecheck`
+- Apply pending Prisma migration for a service: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/<db>?schema=public pnpm --filter @teamspace-one/<service> db:migrate`
 
 ## Frontend Stack
 

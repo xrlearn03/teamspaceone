@@ -122,6 +122,14 @@ export class AuthService {
     return this.toDto(user);
   }
 
+  async findMany(ids?: string[]): Promise<UserDto[]> {
+    const users = await this.prisma.user.findMany({
+      where: ids && ids.length > 0 ? { id: { in: ids } } : undefined,
+      orderBy: { createdAt: 'desc' },
+    });
+    return users.map((user) => this.toDto(user));
+  }
+
   private toDto(user: User): UserDto {
     return {
       id: user.id,

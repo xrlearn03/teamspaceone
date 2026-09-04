@@ -24,9 +24,19 @@ export function useMe() {
   });
 }
 
+export function useUsers(ids?: string[]) {
+  const enabled = Boolean(ids && ids.length > 0);
+  return useQuery({
+    queryKey: ["users", ids ? [...ids].sort() : []],
+    queryFn: () => api.getUsers(ids),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useUpdateProfile() {
   const client = useQueryClient();
-  return useMutation({ mutationFn: api.updateProfile, onSuccess: (user) => client.setQueryData(["me"], user) });
+  return useMutation({ mutationFn: api.updateProfile, onSuccess: (user) => { client.setQueryData(["me"], user); client.invalidateQueries({ queryKey: ["users"] }); } });
 }
 
 export function useChangePassword() {

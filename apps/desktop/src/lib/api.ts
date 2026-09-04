@@ -492,6 +492,15 @@ export function getMe() {
   return apiRequest<UserDto>("/auth/me");
 }
 
+export function getUsers(ids?: string[]) {
+  const params = new URLSearchParams();
+  if (ids?.length) {
+    for (const id of ids) params.append("ids", id);
+  }
+  const query = params.toString();
+  return apiRequest<UserDto[]>(`/auth/users${query ? `?${query}` : ""}`);
+}
+
 export function updateProfile(body: { firstName?: string; lastName?: string }) {
   return apiRequest<UserDto>("/auth/me", { method: "PATCH", body });
 }

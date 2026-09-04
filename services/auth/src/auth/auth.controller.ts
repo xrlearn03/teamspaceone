@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Patch, Post, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
 import { AuthService } from './auth.service.js';
 import { AuthGuard } from './auth.guard.js';
 import { type RegisterDto } from './dto/register.dto.js';
@@ -52,5 +52,18 @@ export class AuthController {
   @UseGuards(AuthGuard)
   async me(@Request() req: any) {
     return this.auth.me(req.user.sub as string);
+  }
+
+  @Get('users')
+  @UseGuards(AuthGuard)
+  async list(@Query('ids') ids?: string | string[]) {
+    const idList = ids ? (Array.isArray(ids) ? ids : [ids]) : undefined;
+    return this.auth.findMany(idList);
+  }
+
+  @Get('users/:id')
+  @UseGuards(AuthGuard)
+  async getById(@Param('id') id: string) {
+    return this.auth.me(id);
   }
 }
