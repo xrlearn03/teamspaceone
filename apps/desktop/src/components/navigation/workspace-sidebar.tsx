@@ -28,7 +28,6 @@ import {
   useCreateDirectChannel,
   useCreateMeeting,
   useCreateProject,
-  useCreateVoiceRoom,
   useDeleteEndedMeetings,
   useMeetings,
   useMembers,
@@ -225,7 +224,6 @@ export function WorkspaceSidebar() {
   const createDirectChannel = useCreateDirectChannel();
   const createProject = useCreateProject();
   const createMeeting = useCreateMeeting();
-  const createVoiceRoom = useCreateVoiceRoom();
   const deleteEndedMeetings = useDeleteEndedMeetings();
   const { data: projects } = useProjects();
   const { data: meetings } = useMeetings();
@@ -541,7 +539,7 @@ export function WorkspaceSidebar() {
           )}
         </SidebarSection>
 
-        <SidebarSection title="Meetings & voice">
+        <SidebarSection title="Meetings">
           {visibleMeetings.length > 0 ? (
             visibleMeetings.map((m) => (
               <SidebarItem
@@ -559,16 +557,6 @@ export function WorkspaceSidebar() {
           ) : (
             <div className="px-2 py-1 text-xs text-text-muted">No meetings yet</div>
           )}
-          <SidebarItem
-            icon={Mic}
-            label="General voice"
-            onClick={() =>
-              createVoiceRoom.mutate(
-                { title: "General voice", workspaceId: currentWorkspace?.id },
-                { onSuccess: (meeting) => navigate("voice", { meetingId: meeting.id }) },
-              )
-            }
-          />
           {visibleMeetings.some((m) => m.status === "ended") && (
             <button
               type="button"
@@ -649,8 +637,8 @@ export function WorkspaceSidebar() {
               {!members?.length ? <p className="p-2 text-sm text-text-muted">No organisation members available.</p> : null}
             </div>
           ) : null}
-          {(createChannel.error || createDirectChannel.error || createProject.error || createMeeting.error || createVoiceRoom.error) ? (
-            <p className="text-sm text-error">{(createChannel.error ?? createDirectChannel.error ?? createProject.error ?? createMeeting.error ?? createVoiceRoom.error)?.message}</p>
+          {(createChannel.error || createDirectChannel.error || createProject.error || createMeeting.error) ? (
+            <p className="text-sm text-error">{(createChannel.error ?? createDirectChannel.error ?? createProject.error ?? createMeeting.error)?.message}</p>
           ) : null}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={closeCreate}>Cancel</Button>
