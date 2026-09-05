@@ -1,4 +1,6 @@
 import { useCallback, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type Event } from "@tauri-apps/api/event";
 
 export interface SfuParticipant {
   id: string;
@@ -59,6 +61,11 @@ export function useSfu() {
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const screenShareModeRef = useRef<"browser" | "native" | null>(null);
+  const nativeUnlistenRef = useRef<(() => void) | null>(null);
+  const nativeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const isTauri = typeof (window as typeof window & { __TAURI_INTERNALS__?: unknown })?.__TAURI_INTERNALS__ !== "undefined";
 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<SfuRemoteStream[]>([]);
@@ -85,10 +92,22 @@ export function useSfu() {
       screenStreamRef.current = null;
     }
 
+    if (screenShareModeRef.current === "native") {
+      nativeUnlistenRef.current?.();
+      nativeUnlistenRef.current = null;
+      nativeCanvasRef.current = null;
+      try {
+        await invoke("stop-screen-share");
+      } catch {
+        // Best-effort cleanup.
+      }
+    }
+    screenShareModeRef.current = null;
+
     const camera = cameraStreamRef.current;
     const cameraTrack = camera?.getVideoTracks()[0];
 
-    if (pc && cameraTrack) {
+    if (pc && pc.connectionState !== "closed" && cameraTrack) {
       const sender = pc.getSenders().find((s) => s.track?.kind === "video");
       if (sender) {
         try {
@@ -110,36 +129,103 @@ export function useSfu() {
     setLocalVideoEnabled(cameraTrack?.enabled ?? false);
   }, []);
 
+  const startNativeScreenShare = useCallback(async () => {
+    if (!isTauri) {
+      throw new Error("Native screen share is only available in the desktop app");
+    }
+
+    await invoke("start-screen-share");
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 1280;
+    canvas.height = 720;
+    nativeCanvasRef.current = canvas;
+
+    const stream = canvas.captureStream(15);
+    const track = stream.getVideoTracks()[0];
+    track.onended = () => {
+      void stopScreenShare();
+    };
+
+    const unlisten = await listen<string>("screen-frame", (event: Event<string>) => {
+      const payload = event.payload;
+      const img = new Image();
+      img.onload = () => {
+        if (canvas.width !== img.width || canvas.height !== img.height) {
+          canvas.width = img.width;
+          canvas.height = img.height;
+        }
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0);
+      };
+      img.onerror = () => {};
+      img.src = payload;
+    });
+
+    nativeUnlistenRef.current = unlisten;
+    screenShareModeRef.current = "native";
+    return { stream, track };
+  }, [stopScreenShare]);
+
   const startScreenShare = useCallback(async () => {
     const pc = pcRef.current;
     if (!pc) return;
 
+    // Try the browser getDisplayMedia path first (works in browsers and may
+    // work in future Tauri versions).
+    if (
+      navigator.mediaDevices &&
+      typeof navigator.mediaDevices.getDisplayMedia === "function"
+    ) {
+      try {
+        const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const screenTrack = screen.getVideoTracks()[0];
+        if (!screenTrack) return;
+
+        screenTrack.onended = () => {
+          void stopScreenShare();
+        };
+
+        const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+        if (sender) {
+          await sender.replaceTrack(screenTrack);
+        }
+
+        const audioTracks = localStreamRef.current?.getAudioTracks() ?? [];
+        const preview = new MediaStream([screenTrack, ...audioTracks]);
+        localStreamRef.current = preview;
+        setLocalStream(preview);
+
+        screenStreamRef.current = screen;
+        screenShareModeRef.current = "browser";
+        setScreenShareEnabled(true);
+        setLocalVideoEnabled(true);
+        return;
+      } catch {
+        // getDisplayMedia denied or not supported in this webview; fall through
+        // to the native Tauri screen capture fallback.
+      }
+    }
+
     try {
-      const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      const screenTrack = screen.getVideoTracks()[0];
-      if (!screenTrack) return;
-
-      screenTrack.onended = () => {
-        void stopScreenShare();
-      };
-
+      const { stream, track } = await startNativeScreenShare();
       const sender = pc.getSenders().find((s) => s.track?.kind === "video");
       if (sender) {
-        await sender.replaceTrack(screenTrack);
+        await sender.replaceTrack(track);
       }
 
       const audioTracks = localStreamRef.current?.getAudioTracks() ?? [];
-      const preview = new MediaStream([screenTrack, ...audioTracks]);
+      const preview = new MediaStream([track, ...audioTracks]);
       localStreamRef.current = preview;
       setLocalStream(preview);
 
-      screenStreamRef.current = screen;
+      screenStreamRef.current = stream;
       setScreenShareEnabled(true);
       setLocalVideoEnabled(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Screen share failed");
     }
-  }, [stopScreenShare]);
+  }, [startNativeScreenShare, stopScreenShare]);
 
   const toggleScreenShare = useCallback(async () => {
     if (screenShareEnabled) {
@@ -174,14 +260,13 @@ export function useSfu() {
     setLocalStream(preview);
   }, [screenShareEnabled, stopScreenShare]);
 
-  const leave = useCallback(() => {
+  const leave = useCallback(async () => {
+    await stopScreenShare();
+
     pcRef.current?.close();
     pcRef.current = null;
     wsRef.current?.close();
     wsRef.current = null;
-
-    screenStreamRef.current?.getTracks().forEach((t) => t.stop());
-    screenStreamRef.current = null;
     cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
     cameraStreamRef.current = null;
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -196,11 +281,11 @@ export function useSfu() {
     setLocalAudioEnabled(false);
     setLocalVideoEnabled(false);
     setScreenShareEnabled(false);
-  }, []);
+  }, [stopScreenShare]);
 
   const join = useCallback(
     async (roomId: string, displayName: string, mediaOptions: MediaOptions, userId?: string) => {
-      leave();
+      await leave();
       setError(null);
 
       let stream: MediaStream | null = null;

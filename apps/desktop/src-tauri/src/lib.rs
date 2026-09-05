@@ -7,6 +7,7 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod desktop;
 mod media;
+mod screen_share;
 mod sfu;
 
 #[tauri::command]
@@ -131,6 +132,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .manage(media::CameraState::new())
         .manage(media::MicrophoneState::new())
+        .manage(screen_share::ScreenShareState::new())
         .manage(sfu::SfuState::new())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -161,6 +163,8 @@ pub fn run() {
             media::start_microphone,
             media::stop_microphone,
             media::get_microphone_chunk,
+            screen_share::start_screen_share,
+            screen_share::stop_screen_share,
             sfu::sfu_join,
             sfu::sfu_leave,
         ])

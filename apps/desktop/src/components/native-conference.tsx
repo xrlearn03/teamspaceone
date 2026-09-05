@@ -555,7 +555,7 @@ function ParticipantTile({
       : nativeFrame != null && nativeFrame !== "");
 
   return (
-    <div className="relative aspect-video overflow-hidden rounded-2xl border border-border bg-surface-elevated">
+    <div className="relative aspect-square overflow-hidden rounded-2xl border border-border bg-surface-elevated">
       {hasVideo ? (
         stream ? (
           <video
