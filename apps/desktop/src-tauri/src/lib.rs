@@ -179,16 +179,17 @@ pub fn run() {
                 WebviewUrl::External(format!("http://localhost:{}", port.unwrap()).parse::<Url>().unwrap())
             };
 
-            let window = WebviewWindowBuilder::new(app, "main".to_string(), url)
+            let _window = WebviewWindowBuilder::new(app, "main".to_string(), url)
                 .title("Teamspace One")
                 .inner_size(1200.0, 800.0)
                 .min_inner_size(800.0, 600.0)
+                .devtools(cfg!(debug_assertions))
                 .build()?;
 
             // Open the web inspector so console errors are visible during testing.
-            #[cfg(desktop)]
+            #[cfg(all(desktop, debug_assertions))]
             {
-                let _ = window.open_devtools();
+                let _ = _window.open_devtools();
             }
 
             Ok(())
