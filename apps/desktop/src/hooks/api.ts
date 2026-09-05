@@ -430,6 +430,32 @@ export function useDeleteProjectComment() {
   });
 }
 
+export function useTaskAttachments(taskId?: string) {
+  return useQuery({ queryKey: ["task-attachments", taskId], queryFn: () => api.getTaskAttachments(taskId as string), enabled: Boolean(taskId) });
+}
+
+export function useAddTaskAttachment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { taskId: string; projectId: string; fileId: string }) => api.addTaskAttachment(args.taskId, args.fileId),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["task-attachments", args.taskId] });
+      client.invalidateQueries({ queryKey: ["project-activity", args.projectId] });
+    },
+  });
+}
+
+export function useRemoveTaskAttachment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { taskId: string; projectId: string; fileId: string }) => api.removeTaskAttachment(args.taskId, args.fileId),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["task-attachments", args.taskId] });
+      client.invalidateQueries({ queryKey: ["project-activity", args.projectId] });
+    },
+  });
+}
+
 export function useProjectAttachments(projectId?: string) {
   return useQuery({ queryKey: ["project-attachments", projectId], queryFn: () => api.getProjectAttachments(projectId as string), enabled: Boolean(projectId) });
 }

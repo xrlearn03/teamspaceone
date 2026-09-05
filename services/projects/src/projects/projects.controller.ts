@@ -66,6 +66,21 @@ export class ProjectsController {
     await this.projects.deleteTask(ctx, taskId);
   }
 
+  @Get('tasks/:id/attachments')
+  listTaskAttachments(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') taskId: string) {
+    return this.projects.listTaskAttachments(ctx, taskId);
+  }
+
+  @Post('tasks/:id/attachments')
+  addTaskAttachment(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') taskId: string, @Body() dto: AddAttachmentDto) {
+    return this.projects.addTaskAttachment(ctx, taskId, dto);
+  }
+
+  @Delete('tasks/:id/attachments/:fileId')
+  async removeTaskAttachment(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') taskId: string, @Param('fileId') fileId: string) {
+    await this.projects.removeTaskAttachment(ctx, taskId, fileId);
+  }
+
   @Get('projects/:id/comments')
   listComments(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Query('cursor') cursor?: string, @Query('limit') limit?: string) {
     return this.projects.listComments(ctx, projectId, cursor, limit ? Number(limit) : 50);

@@ -128,6 +128,7 @@ export class ProjectsService {
           title,
           description: this.optional(dto.description, 10000),
           assigneeId: dto.assigneeId,
+          startDate: this.date(dto.startDate),
           dueDate: this.date(dto.dueDate),
           status,
           priority,
@@ -157,6 +158,7 @@ export class ProjectsService {
       data.completedAt = data.status === 'done' ? new Date() : null;
     }
     if (dto.assigneeId !== undefined) data.assigneeId = dto.assigneeId;
+    if (dto.startDate !== undefined) data.startDate = dto.startDate === null ? null : this.date(dto.startDate);
     if (dto.dueDate !== undefined) data.dueDate = dto.dueDate === null ? null : this.date(dto.dueDate);
     if (dto.priority !== undefined) data.priority = this.priority(dto.priority);
     if (dto.position !== undefined) data.position = Math.max(0, Math.trunc(dto.position));
@@ -178,6 +180,38 @@ export class ProjectsService {
       await tx.task.delete({ where: { id: taskId } });
       await this.activity(tx, ctx, task.projectId, 'task.deleted', 'task', taskId, { title: task.title });
       await this.event(tx, ctx, Subjects.TASK_UPDATED, 'task', taskId, { id: taskId, projectId: task.projectId, deleted: true, memberIds: project.members.map((m) => m.userId) });
+    });
+  }
+
+  async listTaskAttachments(ctx: OrganisationContextValue, taskId: string) {
+    const task = await this.task(ctx, taskId);
+    return this.prisma.taskAttachment.findMany({ where: { taskId: task.id }, orderBy: { createdAt: 'desc' } });
+  }
+
+  async addTaskAttachment(ctx: OrganisationContextValue, taskId: string, dto: AddAttachmentDto) {
+    const actorId = this.actor(ctx);
+    const task = await this.task(ctx, taskId);
+    const fileId = this.required(dto.fileId, 'File ID', 200);
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const attachment = await tx.taskAttachment.upsert({
+        where: { taskId_fileId: { taskId: task.id, fileId } },
+        create: { id: randomUUID(), taskId: task.id, fileId, addedBy: actorId },
+        update: {},
+      });
+      await this.activity(tx, ctx, task.projectId, 'task.attachment.added', 'file', fileId, { taskId: task.id });
+      await this.event(tx, ctx, Subjects.TASK_ATTACHMENT_ADDED, 'task-attachment', attachment.id, attachment);
+      return attachment;
+    });
+  }
+
+  async removeTaskAttachment(ctx: OrganisationContextValue, taskId: string, fileId: string) {
+    const task = await this.task(ctx, taskId);
+    const attachment = await this.prisma.taskAttachment.findUnique({ where: { taskId_fileId: { taskId: task.id, fileId } } });
+    if (!attachment) throw new NotFoundException('Attachment not found');
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.taskAttachment.delete({ where: { id: attachment.id } });
+      await this.activity(tx, ctx, task.projectId, 'task.attachment.removed', 'file', fileId, { taskId: task.id });
+      await this.event(tx, ctx, Subjects.TASK_ATTACHMENT_REMOVED, 'task-attachment', attachment.id, { ...attachment, deleted: true });
     });
   }
 

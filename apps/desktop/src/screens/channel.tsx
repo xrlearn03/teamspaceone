@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Hash,
   Info,
@@ -23,6 +23,7 @@ import {
   useUpdateChannel,
   useUpdateMessage,
   useUploadFile,
+  useUsers,
 } from "../hooks/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -32,7 +33,16 @@ import { Composer } from "../components/chat/composer";
 import { ThreadPanel } from "../components/chat/thread-panel";
 import { getActiveOrganisation } from "../lib/api";
 import { useRealtime } from "../hooks/useRealtime";
-import type { Message } from "../lib/api";
+import type { Message, UserDto } from "../lib/api";
+
+function getDisplayName(member: { userId: string }, user?: UserDto) {
+  if (user) {
+    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+    if (fullName) return fullName;
+    return user.email;
+  }
+  return member.userId;
+}
 
 export function ChannelScreen() {
   const { activeChannelId, toggleRightPanel, setActiveView } = useUIStore(
@@ -46,6 +56,9 @@ export function ChannelScreen() {
   const { data: user } = useMe();
   const { data: channels } = useChannels();
   const { data: members } = useMembers(getActiveOrganisation() ?? undefined);
+  const channelUserIds = useMemo(() => [...new Set((members ?? []).map((m) => m.userId))], [members]);
+  const { data: channelUsers } = useUsers(channelUserIds);
+  const userMap = useMemo(() => new Map((channelUsers ?? []).map((u) => [u.id, u])), [channelUsers]);
   const channel =
     channels?.find((c) => c.id === activeChannelId) ?? channels?.[0];
   const { data: messages, fetchNextPage, hasNextPage, isFetchingNextPage } = useMessages(channel?.id);
@@ -178,6 +191,7 @@ export function ChannelScreen() {
                       key={m.id}
                       message={m}
                       user={user}
+                      userMap={userMap}
                       compact={compact}
                       onReply={() => setThreadMessage(m)}
                       onEdit={handleEdit}
@@ -196,14 +210,14 @@ export function ChannelScreen() {
           <div className="border-t p-3">
             {typingUsers.length > 0 ? (
               <p className="px-1 pb-1 text-xs italic text-text-muted">
-                {typingUsers.map((id) => id.slice(0, 8)).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing…
+                {typingUsers.map((id) => getDisplayName({ userId: id }, userMap.get(id))).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing…
               </p>
             ) : null}
             <Composer
               placeholder={`Message #${channel?.name ?? "channel"}`}
               draftKey={channel ? `channel:${channel.id}` : undefined}
               channelId={channel?.id}
-              members={(members ?? []).map((m) => ({ id: m.userId, name: m.userId.slice(0, 8) }))}
+              members={(members ?? []).map((m) => ({ id: m.userId, name: getDisplayName(m, userMap.get(m.userId)) }))}
               sending={sending}
               disabled={!channel}
               onSend={send}
@@ -216,6 +230,7 @@ export function ChannelScreen() {
           <ThreadPanel
             channelId={channel.id}
             parentMessage={threadMessage}
+            userMap={userMap}
             onClose={() => setThreadMessage(null)}
           />
         ) : null}
@@ -244,7 +259,7 @@ export function ChannelScreen() {
                     disabled={member.userId === channel?.createdBy}
                     onChange={() => setChannelMemberIds((ids) => ids.includes(member.userId) ? ids.filter((id) => id !== member.userId) : [...ids, member.userId])}
                   />
-                  <span className="flex-1 truncate">{member.userId}</span>
+                  <span className="flex-1 truncate">{getDisplayName(member, userMap.get(member.userId))}</span>
                   {/client|external/i.test(member.role.name) ? (
                     <span className="rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">External</span>
                   ) : (

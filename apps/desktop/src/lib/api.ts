@@ -281,10 +281,19 @@ export interface Task {
   status: string;
   priority: string;
   position: number;
+  startDate?: string | null;
   dueDate?: string | null;
   completedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TaskAttachment {
+  id: string;
+  taskId: string;
+  fileId: string;
+  addedBy: string;
+  createdAt: string;
 }
 
 export interface ProjectComment {
@@ -685,16 +694,28 @@ export function getTasks(projectId: string) {
   return apiRequest<Task[]>(`/projects/${projectId}/tasks`);
 }
 
-export function createTask(body: { projectId: string; title: string; description?: string; assigneeId?: string; dueDate?: string; status?: string; priority?: string; position?: number }) {
+export function createTask(body: { projectId: string; title: string; description?: string; assigneeId?: string; startDate?: string; dueDate?: string; status?: string; priority?: string; position?: number }) {
   return apiRequest<Task>("/tasks", { method: "POST", body });
 }
 
-export function updateTask(taskId: string, body: { status?: string; title?: string; description?: string | null; assigneeId?: string | null; dueDate?: string | null; priority?: string; position?: number }) {
+export function updateTask(taskId: string, body: { status?: string; title?: string; description?: string | null; assigneeId?: string | null; startDate?: string | null; dueDate?: string | null; priority?: string; position?: number }) {
   return apiRequest<Task>(`/tasks/${taskId}`, { method: "PATCH", body });
 }
 
 export function deleteTask(taskId: string) {
   return apiRequest<void>(`/tasks/${taskId}`, { method: "DELETE" });
+}
+
+export function getTaskAttachments(taskId: string) {
+  return apiRequest<TaskAttachment[]>(`/tasks/${taskId}/attachments`);
+}
+
+export function addTaskAttachment(taskId: string, fileId: string) {
+  return apiRequest<TaskAttachment>(`/tasks/${taskId}/attachments`, { method: "POST", body: { fileId } });
+}
+
+export function removeTaskAttachment(taskId: string, fileId: string) {
+  return apiRequest<void>(`/tasks/${taskId}/attachments/${fileId}`, { method: "DELETE" });
 }
 
 export function getProjectComments(projectId: string, cursor?: string) {

@@ -11,15 +11,16 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
-import type { Message } from "../../lib/api";
+import type { Message, UserDto } from "../../lib/api";
 
 interface ThreadPanelProps {
   channelId: string;
   parentMessage: Message;
+  userMap?: Map<string, UserDto>;
   onClose: () => void;
 }
 
-export function ThreadPanel({ channelId, parentMessage, onClose }: ThreadPanelProps) {
+export function ThreadPanel({ channelId, parentMessage, userMap, onClose }: ThreadPanelProps) {
   const { data: replies, fetchNextPage, hasNextPage, isFetchingNextPage } = useThreadMessages(parentMessage.id);
   const { sendOrQueue, isPending: sending } = useSendMessageOrQueue();
   const { data: user } = useMe();
@@ -76,7 +77,7 @@ export function ThreadPanel({ channelId, parentMessage, onClose }: ThreadPanelPr
       </div>
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mb-4 border-b pb-4">
-          <MessageItem message={parentMessage} user={user} showReplyButton={false} />
+          <MessageItem message={parentMessage} user={user} userMap={userMap} showReplyButton={false} />
         </div>
         <div className="space-y-4">
           {hasNextPage ? (
@@ -87,7 +88,7 @@ export function ThreadPanel({ channelId, parentMessage, onClose }: ThreadPanelPr
             </div>
           ) : null}
           {replies && replies.length > 0 ? (
-            replies.map((reply) => <MessageItem key={reply.id} message={reply} user={user} showReplyButton={false} />)
+            replies.map((reply) => <MessageItem key={reply.id} message={reply} user={user} userMap={userMap} showReplyButton={false} />)
           ) : (
             <p className="py-4 text-center text-sm text-text-muted">No replies yet.</p>
           )}

@@ -18,18 +18,23 @@ pub struct MediaDevice {
     pub name: String,
 }
 
-pub fn initialize() {
-    nokhwa_initialize(|granted| {
-        if granted {
-            println!("nokhwa camera permission granted");
-        } else {
-            eprintln!("nokhwa camera permission denied");
-        }
-    });
-}
-
 #[tauri::command(rename = "list-cameras")]
-pub fn list_cameras() -> Result<Vec<MediaDevice>, String> {
+pub fn list_cameras(app: tauri::AppHandle) -> Result<Vec<MediaDevice>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        nokhwa_initialize(move |granted| {
+            let _ = tx.send(granted);
+        });
+    })
+    .map_err(|e| e.to_string())?;
+
+    let granted = rx
+        .recv()
+        .map_err(|_| "Camera permission request was cancelled".to_string())?;
+    if !granted {
+        return Err("Camera access was denied. Please enable it in System Settings > Privacy & Security > Camera.".into());
+    }
+
     let backend = ApiBackend::Auto;
     let infos = query(backend).map_err(|e| e.to_string())?;
     Ok(infos

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import { useShallow } from "zustand/shallow";
 import { AlertCircle, Sparkles, Send, ThumbsUp, RotateCcw, Save, CheckSquare, Copy, Check, BookOpen } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -69,10 +70,17 @@ export function AIAssistantScreen() {
   const { data: pendingActions } = usePendingAIActions();
   const confirmAIAction = useConfirmAIAction();
   const declineAIAction = useDeclineAIAction();
-  const { organisationId, pendingActionFilter, setPendingActionFilter } = useUIStore((s) => ({ organisationId: s.organisationId, pendingActionFilter: s.pendingActionFilter, setPendingActionFilter: s.setPendingActionFilter }));
+  const { organisationId, pendingActionFilter, setPendingActionFilter } = useUIStore(
+    useShallow((s) => ({
+      organisationId: s.organisationId,
+      pendingActionFilter: s.pendingActionFilter,
+      setPendingActionFilter: s.setPendingActionFilter,
+    })),
+  );
+  const pendingActionsList = useMemo(() => (Array.isArray(pendingActions) ? pendingActions : []), [pendingActions]);
   const filteredPendingActions = useMemo(
-    () => pendingActions?.filter((a) => !pendingActionFilter || a.actionType === pendingActionFilter) ?? [],
-    [pendingActions, pendingActionFilter],
+    () => pendingActionsList.filter((a) => !pendingActionFilter || a.actionType === pendingActionFilter),
+    [pendingActionsList, pendingActionFilter],
   );
   const organisation = organisations?.find((o) => o.id === organisationId);
 
@@ -181,10 +189,10 @@ export function AIAssistantScreen() {
           <Sparkles className="h-5 w-5 text-primary" />
           <h1 className="text-lg font-semibold text-text">AI Assistant</h1>
         </div>
-        {pendingActions && pendingActions.length > 0 && (
+        {pendingActionsList.length > 0 && (
           <Button variant="secondary" size="sm" onClick={() => setPendingActionsDialogOpen(true)}>
             <AlertCircle className="mr-1.5 h-4 w-4" />
-            {pendingActions.length} pending action{pendingActions.length === 1 ? "" : "s"}
+            {pendingActionsList.length} pending action{pendingActionsList.length === 1 ? "" : "s"}
           </Button>
         )}
       </header>

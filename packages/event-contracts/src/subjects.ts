@@ -24,6 +24,8 @@ export const Subjects = {
   TASK_CREATED: 'teamspace-one.task.created',
   TASK_UPDATED: 'teamspace-one.task.updated',
   TASK_COMPLETED: 'teamspace-one.task.completed',
+  TASK_ATTACHMENT_ADDED: 'teamspace-one.task.attachment.added',
+  TASK_ATTACHMENT_REMOVED: 'teamspace-one.task.attachment.removed',
   FILE_UPLOADED: 'teamspace-one.file.uploaded',
   FILE_PROCESSED: 'teamspace-one.file.processed',
   FILE_DELETED: 'teamspace-one.file.deleted',

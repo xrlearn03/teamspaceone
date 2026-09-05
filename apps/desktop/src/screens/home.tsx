@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import type { DailyDigestResult } from "../lib/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { DailyDigestResult, UserDto } from "../lib/api";
 import {
   Calendar,
   CheckSquare,
@@ -30,6 +30,7 @@ import {
   usePendingAIActions,
   useProjects,
   useTasks,
+  useUsers,
   useWorkspaces,
 } from "../hooks/api";
 import { getActiveOrganisation } from "../lib/api";
@@ -50,6 +51,15 @@ function getGreeting() {
 function formatTime(iso: string) {
   const d = new Date(iso);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function getDisplayName(member: { userId: string }, user?: UserDto) {
+  if (user) {
+    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+    if (fullName) return fullName;
+    return user.email;
+  }
+  return member.userId;
 }
 
 function normalizeDigest(result: unknown): DailyDigestResult {
@@ -106,6 +116,7 @@ export function HomeScreen() {
   const { data: workspaces } = useWorkspaces(organisationId);
   const { data: clients } = useClients(organisationId);
   const { data: members } = useMembers(organisationId);
+  const memberUserIds = useMemo(() => [...new Set((members ?? []).map((m) => m.userId))], [members]);
   const createMeeting = useCreateMeeting();
   const createDirectChannel = useCreateDirectChannel();
   const createTask = useCreateTask();
@@ -121,6 +132,10 @@ export function HomeScreen() {
 
   const firstChannelId = channels?.[0]?.id;
   const { data: messages } = useMessages(firstChannelId);
+  const messageSenderIds = useMemo(() => [...new Set((messages ?? []).map((m) => m.senderId))], [messages]);
+  const userIds = useMemo(() => [...new Set([...memberUserIds, ...messageSenderIds])], [memberUserIds, messageSenderIds]);
+  const { data: users } = useUsers(userIds);
+  const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
   const firstProjectId = projects?.[0]?.id;
   const { data: tasks } = useTasks(firstProjectId);
   const dailyDigest = useDailyDigest();
@@ -128,8 +143,9 @@ export function HomeScreen() {
   const [digest, setDigest] = useState<DailyDigestResult | null>(null);
   const digestError = useRef<string | null>(null);
 
-  const momCount = pendingActions?.filter((a) => a.actionType === "send_meeting_summary_email")?.length ?? 0;
-  const taskCount = pendingActions?.filter((a) => a.actionType === "create_task")?.length ?? 0;
+  const pendingActionsList = Array.isArray(pendingActions) ? pendingActions : [];
+  const momCount = pendingActionsList.filter((a) => a.actionType === "send_meeting_summary_email").length;
+  const taskCount = pendingActionsList.filter((a) => a.actionType === "create_task").length;
 
   useEffect(() => {
     if (digest || dailyDigest.isPending || digestError.current) return;
@@ -289,7 +305,7 @@ export function HomeScreen() {
                     className="flex w-full flex-col gap-0.5 rounded-md p-1.5 text-left hover:bg-surface-elevated"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-text">{m.senderId.slice(0, 8)}</span>
+                      <span className="text-sm font-medium text-text">{getDisplayName({ userId: m.senderId }, userMap.get(m.senderId))}</span>
                       <span className="text-xs text-text-muted">{formatRelative(m.createdAt)}</span>
                     </div>
                     <p className="line-clamp-1 text-xs text-text-secondary">{m.content}</p>
@@ -452,7 +468,7 @@ export function HomeScreen() {
       <NewMessageDialog
         open={dialog === "message"}
         onOpenChange={(open) => { if (!open) setDialog(null); }}
-        members={members ?? []}
+        members={(members ?? []).map((m) => ({ ...m, displayName: getDisplayName(m, userMap.get(m.userId)) }))}
         createDirectChannel={createDirectChannel}
         onSuccess={(channel) => { setDialog(null); setActiveView("dm", { channelId: channel.id }); }}
       />
@@ -470,7 +486,7 @@ export function HomeScreen() {
         onOpenChange={(open) => { if (!open) setDialog(null); }}
         workspaces={workspaces ?? []}
         clients={clients ?? []}
-        members={members ?? []}
+        members={(members ?? []).map((m) => ({ ...m, displayName: getDisplayName(m, userMap.get(m.userId)) }))}
         createProject={createProject}
         onSuccess={(project) => { setDialog(null); setActiveView("project", { projectId: project.id }); }}
       />
@@ -487,7 +503,7 @@ function NewMessageDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  members: { userId: string; id: string }[];
+  members: { userId: string; id: string; displayName?: string }[];
   createDirectChannel: ReturnType<typeof useCreateDirectChannel>;
   onSuccess: (channel: { id: string }) => void;
 }) {
@@ -516,7 +532,7 @@ function NewMessageDialog({
                   }}
                   className="h-4 w-4 accent-primary"
                 />
-                <span className="text-sm">{member.userId}</span>
+                <span className="text-sm">{member.displayName ?? member.userId}</span>
               </label>
             ))}
             {!members.length && <p className="text-sm text-text-muted">No members found.</p>}
@@ -624,7 +640,7 @@ function CreateProjectDialog({
   onOpenChange: (open: boolean) => void;
   workspaces: { id: string; name: string }[];
   clients: { id: string; name: string }[];
-  members: { userId: string; id: string }[];
+  members: { userId: string; id: string; displayName?: string }[];
   createProject: ReturnType<typeof useCreateProject>;
   onSuccess: (project: { id: string }) => void;
 }) {
@@ -673,7 +689,7 @@ function CreateProjectDialog({
                   }}
                   className="h-4 w-4 accent-primary"
                 />
-                <span className="text-sm">{member.userId}</span>
+                <span className="text-sm">{member.displayName ?? member.userId}</span>
               </label>
             ))}
           </div>

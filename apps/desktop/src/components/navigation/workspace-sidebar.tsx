@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -36,9 +36,10 @@ import {
   useCreateOrganisation,
   useProjects,
   useUnreadCount,
+  useUsers,
   useWorkspaces,
 } from "../../hooks/api";
-import { type Meeting } from "../../lib/api";
+import { type Meeting, type OrganisationMember, type UserDto } from "../../lib/api";
 import { useSwitchOrganisation } from "../../hooks/useOrganisationSwitch";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -57,6 +58,15 @@ import { cn } from "../../lib/utils";
 const Collapsible = CollapsiblePrimitive.Root;
 const CollapsibleTrigger = CollapsiblePrimitive.Trigger;
 const CollapsibleContent = CollapsiblePrimitive.Content;
+
+function getDisplayName(member: OrganisationMember, user?: UserDto) {
+  if (user) {
+    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+    if (fullName) return fullName;
+    return user.email;
+  }
+  return member.userId;
+}
 
 interface SidebarItemData {
   label: string;
@@ -219,6 +229,9 @@ export function WorkspaceSidebar() {
   const { data: organisations } = useOrganisations();
   const { data: workspaces } = useWorkspaces(activeOrgId ?? undefined);
   const { data: members } = useMembers(activeOrgId ?? undefined);
+  const memberUserIds = useMemo(() => [...new Set((members ?? []).map((m) => m.userId))], [members]);
+  const { data: users } = useUsers(memberUserIds);
+  const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
   const { data: channels } = useChannels();
   const createChannel = useCreateChannel();
   const createDirectChannel = useCreateDirectChannel();
@@ -630,7 +643,7 @@ export function WorkspaceSidebar() {
               {members?.map((member) => (
                 <label key={member.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-surface-elevated">
                   <input type="checkbox" checked={selectedMembers.includes(member.userId)} onChange={() => toggleMember(member.userId)} />
-                  <span className="flex-1 truncate">{member.userId}</span>
+                  <span className="flex-1 truncate">{getDisplayName(member, userMap.get(member.userId))}</span>
                   <span className="text-xs text-text-muted">{member.role.name}</span>
                 </label>
               ))}

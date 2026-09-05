@@ -169,7 +169,6 @@ pub fn run() {
             sfu::sfu_leave,
         ])
         .setup(move |app| {
-            media::initialize();
             #[cfg(desktop)]
             {
                 setup_tray(app.app_handle())?;
@@ -187,6 +186,7 @@ pub fn run() {
                 .title("Teamspace One")
                 .inner_size(1200.0, 800.0)
                 .min_inner_size(800.0, 600.0)
+                .disable_drag_drop_handler()
                 .devtools(cfg!(debug_assertions))
                 .build()?;
 

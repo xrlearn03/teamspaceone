@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Info,
   Phone,
@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
-import { useChannels, useCreateMeeting, useCreateVoiceRoom, useDeleteMessage, useMe, useMembers, useMessages, useSendMessageOrQueue, useUpdateMessage, useUploadFile } from "../hooks/api";
+import { useChannels, useCreateMeeting, useCreateVoiceRoom, useDeleteMessage, useMe, useMembers, useMessages, useSendMessageOrQueue, useUpdateMessage, useUploadFile, useUsers } from "../hooks/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
@@ -17,7 +17,16 @@ import { ThreadPanel } from "../components/chat/thread-panel";
 import { getActiveOrganisation } from "../lib/api";
 import { useRealtime } from "../hooks/useRealtime";
 import { cn } from "../lib/utils";
-import type { Message } from "../lib/api";
+import type { Message, UserDto } from "../lib/api";
+
+function getDisplayName(member: { userId: string }, user?: UserDto) {
+  if (user) {
+    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+    if (fullName) return fullName;
+    return user.email;
+  }
+  return member.userId;
+}
 
 export function DirectMessageScreen() {
   const { activeChannelId, toggleRightPanel, setActiveView } = useUIStore(
@@ -36,6 +45,11 @@ export function DirectMessageScreen() {
     directChannels.find((c) => c.id === activeChannelId) ??
     directChannels[0];
   const { data: messages, fetchNextPage, hasNextPage, isFetchingNextPage } = useMessages(contact?.id);
+  const messageUserIds = useMemo(() => [...new Set((messages ?? []).map((m) => m.senderId))], [messages]);
+  const memberUserIds = useMemo(() => [...new Set((members ?? []).map((m) => m.userId))], [members]);
+  const allUserIds = useMemo(() => [...new Set([...memberUserIds, ...messageUserIds])], [memberUserIds, messageUserIds]);
+  const { data: users } = useUsers(allUserIds);
+  const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
   const { sendOrQueue, isPending: sending } = useSendMessageOrQueue();
   const updateMessage = useUpdateMessage();
   const deleteMessage = useDeleteMessage();
@@ -205,6 +219,7 @@ export function DirectMessageScreen() {
                       key={m.id}
                       message={m}
                       user={user}
+                      userMap={userMap}
                       compact={compact}
                       onReply={() => setThreadMessage(m)}
                       onEdit={handleEdit}
@@ -230,14 +245,14 @@ export function DirectMessageScreen() {
           <div className="border-t p-3">
             {typingUsers.length > 0 ? (
               <p className="px-1 pb-1 text-xs italic text-text-muted">
-                {typingUsers.map((id) => id.slice(0, 8)).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing…
+                {typingUsers.map((id) => getDisplayName({ userId: id }, userMap.get(id))).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing…
               </p>
             ) : null}
             <Composer
               placeholder={`Message ${contact?.name ?? "contact"}`}
               draftKey={contact ? `channel:${contact.id}` : undefined}
               channelId={contact?.id}
-              members={(members ?? []).map((m) => ({ id: m.userId, name: m.userId.slice(0, 8) }))}
+              members={(members ?? []).map((m) => ({ id: m.userId, name: getDisplayName(m, userMap.get(m.userId)) }))}
               sending={sending}
               disabled={!contact}
               onSend={send}
@@ -250,6 +265,7 @@ export function DirectMessageScreen() {
           <ThreadPanel
             channelId={contact.id}
             parentMessage={threadMessage}
+            userMap={userMap}
             onClose={() => setThreadMessage(null)}
           />
         ) : null}

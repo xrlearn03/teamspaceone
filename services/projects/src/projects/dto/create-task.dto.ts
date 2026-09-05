@@ -3,6 +3,7 @@ export class CreateTaskDto {
   title!: string;
   description?: string;
   assigneeId?: string;
+  startDate?: string;
   dueDate?: string;
   status?: string;
   priority?: string;

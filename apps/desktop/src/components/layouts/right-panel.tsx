@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X, Hash, Folder, Info, Calendar, Users, Mic } from "lucide-react";
 import { useUIStore } from "../../stores/ui";
 import { useShallow } from "zustand/shallow";
@@ -11,7 +11,9 @@ import {
   useMembers,
   useProjects,
   useTasks,
+  useUsers,
 } from "../../hooks/api";
+import type { UserDto } from "../../lib/api";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -31,16 +33,27 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+function getDisplayName(member: { userId: string }, user?: UserDto) {
+  if (user) {
+    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+    if (fullName) return fullName;
+    return user.email;
+  }
+  return member.userId;
+}
+
 function MemberList({ userIds, externalIds }: { userIds: string[]; externalIds?: Set<string> }) {
+  const { data: users } = useUsers(userIds);
+  const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
   if (!userIds.length) return <p className="text-sm text-text-muted">No members.</p>;
   return (
     <div className="space-y-1.5">
       {userIds.map((id) => (
         <div key={id} className="flex items-center gap-2">
           <Avatar className="h-6 w-6">
-            <AvatarFallback className="text-[10px]">{id.slice(0, 2).toUpperCase()}</AvatarFallback>
+            <AvatarFallback className="text-[10px]">{getDisplayName({ userId: id }, userMap.get(id)).slice(0, 2).toUpperCase()}</AvatarFallback>
           </Avatar>
-          <span className="flex-1 truncate text-sm text-text">{id.slice(0, 8)}</span>
+          <span className="flex-1 truncate text-sm text-text">{getDisplayName({ userId: id }, userMap.get(id))}</span>
           {externalIds?.has(id) ? <Badge variant="warning">External</Badge> : null}
         </div>
       ))}

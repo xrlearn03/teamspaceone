@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { useUIStore, type View } from "../../stores/ui";
 import { useTheme } from "../../hooks/useTheme";
 import { useShallow } from "zustand/shallow";
+import { ErrorBoundary } from "../ErrorBoundary";
 import { AppRail } from "../navigation/app-rail";
 import { WorkspaceSidebar } from "../navigation/workspace-sidebar";
 import { StatusBar } from "./status-bar";
@@ -104,7 +105,9 @@ export function AppShell() {
           <AppRail />
           <WorkspaceSidebar />
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
-            <Screen />
+            <ErrorBoundary>
+              <Screen />
+            </ErrorBoundary>
           </main>
           {rightPanelOpen && <RightPanel />}
         </div>

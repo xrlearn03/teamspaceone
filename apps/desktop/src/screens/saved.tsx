@@ -1,17 +1,30 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Bookmark, Hash, Trash2 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
-import { useChannels } from "../hooks/api";
+import { useChannels, useUsers } from "../hooks/api";
 import { getSavedMessages, toggleSavedMessage, type SavedMessage } from "../lib/message-local";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";
 import { MessageContent } from "../components/chat/message-content";
+import type { UserDto } from "../lib/api";
+
+function getDisplayName(member: { userId: string }, user?: UserDto) {
+  if (user) {
+    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+    if (fullName) return fullName;
+    return user.email;
+  }
+  return member.userId;
+}
 
 export function SavedItemsScreen() {
   const setActiveView = useUIStore((s) => s.setActiveView);
   const { data: channels } = useChannels();
   const [items, setItems] = useState<SavedMessage[]>([]);
+  const senderIds = useMemo(() => [...new Set(items.map((i) => i.senderId))], [items]);
+  const { data: users } = useUsers(senderIds);
+  const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
 
   useEffect(() => {
     setItems(getSavedMessages().slice().reverse());
@@ -43,7 +56,7 @@ export function SavedItemsScreen() {
               return (
                 <div key={item.id} className="group flex items-start gap-3 rounded-lg border bg-surface p-3">
                   <Avatar className="h-7 w-7">
-                    <AvatarFallback className="text-[10px]">{item.senderId.slice(0, 2).toUpperCase()}</AvatarFallback>
+                    <AvatarFallback className="text-[10px]">{getDisplayName({ userId: item.senderId }, userMap.get(item.senderId)).slice(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
                   <button type="button" onClick={() => open(item)} className="min-w-0 flex-1 text-left">
                     <div className="flex items-center gap-2 text-xs text-text-muted">

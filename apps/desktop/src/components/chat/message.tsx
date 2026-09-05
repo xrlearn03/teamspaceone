@@ -20,6 +20,7 @@ function formatTime(iso: string) {
 export interface MessageItemProps {
   message: MessageType;
   user?: UserDto | null;
+  userMap?: Map<string, UserDto>;
   showReplyButton?: boolean;
   onReply?: () => void;
   onEdit?: (messageId: string, content: string) => void;
@@ -28,9 +29,19 @@ export interface MessageItemProps {
   compact?: boolean;
 }
 
+function getDisplayName(member: { userId: string }, user?: UserDto) {
+  if (user) {
+    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+    if (fullName) return fullName;
+    return user.email;
+  }
+  return member.userId;
+}
+
 export function MessageItem({
   message,
   user,
+  userMap,
   showReplyButton = true,
   onReply,
   onEdit,
@@ -43,7 +54,8 @@ export function MessageItem({
   const toggleReaction = useToggleReaction();
   const [saved, setSaved] = useState(() => isSaved(message.id));
   const isMe = message.senderId === user?.id;
-  const author = isMe ? "You" : message.senderId.slice(0, 8);
+  const sender = userMap?.get(message.senderId);
+  const author = isMe ? "You" : getDisplayName({ userId: message.senderId }, sender);
   const mentionName = user?.firstName ?? user?.id ?? null;
 
   function saveEdit() {

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Calendar, CheckCircle2, Copy, ExternalLink, Folder, Plus, Send, Settings, Trash2 } from "lucide-react";
+import { CheckCircle2, Copy, ExternalLink, FileText, Folder, Paperclip, Plus, Send, Settings, Trash2, X } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import {
   useAddProjectAttachment,
+  useAddTaskAttachment,
   useApprovals,
   useClients,
   useCreateApproval,
@@ -12,6 +13,8 @@ import {
   useDeleteProject,
   useDeleteProjectComment,
   useDeleteTask,
+  useFile,
+  useFiles,
   useMe,
   useMembers,
   useProjectActivity,
@@ -19,15 +22,18 @@ import {
   useProjectComments,
   useProjects,
   useRemoveProjectAttachment,
+  useRemoveTaskAttachment,
   useResolveApproval,
+  useTaskAttachments,
   useTasks,
   useUpdateProject,
   useUpdateProjectComment,
   useUpdateTask,
   useUploadFile,
+  useUsers,
   useWorkspaces,
 } from "../hooks/api";
-import { getActiveOrganisation, type Project, type ProjectComment, type Task } from "../lib/api";
+import { downloadFile, fetchFilePreview, getActiveOrganisation, type FileRecord, type Project, type ProjectActivity, type ProjectComment, type Task, type UserDto } from "../lib/api";
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -57,12 +63,22 @@ export function ProjectScreen() {
   const { data: workspaces } = useWorkspaces(organisationId);
   const project = projects?.find((item) => item.id === activeProjectId) ?? projects?.[0];
   const { data: tasks } = useTasks(project?.id);
+  const memberUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of members ?? []) ids.add(m.userId);
+    for (const m of project?.members ?? []) ids.add(m.userId);
+    for (const t of tasks ?? []) if (t.assigneeId) ids.add(t.assigneeId);
+    return [...ids];
+  }, [members, project?.members, tasks]);
+  const { data: users } = useUsers(memberUserIds);
+  const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const [tab, setTab] = useState<(typeof tabs)[number]>("board");
   const [newTask, setNewTask] = useState<Record<string, string>>({});
   const [projectDialog, setProjectDialog] = useState<"create" | "settings" | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
 
@@ -92,7 +108,7 @@ export function ProjectScreen() {
         <Folder className="h-10 w-10" />
         <p>No projects yet.</p>
         <Button onClick={() => setProjectDialog("create")}><Plus className="mr-1 h-4 w-4" />Create project</Button>
-        <ProjectDialog mode="create" open={projectDialog === "create"} onOpenChange={(open) => setProjectDialog(open ? "create" : null)} members={members ?? []} workspaces={workspaces ?? []} clients={clients ?? []} />
+        <ProjectDialog mode="create" open={projectDialog === "create"} onOpenChange={(open) => setProjectDialog(open ? "create" : null)} members={members ?? []} userMap={userMap} workspaces={workspaces ?? []} clients={clients ?? []} />
       </div>
     );
   }
@@ -118,13 +134,13 @@ export function ProjectScreen() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <div className="flex -space-x-2">{project.members.slice(0, 4).map((member) => <Avatar key={member.id} className="h-7 w-7 border-2 border-surface"><AvatarFallback className="text-[10px]">{member.userId.slice(0, 2).toUpperCase()}</AvatarFallback></Avatar>)}</div>
+              <div className="flex -space-x-2">{project.members.slice(0, 4).map((member) => <Avatar key={member.id} className="h-7 w-7 border-2 border-surface"><AvatarFallback className="text-[10px]">{getInitials(member, userMap.get(member.userId))}</AvatarFallback></Avatar>)}</div>
               {project.ownerId === user?.id ? <Button variant="ghost" size="icon" onClick={() => setProjectDialog("settings")}><Settings className="h-4 w-4" /></Button> : null}
             </div>
           </div>
           <div className="mt-4 flex items-center justify-between">
             <div className="flex items-center gap-1 overflow-x-auto">{tabs.map((item) => <button key={item} type="button" onClick={() => setTab(item)} className={cn("rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-colors", tab === item ? "bg-primary-subtle text-primary" : "text-text-secondary hover:bg-surface-elevated hover:text-text")}>{item}</button>)}</div>
-            <Button size="sm" onClick={() => setTab("board")}><Plus className="mr-1.5 h-4 w-4" />New task</Button>
+            <Button size="sm" onClick={() => setCreateTaskOpen(true)}><Plus className="mr-1.5 h-4 w-4" />New task</Button>
           </div>
           {project.clientId ? (
             <div className="mt-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
@@ -149,25 +165,28 @@ export function ProjectScreen() {
               onDrop={(event) => { event.preventDefault(); dropTask(status); }}
             >
               <div className="flex items-center justify-between px-3 py-2"><span className="text-xs font-semibold text-text">{labels[status]}</span><span className="text-xs text-text-muted">{grouped[status]?.length ?? 0}</span></div>
-              <div className="flex-1 space-y-2 p-2">{grouped[status]?.map((task) => <TaskCard key={task.id} task={task} dragging={dragTaskId === task.id} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", task.id); setDragTaskId(task.id); }} onDragEnd={() => { setDragTaskId(null); setDragOverStatus(null); }} onClick={() => setSelectedTask(task)} />)}{!grouped[status]?.length ? <div className="rounded-md border border-dashed py-6 text-center text-xs text-text-muted">Drop tasks here</div> : null}</div>
-              <div className="m-2 space-y-1"><Input placeholder="Add task…" value={newTask[status] ?? ""} onChange={(event) => setNewTask((current) => ({ ...current, [status]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") addTask(status); }} className="h-7 text-xs" /><button type="button" onClick={() => addTask(status)} className="flex w-full items-center justify-center gap-1 rounded-md py-1.5 text-xs font-medium text-text-muted hover:bg-surface-elevated hover:text-text"><Plus className="h-3.5 w-3.5" />Add task</button></div>
+              <div className="flex-1 space-y-2 p-2">{grouped[status]?.map((task) => <TaskCard key={task.id} task={task} userMap={userMap} dragging={dragTaskId === task.id} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", task.id); setDragTaskId(task.id); }} onDragEnd={() => { setDragTaskId(null); setDragOverStatus(null); }} onClick={() => setSelectedTask(task)} />)}{!grouped[status]?.length ? <div className="rounded-md border border-dashed py-6 text-center text-xs text-text-muted">Drop tasks here</div> : null}</div>
+              {status === "todo" ? (
+                <div className="m-2 space-y-1"><Input placeholder="Add task…" value={newTask[status] ?? ""} onChange={(event) => setNewTask((current) => ({ ...current, [status]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") addTask(status); }} className="h-7 text-xs" /><button type="button" onClick={() => addTask(status)} className="flex w-full items-center justify-center gap-1 rounded-md py-1.5 text-xs font-medium text-text-muted hover:bg-surface-elevated hover:text-text"><Plus className="h-3.5 w-3.5" />Add task</button></div>
+              ) : null}
             </div>
           ))}</div>
         ) : null}
         {tab === "list" ? <TaskList tasks={tasks ?? []} onSelect={setSelectedTask} /> : null}
-        {tab === "timeline" ? <Timeline tasks={tasks ?? []} /> : null}
+        {tab === "timeline" ? <Gantt project={project} tasks={tasks ?? []} onSelect={setSelectedTask} /> : null}
         {tab === "files" ? <ProjectFiles projectId={project.id} /> : null}
-        {tab === "discussions" ? <ProjectDiscussions projectId={project.id} /> : null}
-        {tab === "approvals" ? <ProjectApprovals projectId={project.id} tasks={tasks ?? []} /> : null}
+        {tab === "discussions" ? <ProjectDiscussions projectId={project.id} userMap={userMap} /> : null}
+        {tab === "approvals" ? <ProjectApprovals projectId={project.id} tasks={tasks ?? []} userMap={userMap} /> : null}
         {tab === "activity" ? <ProjectActivityView projectId={project.id} /> : null}
       </div>
-      <ProjectDialog mode="settings" project={project} open={projectDialog === "settings"} onOpenChange={(open) => setProjectDialog(open ? "settings" : null)} members={members ?? []} workspaces={workspaces ?? []} clients={clients ?? []} />
-      <TaskDialog task={selectedTask} members={members ?? []} open={Boolean(selectedTask)} onOpenChange={(open) => { if (!open) setSelectedTask(null); }} onSave={(body) => updateTask.mutate({ taskId: selectedTask!.id, projectId: project.id, body }, { onSuccess: () => setSelectedTask(null) })} />
+      <ProjectDialog mode="settings" project={project} open={projectDialog === "settings"} onOpenChange={(open) => setProjectDialog(open ? "settings" : null)} members={members ?? []} userMap={userMap} workspaces={workspaces ?? []} clients={clients ?? []} />
+      <TaskDialog task={selectedTask} members={members ?? []} userMap={userMap} open={Boolean(selectedTask)} onOpenChange={(open) => { if (!open) setSelectedTask(null); }} onSave={(body) => updateTask.mutate({ taskId: selectedTask!.id, projectId: project.id, body }, { onSuccess: () => setSelectedTask(null) })} />
+      <CreateTaskDialog projectId={project.id} members={members ?? []} userMap={userMap} open={createTaskOpen} onOpenChange={setCreateTaskOpen} />
     </>
   );
 }
 
-function TaskCard({ task, onClick, dragging, onDragStart, onDragEnd }: { task: Task; onClick: () => void; dragging?: boolean; onDragStart?: (event: React.DragEvent) => void; onDragEnd?: () => void }) {
+function TaskCard({ task, userMap, onClick, dragging, onDragStart, onDragEnd }: { task: Task; userMap: Map<string, UserDto>; onClick: () => void; dragging?: boolean; onDragStart?: (event: React.DragEvent) => void; onDragEnd?: () => void }) {
   return (
     <Card
       className={cn("cursor-pointer p-3 hover:border-primary/30", dragging && "opacity-40")}
@@ -180,7 +199,7 @@ function TaskCard({ task, onClick, dragging, onDragStart, onDragEnd }: { task: T
       onKeyDown={(event) => { if (event.key === "Enter") onClick(); }}
     >
       <div className="flex items-start justify-between gap-2"><p className="text-sm font-medium text-text">{task.title}</p><span className={cn("h-2 w-2 shrink-0 rounded-full", task.priority === "urgent" ? "bg-error" : task.priority === "high" ? "bg-warning" : "bg-primary")} /></div>
-      <div className="mt-2 flex items-center justify-between"><span className="text-xs text-text-muted">{task.assigneeId ? task.assigneeId.slice(0, 8) : "Unassigned"}</span>{task.dueDate ? <span className="text-xs text-text-muted">{new Date(task.dueDate).toLocaleDateString()}</span> : null}</div>
+      <div className="mt-2 flex items-center justify-between"><span className="text-xs text-text-muted">{task.assigneeId ? getDisplayName({ userId: task.assigneeId }, userMap.get(task.assigneeId)) : "Unassigned"}</span>{task.dueDate ? <span className="text-xs text-text-muted">{new Date(task.dueDate).toLocaleDateString()}</span> : null}</div>
     </Card>
   );
 }
@@ -189,7 +208,7 @@ function TaskList({ tasks, onSelect }: { tasks: Task[]; onSelect: (task: Task) =
   return <div className="flex-1 overflow-y-auto p-6"><div className="overflow-hidden rounded-lg border">{tasks.map((task) => <button key={task.id} type="button" onClick={() => onSelect(task)} className="grid w-full grid-cols-[1fr_140px_100px_120px] gap-3 border-b px-4 py-3 text-left text-sm last:border-0 hover:bg-surface-elevated"><span>{task.title}</span><span className="capitalize text-text-muted">{labels[task.status]}</span><span className="capitalize text-text-muted">{task.priority}</span><span className="text-text-muted">{task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "No due date"}</span></button>)}{!tasks.length ? <p className="p-8 text-center text-sm text-text-muted">No tasks yet.</p> : null}</div></div>;
 }
 
-function ProjectDialog({ mode, project, open, onOpenChange, members, workspaces, clients }: { mode: "create" | "settings"; project?: Project; open: boolean; onOpenChange: (open: boolean) => void; members: { userId: string; role: { name: string } }[]; workspaces: { id: string; name: string }[]; clients: { id: string; name: string }[] }) {
+function ProjectDialog({ mode, project, open, onOpenChange, members, userMap, workspaces, clients }: { mode: "create" | "settings"; project?: Project; open: boolean; onOpenChange: (open: boolean) => void; members: { userId: string; role: { name: string } }[]; userMap: Map<string, UserDto>; workspaces: { id: string; name: string }[]; clients: { id: string; name: string }[] }) {
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
   const deleteProject = useDeleteProject();
@@ -208,10 +227,10 @@ function ProjectDialog({ mode, project, open, onOpenChange, members, workspaces,
     else if (project) updateProject.mutate({ projectId: project.id, body: { ...body, clientId: clientId || null, status } }, { onSuccess: () => onOpenChange(false) });
   }
 
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-lg p-0"><DialogHeader><DialogTitle>{mode === "create" ? "Create project" : "Project settings"}</DialogTitle><DialogDescription>Configure project ownership, schedule, and access.</DialogDescription></DialogHeader><div className="space-y-3 px-4 pb-4"><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Project name" /><Input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" />{mode === "create" ? <select className={selectClass} value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}><option value="">No workspace</option>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select> : <select className={selectClass} value={status} onChange={(event) => setStatus(event.target.value)}><option value="active">Active</option><option value="on_hold">On hold</option><option value="completed">Completed</option><option value="archived">Archived</option></select>}<select className={selectClass} value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">No client</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select><div className="grid grid-cols-2 gap-2"><label className="text-xs text-text-muted">Start date<Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label className="text-xs text-text-muted">Target date<Input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} /></label></div><div className="max-h-36 overflow-y-auto rounded-md border p-2">{members.map((member) => <label key={member.userId} className="flex items-center gap-2 px-2 py-1 text-sm"><input type="checkbox" checked={memberIds.includes(member.userId)} disabled={member.userId === project?.ownerId} onChange={() => setMemberIds((ids) => ids.includes(member.userId) ? ids.filter((id) => id !== member.userId) : [...ids, member.userId])} /><span className="flex-1 truncate">{member.userId}</span>{isExternalMember(member.role.name) ? <Badge variant="warning">External</Badge> : <span className="text-xs text-text-muted">{member.role.name}</span>}</label>)}</div><div className="flex justify-between">{mode === "settings" ? <Button variant="ghost" className="text-error" onClick={() => project && deleteProject.mutate(project.id, { onSuccess: () => { onOpenChange(false); useUIStore.getState().setActiveView("home"); } })}>Delete project</Button> : <span />}<div className="flex gap-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={!name.trim() || createProject.isPending || updateProject.isPending} onClick={submit}>Save</Button></div></div></div></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-lg p-0 top-[55%]"><DialogHeader><DialogTitle>{mode === "create" ? "Create project" : "Project settings"}</DialogTitle><DialogDescription>Configure project ownership, schedule, and access.</DialogDescription></DialogHeader><div className="space-y-3 px-4 pb-4"><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Project name" /><Input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" />{mode === "create" ? <select className={selectClass} value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}><option value="">No workspace</option>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select> : <select className={selectClass} value={status} onChange={(event) => setStatus(event.target.value)}><option value="active">Active</option><option value="on_hold">On hold</option><option value="completed">Completed</option><option value="archived">Archived</option></select>}<select className={selectClass} value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">No client</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select><div className="grid grid-cols-2 gap-2"><label className="text-xs text-text-muted">Start date<Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label className="text-xs text-text-muted">Target date<Input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} /></label></div><div className="max-h-36 overflow-y-auto rounded-md border p-2">{members.map((member) => <label key={member.userId} className="flex items-center gap-2 px-2 py-1 text-sm"><input type="checkbox" checked={memberIds.includes(member.userId)} disabled={member.userId === project?.ownerId} onChange={() => setMemberIds((ids) => ids.includes(member.userId) ? ids.filter((id) => id !== member.userId) : [...ids, member.userId])} /><span className="flex-1 truncate">{getDisplayName(member, userMap.get(member.userId))}</span>{isExternalMember(member.role.name) ? <Badge variant="warning">External</Badge> : <span className="text-xs text-text-muted">{member.role.name}</span>}</label>)}</div><div className="flex justify-between">{mode === "settings" ? <Button variant="ghost" className="text-error" onClick={() => project && deleteProject.mutate(project.id, { onSuccess: () => { onOpenChange(false); useUIStore.getState().setActiveView("home"); } })}>Delete project</Button> : <span />}<div className="flex gap-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={!name.trim() || createProject.isPending || updateProject.isPending} onClick={submit}>Save</Button></div></div></div></DialogContent></Dialog>;
 }
 
-function TaskDialog({ task, members, open, onOpenChange, onSave }: { task: Task | null; members: { userId: string; role?: { name: string } }[]; open: boolean; onOpenChange: (open: boolean) => void; onSave: (body: Parameters<ReturnType<typeof useUpdateTask>["mutate"]>[0]["body"]) => void }) {
+function TaskDialog({ task, members, userMap, open, onOpenChange, onSave }: { task: Task | null; members: { userId: string; role?: { name: string } }[]; userMap: Map<string, UserDto>; open: boolean; onOpenChange: (open: boolean) => void; onSave: (body: Parameters<ReturnType<typeof useUpdateTask>["mutate"]>[0]["body"]) => void }) {
   const deleteTask = useDeleteTask();
   const createTask = useCreateTask();
   const [title, setTitle] = useState(task?.title ?? "");
@@ -219,9 +238,11 @@ function TaskDialog({ task, members, open, onOpenChange, onSave }: { task: Task 
   const [status, setStatus] = useState(task?.status ?? "todo");
   const [priority, setPriority] = useState(task?.priority ?? "medium");
   const [assigneeId, setAssigneeId] = useState(task?.assigneeId ?? "");
+  const [startDate, setStartDate] = useState(task?.startDate?.slice(0, 10) ?? "");
   const [dueDate, setDueDate] = useState(task?.dueDate?.slice(0, 10) ?? "");
   const [copied, setCopied] = useState(false);
   const { data: activity } = useProjectActivity(task?.projectId);
+  const actorMap = useActorMap(activity);
   const taskActivity = useMemo(
     () => (activity ?? []).filter((item) => item.resourceId === task?.id).slice(0, 8),
     [activity, task?.id],
@@ -232,6 +253,7 @@ function TaskDialog({ task, members, open, onOpenChange, onSave }: { task: Task 
     setStatus(task?.status ?? "todo");
     setPriority(task?.priority ?? "medium");
     setAssigneeId(task?.assigneeId ?? "");
+    setStartDate(task?.startDate?.slice(0, 10) ?? "");
     setDueDate(task?.dueDate?.slice(0, 10) ?? "");
     setCopied(false);
   }, [task]);
@@ -242,7 +264,7 @@ function TaskDialog({ task, members, open, onOpenChange, onSave }: { task: Task 
   function duplicate() {
     if (!task) return;
     createTask.mutate(
-      { projectId: task.projectId, title: `${title.trim() || task.title} (copy)`, description: description.trim() || undefined, assigneeId: assigneeId || undefined, priority, dueDate: dueDate || undefined, status },
+      { projectId: task.projectId, title: `${title.trim() || task.title} (copy)`, description: description.trim() || undefined, assigneeId: assigneeId || undefined, priority, startDate: startDate || undefined, dueDate: dueDate || undefined, status },
       { onSuccess: () => onOpenChange(false) },
     );
   }
@@ -270,6 +292,7 @@ function TaskDialog({ task, members, open, onOpenChange, onSave }: { task: Task 
             rows={4}
             className="w-full resize-y rounded-md border bg-surface px-3 py-2 text-sm text-text outline-none placeholder:text-text-muted focus-visible:ring-1 focus-visible:ring-primary"
           />
+          <TaskAttachments task={task} />
           <div className="grid grid-cols-2 gap-2">
             <label className="text-xs text-text-muted">Status
               <select className={cn(selectClass, "mt-1")} value={status} onChange={(event) => setStatus(event.target.value)}>{statuses.map((item) => <option key={item} value={item}>{labels[item]}</option>)}</select>
@@ -278,7 +301,10 @@ function TaskDialog({ task, members, open, onOpenChange, onSave }: { task: Task 
               <select className={cn(selectClass, "mt-1 capitalize")} value={priority} onChange={(event) => setPriority(event.target.value)}>{priorities.map((item) => <option key={item}>{item}</option>)}</select>
             </label>
             <label className="text-xs text-text-muted">Assignee
-              <select className={cn(selectClass, "mt-1")} value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}><option value="">Unassigned</option>{members.map((member) => <option key={member.userId} value={member.userId}>{member.userId}{member.role && isExternalMember(member.role.name) ? " (external)" : ""}</option>)}</select>
+              <select className={cn(selectClass, "mt-1")} value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}><option value="">Unassigned</option>{members.map((member) => <option key={member.userId} value={member.userId}>{getDisplayName(member, userMap.get(member.userId))}{member.role && isExternalMember(member.role.name) ? " (external)" : ""}</option>)}</select>
+            </label>
+            <label className="text-xs text-text-muted">Start date
+              <Input type="date" className="mt-1" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
             </label>
             <label className="text-xs text-text-muted">Due date
               <Input type="date" className="mt-1" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
@@ -292,12 +318,16 @@ function TaskDialog({ task, members, open, onOpenChange, onSave }: { task: Task 
             <div>
               <p className="mb-1 text-xs font-medium text-text-muted">Activity</p>
               <div className="space-y-1 rounded-md border p-2">
-                {taskActivity.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-2 text-xs">
-                    <span className="text-text-secondary">{item.action.replace(/[._]/g, " ")} by {item.actorId.slice(0, 8)}</span>
-                    <span className="text-text-muted">{new Date(item.createdAt).toLocaleString()}</span>
-                  </div>
-                ))}
+                {taskActivity.map((item) => {
+                  const actor = actorMap.get(item.actorId);
+                  const name = getActorLabel(actor, item.actorId);
+                  return (
+                    <div key={item.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-text-secondary">{item.action.replace(/[._]/g, " ")} by {name}</span>
+                      <span className="text-text-muted">{new Date(item.createdAt).toLocaleString()}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ) : null}
@@ -318,7 +348,7 @@ function TaskDialog({ task, members, open, onOpenChange, onSave }: { task: Task 
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button onClick={() => onSave({ title: title.trim(), description: description.trim() || null, status, priority, assigneeId: assigneeId || null, dueDate: dueDate || null })}>Save</Button>
+              <Button onClick={() => onSave({ title: title.trim(), description: description.trim() || null, status, priority, assigneeId: assigneeId || null, startDate: startDate || null, dueDate: dueDate || null })}>Save</Button>
             </div>
           </div>
         </div>
@@ -327,9 +357,394 @@ function TaskDialog({ task, members, open, onOpenChange, onSave }: { task: Task 
   );
 }
 
-function Timeline({ tasks }: { tasks: Task[] }) {
-  const dated = tasks.filter((task) => task.dueDate).sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime());
-  return <div className="flex-1 overflow-y-auto p-6"><div className="mx-auto max-w-3xl space-y-3">{dated.map((task) => <Card key={task.id} className="flex items-center gap-3"><Calendar className="h-5 w-5 text-primary" /><div className="flex-1"><p className="text-sm font-medium">{task.title}</p><p className="text-xs text-text-muted">{labels[task.status]} · {task.priority}</p></div><time className="text-sm text-text-secondary">{new Date(task.dueDate!).toLocaleDateString()}</time></Card>)}{!dated.length ? <p className="py-12 text-center text-sm text-text-muted">Add task due dates to build the timeline.</p> : null}</div></div>;
+function useAttachmentObjectUrl(file: FileRecord | undefined, kind: "image" | "video" | null) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!file || !kind) {
+      setUrl(null);
+      setLoading(false);
+      return;
+    }
+    let objectUrl: string | null = null;
+    let active = true;
+    setLoading(true);
+    (async () => {
+      try {
+        return kind === "image" ? await fetchFilePreview(file.id, "preview") : await downloadFile(file.id);
+      } catch {
+        return downloadFile(file.id);
+      }
+    })()
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      })
+      .catch(() => undefined)
+      .finally(() => { if (active) setLoading(false); });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [file, kind]);
+
+  return { url, loading };
+}
+
+function TaskAttachmentItem({ fileId, onRemove }: { fileId: string; onRemove: () => void }) {
+  const { data: file } = useFile(fileId);
+  const kind = file?.mimeType.startsWith("image/") ? "image" : file?.mimeType.startsWith("video/") ? "video" : null;
+  const { url, loading } = useAttachmentObjectUrl(file, kind);
+
+  const removeButton = (
+    <Button variant="secondary" size="icon" className="absolute right-1.5 top-1.5 h-6 w-6" onClick={onRemove} aria-label="Remove attachment">
+      <X className="h-3.5 w-3.5" />
+    </Button>
+  );
+
+  if (kind === "image" || kind === "video") {
+    return (
+      <div className="relative">
+        {loading ? (
+          <div className="h-32 animate-pulse rounded-md bg-surface-elevated" />
+        ) : url ? (
+          kind === "image" ? (
+            <img src={url} alt={file?.originalName ?? "attachment"} className="max-h-56 w-full rounded-md border object-contain" />
+          ) : (
+            <video src={url} controls className="max-h-56 w-full rounded-md border" />
+          )
+        ) : (
+          <MessageAttachment fileId={fileId} />
+        )}
+        {removeButton}
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <MessageAttachment fileId={fileId} />
+      {removeButton}
+    </div>
+  );
+}
+
+function TaskAttachments({ task }: { task: Task }) {
+  const { data: attachments } = useTaskAttachments(task.id);
+  const addAttachment = useAddTaskAttachment();
+  const removeAttachment = useRemoveTaskAttachment();
+  const upload = useUploadFile();
+  const { data: files } = useFiles();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const attachedIds = new Set((attachments ?? []).map((item) => item.fileId));
+  const available = (files ?? []).filter((file) => !attachedIds.has(file.id));
+
+  function attach(fileId: string) {
+    addAttachment.mutate({ taskId: task.id, projectId: task.projectId, fileId });
+  }
+
+  function uploadAndAttach(file?: File) {
+    if (!file) return;
+    upload.mutate(file, { onSuccess: (record) => attach(record.id) });
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-xs font-medium text-text-muted">Attachments</p>
+        <Button variant="ghost" size="sm" asChild>
+          <label className="cursor-pointer">
+            <Paperclip className="mr-1 h-3.5 w-3.5" />{upload.isPending ? "Uploading…" : "Browse files"}
+            <input type="file" accept="image/*,video/*,.pdf,.doc,.docx,.txt,.md,.zip" className="hidden" onChange={(event) => { uploadAndAttach(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+          </label>
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => setPickerOpen((open) => !open)}>
+          <Folder className="mr-1 h-3.5 w-3.5" />App files
+        </Button>
+      </div>
+      {pickerOpen ? (
+        <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
+          {available.map((file) => (
+            <button
+              key={file.id}
+              type="button"
+              disabled={addAttachment.isPending}
+              className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-surface-elevated disabled:opacity-50"
+              onClick={() => { attach(file.id); setPickerOpen(false); }}
+            >
+              <FileText className="h-3.5 w-3.5 shrink-0 text-text-muted" />
+              <span className="truncate text-text">{file.originalName}</span>
+              <span className="ml-auto shrink-0 text-text-muted">{Math.max(1, Math.round(file.size / 1024))} KB</span>
+            </button>
+          ))}
+          {!available.length ? <p className="px-2 py-3 text-center text-xs text-text-muted">No other files available.</p> : null}
+        </div>
+      ) : null}
+      {attachments?.length ? (
+        <div className="space-y-2">
+          {attachments.map((attachment) => (
+            <TaskAttachmentItem
+              key={attachment.id}
+              fileId={attachment.fileId}
+              onRemove={() => removeAttachment.mutate({ taskId: task.id, projectId: task.projectId, fileId: attachment.fileId })}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CreateTaskDialog({
+  open,
+  onOpenChange,
+  projectId,
+  members,
+  userMap,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+  members: { userId: string; role?: { name: string } }[];
+  userMap: Map<string, UserDto>;
+}) {
+  const createTask = useCreateTask();
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [status, setStatus] = useState("todo");
+  const [priority, setPriority] = useState("medium");
+  const [assigneeId, setAssigneeId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [dueDate, setDueDate] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setTitle("");
+    setDescription("");
+    setStatus("todo");
+    setPriority("medium");
+    setAssigneeId("");
+    setStartDate("");
+    setDueDate("");
+  }, [open]);
+
+  function submit() {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    createTask.mutate(
+      {
+        projectId,
+        title: trimmed,
+        description: description.trim() || undefined,
+        status,
+        priority,
+        assigneeId: assigneeId || undefined,
+        startDate: startDate || undefined,
+        dueDate: dueDate || undefined,
+      },
+      { onSuccess: () => onOpenChange(false) },
+    );
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md p-0">
+        <DialogHeader>
+          <DialogTitle>New task</DialogTitle>
+          <DialogDescription>Create a new task for this project.</DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[70vh] space-y-4 overflow-y-auto px-4 pb-4">
+          <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Task title" />
+          <textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="Add a description…"
+            rows={4}
+            className="w-full resize-y rounded-md border bg-surface px-3 py-2 text-sm text-text outline-none placeholder:text-text-muted focus-visible:ring-1 focus-visible:ring-primary"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-xs text-text-muted">Status
+              <select className={cn(selectClass, "mt-1")} value={status} onChange={(event) => setStatus(event.target.value)}>{statuses.map((item) => <option key={item} value={item}>{labels[item]}</option>)}</select>
+            </label>
+            <label className="text-xs text-text-muted">Priority
+              <select className={cn(selectClass, "mt-1 capitalize")} value={priority} onChange={(event) => setPriority(event.target.value)}>{priorities.map((item) => <option key={item}>{item}</option>)}</select>
+            </label>
+            <label className="text-xs text-text-muted">Assignee
+              <select className={cn(selectClass, "mt-1")} value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}><option value="">Unassigned</option>{members.map((member) => <option key={member.userId} value={member.userId}>{getDisplayName(member, userMap.get(member.userId))}{member.role && isExternalMember(member.role.name) ? " (external)" : ""}</option>)}</select>
+            </label>
+            <label className="text-xs text-text-muted">Start date
+              <Input type="date" className="mt-1" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+            </label>
+            <label className="text-xs text-text-muted">Due date
+              <Input type="date" className="mt-1" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
+            </label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button disabled={!title.trim() || createTask.isPending} onClick={submit}>Create task</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const statusColors: Record<string, string> = {
+  backlog: "var(--text-muted)",
+  todo: "var(--primary)",
+  in_progress: "var(--info)",
+  in_review: "var(--warning)",
+  blocked: "var(--error)",
+  done: "var(--success)",
+};
+
+function toLocalDay(value: string) {
+  if (!value) return new Date();
+  if (value.includes("T")) {
+    const d = new Date(value);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  const [y, m, day] = value.split("-").map(Number);
+  return new Date(y, m - 1, day);
+}
+
+function addDays(date: Date, n: number) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + n);
+}
+
+function dayDiff(a: Date, b: Date) {
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+function stringToHsl(value: string) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = value.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 70%, 50%)`;
+}
+
+function Gantt({ project, tasks, onSelect }: { project: Project; tasks: Task[]; onSelect?: (task: Task) => void }) {
+  const items = useMemo(() => {
+    const ranges = tasks.map((task) => {
+      const start = toLocalDay(task.startDate ?? task.createdAt);
+      const end = task.dueDate ? toLocalDay(task.dueDate) : addDays(start, 2);
+      return { task, start, end: end < start ? addDays(start, 1) : end };
+    });
+
+    let rangeStart: Date | null = project.startDate ? toLocalDay(project.startDate) : null;
+    let rangeEnd: Date | null = project.targetDate ? toLocalDay(project.targetDate) : null;
+    for (const { start, end } of ranges) {
+      if (!rangeStart || start < rangeStart) rangeStart = start;
+      if (!rangeEnd || end > rangeEnd) rangeEnd = end;
+    }
+    if (!rangeStart) rangeStart = new Date();
+    if (!rangeEnd) rangeEnd = addDays(rangeStart, 7);
+    if (rangeEnd < rangeStart) rangeEnd = addDays(rangeStart, 7);
+
+    const totalDays = Math.max(1, dayDiff(rangeStart, rangeEnd) + 1);
+    const sorted = [...ranges].sort((a, b) => a.start.getTime() - b.start.getTime());
+    return { rangeStart, rangeEnd, totalDays, rows: sorted };
+  }, [tasks, project.startDate, project.targetDate]);
+
+  const { rangeStart, totalDays, rows } = items;
+  const days = Array.from({ length: totalDays }, (_, i) => addDays(rangeStart, i));
+
+  const months: { label: string; start: number; end: number }[] = [];
+  let current: { label: string; start: number; end: number } | null = null;
+  for (let i = 0; i < days.length; i++) {
+    const label = days[i].toLocaleDateString(undefined, { month: "short", year: "numeric" });
+    if (!current || current.label !== label) {
+      if (current) months.push(current);
+      current = { label, start: i, end: i };
+    } else {
+      current.end = i;
+    }
+  }
+  if (current) months.push(current);
+
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="grid text-sm" style={{ gridTemplateColumns: `240px repeat(${totalDays}, 40px)` }}>
+        <div className="sticky left-0 top-0 z-30 border-b border-r bg-surface" style={{ gridRow: "1 / span 2" }} />
+        {months.map((month) => (
+          <div
+            key={`${month.label}-${month.start}`}
+            className="sticky top-0 z-20 flex h-7 items-end border-b border-r bg-surface px-1 pb-1 text-xs font-medium text-text-secondary"
+            style={{ gridColumn: `${2 + month.start} / ${2 + month.end + 1}` }}
+          >
+            {month.label}
+          </div>
+        ))}
+        {days.map((day, i) => {
+          const weekend = day.getDay() === 0 || day.getDay() === 6;
+          return (
+            <div
+              key={day.toISOString()}
+              className={cn(
+                "sticky top-7 z-20 h-7 border-b border-r text-center text-[10px] leading-7",
+                weekend ? "bg-surface-elevated/85 text-text" : "bg-surface text-text-muted",
+              )}
+              style={{ gridColumn: `${2 + i} / ${3 + i}` }}
+            >
+              {day.getDate()}
+            </div>
+          );
+        })}
+        {!rows.length ? (
+          <div className="col-span-full py-12 text-center text-sm text-text-muted" style={{ gridColumn: "1 / -1", gridRow: 3 }}>
+            Add task dates to build the Gantt chart.
+          </div>
+        ) : null}
+        {rows.map(({ task, start, end }, idx) => {
+          const startIdx = Math.max(0, Math.min(totalDays - 1, dayDiff(rangeStart, start)));
+          const endIdx = Math.max(startIdx, Math.min(totalDays - 1, dayDiff(rangeStart, end)));
+          const colStart = startIdx + 1;
+          const duration = endIdx - startIdx + 1;
+          return (
+            <div key={task.id} className="contents">
+              <button
+                type="button"
+                onClick={() => onSelect?.(task)}
+                className="sticky left-0 z-10 flex items-center border-b border-r bg-surface px-3 py-2 text-left text-xs text-text transition-colors hover:bg-surface-elevated"
+                style={{ gridRow: idx + 3 }}
+              >
+                {task.title}
+              </button>
+              <div
+                className="relative border-b"
+                style={{ gridColumn: "2 / -1", gridRow: idx + 3, display: "grid", gridTemplateColumns: "subgrid", alignItems: "center" }}
+              >
+                <button
+                  type="button"
+                  onClick={() => onSelect?.(task)}
+                  className="flex h-6 items-center overflow-hidden rounded px-2 text-xs font-medium text-white"
+                  style={{ gridColumn: `${colStart} / span ${duration}`, backgroundColor: stringToHsl(task.id), borderLeft: `3px solid ${statusColors[task.status] ?? "var(--primary)"}`, cursor: "pointer" }}
+                  title={`${task.title} · ${labels[task.status]} · ${task.priority}`}
+                >
+                  {task.title}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {rows.length > 0 &&
+          days.map((day, i) => {
+            if (day.getDay() !== 0 && day.getDay() !== 6) return null;
+            return (
+              <div
+                key={`weekend-${day.toISOString()}`}
+                className="pointer-events-none bg-surface-elevated/85"
+                style={{ gridColumn: `${2 + i} / ${3 + i}`, gridRow: `3 / span ${rows.length}` }}
+              />
+            );
+          })}
+      </div>
+    </div>
+  );
 }
 
 function ProjectFiles({ projectId }: { projectId: string }) {
@@ -341,7 +756,7 @@ function ProjectFiles({ projectId }: { projectId: string }) {
   return <div className="flex-1 overflow-y-auto p-6"><div className="mb-4 flex justify-end"><Button asChild><label className="cursor-pointer"><Plus className="mr-1 h-4 w-4" />Upload file<input type="file" className="hidden" onChange={(event) => { uploadFile(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label></Button></div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{attachments?.map((attachment) => <Card key={attachment.id}><MessageAttachment fileId={attachment.fileId} /><Button variant="ghost" size="sm" className="mt-2 text-error" onClick={() => remove.mutate({ projectId, fileId: attachment.fileId })}>Remove</Button></Card>)}{!attachments?.length ? <p className="col-span-full py-12 text-center text-sm text-text-muted">No project files.</p> : null}</div></div>;
 }
 
-function ProjectDiscussions({ projectId }: { projectId: string }) {
+function ProjectDiscussions({ projectId, userMap }: { projectId: string; userMap: Map<string, UserDto> }) {
   const { data: user } = useMe();
   const { data: comments, hasNextPage, fetchNextPage } = useProjectComments(projectId);
   const create = useCreateProjectComment();
@@ -349,21 +764,79 @@ function ProjectDiscussions({ projectId }: { projectId: string }) {
   const remove = useDeleteProjectComment();
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState<ProjectComment | null>(null);
-  return <div className="flex flex-1 flex-col overflow-hidden"><div className="flex-1 space-y-3 overflow-y-auto p-6">{hasNextPage ? <div className="text-center"><Button variant="ghost" onClick={() => void fetchNextPage()}>Load older</Button></div> : null}{comments?.map((comment) => <Card key={comment.id}><div className="flex justify-between"><span className="text-xs font-medium">{comment.authorId}</span><span className="text-xs text-text-muted">{new Date(comment.createdAt).toLocaleString()}</span></div>{editing?.id === comment.id ? <div className="mt-2 flex gap-2"><Input value={editing.content} onChange={(event) => setEditing({ ...editing, content: event.target.value })} /><Button onClick={() => update.mutate({ projectId, commentId: comment.id, content: editing.content }, { onSuccess: () => setEditing(null) })}>Save</Button></div> : <p className="mt-2 text-sm">{comment.deletedAt ? <em>Comment deleted</em> : comment.content}</p>}{!comment.deletedAt && comment.authorId === user?.id ? <div className="mt-2 flex gap-1"><Button size="sm" variant="ghost" onClick={() => setEditing(comment)}>Edit</Button><Button size="sm" variant="ghost" className="text-error" onClick={() => remove.mutate({ projectId, commentId: comment.id })}>Delete</Button></div> : null}</Card>)}{!comments?.length ? <p className="py-12 text-center text-sm text-text-muted">No discussions yet.</p> : null}</div><div className="flex gap-2 border-t p-3"><Input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Write a comment" onKeyDown={(event) => { if (event.key === "Enter" && draft.trim()) create.mutate({ projectId, content: draft.trim() }, { onSuccess: () => setDraft("") }); }} /><Button size="icon" disabled={!draft.trim()} onClick={() => create.mutate({ projectId, content: draft.trim() }, { onSuccess: () => setDraft("") })}><Send className="h-4 w-4" /></Button></div></div>;
+  return <div className="flex flex-1 flex-col overflow-hidden"><div className="flex-1 space-y-3 overflow-y-auto p-6">{hasNextPage ? <div className="text-center"><Button variant="ghost" onClick={() => void fetchNextPage()}>Load older</Button></div> : null}{comments?.map((comment) => <Card key={comment.id}><div className="flex justify-between"><span className="text-xs font-medium">{getDisplayName({ userId: comment.authorId }, userMap.get(comment.authorId))}</span><span className="text-xs text-text-muted">{new Date(comment.createdAt).toLocaleString()}</span></div>{editing?.id === comment.id ? <div className="mt-2 flex gap-2"><Input value={editing.content} onChange={(event) => setEditing({ ...editing, content: event.target.value })} /><Button onClick={() => update.mutate({ projectId, commentId: comment.id, content: editing.content }, { onSuccess: () => setEditing(null) })}>Save</Button></div> : <p className="mt-2 text-sm">{comment.deletedAt ? <em>Comment deleted</em> : comment.content}</p>}{!comment.deletedAt && comment.authorId === user?.id ? <div className="mt-2 flex gap-1"><Button size="sm" variant="ghost" onClick={() => setEditing(comment)}>Edit</Button><Button size="sm" variant="ghost" className="text-error" onClick={() => remove.mutate({ projectId, commentId: comment.id })}>Delete</Button></div> : null}</Card>)}{!comments?.length ? <p className="py-12 text-center text-sm text-text-muted">No discussions yet.</p> : null}</div><div className="flex gap-2 border-t p-3"><Input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Write a comment" onKeyDown={(event) => { if (event.key === "Enter" && draft.trim()) create.mutate({ projectId, content: draft.trim() }, { onSuccess: () => setDraft("") }); }} /><Button size="icon" disabled={!draft.trim()} onClick={() => create.mutate({ projectId, content: draft.trim() }, { onSuccess: () => setDraft("") })}><Send className="h-4 w-4" /></Button></div></div>;
 }
 
-function ProjectApprovals({ projectId, tasks }: { projectId: string; tasks: Task[] }) {
+function ProjectApprovals({ projectId, tasks, userMap }: { projectId: string; tasks: Task[]; userMap: Map<string, UserDto> }) {
   const { data: approvals } = useApprovals(projectId);
   const create = useCreateApproval();
   const resolve = useResolveApproval();
   const [taskId, setTaskId] = useState("");
   const [message, setMessage] = useState("");
-  return <div className="flex-1 overflow-y-auto p-6"><div className="mb-4 flex gap-2"><select className={selectClass} value={taskId} onChange={(event) => setTaskId(event.target.value)}><option value="">Select a task</option>{tasks.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}</select><Input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Approval note" /><Button disabled={!taskId || create.isPending} onClick={() => create.mutate({ projectId, resourceType: "task", resourceId: taskId, message: message || undefined }, { onSuccess: () => { setTaskId(""); setMessage(""); } })}>Request</Button></div><div className="space-y-2">{approvals?.map((approval) => <Card key={approval.id}><div className="flex items-start justify-between"><div><p className="text-sm font-medium">{approval.resourceType} · {approval.resourceId}</p><p className="text-xs text-text-muted">Requested by {approval.requestedBy}</p>{approval.message ? <p className="mt-2 text-sm">{approval.message}</p> : null}</div><span className="text-xs capitalize text-text-muted">{approval.status}</span></div>{approval.status === "pending" ? <div className="mt-3 flex gap-2"><Button size="sm" onClick={() => resolve.mutate({ projectId, approvalId: approval.id, status: "approved" })}>Approve</Button><Button size="sm" variant="ghost" className="text-error" onClick={() => resolve.mutate({ projectId, approvalId: approval.id, status: "rejected" })}>Reject</Button></div> : null}</Card>)}{!approvals?.length ? <p className="py-12 text-center text-sm text-text-muted">No approval requests.</p> : null}</div></div>;
+  return <div className="flex-1 overflow-y-auto p-6"><div className="mb-4 flex gap-2"><select className={selectClass} value={taskId} onChange={(event) => setTaskId(event.target.value)}><option value="">Select a task</option>{tasks.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}</select><Input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Approval note" /><Button disabled={!taskId || create.isPending} onClick={() => create.mutate({ projectId, resourceType: "task", resourceId: taskId, message: message || undefined }, { onSuccess: () => { setTaskId(""); setMessage(""); } })}>Request</Button></div><div className="space-y-2">{approvals?.map((approval) => <Card key={approval.id}><div className="flex items-start justify-between"><div><p className="text-sm font-medium">{approval.resourceType} · {approval.resourceId}</p><p className="text-xs text-text-muted">Requested by {getDisplayName({ userId: approval.requestedBy }, userMap.get(approval.requestedBy))}</p>{approval.message ? <p className="mt-2 text-sm">{approval.message}</p> : null}</div><span className="text-xs capitalize text-text-muted">{approval.status}</span></div>{approval.status === "pending" ? <div className="mt-3 flex gap-2"><Button size="sm" onClick={() => resolve.mutate({ projectId, approvalId: approval.id, status: "approved" })}>Approve</Button><Button size="sm" variant="ghost" className="text-error" onClick={() => resolve.mutate({ projectId, approvalId: approval.id, status: "rejected" })}>Reject</Button></div> : null}</Card>)}{!approvals?.length ? <p className="py-12 text-center text-sm text-text-muted">No approval requests.</p> : null}</div></div>;
+}
+
+function useActorMap(activity: ProjectActivity[] | undefined) {
+  const actorIds = useMemo(() => [...new Set(activity?.map((item) => item.actorId) ?? [])], [activity]);
+  const { data: users } = useUsers(actorIds);
+  return useMemo(() => {
+    const map = new Map<string, UserDto>();
+    for (const user of users ?? []) map.set(user.id, user);
+    return map;
+  }, [users]);
+}
+
+function getActorLabel(actor: UserDto | undefined, fallbackId: string) {
+  if (!actor) return fallbackId.slice(0, 8);
+  return `${actor.firstName ?? ""} ${actor.lastName ?? ""}`.trim() || actor.email;
+}
+
+function getActorInitials(actor: UserDto | undefined, fallbackId: string) {
+  if (!actor) return fallbackId.slice(0, 2).toUpperCase();
+  const label = getActorLabel(actor, fallbackId);
+  return label.split(/\s+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+}
+
+function getDisplayName(member: { userId: string }, user: UserDto | undefined) {
+  if (user) {
+    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+    if (fullName) return fullName;
+    return user.email;
+  }
+  return member.userId;
+}
+
+function getInitials(member: { userId: string }, user: UserDto | undefined) {
+  if (!user) return member.userId.slice(0, 2).toUpperCase();
+  const label = getDisplayName(member, user);
+  return label.split(/\s+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
 }
 
 function ProjectActivityView({ projectId }: { projectId: string }) {
   const { data: activity, hasNextPage, fetchNextPage } = useProjectActivity(projectId);
-  return <div className="flex-1 overflow-y-auto p-6"><div className="mx-auto max-w-3xl space-y-2">{activity?.map((item) => <div key={item.id} className="flex gap-3 rounded-md border p-3"><Avatar className="h-8 w-8"><AvatarFallback>{item.actorId.slice(0, 2).toUpperCase()}</AvatarFallback></Avatar><div className="flex-1"><p className="text-sm"><span className="font-medium">{item.actorId}</span> {item.action.split(".").join(" ")}</p><time className="text-xs text-text-muted">{new Date(item.createdAt).toLocaleString()}</time></div></div>)}{hasNextPage ? <div className="text-center"><Button variant="ghost" onClick={() => void fetchNextPage()}>Load more</Button></div> : null}{!activity?.length ? <p className="py-12 text-center text-sm text-text-muted">No activity yet.</p> : null}</div></div>;
+  const actorMap = useActorMap(activity);
+  return (
+    <div className="flex-1 overflow-y-auto p-6">
+      <div className="mx-auto max-w-3xl space-y-2">
+        {activity?.map((item) => {
+          const actor = actorMap.get(item.actorId);
+          const name = getActorLabel(actor, item.actorId);
+          const initials = getActorInitials(actor, item.actorId);
+          return (
+            <div key={item.id} className="flex gap-3 rounded-md border p-3">
+              <Avatar className="h-8 w-8"><AvatarFallback>{initials}</AvatarFallback></Avatar>
+              <div className="flex-1">
+                <p className="text-sm"><span className="font-medium">{name}</span> {item.action.split(".").join(" ")}</p>
+                <time className="text-xs text-text-muted">{new Date(item.createdAt).toLocaleString()}</time>
+              </div>
+            </div>
+          );
+        })}
+        {hasNextPage ? <div className="text-center"><Button variant="ghost" onClick={() => void fetchNextPage()}>Load more</Button></div> : null}
+        {!activity?.length ? <p className="py-12 text-center text-sm text-text-muted">No activity yet.</p> : null}
+      </div>
+    </div>
+  );
 }
 
 function ProjectOverview({ tasks, project }: { tasks?: Task[]; project: Project }) {
