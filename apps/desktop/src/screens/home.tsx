@@ -52,6 +52,34 @@ function formatTime(iso: string) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function normalizeDigest(result: unknown): DailyDigestResult {
+  if (!result || typeof result !== "object") {
+    return { sections: [{ title: "Daily brief", items: ["Failed to load daily brief."] }], model: "none" };
+  }
+  const typed = result as Partial<DailyDigestResult> & { sections?: unknown };
+  const rawSections = Array.isArray(typed.sections) ? typed.sections : [];
+  const sections: { title: string; items: string[] }[] = [];
+  for (const raw of rawSections) {
+    if (!raw || typeof raw !== "object") continue;
+    const s = raw as { title?: unknown; items?: unknown };
+    const title = typeof s.title === "string" && s.title.trim() ? s.title.trim() : "Brief";
+    let items: string[] = [];
+    if (Array.isArray(s.items)) {
+      items = s.items.filter((i: unknown): i is string => typeof i === "string").map((i) => i.trim());
+    } else if (typeof s.items === "string") {
+      items = [s.items.trim()];
+    }
+    if (title !== "Brief" || items.length > 0) {
+      sections.push({ title, items });
+    }
+  }
+  return {
+    sections: sections.length > 0 ? sections : [{ title: "Daily brief", items: ["No activity to summarize."] }],
+    model: typeof typed.model === "string" ? typed.model : "none",
+    raw: typeof typed.raw === "string" ? typed.raw : undefined,
+  };
+}
+
 function formatRelative(iso: string) {
   const d = new Date(iso);
   const now = new Date();
@@ -107,10 +135,10 @@ export function HomeScreen() {
     if (digest || dailyDigest.isPending || digestError.current) return;
     dailyDigest
       .mutateAsync({ hours: 24 })
-      .then((result) => setDigest(result))
+      .then((result) => setDigest(normalizeDigest(result)))
       .catch((err) => {
         digestError.current = err instanceof Error ? err.message : "Unknown error";
-        setDigest({ sections: [{ title: "Daily brief", items: ["Failed to load daily brief."] }], model: "none" });
+        setDigest(normalizeDigest(null));
       });
   }, [digest, dailyDigest]);
 
@@ -347,10 +375,10 @@ export function HomeScreen() {
                     digestError.current = null;
                     setDigest(null);
                     const result = await dailyDigest.mutateAsync({ hours: 24 });
-                    setDigest(result);
+                    setDigest(normalizeDigest(result));
                   } catch (err) {
                     digestError.current = err instanceof Error ? err.message : "Unknown error";
-                    setDigest({ sections: [{ title: "Daily brief", items: ["Failed to load daily brief."] }], model: "none" });
+                    setDigest(normalizeDigest(null));
                   }
                 }}
               >
