@@ -48,6 +48,7 @@ interface NativeConferenceProps {
   participants?: { id: string; displayName: string; userId?: string }[];
   screenShareEnabled?: boolean;
   isRecording?: boolean;
+  isHost?: boolean;
   onLeave: () => void;
   onEnd?: () => void;
   onToggleAudio?: () => void;
@@ -69,6 +70,7 @@ export function NativeConference({
   participants = [],
   screenShareEnabled = false,
   isRecording: initialRecording = false,
+  isHost = false,
   onLeave,
   onEnd,
   onToggleAudio,
@@ -84,6 +86,7 @@ export function NativeConference({
   const [isRecording, setIsRecording] = useState(initialRecording);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [screenSharingUsers, setScreenSharingUsers] = useState<Set<string>>(new Set());
+  const processedReactionIds = useRef<Set<string>>(new Set());
 
   const displayName = user
     ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
@@ -107,11 +110,22 @@ export function NativeConference({
   }
 
   function showReaction(emoji: string, userId: string, id: string) {
+    if (processedReactionIds.current.has(id)) return;
+    processedReactionIds.current.add(id);
     const name = resolveName(userId);
     setReactions((prev) => [...prev, { id, emoji, name }]);
     window.setTimeout(() => {
       setReactions((prev) => prev.filter((r) => r.id !== id));
+      processedReactionIds.current.delete(id);
     }, 2500);
+  }
+
+  function addMessageFromEvent(payload: Omit<MeetingMessage, "updatedAt">) {
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === payload.id)) return prev;
+      const full: MeetingMessage = { ...payload, updatedAt: payload.createdAt };
+      return [...prev, full];
+    });
   }
 
   useEffect(() => {
@@ -135,12 +149,10 @@ export function NativeConference({
 
   useEffect(() => {
     const unsubChat = realtime.onRealtimeEvent("meeting.chat.created", (msg) => {
-      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+      addMessageFromEvent(msg);
     });
     const unsubReaction = realtime.onRealtimeEvent("meeting.reaction.created", (r) => {
-      if (!reactions.some((x) => x.id === r.id)) {
-        showReaction(r.emoji, r.userId, r.id);
-      }
+      showReaction(r.emoji, r.userId, r.id);
     });
     const unsubRaise = realtime.onRealtimeEvent("meeting.raise_hand.changed", (payload) => {
       setRaisedHands((prev) => {
@@ -168,7 +180,7 @@ export function NativeConference({
       unsubRecording();
       unsubScreen();
     };
-  }, [realtime, meetingId, participants, user?.id, reactions]);
+  }, [realtime, meetingId, participants, user?.id]);
 
   async function sendMessage() {
     const content = chatInput.trim();
@@ -208,7 +220,7 @@ export function NativeConference({
   }
 
   async function toggleRecording() {
-    if (!streamToRecord) return;
+    if (!streamToRecord || !isHost) return;
     if (isRecording) {
       mediaRecorder?.stop();
       try {
@@ -419,7 +431,7 @@ export function NativeConference({
             onIcon={<CircleDot className="h-5 w-5" />}
             offIcon={<CircleDot className="h-5 w-5" />}
             variant="danger"
-            disabled={!streamToRecord}
+            disabled={!streamToRecord || !isHost}
             title={isRecording ? "Stop recording" : "Record"}
           />
           <DropdownMenu>

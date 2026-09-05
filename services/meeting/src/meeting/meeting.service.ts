@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { type OrganisationContextValue } from '@teamspace-one/organisation-context';
@@ -17,6 +17,7 @@ function generateRoomName(organisationId: string, title: string): string {
 
 @Injectable()
 export class MeetingService {
+  private readonly logger = new Logger(MeetingService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
@@ -549,11 +550,15 @@ export class MeetingService {
     const eventType = recording ? Subjects.MEETING_RECORDING_STARTED : Subjects.MEETING_RECORDING_STOPPED;
 
     let egressId: string | undefined | null = meeting.recordingEgressId;
-    if (recording && !egressId) {
-      egressId = await this.livekit.startRecording(meeting.roomName);
-    } else if (!recording && egressId) {
-      await this.livekit.stopRecording(egressId);
-      egressId = null;
+    try {
+      if (recording && !egressId) {
+        egressId = await this.livekit.startRecording(meeting.roomName);
+      } else if (!recording && egressId) {
+        await this.livekit.stopRecording(egressId);
+        egressId = null;
+      }
+    } catch (err) {
+      this.logger.warn({ err, meetingId }, 'LiveKit recording failed; continuing with local recording state');
     }
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {

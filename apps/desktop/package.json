@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build && node scripts/rename-release.mjs"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.3",

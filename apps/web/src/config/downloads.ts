@@ -11,7 +11,7 @@
  */
 export const downloadLinks = {
   windows: "/downloads/Teamspace-One-Setup.exe",
-  macos: "/downloads/Teamspace-One-0.1.0-macOS.dmg",
+  macos: "/downloads/Teamspace%20One.dmg",
 } as const;
 
 export const platformMeta = {

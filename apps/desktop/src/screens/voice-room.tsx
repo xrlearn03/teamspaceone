@@ -6,7 +6,7 @@ import { MeetingLobby } from "../components/livekit/lobby";
 import { NativeConference } from "../components/native-conference";
 import { Button } from "../components/ui/button";
 import { useRealtime } from "../hooks/useRealtime";
-import { endMeeting, getMeeting, leaveMeeting, setScreenShare, type Meeting } from "../lib/api";
+import { endMeeting, getMeeting, joinMeeting, leaveMeeting, setScreenShare, type Meeting } from "../lib/api";
 import { useMe } from "../hooks/api";
 import type { MediaJoinOptions } from "./meeting";
 import { useSfu } from "../hooks/useSfu";
@@ -86,6 +86,14 @@ export function VoiceRoomScreen() {
 
     setMediaOptions(opts);
     setError(null);
+
+    try {
+      await joinMeeting(activeMeetingId, displayName);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to join meeting");
+      setMediaOptions(null);
+      return;
+    }
 
     try {
       await sfu.join(activeMeetingId, displayName, opts, user?.id);
@@ -181,6 +189,7 @@ export function VoiceRoomScreen() {
       localAudioEnabled={sfu.localAudioEnabled}
       screenShareEnabled={sfu.screenShareEnabled}
       isRecording={meeting.isRecording}
+      isHost={meeting.createdBy === user?.id}
       remoteStreams={sfu.remoteStreams}
       participants={sfu.participants}
       onLeave={handleLeave}

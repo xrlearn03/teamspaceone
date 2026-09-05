@@ -11,6 +11,7 @@ import { useNativeMicrophone } from "../hooks/useNativeMicrophone";
 import {
   endMeeting,
   getMeeting,
+  joinMeeting,
   leaveMeeting,
   startMeeting,
   type Meeting,
@@ -118,6 +119,17 @@ export function MeetingScreen() {
 
   async function handleJoin(opts: MediaJoinOptions) {
     if (!activeMeetingId) return;
+
+    const displayName = user
+      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
+      : "Guest";
+
+    try {
+      await joinMeeting(activeMeetingId, displayName);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to join meeting");
+      return;
+    }
 
     // Resume the AudioContext from the user gesture and combine native audio
     // (ScriptProcessorNode) with native canvas-captured video.
@@ -234,10 +246,16 @@ export function MeetingScreen() {
       title={meeting.title}
       meetingId={meeting.id}
       nativeFrame={nativeFrame}
-      recordingStream={mediaOptions.stream}
+      recordingStream={
+        new MediaStream([
+          ...(nativeAudioStream?.getAudioTracks() ?? []),
+          ...(nativeVideoStream?.getVideoTracks() ?? []),
+        ])
+      }
       localVideoEnabled={mediaOptions.videoEnabled}
       localAudioEnabled={mediaOptions.audioEnabled}
       isRecording={meeting.isRecording}
+      isHost={meeting.createdBy === user?.id}
       onLeave={handleLeave}
       onEnd={meeting.createdBy === user?.id ? handleEnd : undefined}
       onToggleAudio={handleToggleAudio}
