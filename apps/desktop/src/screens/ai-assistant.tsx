@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { AlertCircle, Sparkles, Send, ThumbsUp, RotateCcw, Save, CheckSquare, Copy, Check, BookOpen } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -70,7 +70,10 @@ export function AIAssistantScreen() {
   const confirmAIAction = useConfirmAIAction();
   const declineAIAction = useDeclineAIAction();
   const { organisationId, pendingActionFilter, setPendingActionFilter } = useUIStore((s) => ({ organisationId: s.organisationId, pendingActionFilter: s.pendingActionFilter, setPendingActionFilter: s.setPendingActionFilter }));
-  const filteredPendingActions = pendingActions?.filter((a) => !pendingActionFilter || a.actionType === pendingActionFilter) ?? [];
+  const filteredPendingActions = useMemo(
+    () => pendingActions?.filter((a) => !pendingActionFilter || a.actionType === pendingActionFilter) ?? [],
+    [pendingActions, pendingActionFilter],
+  );
   const organisation = organisations?.find((o) => o.id === organisationId);
 
   useEffect(() => {

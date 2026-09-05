@@ -232,9 +232,12 @@ export function MeetingScreen() {
     <NativeConference
       user={user}
       title={meeting.title}
+      meetingId={meeting.id}
       nativeFrame={nativeFrame}
+      recordingStream={mediaOptions.stream}
       localVideoEnabled={mediaOptions.videoEnabled}
       localAudioEnabled={mediaOptions.audioEnabled}
+      isRecording={meeting.isRecording}
       onLeave={handleLeave}
       onEnd={meeting.createdBy === user?.id ? handleEnd : undefined}
       onToggleAudio={handleToggleAudio}

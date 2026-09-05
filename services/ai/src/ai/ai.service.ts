@@ -531,7 +531,7 @@ export class AiService {
     ctx: OrganisationContextValue,
     workspaceId?: string,
     hours = 24,
-  ): Promise<{ result: string; model: string }> {
+  ): Promise<{ sections: { title: string; items: string[] }[]; model: string; raw: string }> {
     const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
     const rows = await this.prisma.$queryRaw<
       Array<{ resourceType: string; resourceId: string; title: string | null; text: string; updatedAt: Date }>
@@ -549,8 +549,69 @@ export class AiService {
       .map((row) => `[${row.resourceType}:${row.resourceId}] ${row.title ? row.title + '\n' : ''}${row.text}`)
       .join('\n\n');
 
-    const prompt = `Summarize the following workspace activity from the last ${hours} hours into a concise daily digest. Highlight key updates, decisions, and blockers.`;
-    return this.summarize(prompt, context.slice(0, 12000));
+    const prompt = `Summarize the following workspace activity from the last ${hours} hours into a concise daily digest. Return a JSON object with a "sections" array. Each section has "title" and "items". Include sections: summary, updates, decisions, blockers, actionItems, note. Items should be short bullet strings.`;
+    const { result, model } = await this.summarize(prompt, context.slice(0, 12000));
+
+    const sections = this.parseDigestSections(result);
+    if (sections.length === 0) {
+      sections.push({ title: 'Daily brief', items: [result || 'No activity to summarize.'] });
+    }
+    return { sections, model, raw: result };
+  }
+
+  private parseDigestSections(text: string): { title: string; items: string[] }[] {
+    try {
+      const parsed = JSON.parse(text) as { sections?: unknown };
+      if (Array.isArray(parsed.sections)) {
+        return parsed.sections
+          .map((s: unknown) => {
+            const section = (s ?? {}) as { title?: unknown; items?: unknown };
+            const title = typeof section.title === 'string' ? section.title : '';
+            const rawItems = Array.isArray(section.items) ? section.items : [section.items];
+            const items = rawItems
+              .filter((i: unknown): i is string => typeof i === 'string' && i.trim().length > 0)
+              .map((i) => i.trim());
+            return { title, items };
+          })
+          .filter((s) => s.title && s.items.length > 0);
+      }
+    } catch {
+      // fall through to markdown parser
+    }
+
+    const sections: { title: string; items: string[] }[] = [];
+    const headerRegex = /\*\*([^\*]+?)(?::\*\*|\*\*)/g;
+    let match: RegExpExecArray | null;
+    let lastIndex = 0;
+    let lastTitle = '';
+
+    while ((match = headerRegex.exec(text)) !== null) {
+      if (lastTitle) {
+        const content = text.slice(lastIndex, match.index).trim().replace(/^[-:]\s*/, '');
+        if (content) {
+          const items = content
+            .split(/(?:^|\s)-\s/)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          sections.push({ title: lastTitle, items: items.length > 0 ? items : [content] });
+        }
+      }
+      lastTitle = match[1].trim();
+      lastIndex = headerRegex.lastIndex;
+    }
+
+    if (lastTitle) {
+      const content = text.slice(lastIndex).trim().replace(/^[-:]\s*/, '');
+      if (content) {
+        const items = content
+          .split(/(?:^|\s)-\s/)
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        sections.push({ title: lastTitle, items: items.length > 0 ? items : [content] });
+      }
+    }
+
+    return sections;
   }
 
   async extractTasks(

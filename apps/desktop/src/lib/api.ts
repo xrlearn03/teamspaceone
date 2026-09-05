@@ -978,8 +978,14 @@ export function askAI(question: string, workspaceId?: string, resourceTypes?: st
   );
 }
 
+export interface DailyDigestResult {
+  sections: { title: string; items: string[] }[];
+  model: string;
+  raw?: string;
+}
+
 export function dailyDigest(workspaceId?: string, hours?: number) {
-  return apiRequest<{ result: string; model: string }>("/ai/daily-digest", {
+  return apiRequest<DailyDigestResult>("/ai/daily-digest", {
     method: "POST",
     body: { workspaceId, hours },
   });

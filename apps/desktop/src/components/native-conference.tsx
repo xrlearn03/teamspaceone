@@ -15,20 +15,39 @@ import {
   VideoOff,
 } from "lucide-react";
 import { Button } from "./ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 import { cn } from "../lib/utils";
-import type { UserDto } from "../lib/api";
+import { useRealtime } from "../hooks/useRealtime";
+import {
+  createMeetingMessage,
+  createMeetingReaction,
+  getMeetingMessages,
+  getMeetingRaiseHands,
+  setMeetingRecording,
+  updateMeetingRaiseHand,
+  type MeetingMessage,
+  type UserDto,
+} from "../lib/api";
 
 interface NativeConferenceProps {
   user?: UserDto | null;
   title?: string;
   connected?: boolean;
+  meetingId: string;
   localStream?: MediaStream | null;
+  recordingStream?: MediaStream | null;
   nativeFrame?: string | null;
   localVideoEnabled?: boolean;
   localAudioEnabled?: boolean;
   remoteStreams?: { participantId: string; stream: MediaStream }[];
-  participants?: { id: string; displayName: string }[];
+  participants?: { id: string; displayName: string; userId?: string }[];
   screenShareEnabled?: boolean;
+  isRecording?: boolean;
   onLeave: () => void;
   onEnd?: () => void;
   onToggleAudio?: () => void;
@@ -40,50 +59,170 @@ export function NativeConference({
   user,
   title = "Meeting",
   connected = true,
+  meetingId,
   localStream,
+  recordingStream,
   nativeFrame,
   localVideoEnabled = false,
   localAudioEnabled = false,
   remoteStreams = [],
   participants = [],
   screenShareEnabled = false,
+  isRecording: initialRecording = false,
   onLeave,
   onEnd,
   onToggleAudio,
   onToggleVideo,
   onToggleScreenShare,
 }: NativeConferenceProps) {
+  const realtime = useRealtime();
   const [activePanel, setActivePanel] = useState<"chat" | "participants" | null>(null);
-  const [raisedHand, setRaisedHand] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
+  const [messages, setMessages] = useState<MeetingMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [reactions, setReactions] = useState<{ id: string; emoji: string; name: string }[]>([]);
+  const [isRecording, setIsRecording] = useState(initialRecording);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [reaction, setReaction] = useState<string | null>(null);
+  const [screenSharingUsers, setScreenSharingUsers] = useState<Set<string>>(new Set());
 
   const displayName = user
     ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
     : "Guest";
 
   const participantCount = connected ? 1 + remoteStreams.length : 0;
+  const streamToRecord = recordingStream || localStream;
+
+  function resolveName(userId: string) {
+    if (user?.id === userId) return displayName;
+    const p = participants.find((p) => p.userId === userId);
+    return p?.displayName || "User";
+  }
 
   function remoteDisplayName(id: string) {
     return participants.find((p) => p.id === id)?.displayName ?? id;
   }
 
-  function showReaction(emoji: string) {
-    setReaction(emoji);
-    window.setTimeout(() => setReaction(null), 2000);
+  function remoteUserId(id: string) {
+    return participants.find((p) => p.id === id)?.userId;
   }
 
-  function handleRecord() {
+  function showReaction(emoji: string, userId: string, id: string) {
+    const name = resolveName(userId);
+    setReactions((prev) => [...prev, { id, emoji, name }]);
+    window.setTimeout(() => {
+      setReactions((prev) => prev.filter((r) => r.id !== id));
+    }, 2500);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    getMeetingMessages(meetingId)
+      .then((res) => {
+        if (!cancelled) setMessages(res.items);
+      })
+      .catch((err) => console.error("Failed to load meeting messages", err));
+    getMeetingRaiseHands(meetingId)
+      .then((res) => {
+        if (!cancelled) {
+          setRaisedHands(new Set(res.filter((h) => h.raised).map((h) => h.userId)));
+        }
+      })
+      .catch((err) => console.error("Failed to load raise hands", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [meetingId]);
+
+  useEffect(() => {
+    const unsubChat = realtime.onRealtimeEvent("meeting.chat.created", (msg) => {
+      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+    });
+    const unsubReaction = realtime.onRealtimeEvent("meeting.reaction.created", (r) => {
+      if (!reactions.some((x) => x.id === r.id)) {
+        showReaction(r.emoji, r.userId, r.id);
+      }
+    });
+    const unsubRaise = realtime.onRealtimeEvent("meeting.raise_hand.changed", (payload) => {
+      setRaisedHands((prev) => {
+        const next = new Set(prev);
+        if (payload.raised) next.add(payload.userId);
+        else next.delete(payload.userId);
+        return next;
+      });
+    });
+    const unsubRecording = realtime.onRealtimeEvent("meeting.recording.changed", (payload) => {
+      setIsRecording(payload.isRecording);
+    });
+    const unsubScreen = realtime.onRealtimeEvent("meeting.screen.shared", (payload) => {
+      setScreenSharingUsers((prev) => {
+        const next = new Set(prev);
+        if (payload.isScreenSharing) next.add(payload.userId);
+        else next.delete(payload.userId);
+        return next;
+      });
+    });
+    return () => {
+      unsubChat();
+      unsubReaction();
+      unsubRaise();
+      unsubRecording();
+      unsubScreen();
+    };
+  }, [realtime, meetingId, participants, user?.id, reactions]);
+
+  async function sendMessage() {
+    const content = chatInput.trim();
+    if (!content) return;
+    setChatInput("");
+    try {
+      const msg = await createMeetingMessage(meetingId, content);
+      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+    } catch (err) {
+      console.error("Failed to send message", err);
+    }
+  }
+
+  async function sendReaction(emoji: string) {
+    try {
+      const reaction = await createMeetingReaction(meetingId, emoji);
+      showReaction(reaction.emoji, reaction.userId, reaction.id);
+    } catch (err) {
+      console.error("Failed to send reaction", err);
+    }
+  }
+
+  async function toggleRaiseHand() {
+    if (!user?.id) return;
+    const next = !raisedHands.has(user.id);
+    try {
+      await updateMeetingRaiseHand(meetingId, next);
+      setRaisedHands((prev) => {
+        const s = new Set(prev);
+        if (next) s.add(user.id);
+        else s.delete(user.id);
+        return s;
+      });
+    } catch (err) {
+      console.error("Failed to update raise hand", err);
+    }
+  }
+
+  async function toggleRecording() {
+    if (!streamToRecord) return;
     if (isRecording) {
       mediaRecorder?.stop();
+      try {
+        await setMeetingRecording(meetingId, false);
+      } catch (err) {
+        console.error("Failed to update recording state", err);
+      }
       setIsRecording(false);
+      setMediaRecorder(null);
       return;
     }
 
-    if (!localStream) return;
     try {
-      const recorder = new MediaRecorder(localStream);
+      const recorder = new MediaRecorder(streamToRecord);
       const chunks: Blob[] = [];
       recorder.ondataavailable = (e) => {
         if (e.data.size) chunks.push(e.data);
@@ -100,6 +239,7 @@ export function NativeConference({
       recorder.start();
       setMediaRecorder(recorder);
       setIsRecording(true);
+      await setMeetingRecording(meetingId, true);
     } catch (err) {
       console.error("Failed to start recording", err);
     }
@@ -123,6 +263,15 @@ export function NativeConference({
             <span>
               {participantCount} participant{participantCount === 1 ? "" : "s"}
             </span>
+            {isRecording ? (
+              <>
+                <span className="text-text-muted">•</span>
+                <span className="flex items-center gap-1 text-error">
+                  <CircleDot className="h-2 w-2 animate-pulse" />
+                  Recording
+                </span>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -134,9 +283,7 @@ export function NativeConference({
               "h-9 w-9 rounded-full",
               activePanel === "chat" && "bg-primary text-white hover:bg-primary",
             )}
-            onClick={() =>
-              setActivePanel((p) => (p === "chat" ? null : "chat"))
-            }
+            onClick={() => setActivePanel((p) => (p === "chat" ? null : "chat"))}
             title="Chat"
           >
             <MessageSquare className="h-5 w-5" />
@@ -148,9 +295,7 @@ export function NativeConference({
               "h-9 w-9 rounded-full",
               activePanel === "participants" && "bg-primary text-white hover:bg-primary",
             )}
-            onClick={() =>
-              setActivePanel((p) => (p === "participants" ? null : "participants"))
-            }
+            onClick={() => setActivePanel((p) => (p === "participants" ? null : "participants"))}
             title="Participants"
           >
             <Users className="h-5 w-5" />
@@ -178,34 +323,57 @@ export function NativeConference({
               stream={localStream}
               nativeFrame={nativeFrame}
               videoEnabled={localVideoEnabled}
+              isHandRaised={user?.id ? raisedHands.has(user.id) : false}
+              isScreenSharing={user?.id ? screenSharingUsers.has(user.id) : false}
             />
-            {remoteStreams.map(({ participantId, stream }) => (
-              <ParticipantTile
-                key={participantId}
-                name={remoteDisplayName(participantId)}
-                stream={stream}
-                videoEnabled={stream.getVideoTracks().some((t) => t.enabled)}
-              />
-            ))}
+            {remoteStreams.map(({ participantId, stream }) => {
+              const pUserId = remoteUserId(participantId);
+              return (
+                <ParticipantTile
+                  key={participantId}
+                  name={remoteDisplayName(participantId)}
+                  stream={stream}
+                  videoEnabled={stream.getVideoTracks().some((t) => t.enabled)}
+                  isHandRaised={pUserId ? raisedHands.has(pUserId) : false}
+                  isScreenSharing={pUserId ? screenSharingUsers.has(pUserId) : false}
+                />
+              );
+            })}
           </div>
         </div>
 
         {activePanel && (
           <div className="flex w-80 shrink-0 flex-col border-l bg-surface p-4">
             {activePanel === "chat" ? (
-              <ChatPanel />
+              <ChatPanel
+                messages={messages}
+                input={chatInput}
+                setInput={setChatInput}
+                onSend={sendMessage}
+                resolveName={resolveName}
+              />
             ) : (
               <ParticipantsPanel
                 displayName={displayName}
                 participants={participants}
+                raisedHands={raisedHands}
+                screenSharingUsers={screenSharingUsers}
               />
             )}
           </div>
         )}
 
-        {reaction && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <span className="animate-bounce text-6xl">{reaction}</span>
+        {reactions.length > 0 && (
+          <div className="pointer-events-none absolute right-4 top-4 flex flex-col gap-2">
+            {reactions.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 shadow-sm"
+              >
+                <span className="animate-bounce text-2xl">{r.emoji}</span>
+                <span className="max-w-[120px] truncate text-xs text-text">{r.name}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -238,29 +406,45 @@ export function NativeConference({
             title={screenShareEnabled ? "Stop sharing" : "Share screen"}
           />
           <ControlButton
-            active={raisedHand}
-            onClick={() => setRaisedHand((v) => !v)}
+            active={raisedHands.has(user?.id ?? "")}
+            onClick={toggleRaiseHand}
             onIcon={<Hand className="h-5 w-5" />}
             offIcon={<Hand className="h-5 w-5" />}
             variant="state"
-            title={raisedHand ? "Lower hand" : "Raise hand"}
+            title={raisedHands.has(user?.id ?? "") ? "Lower hand" : "Raise hand"}
           />
           <ControlButton
             active={isRecording}
-            onClick={handleRecord}
+            onClick={toggleRecording}
             onIcon={<CircleDot className="h-5 w-5" />}
             offIcon={<CircleDot className="h-5 w-5" />}
             variant="danger"
+            disabled={!streamToRecord}
             title={isRecording ? "Stop recording" : "Record"}
           />
-          <ControlButton
-            active={false}
-            onClick={() => showReaction("👍")}
-            onIcon={<Smile className="h-5 w-5" />}
-            offIcon={<Smile className="h-5 w-5" />}
-            variant="state"
-            title="Reactions"
-          />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="secondary"
+                size="icon"
+                className="h-11 w-11 rounded-xl"
+                title="Reactions"
+              >
+                <Smile className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" side="top" className="flex min-w-0 gap-1 p-1">
+              {["👍", "❤️", "😂", "🎉", "👏"].map((emoji) => (
+                <DropdownMenuItem
+                  key={emoji}
+                  className="h-10 w-10 cursor-pointer justify-center text-lg"
+                  onClick={() => sendReaction(emoji)}
+                >
+                  {emoji}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <ControlButton
             active={false}
             onClick={() => {}}
@@ -291,6 +475,7 @@ function ControlButton({
   offIcon,
   variant,
   title,
+  disabled,
 }: {
   active: boolean;
   onClick?: () => void;
@@ -298,6 +483,7 @@ function ControlButton({
   offIcon: React.ReactNode;
   variant: "mute" | "state" | "danger";
   title?: string;
+  disabled?: boolean;
 }) {
   let buttonVariant: "default" | "secondary" | "destructive" | "ghost" = "secondary";
   if (variant === "mute" && !active) buttonVariant = "destructive";
@@ -310,7 +496,7 @@ function ControlButton({
       size="icon"
       className="h-11 w-11 rounded-xl"
       onClick={onClick}
-      disabled={!onClick}
+      disabled={disabled || !onClick}
       title={title}
     >
       {active ? onIcon : offIcon}
@@ -324,12 +510,16 @@ function ParticipantTile({
   nativeFrame,
   isLocal,
   videoEnabled,
+  isHandRaised,
+  isScreenSharing,
 }: {
   name: string;
   stream?: MediaStream | null;
   nativeFrame?: string | null;
   isLocal?: boolean;
   videoEnabled?: boolean;
+  isHandRaised?: boolean;
+  isScreenSharing?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -385,28 +575,77 @@ function ParticipantTile({
       <div className="absolute bottom-3 left-3 rounded-md bg-black/50 px-2.5 py-1 text-xs text-white">
         {name} {isLocal ? "(You)" : ""}
       </div>
+
+      {(isHandRaised || isScreenSharing) && (
+        <div className="absolute right-3 top-3 flex gap-1">
+          {isHandRaised && (
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-warning text-white">
+              <Hand className="h-3.5 w-3.5" />
+            </div>
+          )}
+          {isScreenSharing && (
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-white">
+              <Monitor className="h-3.5 w-3.5" />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function ChatPanel() {
+function ChatPanel({
+  messages,
+  input,
+  setInput,
+  onSend,
+  resolveName,
+}: {
+  messages: MeetingMessage[];
+  input: string;
+  setInput: (v: string) => void;
+  onSend: () => void;
+  resolveName: (userId: string) => string;
+}) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
   return (
     <div className="flex h-full flex-col">
       <h3 className="mb-2 text-sm font-semibold text-text">Chat</h3>
-      <div className="flex flex-1 flex-col items-center justify-center rounded-md bg-surface-elevated p-4 text-center text-sm text-text-secondary">
-        <MessageSquare className="mb-2 h-8 w-8 text-text-muted" />
-        <p>Chat is not yet available.</p>
+      <div className="flex-1 overflow-y-auto space-y-2 rounded-md bg-surface-elevated p-2">
+        {messages.length === 0 ? (
+          <p className="text-sm text-text-secondary">No messages yet.</p>
+        ) : (
+          messages.map((m) => (
+            <div key={m.id} className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium text-text">{resolveName(m.userId)}</span>
+              <span className="text-sm text-text-secondary">{m.content}</span>
+            </div>
+          ))
+        )}
+        <div ref={bottomRef} />
       </div>
-      <div className="mt-2 flex gap-2">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSend();
+        }}
+        className="mt-2 flex gap-2"
+      >
         <input
-          disabled
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
           placeholder="Send a message..."
-          className="flex-1 rounded-md border border-border bg-surface px-2 py-1.5 text-sm text-text"
+          className="flex-1 rounded-md border border-border bg-surface px-2 py-1.5 text-sm text-text outline-none focus:border-primary"
         />
-        <Button size="sm" disabled>
+        <Button type="submit" size="sm" disabled={!input.trim()}>
           Send
         </Button>
-      </div>
+      </form>
     </div>
   );
 }
@@ -414,9 +653,13 @@ function ChatPanel() {
 function ParticipantsPanel({
   displayName,
   participants,
+  raisedHands,
+  screenSharingUsers,
 }: {
   displayName: string;
-  participants: { id: string; displayName: string }[];
+  participants: { id: string; displayName: string; userId?: string }[];
+  raisedHands: Set<string>;
+  screenSharingUsers: Set<string>;
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -426,19 +669,22 @@ function ParticipantsPanel({
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white">
             {displayName.charAt(0).toUpperCase()}
           </div>
-          <span className="text-sm text-text">
+          <span className="flex-1 truncate text-sm text-text">
             {displayName} <span className="text-text-muted">(You)</span>
           </span>
         </div>
         {participants.map((p) => (
-          <div
-            key={p.id}
-            className="flex items-center gap-2 rounded-md bg-surface-elevated p-2"
-          >
+          <div key={p.id} className="flex items-center gap-2 rounded-md bg-surface-elevated p-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-surface text-xs font-semibold text-text">
               {p.displayName.charAt(0).toUpperCase()}
             </div>
-            <span className="text-sm text-text">{p.displayName}</span>
+            <span className="flex-1 truncate text-sm text-text">{p.displayName}</span>
+            {p.userId && raisedHands.has(p.userId) && (
+              <Hand className="h-4 w-4 text-warning" />
+            )}
+            {p.userId && screenSharingUsers.has(p.userId) && (
+              <Monitor className="h-4 w-4 text-primary" />
+            )}
           </div>
         ))}
       </div>

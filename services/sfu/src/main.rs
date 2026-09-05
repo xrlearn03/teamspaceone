@@ -34,6 +34,7 @@ type RoomId = String;
 struct ParticipantInfo {
     id: PeerId,
     display_name: String,
+    user_id: Option<String>,
 }
 
 /// Messages sent from the client to the SFU.
@@ -41,7 +42,11 @@ struct ParticipantInfo {
 #[serde(tag = "type")]
 enum Signal {
     #[serde(rename = "join")]
-    Join { room_id: RoomId, display_name: String },
+    Join {
+        room_id: RoomId,
+        display_name: String,
+        user_id: Option<String>,
+    },
     #[serde(rename = "leave")]
     Leave,
     #[serde(rename = "offer")]
@@ -72,6 +77,7 @@ enum Event {
     ParticipantJoined {
         participant_id: PeerId,
         display_name: String,
+        user_id: Option<String>,
     },
     #[serde(rename = "participant_left")]
     ParticipantLeft { participant_id: PeerId },
@@ -93,6 +99,7 @@ enum Event {
 #[derive(Clone)]
 struct Peer {
     display_name: String,
+    user_id: Option<String>,
     room_id: Option<RoomId>,
     tx: mpsc::UnboundedSender<Event>,
     pc: Option<Arc<RTCPeerConnection>>,
@@ -183,6 +190,7 @@ async fn handle_peer(stream: TcpStream, state: SharedState) {
     {
         let peer = Peer {
             display_name: String::new(),
+            user_id: None,
             room_id: None,
             tx: tx.clone(),
             pc: None,
@@ -242,7 +250,7 @@ async fn handle_peer(stream: TcpStream, state: SharedState) {
 
 async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState) -> Result<()> {
     match signal {
-        Signal::Join { room_id, display_name } => {
+        Signal::Join { room_id, display_name, user_id } => {
             let _ = leave_room(peer_id, state).await;
 
             let (tx, api, old_pc) = {
@@ -385,6 +393,7 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState) -> R
             let mut s = state.write().await;
             let peer = s.peers.get_mut(peer_id).unwrap();
             peer.display_name = display_name.clone();
+            peer.user_id = user_id.clone();
             peer.room_id = Some(room_id.clone());
             peer.pc = Some(pc);
             let joined_peer = peer.clone();
@@ -400,6 +409,7 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState) -> R
                 .map(|(id, p)| ParticipantInfo {
                     id: id.clone(),
                     display_name: p.display_name.clone(),
+                    user_id: p.user_id.clone(),
                 })
                 .collect();
 
@@ -413,6 +423,7 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState) -> R
                 Event::ParticipantJoined {
                     participant_id: peer_id.to_string(),
                     display_name: display_name.clone(),
+                    user_id: user_id.clone(),
                 },
                 Some(&peer_id.to_string()),
             );

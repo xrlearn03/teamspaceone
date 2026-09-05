@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { DailyDigestResult } from "../lib/api";
 import {
   Calendar,
   CheckSquare,
@@ -96,17 +97,21 @@ export function HomeScreen() {
   const { data: tasks } = useTasks(firstProjectId);
   const dailyDigest = useDailyDigest();
   const { data: pendingActions } = usePendingAIActions();
-  const [digest, setDigest] = useState("");
+  const [digest, setDigest] = useState<DailyDigestResult | null>(null);
+  const digestError = useRef<string | null>(null);
 
   const momCount = pendingActions?.filter((a) => a.actionType === "send_meeting_summary_email").length ?? 0;
   const taskCount = pendingActions?.filter((a) => a.actionType === "create_task").length ?? 0;
 
   useEffect(() => {
-    if (digest || dailyDigest.isPending) return;
+    if (digest || dailyDigest.isPending || digestError.current) return;
     dailyDigest
       .mutateAsync({ hours: 24 })
-      .then((result) => setDigest(result.result))
-      .catch(() => setDigest(""));
+      .then((result) => setDigest(result))
+      .catch((err) => {
+        digestError.current = err instanceof Error ? err.message : "Unknown error";
+        setDigest({ sections: [{ title: "Daily brief", items: ["Failed to load daily brief."] }], model: "none" });
+      });
   }, [digest, dailyDigest]);
 
   const [dialog, setDialog] = useState<"message" | "task" | "project" | null>(null);
@@ -303,13 +308,28 @@ export function HomeScreen() {
             <Sparkles className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <p className="text-sm leading-relaxed text-text-secondary">
-              {dailyDigest.isPending
-                ? "Generating daily brief..."
-                : digest || (unread.length > 0
+            {dailyDigest.isPending ? (
+              <p className="text-sm leading-relaxed text-text-secondary">Generating daily brief...</p>
+            ) : digest ? (
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {digest.sections.map((section) => (
+                  <div key={section.title} className="rounded-md border bg-surface-elevated p-3 text-sm">
+                    <p className="font-medium text-text">{section.title}</p>
+                    <ul className="mt-1.5 space-y-1">
+                      {section.items.map((item, i) => (
+                        <li key={i} className="text-text-secondary leading-relaxed">{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm leading-relaxed text-text-secondary">
+                {unread.length > 0
                   ? `You have ${unread.length} unread notification${unread.length === 1 ? "" : "s"}. Open the Inbox to review them.`
-                  : "No new notifications. You're all caught up.")}
-            </p>
+                  : "No new notifications. You're all caught up."}
+              </p>
+            )}
             <div className="mt-3 flex flex-wrap gap-2">
               <Button
                 variant="secondary"
@@ -324,10 +344,13 @@ export function HomeScreen() {
                 disabled={dailyDigest.isPending}
                 onClick={async () => {
                   try {
+                    digestError.current = null;
+                    setDigest(null);
                     const result = await dailyDigest.mutateAsync({ hours: 24 });
-                    setDigest(result.result);
-                  } catch {
-                    setDigest("");
+                    setDigest(result);
+                  } catch (err) {
+                    digestError.current = err instanceof Error ? err.message : "Unknown error";
+                    setDigest({ sections: [{ title: "Daily brief", items: ["Failed to load daily brief."] }], model: "none" });
                   }
                 }}
               >

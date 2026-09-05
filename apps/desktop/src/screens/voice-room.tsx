@@ -6,7 +6,7 @@ import { MeetingLobby } from "../components/livekit/lobby";
 import { NativeConference } from "../components/native-conference";
 import { Button } from "../components/ui/button";
 import { useRealtime } from "../hooks/useRealtime";
-import { endMeeting, getMeeting, leaveMeeting, type Meeting } from "../lib/api";
+import { endMeeting, getMeeting, leaveMeeting, setScreenShare, type Meeting } from "../lib/api";
 import { useMe } from "../hooks/api";
 import type { MediaJoinOptions } from "./meeting";
 import { useSfu } from "../hooks/useSfu";
@@ -88,7 +88,7 @@ export function VoiceRoomScreen() {
     setError(null);
 
     try {
-      await sfu.join(activeMeetingId, displayName, opts);
+      await sfu.join(activeMeetingId, displayName, opts, user?.id);
       setToken("native");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join SFU");
@@ -116,6 +116,16 @@ export function VoiceRoomScreen() {
       await endMeeting(activeMeetingId);
     }
     await handleLeave();
+  }
+
+  async function handleToggleScreenShare() {
+    if (!activeMeetingId) return;
+    try {
+      await sfu.toggleScreenShare();
+      await setScreenShare(activeMeetingId, sfu.screenShareEnabled);
+    } catch (err) {
+      console.error("Screen share toggle failed", err);
+    }
   }
 
   if (!activeMeetingId) {
@@ -165,17 +175,19 @@ export function VoiceRoomScreen() {
       user={user}
       title={meeting.title}
       connected={sfu.connected}
+      meetingId={meeting.id}
       localStream={sfu.localStream}
       localVideoEnabled={sfu.localVideoEnabled}
       localAudioEnabled={sfu.localAudioEnabled}
       screenShareEnabled={sfu.screenShareEnabled}
+      isRecording={meeting.isRecording}
       remoteStreams={sfu.remoteStreams}
       participants={sfu.participants}
       onLeave={handleLeave}
       onEnd={meeting.createdBy === user?.id ? handleEnd : undefined}
       onToggleAudio={sfu.toggleAudio}
       onToggleVideo={sfu.toggleVideo}
-      onToggleScreenShare={sfu.toggleScreenShare}
+      onToggleScreenShare={handleToggleScreenShare}
     />
   );
 }

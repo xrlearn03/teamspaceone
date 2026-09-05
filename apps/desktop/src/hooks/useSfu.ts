@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from "react";
 export interface SfuParticipant {
   id: string;
   displayName: string;
+  userId?: string;
 }
 
 export interface SfuRemoteStream {
@@ -27,8 +28,9 @@ interface Signal {
     | "error";
   participant_id?: string;
   room_id?: string;
-  participants?: { id: string; display_name: string }[];
+  participants?: { id: string; display_name: string; user_id?: string }[];
   display_name?: string;
+  user_id?: string;
   from?: string;
   sdp?: string;
   candidate?: string;
@@ -38,7 +40,7 @@ interface Signal {
 }
 
 type SendSignal =
-  | { type: "join"; room_id: string; display_name: string }
+  | { type: "join"; room_id: string; display_name: string; user_id?: string }
   | { type: "answer"; target: string; sdp: string }
   | {
       type: "ice";
@@ -197,7 +199,7 @@ export function useSfu() {
   }, []);
 
   const join = useCallback(
-    async (roomId: string, displayName: string, mediaOptions: MediaOptions) => {
+    async (roomId: string, displayName: string, mediaOptions: MediaOptions, userId?: string) => {
       leave();
       setError(null);
 
@@ -264,7 +266,7 @@ export function useSfu() {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        send({ type: "join", room_id: roomId, display_name: displayName });
+        send({ type: "join", room_id: roomId, display_name: displayName, user_id: userId });
         setConnected(true);
       };
 
@@ -284,14 +286,14 @@ export function useSfu() {
 
           case "room_state":
             setParticipants(
-              msg.participants?.map((p) => ({ id: p.id, displayName: p.display_name })) ?? [],
+              msg.participants?.map((p) => ({ id: p.id, displayName: p.display_name, userId: p.user_id })) ?? [],
             );
             break;
 
           case "participant_joined":
             setParticipants((prev) => [
               ...prev.filter((p) => p.id !== msg.participant_id),
-              { id: msg.participant_id!, displayName: msg.display_name! },
+              { id: msg.participant_id!, displayName: msg.display_name!, userId: msg.user_id },
             ]);
             break;
 

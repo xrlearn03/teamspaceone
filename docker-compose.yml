@@ -114,6 +114,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/identity_db?schema=public
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: teamspace-one-auth-service
     ports:
@@ -256,6 +257,14 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/notification_db?schema=public
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
+      AUTH_SERVICE_URL: http://auth-service:3002
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@teamspace.one}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: teamspace-one-notification-service
     ports:
@@ -388,6 +397,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_db?schema=public
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
+      PROJECTS_SERVICE_URL: http://projects-service:3006
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: teamspace-one-ai-service
