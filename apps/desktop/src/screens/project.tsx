@@ -368,8 +368,8 @@ function ProjectActivityView({ projectId }: { projectId: string }) {
 
 function ProjectOverview({ tasks, project }: { tasks?: Task[]; project: Project }) {
   const total = tasks?.length ?? 0;
-  const done = tasks?.filter((task) => task.status === "done").length ?? 0;
+  const done = tasks?.filter((task) => task.status === "done")?.length ?? 0;
   const progress = total ? done / total : 0;
-  const breakdown = useMemo(() => Object.fromEntries(statuses.map((status) => [status, tasks?.filter((task) => task.status === status).length ?? 0])), [tasks]);
+  const breakdown = useMemo(() => Object.fromEntries(statuses.map((status) => [status, tasks?.filter((task) => task.status === status)?.length ?? 0])), [tasks]);
   return <div className="flex-1 overflow-y-auto p-6"><div className="grid auto-rows-min grid-cols-1 gap-4 md:grid-cols-3"><Card className="md:col-span-2"><h3 className="text-sm font-semibold">Progress summary</h3><div className="mt-3 h-3 overflow-hidden rounded-full bg-surface-elevated"><div className="h-full rounded-full bg-primary" style={{ width: `${progress * 100}%` }} /></div><p className="mt-2 text-xs text-text-muted">{Math.round(progress * 100)}% complete ({done} of {total})</p></Card><Card><h3 className="text-sm font-semibold">Schedule</h3><p className="mt-3 text-sm text-text-secondary">{project.startDate ? new Date(project.startDate).toLocaleDateString() : "No start date"} — {project.targetDate ? new Date(project.targetDate).toLocaleDateString() : "No target date"}</p></Card><Card><h3 className="text-sm font-semibold">Task breakdown</h3><div className="mt-3 space-y-1">{Object.entries(breakdown).map(([status, count]) => <div key={status} className="flex justify-between text-sm"><span>{labels[status]}</span><span>{count}</span></div>)}</div></Card><Card className="md:col-span-2"><h3 className="text-sm font-semibold">Project summary</h3><p className="mt-3 text-sm text-text-secondary">{total} tasks, {done} completed, {total - done} remaining.</p></Card></div></div>;
 }

@@ -83,7 +83,7 @@ export function HomeScreen() {
   const createTask = useCreateTask();
   const createProject = useCreateProject();
   const deleteEndedMeetings = useDeleteEndedMeetings();
-  const endedMeetingsCount = meetings?.filter((m) => m.status === "ended").length ?? 0;
+  const endedMeetingsCount = meetings?.filter((m) => m.status === "ended")?.length ?? 0;
 
   function handleDeleteEndedMeetings() {
     if (endedMeetingsCount === 0) return;
@@ -100,8 +100,8 @@ export function HomeScreen() {
   const [digest, setDigest] = useState<DailyDigestResult | null>(null);
   const digestError = useRef<string | null>(null);
 
-  const momCount = pendingActions?.filter((a) => a.actionType === "send_meeting_summary_email").length ?? 0;
-  const taskCount = pendingActions?.filter((a) => a.actionType === "create_task").length ?? 0;
+  const momCount = pendingActions?.filter((a) => a.actionType === "send_meeting_summary_email")?.length ?? 0;
+  const taskCount = pendingActions?.filter((a) => a.actionType === "create_task")?.length ?? 0;
 
   useEffect(() => {
     if (digest || dailyDigest.isPending || digestError.current) return;

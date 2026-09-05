@@ -549,7 +549,7 @@ export function WorkspaceSidebar() {
                 onClick={() => navigate(m.type === "voice_room" ? "voice" : "meeting", { meetingId: m.id })}
                 subtext={
                   m.type === "voice_room" && m.status === "started"
-                    ? `${m.participants?.filter((p) => !p.leftAt).length ?? 0} in room`
+                    ? `${m.participants?.filter((p) => !p.leftAt)?.length ?? 0} in room`
                     : formatMeetingSubtext(m)
                 }
               />
