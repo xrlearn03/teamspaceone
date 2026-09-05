@@ -6,6 +6,8 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod desktop;
+mod media;
+mod sfu;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -127,6 +129,9 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
+        .manage(media::CameraState::new())
+        .manage(media::MicrophoneState::new())
+        .manage(sfu::SfuState::new())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|_app, shortcut, event| {
@@ -148,8 +153,19 @@ pub fn run() {
             desktop::pick_file,
             desktop::get_deep_link,
             desktop::get_app_info,
+            media::list_cameras,
+            media::list_microphones,
+            media::start_camera,
+            media::stop_camera,
+            media::get_camera_frame,
+            media::start_microphone,
+            media::stop_microphone,
+            media::get_microphone_chunk,
+            sfu::sfu_join,
+            sfu::sfu_leave,
         ])
         .setup(move |app| {
+            media::initialize();
             #[cfg(desktop)]
             {
                 setup_tray(app.app_handle())?;
@@ -163,11 +179,17 @@ pub fn run() {
                 WebviewUrl::External(format!("http://localhost:{}", port.unwrap()).parse::<Url>().unwrap())
             };
 
-            WebviewWindowBuilder::new(app, "main".to_string(), url)
+            let window = WebviewWindowBuilder::new(app, "main".to_string(), url)
                 .title("Teamspace One")
                 .inner_size(1200.0, 800.0)
                 .min_inner_size(800.0, 600.0)
                 .build()?;
+
+            // Open the web inspector so console errors are visible during testing.
+            #[cfg(desktop)]
+            {
+                let _ = window.open_devtools();
+            }
 
             Ok(())
         })

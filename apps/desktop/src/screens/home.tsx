@@ -26,6 +26,7 @@ import {
   useMembers,
   useMessages,
   useNotifications,
+  usePendingAIActions,
   useProjects,
   useTasks,
   useWorkspaces,
@@ -63,8 +64,8 @@ function formatRelative(iso: string) {
 }
 
 export function HomeScreen() {
-  const { setActiveView } = useUIStore(
-    useShallow((s) => ({ setActiveView: s.setActiveView })),
+  const { setActiveView, setPendingActionFilter } = useUIStore(
+    useShallow((s) => ({ setActiveView: s.setActiveView, setPendingActionFilter: s.setPendingActionFilter })),
   );
 
   const { data: user } = useMe();
@@ -94,7 +95,11 @@ export function HomeScreen() {
   const firstProjectId = projects?.[0]?.id;
   const { data: tasks } = useTasks(firstProjectId);
   const dailyDigest = useDailyDigest();
+  const { data: pendingActions } = usePendingAIActions();
   const [digest, setDigest] = useState("");
+
+  const momCount = pendingActions?.filter((a) => a.actionType === "send_meeting_summary_email").length ?? 0;
+  const taskCount = pendingActions?.filter((a) => a.actionType === "create_task").length ?? 0;
 
   useEffect(() => {
     if (digest || dailyDigest.isPending) return;
@@ -305,14 +310,54 @@ export function HomeScreen() {
                   ? `You have ${unread.length} unread notification${unread.length === 1 ? "" : "s"}. Open the Inbox to review them.`
                   : "No new notifications. You're all caught up.")}
             </p>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="mt-3"
-              onClick={() => setActiveView("ai")}
-            >
-              Ask follow-up
-            </Button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setActiveView("ai")}
+              >
+                Ask follow-up
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={dailyDigest.isPending}
+                onClick={async () => {
+                  try {
+                    const result = await dailyDigest.mutateAsync({ hours: 24 });
+                    setDigest(result.result);
+                  } catch {
+                    setDigest("");
+                  }
+                }}
+              >
+                {dailyDigest.isPending ? "Refreshing…" : "Refresh brief"}
+              </Button>
+              {momCount > 0 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setPendingActionFilter("send_meeting_summary_email");
+                    setActiveView("ai");
+                  }}
+                >
+                  Confirm MOM{momCount > 1 ? ` (${momCount})` : ""}
+                </Button>
+              )}
+              {taskCount > 0 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setPendingActionFilter("create_task");
+                    setActiveView("ai");
+                  }}
+                >
+                  Confirm tasks{taskCount > 1 ? ` (${taskCount})` : ""}
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
 

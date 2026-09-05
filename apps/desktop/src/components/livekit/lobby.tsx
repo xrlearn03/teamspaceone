@@ -1,4 +1,3 @@
-import { useRef, useEffect } from "react";
 import { Mic, MicOff, Video, VideoOff } from "lucide-react";
 import { Button } from "../ui/button";
 import { useMediaDevices } from "../../hooks/useMediaDevices";
@@ -16,38 +15,45 @@ interface MeetingLobbyProps {
     stream?: MediaStream;
   }) => void;
   onCancel: () => void;
+  nativeFrame?: string | null;
+  nativeError?: string | null;
+  nativeDevices?: { id: string; name: string }[];
+  nativeCameraIndex?: number | null;
+  setNativeCamera?: (index: number) => void;
+  nativeVideoEnabled?: boolean;
+  setNativeVideoEnabled?: (enabled: boolean) => void;
+  nativeAudioDevices?: { id: string; name: string }[];
+  nativeAudioIndex?: number | null;
+  setNativeAudio?: (index: number) => void;
+  nativeAudioEnabled?: boolean;
+  setNativeAudioEnabled?: (enabled: boolean) => void;
+  nativeAudioError?: string | null;
 }
 
-export function MeetingLobby({ meeting, user, onJoin, onCancel }: MeetingLobbyProps) {
+export function MeetingLobby({
+  meeting,
+  user,
+  onJoin,
+  onCancel,
+  nativeFrame,
+  nativeError,
+  nativeDevices = [],
+  nativeCameraIndex,
+  setNativeCamera,
+  nativeVideoEnabled = false,
+  setNativeVideoEnabled,
+  nativeAudioDevices = [],
+  nativeAudioIndex,
+  setNativeAudio,
+  nativeAudioEnabled = false,
+  setNativeAudioEnabled,
+  nativeAudioError,
+}: MeetingLobbyProps) {
   const {
-    stream,
-    audioEnabled,
-    videoEnabled,
-    audioInputId,
-    videoInputId,
     audioOutputId,
-    toggleAudio,
-    toggleVideo,
-    setAudioDevice,
-    setVideoDevice,
     setSpeakerDevice,
-    releaseStream,
-    applyAudioOutput,
-    error: mediaError,
-    videoDevices,
-    audioInputDevices,
     audioOutputDevices,
-  } = useMediaDevices({ audioEnabled: true, videoEnabled: meeting.type !== "voice_room" });
-
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-      void videoRef.current.play();
-      applyAudioOutput(videoRef.current);
-    }
-  }, [stream, applyAudioOutput]);
+  } = useMediaDevices({ audioEnabled: false, videoEnabled: false });
 
   const displayName = user
     ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
@@ -77,12 +83,10 @@ export function MeetingLobby({ meeting, user, onJoin, onCancel }: MeetingLobbyPr
         </div>
 
         <div className="relative aspect-video w-full overflow-hidden rounded-xl border bg-surface-elevated">
-          {videoEnabled ? (
-            <video
-              ref={videoRef}
-              muted
-              playsInline
-              autoPlay
+          {nativeVideoEnabled && nativeFrame ? (
+            <img
+              src={nativeFrame}
+              alt="Native camera preview"
               className="h-full w-full object-cover"
             />
           ) : (
@@ -94,28 +98,32 @@ export function MeetingLobby({ meeting, user, onJoin, onCancel }: MeetingLobbyPr
             </div>
           )}
 
-          {mediaError ? (
+          {nativeAudioError || nativeError ? (
             <div className="absolute inset-x-0 bottom-0 bg-error/90 p-2 text-center text-xs text-white">
-              {mediaError}
+              {nativeAudioError || nativeError}
             </div>
           ) : null}
 
           <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2">
             <Button
-              variant={audioEnabled ? "secondary" : "destructive"}
+              variant={nativeAudioEnabled ? "secondary" : "destructive"}
               size="icon"
-              onClick={() => void toggleAudio()}
-              aria-label={audioEnabled ? "Mute microphone" : "Unmute microphone"}
+              onClick={() => {
+                setNativeAudioEnabled?.(!nativeAudioEnabled);
+              }}
+              aria-label={nativeAudioEnabled ? "Mute microphone" : "Unmute microphone"}
             >
-              {audioEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+              {nativeAudioEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
             </Button>
             <Button
-              variant={videoEnabled ? "secondary" : "destructive"}
+              variant={nativeVideoEnabled ? "secondary" : "destructive"}
               size="icon"
-              onClick={() => void toggleVideo()}
-              aria-label={videoEnabled ? "Turn off camera" : "Turn on camera"}
+              onClick={() => {
+                setNativeVideoEnabled?.(!nativeVideoEnabled);
+              }}
+              aria-label={nativeVideoEnabled ? "Turn off camera" : "Turn on camera"}
             >
-              {videoEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+              {nativeVideoEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
             </Button>
           </div>
         </div>
@@ -125,15 +133,15 @@ export function MeetingLobby({ meeting, user, onJoin, onCancel }: MeetingLobbyPr
             <span className="text-xs font-medium text-text-secondary">Microphone</span>
             <select
               className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
-              value={audioInputId}
-              onChange={(e) => setAudioDevice(e.target.value)}
+              value={nativeAudioIndex ?? ""}
+              onChange={(e) => setNativeAudio?.(Number(e.target.value))}
             >
-              {audioInputDevices.length === 0 ? (
+              {nativeAudioDevices.length === 0 ? (
                 <option value="">Default microphone</option>
               ) : (
-                audioInputDevices.map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label}
+                nativeAudioDevices.map((d) => (
+                  <option key={d.id} value={Number(d.id)}>
+                    {d.name}
                   </option>
                 ))
               )}
@@ -144,15 +152,15 @@ export function MeetingLobby({ meeting, user, onJoin, onCancel }: MeetingLobbyPr
             <span className="text-xs font-medium text-text-secondary">Camera</span>
             <select
               className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
-              value={videoInputId}
-              onChange={(e) => setVideoDevice(e.target.value)}
+              value={nativeCameraIndex ?? ""}
+              onChange={(e) => setNativeCamera?.(Number(e.target.value))}
             >
-              {videoDevices.length === 0 ? (
+              {nativeDevices.length === 0 ? (
                 <option value="">Default camera</option>
               ) : (
-                videoDevices.map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label}
+                nativeDevices.map((d) => (
+                  <option key={d.id} value={Number(d.id)}>
+                    {d.name}
                   </option>
                 ))
               )}
@@ -186,12 +194,11 @@ export function MeetingLobby({ meeting, user, onJoin, onCancel }: MeetingLobbyPr
           <Button
             onClick={() =>
               onJoin({
-                audioEnabled,
-                videoEnabled,
-                audioInputId,
-                videoInputId,
+                audioEnabled: nativeAudioEnabled,
+                videoEnabled: nativeVideoEnabled,
+                audioInputId: String(nativeAudioIndex ?? ""),
+                videoInputId: String(nativeCameraIndex ?? ""),
                 audioOutputId,
-                stream: releaseStream() ?? undefined,
               })
             }
           >

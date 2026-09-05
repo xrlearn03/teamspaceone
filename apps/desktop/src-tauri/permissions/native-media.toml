@@ -1,0 +1,13 @@
+[[permission]]
+identifier = "native-media"
+description = "Allow all native media capture and enumeration commands"
+commands.allow = [
+  "list-cameras",
+  "list-microphones",
+  "start-camera",
+  "stop-camera",
+  "get-camera-frame",
+  "start-microphone",
+  "stop-microphone",
+  "get-microphone-chunk",
+]

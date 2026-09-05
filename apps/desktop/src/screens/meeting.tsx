@@ -3,16 +3,15 @@ import { Video, Loader2 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
 import { MeetingLobby } from "../components/livekit/lobby";
-import { LiveKitConference } from "../components/livekit/conference";
+import { NativeConference } from "../components/native-conference";
 import { Button } from "../components/ui/button";
 import { useRealtime } from "../hooks/useRealtime";
+import { useNativeCamera } from "../hooks/useNativeCamera";
+import { useNativeMicrophone } from "../hooks/useNativeMicrophone";
 import {
   endMeeting,
   getMeeting,
-  getMeetingToken,
-  joinMeeting,
   leaveMeeting,
-  setScreenShare,
   startMeeting,
   type Meeting,
 } from "../lib/api";
@@ -39,6 +38,28 @@ export function MeetingScreen() {
   const [mediaOptions, setMediaOptions] = useState<MediaJoinOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const {
+    devices: nativeCameras,
+    selectedIndex: nativeCameraIndex,
+    setSelectedIndex: setNativeCamera,
+    frame: nativeFrame,
+    error: nativeError,
+    enabled: nativeVideoEnabled,
+    setEnabled: setNativeVideoEnabled,
+    videoStream: nativeVideoStream,
+  } = useNativeCamera();
+
+  const {
+    devices: nativeMicrophones,
+    selectedIndex: nativeMicrophoneIndex,
+    setSelectedIndex: setNativeMicrophone,
+    enabled: nativeAudioEnabled,
+    setEnabled: setNativeAudioEnabled,
+    audioStream: nativeAudioStream,
+    error: nativeAudioError,
+    resumeContext: resumeNativeAudio,
+  } = useNativeMicrophone();
 
   useEffect(() => {
     return () => {
@@ -95,31 +116,26 @@ export function MeetingScreen() {
     };
   }, [activeMeetingId]);
 
-  const displayName =
-    user
-      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
-      : "Guest";
-
   async function handleJoin(opts: MediaJoinOptions) {
     if (!activeMeetingId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      let t: string;
-      try {
-        const result = await getMeetingToken(activeMeetingId, displayName);
-        t = result.token;
-      } catch {
-        const result = await joinMeeting(activeMeetingId, displayName);
-        t = result.token;
-      }
-      setMediaOptions(opts);
-      setToken(t);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to join meeting");
-    } finally {
-      setLoading(false);
-    }
+
+    // Resume the AudioContext from the user gesture and combine native audio
+    // (ScriptProcessorNode) with native canvas-captured video.
+    await resumeNativeAudio();
+    const combined = new MediaStream([
+      ...(opts.audioEnabled && nativeAudioStream ? nativeAudioStream.getAudioTracks() : []),
+      ...(opts.videoEnabled && nativeVideoStream ? nativeVideoStream.getVideoTracks() : []),
+    ]);
+    const full: MediaJoinOptions = {
+      ...opts,
+      audioEnabled: opts.audioEnabled && !!nativeAudioStream,
+      videoEnabled: opts.videoEnabled && !!nativeVideoStream,
+      audioInputId: String(nativeMicrophoneIndex ?? ""),
+      videoInputId: String(nativeCameraIndex ?? ""),
+      stream: combined,
+    };
+    setMediaOptions(full);
+    setToken("native");
   }
 
   async function handleLeave() {
@@ -143,10 +159,18 @@ export function MeetingScreen() {
     await handleLeave();
   }
 
-  async function handleScreenShare(enabled: boolean) {
-    if (activeMeetingId) {
-      await setScreenShare(activeMeetingId, enabled).catch(() => {});
-    }
+  function handleToggleAudio() {
+    if (!mediaOptions) return;
+    const next = !mediaOptions.audioEnabled;
+    setMediaOptions((prev) => (prev ? { ...prev, audioEnabled: next } : prev));
+    setNativeAudioEnabled(next);
+  }
+
+  function handleToggleVideo() {
+    if (!mediaOptions) return;
+    const next = !mediaOptions.videoEnabled;
+    setMediaOptions((prev) => (prev ? { ...prev, videoEnabled: next } : prev));
+    setNativeVideoEnabled(next);
   }
 
   if (!activeMeetingId) {
@@ -187,24 +211,34 @@ export function MeetingScreen() {
         user={user}
         onJoin={handleJoin}
         onCancel={() => setActiveView("home")}
+        nativeFrame={nativeFrame}
+        nativeError={nativeError}
+        nativeDevices={nativeCameras}
+        nativeCameraIndex={nativeCameraIndex}
+        setNativeCamera={setNativeCamera}
+        nativeVideoEnabled={nativeVideoEnabled}
+        setNativeVideoEnabled={setNativeVideoEnabled}
+        nativeAudioDevices={nativeMicrophones}
+        nativeAudioIndex={nativeMicrophoneIndex}
+        setNativeAudio={setNativeMicrophone}
+        nativeAudioEnabled={nativeAudioEnabled}
+        setNativeAudioEnabled={setNativeAudioEnabled}
+        nativeAudioError={nativeAudioError}
       />
     );
   }
 
   return (
-    <LiveKitConference
-      meeting={meeting}
-      token={token}
-      displayName={displayName}
-      videoEnabled={mediaOptions.videoEnabled}
-      audioEnabled={mediaOptions.audioEnabled}
-      audioInputId={mediaOptions.audioInputId}
-      videoInputId={mediaOptions.videoInputId}
-      audioOutputId={mediaOptions.audioOutputId}
-      previewStream={mediaOptions.stream}
+    <NativeConference
+      user={user}
+      title={meeting.title}
+      nativeFrame={nativeFrame}
+      localVideoEnabled={mediaOptions.videoEnabled}
+      localAudioEnabled={mediaOptions.audioEnabled}
       onLeave={handleLeave}
       onEnd={meeting.createdBy === user?.id ? handleEnd : undefined}
-      onScreenShare={handleScreenShare}
+      onToggleAudio={handleToggleAudio}
+      onToggleVideo={handleToggleVideo}
     />
   );
 }

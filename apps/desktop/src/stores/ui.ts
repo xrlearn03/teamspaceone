@@ -31,6 +31,7 @@ interface UIState {
   connection: "connected" | "connecting" | "offline" | "syncing";
   pendingCount: number;
   activeWorkspaceId: string | null;
+  pendingActionFilter: string | null;
   setOrganisation: (organisationId: string) => void;
   setPendingCount: (count: number) => void;
   setActiveWorkspace: (workspaceId: string | null) => void;
@@ -40,6 +41,7 @@ interface UIState {
     params?: { channelId?: string; projectId?: string; meetingId?: string },
   ) => void;
   setActiveMeetingId: (meetingId: string | null) => void;
+  setPendingActionFilter: (filter: string | null) => void;
   toggleSidebar: () => void;
   setSidebarWidth: (width: number) => void;
   toggleRightPanel: () => void;
@@ -65,6 +67,7 @@ export const useUIStore = create<UIState>((set) => ({
   activeWorkspaceId: localStorage.getItem(
     `teamspace-one:${getActiveOrganisation() ?? "none"}:activeWorkspace`,
   ),
+  pendingActionFilter: null,
   setOrganisation: (organisationId) =>
     set({
       organisationId,
@@ -93,6 +96,7 @@ export const useUIStore = create<UIState>((set) => ({
       activeMeetingId: params?.meetingId ?? null,
     }),
   setActiveMeetingId: (meetingId) => set({ activeMeetingId: meetingId }),
+  setPendingActionFilter: (filter) => set({ pendingActionFilter: filter }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setSidebarWidth: (width) =>
     set({ sidebarWidth: Math.max(180, Math.min(400, width)) }),

@@ -438,7 +438,7 @@ export class AiService {
       FROM "ai_documents"
       WHERE "organisationId" = ${ctx.organisationId}
         AND "vector" IS NOT NULL
-        AND ( ${workspaceId} IS NULL OR "workspaceId" = ${workspaceId} )
+        AND ( ${workspaceId}::text IS NULL OR "workspaceId" = ${workspaceId}::text )
       ORDER BY "vector" <-> ${vectorString}::vector
       LIMIT ${limit}
     `;
@@ -540,7 +540,7 @@ export class AiService {
       FROM "ai_documents"
       WHERE "organisationId" = ${ctx.organisationId}
         AND "updatedAt" > ${since}::timestamp
-        AND ( ${workspaceId ?? null} IS NULL OR "workspaceId" = ${workspaceId ?? null} )
+        AND ( ${workspaceId ?? null}::text IS NULL OR "workspaceId" = ${workspaceId ?? null}::text )
       ORDER BY "updatedAt" DESC
       LIMIT 100
     `;

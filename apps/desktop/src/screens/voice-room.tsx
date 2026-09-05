@@ -3,19 +3,13 @@ import { Mic, Loader2 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
 import { MeetingLobby } from "../components/livekit/lobby";
-import { LiveKitConference } from "../components/livekit/conference";
+import { NativeConference } from "../components/native-conference";
 import { Button } from "../components/ui/button";
 import { useRealtime } from "../hooks/useRealtime";
-import {
-  endMeeting,
-  getMeeting,
-  getMeetingToken,
-  joinMeeting,
-  leaveMeeting,
-  type Meeting,
-} from "../lib/api";
+import { endMeeting, getMeeting, leaveMeeting, type Meeting } from "../lib/api";
 import { useMe } from "../hooks/api";
 import type { MediaJoinOptions } from "./meeting";
+import { useSfu } from "../hooks/useSfu";
 
 export function VoiceRoomScreen() {
   const { activeMeetingId, setActiveView } = useUIStore(
@@ -23,12 +17,19 @@ export function VoiceRoomScreen() {
   );
   const { joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent } = useRealtime();
   const { data: user } = useMe();
+  const sfu = useSfu();
 
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [mediaOptions, setMediaOptions] = useState<MediaJoinOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (sfu.error) {
+      setError(sfu.error);
+    }
+  }, [sfu.error]);
 
   useEffect(() => {
     if (!activeMeetingId) return;
@@ -72,28 +73,26 @@ export function VoiceRoomScreen() {
       cancelled = true;
       leaveRealtimeMeeting(activeMeetingId);
       unsubscribe();
+      sfu.leave();
     };
   }, [activeMeetingId]);
 
   async function handleJoin(opts: MediaJoinOptions) {
     if (!activeMeetingId) return;
-    setLoading(true);
+
+    const displayName = user
+      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
+      : "Guest";
+
+    setMediaOptions(opts);
     setError(null);
+
     try {
-      let t: string;
-      try {
-        const result = await getMeetingToken(activeMeetingId);
-        t = result.token;
-      } catch {
-        const result = await joinMeeting(activeMeetingId);
-        t = result.token;
-      }
-      setMediaOptions({ ...opts, videoEnabled: false });
-      setToken(t);
+      await sfu.join(activeMeetingId, displayName, opts);
+      setToken("native");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to join voice room");
-    } finally {
-      setLoading(false);
+      setError(err instanceof Error ? err.message : "Failed to join SFU");
+      setMediaOptions(null);
     }
   }
 
@@ -105,6 +104,7 @@ export function VoiceRoomScreen() {
         // Best-effort.
       }
     }
+    sfu.leave();
     setToken(null);
     setMeeting(null);
     setMediaOptions(null);
@@ -160,22 +160,22 @@ export function VoiceRoomScreen() {
     );
   }
 
-  const displayName =
-    user
-      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
-      : "Guest";
-
   return (
-    <LiveKitConference
-      meeting={meeting}
-      token={token}
-      displayName={displayName}
-      audioEnabled={mediaOptions.audioEnabled}
-      videoEnabled={false}
-      audioInputId={mediaOptions.audioInputId}
-      audioOutputId={mediaOptions.audioOutputId}
+    <NativeConference
+      user={user}
+      title={meeting.title}
+      connected={sfu.connected}
+      localStream={sfu.localStream}
+      localVideoEnabled={sfu.localVideoEnabled}
+      localAudioEnabled={sfu.localAudioEnabled}
+      screenShareEnabled={sfu.screenShareEnabled}
+      remoteStreams={sfu.remoteStreams}
+      participants={sfu.participants}
       onLeave={handleLeave}
       onEnd={meeting.createdBy === user?.id ? handleEnd : undefined}
+      onToggleAudio={sfu.toggleAudio}
+      onToggleVideo={sfu.toggleVideo}
+      onToggleScreenShare={sfu.toggleScreenShare}
     />
   );
 }

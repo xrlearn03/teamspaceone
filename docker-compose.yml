@@ -281,6 +281,18 @@ services:
       timeout: 3s
       retries: 5
 
+  sfu:
+    build:
+      context: .
+      dockerfile: services/sfu/Dockerfile
+    container_name: teamspace-one-sfu
+    restart: unless-stopped
+    environment:
+      SFU_HOST: 0.0.0.0
+      SFU_PORT: 8443
+    ports:
+      - "8443:8443"
+
   meeting-service:
     build:
       additional_contexts:

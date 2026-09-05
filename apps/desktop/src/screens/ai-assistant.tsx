@@ -69,7 +69,8 @@ export function AIAssistantScreen() {
   const { data: pendingActions } = usePendingAIActions();
   const confirmAIAction = useConfirmAIAction();
   const declineAIAction = useDeclineAIAction();
-  const organisationId = useUIStore((s) => s.organisationId);
+  const { organisationId, pendingActionFilter, setPendingActionFilter } = useUIStore((s) => ({ organisationId: s.organisationId, pendingActionFilter: s.pendingActionFilter, setPendingActionFilter: s.setPendingActionFilter }));
+  const filteredPendingActions = pendingActions?.filter((a) => !pendingActionFilter || a.actionType === pendingActionFilter) ?? [];
   const organisation = organisations?.find((o) => o.id === organisationId);
 
   useEffect(() => {
@@ -77,11 +78,14 @@ export function AIAssistantScreen() {
   }, [messages]);
 
   useEffect(() => {
-    if (pendingActions?.length && !hasAutoOpened.current && !pendingActionsDialogOpen) {
+    if (filteredPendingActions.length && !hasAutoOpened.current && !pendingActionsDialogOpen) {
       hasAutoOpened.current = true;
       setPendingActionsDialogOpen(true);
     }
-  }, [pendingActions, pendingActionsDialogOpen]);
+    if (pendingActionsDialogOpen && filteredPendingActions.length === 0) {
+      setPendingActionsDialogOpen(false);
+    }
+  }, [filteredPendingActions, pendingActionsDialogOpen]);
 
   async function ask(prompt: string) {
     if (!prompt.trim()) return;
@@ -335,41 +339,51 @@ export function AIAssistantScreen() {
       <Dialog open={pendingActionsDialogOpen} onOpenChange={(open) => { if (!open) setPendingActionsDialogOpen(false); }}>
         <DialogContent className="max-w-lg p-0">
           <DialogHeader>
-            <DialogTitle>Confirm AI actions</DialogTitle>
-            <DialogDescription>Review and edit before the assistant creates or sends anything.</DialogDescription>
-          </DialogHeader>
-          <div className="max-h-[70vh] space-y-3 overflow-y-auto px-4 pb-4">
-            {pendingActions?.length === 0 && <p className="text-sm text-text-secondary">No pending actions.</p>}
-            {pendingActions?.map((action) => (
-              <div key={action.id} className="rounded-md border bg-surface-elevated p-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <Badge variant="secondary" className="capitalize">{action.actionType.replace(/_/g, " ")}</Badge>
-                  <span className="text-xs text-text-muted">{new Date(action.createdAt).toLocaleString()}</span>
-                </div>
-                <p className="mt-2 font-medium text-text">
-                  {action.actionType === "create_task" ? (action.payload.title as string) ?? "Untitled task" : (action.payload.title as string) ?? "Meeting summary email"}
-                </p>
-                {action.actionType === "create_task" && action.payload.description ? (
-                  <p className="mt-1 line-clamp-2 text-text-secondary">{action.payload.description as string}</p>
-                ) : null}
-                {action.actionType === "send_meeting_summary_email" && (
-                  <div className="mt-2">
-                    <label className="text-xs text-text-secondary">Summary email</label>
-                    <textarea
-                      className="mt-1 w-full min-h-[120px] rounded-md border bg-background px-3 py-2 text-sm text-text outline-none focus:ring-2 focus:ring-primary"
-                      value={editingSummaries[action.id] ?? (action.payload.summary as string) ?? ""}
-                      onChange={(e) => setEditingSummaries((prev) => ({ ...prev, [action.id]: e.target.value }))}
-                    />
-                  </div>
-                )}
-                <div className="mt-3 flex justify-end gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => declineAIAction.mutate(action.id)} disabled={declineAIAction.isPending}>Decline</Button>
-                  <Button size="sm" disabled={confirmAIAction.isPending} onClick={() => confirmAIAction.mutate({ id: action.id, edits: action.actionType === "send_meeting_summary_email" ? { summary: editingSummaries[action.id] ?? action.payload.summary } : undefined })}>
-                    {confirmAIAction.isPending ? "Confirming…" : "Confirm"}
-                  </Button>
-                </div>
+            <div className="flex items-start justify-between pr-6">
+              <div>
+                <DialogTitle>{pendingActionFilter ? pendingActionFilter.replace(/_/g, " ") : "Confirm AI action"}</DialogTitle>
+                <DialogDescription>Review and edit before the assistant creates or sends anything.</DialogDescription>
               </div>
-            ))}
+              {pendingActionFilter && (
+                <Button variant="ghost" size="sm" onClick={() => setPendingActionFilter(null)}>Show all</Button>
+              )}
+            </div>
+          </DialogHeader>
+          <div className="px-4 pb-4">
+            {(() => {
+              const action = filteredPendingActions[0];
+              if (!action) return <p className="text-sm text-text-secondary">{pendingActionFilter ? `No pending ${pendingActionFilter.replace(/_/g, " ")} actions.` : "No pending actions."}</p>;
+              return (
+                <div className="rounded-md border bg-surface-elevated p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <Badge variant="secondary" className="capitalize">{action.actionType.replace(/_/g, " ")}</Badge>
+                    <span className="text-xs text-text-muted">{new Date(action.createdAt).toLocaleString()}</span>
+                  </div>
+                  <p className="mt-2 font-medium text-text">
+                    {action.actionType === "create_task" ? (action.payload.title as string) ?? "Untitled task" : (action.payload.title as string) ?? "Meeting summary email"}
+                  </p>
+                  {action.actionType === "create_task" && action.payload.description ? (
+                    <p className="mt-1 line-clamp-2 text-text-secondary">{action.payload.description as string}</p>
+                  ) : null}
+                  {action.actionType === "send_meeting_summary_email" && (
+                    <div className="mt-2">
+                      <label className="text-xs text-text-secondary">Summary email</label>
+                      <textarea
+                        className="mt-1 w-full min-h-[140px] rounded-md border bg-background px-3 py-2 text-sm text-text outline-none focus:ring-2 focus:ring-primary"
+                        value={editingSummaries[action.id] ?? (action.payload.summary as string) ?? ""}
+                        onChange={(e) => setEditingSummaries((prev) => ({ ...prev, [action.id]: e.target.value }))}
+                      />
+                    </div>
+                  )}
+                  <div className="mt-3 flex justify-end gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => declineAIAction.mutate(action.id)} disabled={declineAIAction.isPending}>Decline</Button>
+                    <Button size="sm" disabled={confirmAIAction.isPending} onClick={() => confirmAIAction.mutate({ id: action.id, edits: action.actionType === "send_meeting_summary_email" ? { summary: editingSummaries[action.id] ?? action.payload.summary } : undefined })}>
+                      {confirmAIAction.isPending ? "Confirming…" : "Confirm"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </DialogContent>
       </Dialog>
