@@ -39,10 +39,12 @@ image = "0.25"
 cpal = "0.15.3"
 webrtc = "0.17.1"
 scap = "0.0.8"
-windows-capture = "=1.4.2"
 tokio-tungstenite = "0.21"
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 anyhow = "1"
 tracing = "0.1"
 
+
+[target.'cfg(windows)'.dependencies]
+windows-capture = "=1.4.2"
