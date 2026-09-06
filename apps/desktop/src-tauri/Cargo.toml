@@ -33,15 +33,13 @@ serde_json = "1"
 tauri-plugin-http = { version = "2.6.0", features = ["unsafe-headers"] }
 tauri-plugin-localhost = "2"
 portpicker = "0.1"
-objc2 = "0.6.4"
-objc2-foundation = "0.3.2"
-objc2-av-foundation = "0.3.2"
 nokhwa = { version = "0.10.10", features = ["input-native", "decoding"] }
 base64 = "0.22"
 image = "0.25"
 cpal = "0.15.3"
 webrtc = "0.17.1"
 scap = "0.0.8"
+windows-capture = "=1.4.2"
 tokio-tungstenite = "0.21"
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
