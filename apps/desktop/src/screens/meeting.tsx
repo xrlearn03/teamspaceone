@@ -246,6 +246,7 @@ export function MeetingScreen() {
       user={user}
       title={meeting.title}
       meetingId={meeting.id}
+      kind="video"
       nativeFrame={nativeFrame}
       recordingStream={
         new MediaStream([

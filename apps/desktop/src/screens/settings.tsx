@@ -332,7 +332,11 @@ function AboutSettings() {
       <div className="max-w-lg space-y-2 text-sm text-text-secondary">
         <p><strong className="text-text">Teamspace One</strong></p>
         <p>Version 0.1.0</p>
-        <p>Built with React 19, Tauri 2, TypeScript, and Tailwind CSS v4.</p>
+        <p>
+          Teamspace One brings your team&apos;s conversations, projects, and files together in one
+          secure desktop workspace — so you can chat, collaborate, and stay organised without
+          switching between apps.
+        </p>
       </div>
     </SettingsSection>
   );

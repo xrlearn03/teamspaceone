@@ -185,6 +185,7 @@ export function VoiceRoomScreen() {
       title={meeting.title}
       connected={sfu.connected}
       meetingId={meeting.id}
+      kind="audio"
       localStream={sfu.localStream}
       localVideoEnabled={sfu.localVideoEnabled}
       localAudioEnabled={sfu.localAudioEnabled}

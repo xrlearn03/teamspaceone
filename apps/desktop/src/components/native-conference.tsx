@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CircleDot,
   Hand,
@@ -15,6 +15,7 @@ import {
   VideoOff,
 } from "lucide-react";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,6 +24,8 @@ import {
 } from "./ui/dropdown-menu";
 import { cn } from "../lib/utils";
 import { useRealtime } from "../hooks/useRealtime";
+import { useUIStore } from "../stores/ui";
+import { useMembers, useUsers } from "../hooks/api";
 import {
   createMeetingMessage,
   createMeetingReaction,
@@ -31,6 +34,7 @@ import {
   setMeetingRecording,
   updateMeetingRaiseHand,
   type MeetingMessage,
+  type OrganisationMember,
   type UserDto,
 } from "../lib/api";
 
@@ -39,6 +43,7 @@ interface NativeConferenceProps {
   title?: string;
   connected?: boolean;
   meetingId: string;
+  kind?: "audio" | "video";
   localStream?: MediaStream | null;
   recordingStream?: MediaStream | null;
   nativeFrame?: string | null;
@@ -61,6 +66,7 @@ export function NativeConference({
   title = "Meeting",
   connected = true,
   meetingId,
+  kind = "video",
   localStream,
   recordingStream,
   nativeFrame,
@@ -370,6 +376,10 @@ export function NativeConference({
                 participants={participants}
                 raisedHands={raisedHands}
                 screenSharingUsers={screenSharingUsers}
+                meetingId={meetingId}
+                kind={kind}
+                callerName={displayName}
+                currentUserId={user?.id}
               />
             )}
           </div>
@@ -667,15 +677,90 @@ function ParticipantsPanel({
   participants,
   raisedHands,
   screenSharingUsers,
+  meetingId,
+  kind,
+  callerName,
+  currentUserId,
 }: {
   displayName: string;
   participants: { id: string; displayName: string; userId?: string }[];
   raisedHands: Set<string>;
   screenSharingUsers: Set<string>;
+  meetingId: string;
+  kind: "audio" | "video";
+  callerName?: string;
+  currentUserId?: string;
 }) {
+  const organisationId = useUIStore((s) => s.organisationId);
+  const { data: members } = useMembers(organisationId ?? undefined);
+  const memberUserIds = useMemo(() => (members ?? []).map((m) => m.userId), [members]);
+  const { data: users } = useUsers(memberUserIds);
+  const [query, setQuery] = useState("");
+  const [invited, setInvited] = useState<Set<string>>(new Set());
+  const realtime = useRealtime();
+
+  const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
+
+  const existingIds = useMemo(
+    () =>
+      new Set([
+        ...(currentUserId ? [currentUserId] : []),
+        ...participants.map((p) => p.userId).filter((u): u is string => Boolean(u)),
+        ...invited,
+      ]),
+    [currentUserId, participants, invited],
+  );
+
+  const matches = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    if (!q) return [];
+    return (members ?? []).filter((member) => {
+      if (existingIds.has(member.userId)) return false;
+      const user = userMap.get(member.userId);
+      const name = getMemberName(member, user);
+      return name.toLowerCase().includes(q);
+    });
+  }, [members, userMap, query, existingIds]);
+
+  function addToCall(member: OrganisationMember) {
+    realtime.sendCallRing({
+      meetingId,
+      kind,
+      callerName,
+      userIds: [member.userId],
+    });
+    setInvited((prev) => new Set([...prev, member.userId]));
+    setQuery("");
+  }
+
   return (
     <div className="flex h-full flex-col">
       <h3 className="mb-2 text-sm font-semibold text-text">Participants</h3>
+      <div className="mb-2 space-y-1">
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search members..."
+        />
+        {matches.length > 0 && (
+          <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-1">
+            {matches.map((member) => {
+              const user = userMap.get(member.userId);
+              const name = getMemberName(member, user);
+              return (
+                <button
+                  key={member.userId}
+                  type="button"
+                  onClick={() => addToCall(member)}
+                  className="flex w-full cursor-pointer items-center rounded px-2 py-1.5 text-sm text-left hover:bg-surface-elevated"
+                >
+                  <span className="truncate">{name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
       <div className="flex-1 overflow-y-auto space-y-2">
         <div className="flex items-center gap-2 rounded-md bg-surface-elevated p-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white">
@@ -703,3 +788,14 @@ function ParticipantsPanel({
     </div>
   );
 }
+
+function getMemberName(member: OrganisationMember, user?: UserDto) {
+  if (user) {
+    const full = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+    if (full) return full;
+    return user.email;
+  }
+  return member.userId;
+}
+
+
