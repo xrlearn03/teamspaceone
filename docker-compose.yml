@@ -116,6 +116,7 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-auth}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
+      ORGANISATION_SERVICE_URL: http://organisation-service:3003
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: teamspace-one-auth-service
     ports:
@@ -140,6 +141,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/organisation_db?schema=public
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: teamspace-one-organisation-service
     ports:
@@ -352,6 +354,7 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
       S3_BUCKET: teamspace-one
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      FILE_HLS_ENABLED: ${FILE_HLS_ENABLED:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: teamspace-one-file-storage-service
     ports:
@@ -435,6 +438,8 @@ services:
       SEARCH_SERVICE_URL: http://search-service:3011
       AI_SERVICE_URL: http://ai-service:3012
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-auth}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: teamspace-one-api-gateway

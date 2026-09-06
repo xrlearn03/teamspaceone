@@ -30,7 +30,8 @@
     "src/outbox/**/*",
     "src/storage/**/*",
     "src/file-storage/**/*",
-    "src/file-processing/**/*"
+    "src/file-processing/**/*",
+    "src/types/**/*"
   ],
   "exclude": ["dist", "node_modules"]
 }

@@ -179,7 +179,7 @@ export class OrganisationService {
     const expiresAt = hoursFromNow(168);
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const invitation = await tx.invitation.create({
-        data: { id, organisationId, email: dto.email.toLowerCase().trim(), roleId: dto.roleId, token, expiresAt },
+        data: { id, organisationId, email: dto.email.toLowerCase().trim(), clientId: dto.clientId, roleId: dto.roleId, token, expiresAt },
       });
       const envelope = createEventEnvelope({
         eventType: Subjects.GUEST_INVITED,
@@ -187,7 +187,7 @@ export class OrganisationService {
         actorId,
         resourceType: 'invitation',
         resourceId: id,
-        payload: { email: invitation.email, organisationId, invitedBy: actorId, token, expiresAt: expiresAt.toISOString() },
+        payload: { email: invitation.email, clientId: invitation.clientId ?? undefined, organisationId, invitedBy: actorId, token, expiresAt: expiresAt.toISOString() },
       });
       await this.outbox.createEvent(tx, envelope, Subjects.GUEST_INVITED);
       return invitation;
@@ -256,6 +256,20 @@ export class OrganisationService {
     return this.prisma.invitation.findMany({ where: { organisationId }, orderBy: { createdAt: 'desc' } });
   }
 
+  async getInvitationByToken(token: string): Promise<{ id: string; organisationId: string; clientId: string | null; email: string; roleId: string; status: string; expiresAt: Date } | null> {
+    const invitation = await this.prisma.invitation.findUnique({ where: { token } });
+    if (!invitation) return null;
+    return {
+      id: invitation.id,
+      organisationId: invitation.organisationId,
+      clientId: invitation.clientId,
+      email: invitation.email,
+      roleId: invitation.roleId,
+      status: invitation.status,
+      expiresAt: invitation.expiresAt,
+    };
+  }
+
   async acceptInvitation(token: string, userId: string): Promise<unknown> {
     if (!token?.trim()) throw new BadRequestException('Invitation token is required');
     const invitation = await this.prisma.invitation.findUnique({ where: { token } });
@@ -267,7 +281,7 @@ export class OrganisationService {
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const membership = await tx.organisationMembership.upsert({
         where: { userId_organisationId: { userId, organisationId: invitation.organisationId } },
-        create: { id: randomUUID(), userId, organisationId: invitation.organisationId, roleId: invitation.roleId, isGuest: true },
+        create: { id: randomUUID(), userId, organisationId: invitation.organisationId, clientId: invitation.clientId, roleId: invitation.roleId, isGuest: true },
         update: {},
       });
       await tx.invitation.update({ where: { id: invitation.id }, data: { status: 'accepted' } });

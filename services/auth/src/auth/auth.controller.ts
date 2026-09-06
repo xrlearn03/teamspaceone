@@ -3,6 +3,7 @@ import { AuthService } from './auth.service.js';
 import { AuthGuard } from './auth.guard.js';
 import { type RegisterDto } from './dto/register.dto.js';
 import { type LoginDto } from './dto/login.dto.js';
+import { type RedeemInvitationDto } from './dto/redeem-invitation.dto.js';
 import { type RefreshDto } from './dto/refresh.dto.js';
 import { type ChangePasswordDto } from './dto/change-password.dto.js';
 import { type UpdateProfileDto } from './dto/update-profile.dto.js';
@@ -24,6 +25,15 @@ export class AuthController {
   @Post('login')
   async login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
+  }
+
+  @Post('redeem')
+  async redeemInvitation(
+    @Body() dto: RedeemInvitationDto,
+    @Headers('x-correlation-id') correlationId?: string,
+  ) {
+    const ctx = OrganisationContext.get();
+    return this.auth.redeemInvitation(dto, ctx?.correlationId ?? correlationId);
   }
 
   @Post('refresh')

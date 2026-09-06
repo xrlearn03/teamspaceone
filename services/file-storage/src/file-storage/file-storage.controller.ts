@@ -88,9 +88,9 @@ export class FileStorageController {
   async completeUpload(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
-    @Body() _dto: CompleteUploadDto,
+    @Body() dto: CompleteUploadDto,
   ) {
-    return this.fileStorage.completeUpload(ctx, id);
+    return this.fileStorage.completeUpload(ctx, id, dto);
   }
 
   @Post('upload')

@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Headers, Param, Patch, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Patch, Post } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { OrganisationService } from './organisation.service.js';
 import { type CreateOrganisationDto } from './dto/create-organisation.dto.js';
@@ -10,7 +11,10 @@ import { type UpdateClientDto } from './dto/update-client.dto.js';
 
 @Controller('organisations')
 export class OrganisationController {
-  constructor(private readonly organisation: OrganisationService) {}
+  constructor(
+    private readonly organisation: OrganisationService,
+    private readonly config: ConfigService,
+  ) {}
 
   @Get()
   async listForActor(
@@ -115,6 +119,26 @@ export class OrganisationController {
   ) {
     if (!actorId) throw new Error('Missing x-actor-id header');
     return this.organisation.acceptInvitation(dto.token, actorId);
+  }
+
+  @Get('invitations/:token')
+  async getPublicInvitation(@Param('token') token: string) {
+    const invitation = await this.organisation.getInvitationByToken(token);
+    if (!invitation) throw new BadRequestException('Invitation not found');
+    const { email, organisationId, clientId, roleId, status, expiresAt } = invitation;
+    return { email, organisationId, clientId: clientId ?? undefined, roleId, status, expiresAt: expiresAt.toISOString() };
+  }
+
+  @Post('invitations/:token/accept')
+  async acceptPublicInvitation(
+    @Param('token') token: string,
+    @Body() dto: { userId: string },
+    @Headers('x-internal-api-key') internalApiKey?: string,
+  ) {
+    if (internalApiKey !== this.config.get<string>('INTERNAL_API_KEY')) {
+      throw new ForbiddenException('Forbidden');
+    }
+    return this.organisation.acceptInvitation(token, dto.userId);
   }
 
   @Get(':id/invitations')

@@ -23,6 +23,7 @@ model FileRecord {
   storageKey     String   @unique
   url            String?
   etag           String?
+  checksumSha256 String?
   status         String   @default("uploaded") // uploaded, processing, processed, failed
   previewUrl     String?
   thumbnailUrl   String?

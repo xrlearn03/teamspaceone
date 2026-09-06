@@ -4,6 +4,7 @@ RUN pnpm --filter @teamspace-one/file-storage-service db:generate
 RUN pnpm --filter "@teamspace-one/file-storage-service..." build
 
 FROM node:20 AS runner
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules

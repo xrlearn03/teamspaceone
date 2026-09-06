@@ -340,6 +340,12 @@ export interface MessageReaction {
   createdAt: string;
 }
 
+export interface MessageMention {
+  messageId: string;
+  userId: string;
+  createdAt: string;
+}
+
 export interface Message {
   id: string;
   channelId: string;
@@ -352,6 +358,7 @@ export interface Message {
   updatedAt: string;
   attachments: MessageAttachment[];
   reactions?: MessageReaction[];
+  mentions?: MessageMention[];
   _count?: { replies: number };
   /** Set client-side for messages queued while offline. */
   pending?: boolean;
@@ -391,6 +398,8 @@ export interface Task {
   id: string;
   organisationId: string;
   projectId: string;
+  sourceMessageId?: string | null;
+  sourceChannelId?: string | null;
   title: string;
   description?: string | null;
   assigneeId?: string | null;
@@ -402,6 +411,13 @@ export interface Task {
   completedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TaskDependency {
+  id: string;
+  taskId: string;
+  dependsOnTaskId: string;
+  createdAt: string;
 }
 
 export interface TaskAttachment {
@@ -509,6 +525,8 @@ export interface FileRecord {
   previewUrl?: string | null;
   thumbnailUrl?: string | null;
   storageKey?: string | null;
+  checksumSha256?: string | null;
+  metadata?: Record<string, unknown> | null;
   createdAt: string;
 }
 
@@ -916,13 +934,61 @@ export function deleteFile(fileId: string) {
   return apiRequest<void>(`/files/${fileId}`, { method: "DELETE" });
 }
 
-export function uploadFile(file: File) {
-  const form = new FormData();
-  form.append("file", file);
-  return apiRequest<FileRecord>("/files/upload", {
-    method: "POST",
-    body: form,
-  });
+interface PresignUploadResult {
+  id: string;
+  uploadUrl: string;
+  storageKey: string;
+  uploadHeaders?: Record<string, string>;
+}
+
+async function sha256Hex(file: File): Promise<string | undefined> {
+  try {
+    const buffer = await file.arrayBuffer();
+    const digest = await crypto.subtle.digest("SHA-256", buffer);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    return undefined;
+  }
+}
+
+export async function uploadFile(file: File) {
+  const mimeType = file.type || "application/octet-stream";
+  const sha256 = await sha256Hex(file);
+
+  try {
+    const presign = await apiRequest<PresignUploadResult>("/files/presign-upload", {
+      method: "POST",
+      body: {
+        fileName: file.name,
+        mimeType,
+        size: file.size,
+        category: "attachment",
+        sha256,
+      },
+    });
+
+    const put = await fetch(presign.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": mimeType, ...presign.uploadHeaders },
+      body: file,
+    });
+    if (!put.ok) {
+      throw new ApiError(put.status, `Upload failed with status ${put.status}`);
+    }
+
+    return await apiRequest<FileRecord>(`/files/${presign.id}/complete`, {
+      method: "POST",
+      body: { sha256 },
+    });
+  } catch (err) {
+    // Older deployments may not expose the presign flow; fall back to multipart.
+    if (!(err instanceof ApiError && err.status === 404)) throw err;
+    const form = new FormData();
+    form.append("file", file);
+    return apiRequest<FileRecord>("/files/upload", { method: "POST", body: form });
+  }
 }
 
 async function authHeaders(): Promise<Record<string, string>> {

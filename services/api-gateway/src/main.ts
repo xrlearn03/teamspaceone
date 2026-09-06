@@ -54,6 +54,40 @@ function securityHeaders(_req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
+}
+
+function createRateLimitMiddleware(windowMs: number, maxRequests: number) {
+  const store = new Map<string, RateLimitEntry>();
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    const now = Date.now();
+    const key = (req.ip || req.socket.remoteAddress || 'unknown').toString();
+    let entry = store.get(key);
+
+    if (!entry || entry.resetAt <= now) {
+      entry = { count: 0, resetAt: now + windowMs };
+      store.set(key, entry);
+    }
+
+    entry.count += 1;
+
+    res.setHeader('X-RateLimit-Limit', String(maxRequests));
+    res.setHeader('X-RateLimit-Remaining', String(Math.max(0, maxRequests - entry.count)));
+    res.setHeader('X-RateLimit-Reset', String(Math.ceil(entry.resetAt / 1000)));
+
+    if (entry.count > maxRequests) {
+      res.setHeader('Retry-After', String(Math.ceil((entry.resetAt - now) / 1000)));
+      res.status(429).json({ error: 'Too many requests' });
+      return;
+    }
+
+    next();
+  };
+}
+
 async function bootstrap() {
   initTelemetry({ serviceName: 'teamspace-one-api-gateway' });
 
@@ -97,6 +131,10 @@ async function bootstrap() {
   });
 
   const config = app.get(ConfigService);
+  const rateLimitWindow = config.get<number>('RATE_LIMIT_WINDOW_MS', 60000);
+  const rateLimitMax = config.get<number>('RATE_LIMIT_MAX', 100);
+  app.use(createRateLimitMiddleware(rateLimitWindow, rateLimitMax));
+
   const authUrl = config.get<string>('AUTH_SERVICE_URL', 'http://localhost:3002');
   const orgUrl = config.get<string>('ORGANISATION_SERVICE_URL', 'http://localhost:3003');
   const msgUrl = config.get<string>('MESSAGING_SERVICE_URL', 'http://localhost:3004');

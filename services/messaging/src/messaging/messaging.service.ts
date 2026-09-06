@@ -20,6 +20,7 @@ const channelInclude = { members: { orderBy: { joinedAt: 'asc' as const } } };
 const messageInclude = {
   attachments: true,
   reactions: { orderBy: { createdAt: 'asc' as const } },
+  mentions: { orderBy: { createdAt: 'asc' as const }, select: { userId: true } },
   _count: { select: { replies: { where: { deletedAt: null } } } },
 };
 
@@ -185,6 +186,7 @@ export class MessagingService {
     }
 
     const id = randomUUID();
+    const memberIds = channel.members.map((m) => m.userId);
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const message = await tx.message.create({
         data: {
@@ -198,10 +200,15 @@ export class MessagingService {
         },
         include: messageInclude,
       });
+      await this.syncMentions(tx, id, content, memberIds);
       await tx.channel.update({ where: { id: dto.channelId }, data: { updatedAt: new Date() } });
-      const recipientIds = channel.members.map((m) => m.userId);
-      await this.event(tx, ctx, Subjects.MESSAGE_CREATED, 'message', id, { ...message, recipientIds });
-      return message;
+      const messageWithMentions = await tx.message.findUniqueOrThrow({
+        where: { id },
+        include: messageInclude,
+      });
+      const recipientIds = [...new Set([...memberIds, ...this.extractMentions(content)])];
+      await this.event(tx, ctx, Subjects.MESSAGE_CREATED, 'message', id, { ...messageWithMentions, recipientIds });
+      return messageWithMentions;
     });
   }
 
@@ -250,9 +257,15 @@ export class MessagingService {
         where: { id: updated.channelId },
         include: { members: { select: { userId: true } } },
       });
-      const recipientIds = channel?.members.map((m) => m.userId) ?? [];
-      await this.event(tx, ctx, Subjects.MESSAGE_UPDATED, 'message', messageId, { ...updated, recipientIds });
-      return updated;
+      const memberIds = channel?.members.map((m) => m.userId) ?? [];
+      await this.syncMentions(tx, messageId, content, memberIds);
+      const updatedWithMentions = await tx.message.findUniqueOrThrow({
+        where: { id: messageId },
+        include: messageInclude,
+      });
+      const recipientIds = [...new Set([...memberIds, ...this.extractMentions(content)])];
+      await this.event(tx, ctx, Subjects.MESSAGE_UPDATED, 'message', messageId, { ...updatedWithMentions, recipientIds });
+      return updatedWithMentions;
     });
   }
 
@@ -368,6 +381,36 @@ export class MessagingService {
     });
     if (!message) throw new NotFoundException('Message not found or not owned by actor');
     return message;
+  }
+
+  private extractMentions(content: string): string[] {
+    if (!content) return [];
+    const matches = content.match(/<@([a-zA-Z0-9_-]+)>/g) || [];
+    return [...new Set(matches.map((m) => m.slice(2, -1)))].filter(Boolean);
+  }
+
+  private async syncMentions(
+    tx: Prisma.TransactionClient,
+    messageId: string,
+    content: string,
+    memberIds: string[],
+  ): Promise<void> {
+    const mentionIds = this.extractMentions(content).filter((userId) => memberIds.includes(userId));
+
+    await tx.messageMention.deleteMany({
+      where: { messageId, userId: { notIn: mentionIds } },
+    });
+
+    if (mentionIds.length === 0) return;
+
+    await tx.messageMention.createMany({
+      data: mentionIds.map((userId) => ({
+        id: randomUUID(),
+        messageId,
+        userId,
+      })),
+      skipDuplicates: true,
+    });
   }
 
   private async event(

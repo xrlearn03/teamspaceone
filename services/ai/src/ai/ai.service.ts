@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { OpenAI } from 'openai';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
@@ -31,12 +32,12 @@ export class AiService {
   ) {}
 
   async summarize(prompt: string, sourceText?: string): Promise<{ result: string; model: string }> {
-    const apiKey = this.config.get<string>('OPENAI_API_KEY');
-    const model = this.config.get<string>('OPENAI_MODEL', 'gpt-4o-mini');
+    const client = await this.getClient();
+    const model = this.config.get<string>('AI_MODEL') ?? this.config.get<string>('OPENAI_MODEL', 'gpt-4o-mini');
 
-    if (!apiKey) {
+    if (!client) {
       return {
-        result: `No OpenAI key configured. Placeholder summary for: ${prompt}`,
+        result: `No AI provider configured. Placeholder summary for: ${prompt}`,
         model: 'none',
       };
     }
@@ -44,8 +45,6 @@ export class AiService {
     const content = sourceText ? `${prompt}\n\n${sourceText.slice(0, 12000)}` : prompt;
 
     try {
-      const { default: OpenAI } = await import('openai');
-      const client = new OpenAI({ apiKey });
       const completion = await client.chat.completions.create({
         model,
         messages: [
@@ -56,24 +55,24 @@ export class AiService {
       const result = completion.choices[0]?.message?.content ?? '';
       return { result, model };
     } catch (err) {
-      this.logger.error(`OpenAI call failed: ${(err as Error).message}`);
-      return { result: 'OpenAI summarization failed.', model: 'none' };
+      this.logger.error(`AI summarization call failed: ${(err as Error).message}`);
+      return { result: 'AI summarization failed.', model: 'none' };
     }
   }
 
   async embed(text: string): Promise<number[]> {
-    const apiKey = this.config.get<string>('OPENAI_API_KEY');
+    const client = await this.getClient();
     const input = text.slice(0, 8000).trim();
 
-    if (!apiKey || !input) {
+    if (!client || !input) {
       return Array(1536).fill(0);
     }
 
+    const model = this.config.get<string>('AI_EMBEDDING_MODEL') ?? 'text-embedding-3-small';
+
     try {
-      const { default: OpenAI } = await import('openai');
-      const client = new OpenAI({ apiKey });
       const response = await client.embeddings.create({
-        model: 'text-embedding-3-small',
+        model,
         input,
         encoding_format: 'float',
       });
@@ -462,15 +461,13 @@ export class AiService {
     }));
 
     const context = sources.map((s) => `[${s.resourceType}:${s.resourceId}] ${s.title ? s.title + '\n' : ''}${s.text}`).join('\n\n');
-    const apiKey = this.config.get<string>('OPENAI_API_KEY');
-    const model = this.config.get<string>('OPENAI_MODEL', 'gpt-4o-mini');
+    const client = await this.getClient();
+    const model = this.config.get<string>('AI_MODEL') ?? this.config.get<string>('OPENAI_MODEL', 'gpt-4o-mini');
 
-    let answer = 'OpenAI is not configured. No answer could be generated.';
+    let answer = 'No AI provider configured. No answer could be generated.';
 
-    if (apiKey) {
+    if (client) {
       try {
-        const { default: OpenAI } = await import('openai');
-        const client = new OpenAI({ apiKey });
         const completion = await client.chat.completions.create({
           model,
           messages: [
@@ -501,7 +498,7 @@ export class AiService {
           question,
           context: sources as any,
           answer,
-          model: apiKey ? model : 'none',
+          model: client ? model : 'none',
         },
       });
 
@@ -959,6 +956,20 @@ export class AiService {
     await tx.$executeRaw(q);
   }
 
+  private getClient(): OpenAI | null {
+    const apiKey = this.config.get<string>('OPENAI_API_KEY');
+    const localUrl = this.config.get<string>('LOCAL_AI_URL');
+
+    if (!apiKey && !localUrl) {
+      return null;
+    }
+
+    return new OpenAI({
+      apiKey: apiKey ?? 'local',
+      baseURL: localUrl,
+    });
+  }
+
   private toResourceType(eventType: string): string | undefined {
     if (eventType.startsWith('teamspace-one.message')) return 'message';
     if (eventType.startsWith('teamspace-one.task')) return 'task';
@@ -973,13 +984,13 @@ export class AiService {
     instruction: string,
     candidates: Array<{ userId: string; name: string; role?: string }> = [],
   ): Promise<T[]> {
-    const apiKey = this.config.get<string>('OPENAI_API_KEY');
-    const model = this.config.get<string>('OPENAI_MODEL', 'gpt-4o-mini');
+    const client = await this.getClient();
+    const model = this.config.get<string>('AI_MODEL') ?? this.config.get<string>('OPENAI_MODEL', 'gpt-4o-mini');
 
-    if (!apiKey) {
+    if (!client) {
       return field === 'tasks'
-        ? ([{ title: 'Placeholder extracted task', description: 'OpenAI is not configured', assigneeId: null }] as unknown as T[])
-        : ([{ decision: 'Placeholder decision: OpenAI is not configured.' }] as unknown as T[]);
+        ? ([{ title: 'Placeholder extracted task', description: 'No AI provider configured', assigneeId: null }] as unknown as T[])
+        : ([{ decision: 'Placeholder decision: No AI provider configured.' }] as unknown as T[]);
     }
 
     let taskSchema = '{ "tasks": [ { "title": string, "description": string | null, "dueDate": string | null (ISO 8601), "assigneeId": string | null } ] }';
@@ -994,8 +1005,6 @@ export class AiService {
         : '{ "decisions": [ { "decision": string, "stakeholders": string[] | null } ] }';
 
     try {
-      const { default: OpenAI } = await import('openai');
-      const client = new OpenAI({ apiKey });
       const completion = await client.chat.completions.create({
         model,
         messages: [

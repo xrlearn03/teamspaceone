@@ -1,5 +1,5 @@
 import { BadRequestException, GoneException, Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { Prisma } from '#prisma';
@@ -8,6 +8,7 @@ import { OutboxService } from '../outbox/outbox.service.js';
 import { StorageService } from '../storage/storage.service.js';
 import { FileProcessingService } from '../file-processing/file-processing.service.js';
 import { type PresignUploadDto } from './dto/presign-upload.dto.js';
+import { type CompleteUploadDto } from './dto/complete-upload.dto.js';
 import { type CreateExternalShareDto } from './dto/create-external-share.dto.js';
 
 export interface MulterFile {
@@ -21,6 +22,7 @@ export interface PresignUploadResult {
   id: string;
   uploadUrl: string;
   storageKey: string;
+  uploadHeaders: Record<string, string>;
 }
 
 export interface FileRecordResult {
@@ -38,6 +40,7 @@ export interface FileRecordResult {
   storageKey: string;
   url: string | null;
   etag: string | null;
+  checksumSha256: string | null;
   status: string;
   previewUrl: string | null;
   thumbnailUrl: string | null;
@@ -90,6 +93,12 @@ export class FileStorageService {
       throw new ForbiddenException('Missing actor');
     }
 
+    if (dto.sha256 !== undefined && !/^[a-f0-9]{64}$/i.test(dto.sha256)) {
+      throw new BadRequestException('sha256 must be a lowercase hex-encoded SHA-256 digest');
+    }
+    const checksumSha256 = dto.sha256?.toLowerCase();
+    const checksumBase64 = checksumSha256 ? Buffer.from(checksumSha256, 'hex').toString('base64') : undefined;
+
     const id = randomUUID();
     const storageKey = this.storage.buildStorageKey({
       organisationId: ctx.organisationId,
@@ -97,7 +106,12 @@ export class FileStorageService {
       fileName: dto.fileName,
     });
 
-    const uploadUrl = await this.storage.getSignedUploadUrl(storageKey, dto.mimeType);
+    const { url: uploadUrl, headers: uploadHeaders } = await this.storage.getSignedUploadUrl(
+      storageKey,
+      dto.mimeType,
+      300,
+      { checksumSha256Base64: checksumBase64 },
+    );
 
     await this.prisma.fileRecord.create({
       data: {
@@ -113,20 +127,26 @@ export class FileStorageService {
         size: dto.size,
         bucket: this.storage.getBucket(),
         storageKey,
+        checksumSha256,
         status: 'pending',
       },
     });
 
-    return { id, uploadUrl, storageKey };
+    return { id, uploadUrl, storageKey, uploadHeaders };
   }
 
   async completeUpload(
     ctx: OrganisationContextValue,
     id: string,
+    dto: CompleteUploadDto = {},
   ): Promise<FileRecordResult> {
     const actorId = ctx.actorId;
     if (!actorId) {
       throw new ForbiddenException('Missing actor');
+    }
+
+    if (dto.sha256 !== undefined && !/^[a-f0-9]{64}$/i.test(dto.sha256)) {
+      throw new BadRequestException('sha256 must be a lowercase hex-encoded SHA-256 digest');
     }
 
     const existing = await this.prisma.fileRecord.findFirst({
@@ -136,9 +156,30 @@ export class FileStorageService {
       throw new NotFoundException('File not found');
     }
 
-    const exists = await this.storage.exists(existing.storageKey);
-    if (!exists) {
+    const expectedSha256 = (dto.sha256 ?? existing.checksumSha256)?.toLowerCase() ?? null;
+
+    const head = await this.storage.headObject(existing.storageKey);
+    if (!head) {
       throw new NotFoundException('Object not found in storage');
+    }
+    if (head.contentLength !== undefined && head.contentLength !== existing.size) {
+      await this.rejectCorruptUpload(existing.id, existing.storageKey, `size mismatch: expected ${existing.size}, got ${head.contentLength}`);
+    }
+
+    if (expectedSha256) {
+      // S3 returns the stored SHA-256 (base64) when the PUT carried a checksum;
+      // otherwise fall back to hashing the object ourselves.
+      const storedBase64 = head.checksumSha256;
+      if (storedBase64) {
+        if (Buffer.from(expectedSha256, 'hex').toString('base64') !== storedBase64) {
+          await this.rejectCorruptUpload(existing.id, existing.storageKey, 'checksum mismatch');
+        }
+      } else {
+        const actual = await this.hashObject(existing.storageKey);
+        if (actual !== expectedSha256) {
+          await this.rejectCorruptUpload(existing.id, existing.storageKey, 'checksum mismatch');
+        }
+      }
     }
 
     const publicUrl = this.storage.getPublicUrl(existing.storageKey);
@@ -156,6 +197,7 @@ export class FileStorageService {
       size: existing.size,
       storageKey: existing.storageKey,
       bucket: this.storage.getBucket(),
+      checksumSha256: expectedSha256 ?? existing.checksumSha256,
       url: publicUrl,
       status: 'uploaded',
     };
@@ -174,7 +216,7 @@ export class FileStorageService {
     const updated = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const record = await tx.fileRecord.update({
         where: { id },
-        data: { status: 'uploaded', url: publicUrl },
+        data: { status: 'uploaded', url: publicUrl, checksumSha256: expectedSha256 ?? existing.checksumSha256 },
       });
       await this.outbox.createEvent(tx, envelope, Subjects.FILE_UPLOADED);
       return record;
@@ -190,6 +232,26 @@ export class FileStorageService {
     });
 
     return this.withSignedUrl(updated);
+  }
+
+  private async hashObject(storageKey: string): Promise<string> {
+    const { stream } = await this.storage.getObjectStream(storageKey);
+    const hash = createHash('sha256');
+    for await (const chunk of stream) {
+      hash.update(chunk);
+    }
+    return hash.digest('hex');
+  }
+
+  private async rejectCorruptUpload(fileId: string, storageKey: string, reason: string): Promise<never> {
+    this.logger.warn({ fileId, storageKey, reason }, 'Upload integrity check failed');
+    await this.prisma.fileRecord.update({ where: { id: fileId }, data: { status: 'failed' } });
+    try {
+      await this.storage.delete(storageKey);
+    } catch (err) {
+      this.logger.error({ fileId, error: (err as Error).message }, 'Failed to delete corrupt object');
+    }
+    throw new BadRequestException(`Upload integrity check failed: ${reason}`);
   }
 
   async upload(ctx: OrganisationContextValue, file: MulterFile): Promise<FileRecordResult> {
@@ -208,6 +270,7 @@ export class FileStorageService {
 
     const { etag } = await this.storage.uploadBuffer(storageKey, file.buffer, file.mimetype);
     const publicUrl = this.storage.getPublicUrl(storageKey);
+    const checksumSha256 = createHash('sha256').update(file.buffer).digest('hex');
 
     const payload = {
       id,
@@ -223,6 +286,7 @@ export class FileStorageService {
       bucket: this.storage.getBucket(),
       storageKey,
       etag,
+      checksumSha256,
       url: publicUrl,
       status: 'uploaded',
     };
@@ -250,6 +314,7 @@ export class FileStorageService {
           bucket: this.storage.getBucket(),
           storageKey,
           etag,
+          checksumSha256,
           url: publicUrl,
           status: 'uploaded',
         },

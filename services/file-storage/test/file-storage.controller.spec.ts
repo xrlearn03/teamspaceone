@@ -46,7 +46,7 @@ describe('FileStorageController', () => {
   it('should complete an upload', async () => {
     const result = await controller.completeUpload(ctx, 'f1', {});
     expect(result.id).toBe('f1');
-    expect(mockService.completeUpload).toHaveBeenCalledWith(ctx, 'f1');
+    expect(mockService.completeUpload).toHaveBeenCalledWith(ctx, 'f1', {});
   });
 
   it('should delete a file', async () => {

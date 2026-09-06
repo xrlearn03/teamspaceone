@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  File,
+  FileArchive,
+  FileAudio,
   FileText,
+  FileVideo,
   Grid,
+  Image as ImageIcon,
   List,
   Search,
   Download,
@@ -21,7 +26,51 @@ import { EmptyState } from "../components/ui/empty-state";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { cn } from "../lib/utils";
 
-const filters = ["All", "PDF", "Images", "Design", "Docs", "Archives"];
+const filters = ["All", "PDF", "Images", "Video", "Audio", "Design", "Docs", "Archives"];
+
+type FileKind = "image" | "video" | "audio" | "document" | "archive" | "text" | "other";
+
+function fileKind(file: { mimeType: string; originalName: string; metadata?: Record<string, unknown> | null }): FileKind {
+  const kind = file.metadata?.kind;
+  if (typeof kind === "string" && ["image", "video", "audio", "document", "archive", "text", "other"].includes(kind)) {
+    return kind as FileKind;
+  }
+  const mime = file.mimeType.toLowerCase();
+  const name = file.originalName.toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime === "text/plain") return "text";
+  if (mime.includes("pdf") || mime.includes("word") || mime.includes("officedocument") || mime.includes("opendocument") || mime.includes("rtf") || mime === "text/csv" || mime === "text/html" || mime === "text/markdown") return "document";
+  if (/\.(zip|tar|tar\.gz|tgz|gz|7z|rar|bz2)$/.test(name) || mime.includes("zip") || mime.includes("tar") || mime.includes("compressed")) return "archive";
+  if (mime.startsWith("text/")) return "text";
+  return "other";
+}
+
+const KIND_ICONS: Record<FileKind, typeof FileText> = {
+  image: ImageIcon,
+  video: FileVideo,
+  audio: FileAudio,
+  document: FileText,
+  archive: FileArchive,
+  text: FileText,
+  other: File,
+};
+
+function FileKindIcon({ file, className }: { file: FileRecord; className?: string }) {
+  const Icon = KIND_ICONS[fileKind(file)];
+  return <Icon className={cn("text-text-muted", className)} />;
+}
+
+function formatDuration(seconds: unknown): string | null {
+  const value = typeof seconds === "number" ? seconds : Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const total = Math.round(value);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
 
 function formatBytes(bytes: number) {
   if (bytes === 0) return "0 B";
@@ -74,8 +123,12 @@ function matchesFilter(file: { originalName: string; mimeType: string }, filter:
         name.endsWith(".docx") ||
         mime.includes("word")
       );
+    case "Video":
+      return mime.startsWith("video/");
+    case "Audio":
+      return mime.startsWith("audio/");
     case "Archives":
-      return name.endsWith(".zip") || mime.includes("zip") || mime.includes("archive");
+      return /\.(zip|tar|tar\.gz|tgz|gz|7z|rar|bz2)$/.test(name) || mime.includes("zip") || mime.includes("archive") || mime.includes("compressed");
     default:
       return true;
   }
@@ -117,6 +170,7 @@ function useObjectUrl(load: (() => Promise<Blob>) | null, enabled = true) {
 }
 
 function FileThumbnail({ file, className, fallbackClassName }: { file: FileRecord; className?: string; fallbackClassName?: string }) {
+  const hasVisualThumbnail = fileKind(file) === "image" || fileKind(file) === "video";
   const load = useCallback(async () => {
     try {
       return await fetchFilePreview(file.id, "thumbnail");
@@ -124,7 +178,7 @@ function FileThumbnail({ file, className, fallbackClassName }: { file: FileRecor
       return downloadFile(file.id);
     }
   }, [file.id]);
-  const { url, loading } = useObjectUrl(load, isImage(file));
+  const { url, loading } = useObjectUrl(load, hasVisualThumbnail);
 
   if (loading) {
     return <div className={cn("animate-pulse rounded bg-surface-elevated", className)} />;
@@ -134,10 +188,43 @@ function FileThumbnail({ file, className, fallbackClassName }: { file: FileRecor
     return <img src={url} alt={file.originalName} className={cn("rounded object-cover", className)} />;
   }
 
-  return <FileText className={cn("text-text-muted", fallbackClassName ?? className)} />;
+  return <FileKindIcon file={file} className={fallbackClassName ?? className} />;
+}
+
+function FileMetadataRows({ file }: { file: FileRecord }) {
+  const metadata = file.metadata ?? {};
+  const duration = formatDuration(metadata.durationSeconds);
+  const dimensions =
+    typeof metadata.width === "number" && typeof metadata.height === "number"
+      ? `${metadata.width} × ${metadata.height}`
+      : null;
+  const entryCount = typeof metadata.archiveEntryCount === "number" ? metadata.archiveEntryCount : null;
+  const rows: [string, string][] = [
+    ["Type", file.mimeType],
+    ["Size", formatBytes(file.size)],
+    ["Status", file.status],
+  ];
+  if (duration) rows.push(["Duration", duration]);
+  if (dimensions) rows.push(["Dimensions", dimensions]);
+  if (typeof metadata.videoCodec === "string") rows.push(["Video codec", metadata.videoCodec]);
+  if (typeof metadata.audioCodec === "string") rows.push(["Audio codec", metadata.audioCodec]);
+  if (entryCount !== null) rows.push(["Archive contents", `${entryCount} file${entryCount === 1 ? "" : "s"}`]);
+  if (metadata.textExtracted === true) rows.push(["Text", "Extracted for search"]);
+  if (file.checksumSha256) rows.push(["SHA-256", file.checksumSha256]);
+  return (
+    <dl className="grid w-full grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-left text-sm">
+      {rows.map(([label, value]) => (
+        <div key={label} className="contents">
+          <dt className="text-text-muted">{label}</dt>
+          <dd className="break-all text-text">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 function FilePreview({ file }: { file: FileRecord }) {
+  const kind = fileKind(file);
   const loadImage = useCallback(async () => {
     try {
       return await fetchFilePreview(file.id, "preview");
@@ -145,47 +232,76 @@ function FilePreview({ file }: { file: FileRecord }) {
       return downloadFile(file.id);
     }
   }, [file.id]);
-  const { url: imageUrl, loading: imageLoading, error: imageError } = useObjectUrl(loadImage, isImage(file));
+  const { url: imageUrl, loading: imageLoading, error: imageError } = useObjectUrl(loadImage, kind === "image");
 
-  const loadVideo = useCallback(() => downloadFile(file.id), [file.id]);
-  const { url: videoUrl, loading: videoLoading, error: videoError } = useObjectUrl(loadVideo, isVideo(file));
+  const loadMedia = useCallback(() => downloadFile(file.id), [file.id]);
+  const { url: videoUrl, loading: videoLoading, error: videoError } = useObjectUrl(loadMedia, kind === "video");
+  const { url: audioUrl, loading: audioLoading, error: audioError } = useObjectUrl(loadMedia, kind === "audio");
+
+  const textPreview = typeof file.metadata?.textPreview === "string" ? file.metadata.textPreview : null;
+  const archiveEntries = Array.isArray(file.metadata?.archiveEntries)
+    ? (file.metadata.archiveEntries as unknown[]).filter((e): e is string => typeof e === "string")
+    : [];
+
+  const mediaError = (message: string) => (
+    <div className="flex flex-col items-center gap-3 text-center text-error">
+      <FileKindIcon file={file} className="h-16 w-16" />
+      <p className="text-sm">{message}</p>
+    </div>
+  );
 
   return (
-    <div className="flex min-h-[16rem] items-center justify-center p-4 pt-0">
-      {isImage(file) ? (
+    <div className="flex min-h-[16rem] flex-col items-center justify-center gap-4 p-4 pt-0">
+      {kind === "image" && (
         imageLoading ? (
           <div className="h-32 w-32 animate-pulse rounded bg-surface-elevated" />
         ) : imageUrl ? (
-          <img src={imageUrl} alt={file.originalName} className="max-h-[70vh] max-w-full rounded-md object-contain" />
-        ) : (
-          <div className="flex flex-col items-center gap-3 text-center text-error">
-            <FileText className="h-16 w-16 text-text-muted" />
-            <p className="text-sm">{imageError ?? "Unable to load image"}</p>
-          </div>
-        )
-      ) : isVideo(file) ? (
+          <img src={imageUrl} alt={file.originalName} className="max-h-[60vh] max-w-full rounded-md object-contain" />
+        ) : mediaError(imageError ?? "Unable to load image")
+      )}
+      {kind === "video" && (
         videoLoading ? (
           <div className="h-32 w-32 animate-pulse rounded bg-surface-elevated" />
         ) : videoUrl ? (
-          <video src={videoUrl} controls className="max-h-[70vh] max-w-full rounded-md" />
-        ) : (
-          <div className="flex flex-col items-center gap-3 text-center text-error">
-            <FileText className="h-16 w-16 text-text-muted" />
-            <p className="text-sm">{videoError ?? "Unable to load video"}</p>
-          </div>
-        )
-      ) : (
-        <div className="flex flex-col items-center gap-4 text-center">
-          <FileText className="h-16 w-16 text-text-muted" />
-          <div>
-            <p className="font-medium text-text">{file.originalName}</p>
-            <p className="text-sm text-text-muted">{formatBytes(file.size)} · {file.mimeType}</p>
-          </div>
-          <Button disabled={!getFileUrl(file)} onClick={() => { const url = getFileUrl(file); if (url) void openUrl(url); }}>
-            <ExternalLink className="mr-1.5 h-4 w-4" /> Open file
-          </Button>
-        </div>
+          <video src={videoUrl} controls className="max-h-[60vh] max-w-full rounded-md" />
+        ) : mediaError(videoError ?? "Unable to load video")
       )}
+      {kind === "audio" && (
+        audioLoading ? (
+          <div className="h-16 w-64 animate-pulse rounded bg-surface-elevated" />
+        ) : audioUrl ? (
+          <audio src={audioUrl} controls className="w-full max-w-md" />
+        ) : mediaError(audioError ?? "Unable to load audio")
+      )}
+      {kind !== "image" && kind !== "video" && kind !== "audio" && (
+        <FileKindIcon file={file} className="h-16 w-16" />
+      )}
+      {textPreview && kind !== "text" ? (
+        <pre className="max-h-48 w-full overflow-y-auto whitespace-pre-wrap rounded-md bg-surface-elevated p-3 text-left text-xs text-text-secondary">
+          {textPreview}
+        </pre>
+      ) : null}
+      {textPreview && kind === "text" ? (
+        <pre className="max-h-[50vh] w-full overflow-y-auto whitespace-pre-wrap rounded-md bg-surface-elevated p-3 text-left text-xs text-text-secondary">
+          {textPreview}
+        </pre>
+      ) : null}
+      {archiveEntries.length > 0 ? (
+        <ul className="max-h-48 w-full overflow-y-auto rounded-md bg-surface-elevated p-3 text-left text-xs text-text-secondary">
+          {archiveEntries.map((entry) => (
+            <li key={entry} className="truncate py-0.5">{entry}</li>
+          ))}
+          {typeof file.metadata?.archiveEntryCount === "number" && file.metadata.archiveEntryCount > archiveEntries.length ? (
+            <li className="py-0.5 text-text-muted">…and {file.metadata.archiveEntryCount - archiveEntries.length} more</li>
+          ) : null}
+        </ul>
+      ) : null}
+      <div className="w-full max-w-md">
+        <FileMetadataRows file={file} />
+      </div>
+      <Button disabled={!getFileUrl(file)} onClick={() => { const url = getFileUrl(file); if (url) void openUrl(url); }}>
+        <ExternalLink className="mr-1.5 h-4 w-4" /> Open file
+      </Button>
     </div>
   );
 }

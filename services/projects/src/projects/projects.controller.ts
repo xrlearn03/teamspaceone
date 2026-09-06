@@ -6,6 +6,8 @@ import { type CreateApprovalDto } from './dto/create-approval.dto.js';
 import { type CreateCommentDto } from './dto/create-comment.dto.js';
 import { type CreateProjectDto } from './dto/create-project.dto.js';
 import { type CreateTaskDto } from './dto/create-task.dto.js';
+import { type CreateTaskDependencyDto } from './dto/create-task-dependency.dto.js';
+import { type CreateTaskFromMessageDto } from './dto/create-task-from-message.dto.js';
 import { type ResolveApprovalDto } from './dto/resolve-approval.dto.js';
 import { type UpdateCommentDto } from './dto/update-comment.dto.js';
 import { type UpdateProjectDto } from './dto/update-project.dto.js';
@@ -51,6 +53,11 @@ export class ProjectsController {
     return this.projects.createTask(ctx, dto);
   }
 
+  @Post('tasks/from-message')
+  createTaskFromMessage(@CurrentOrganisation() ctx: OrganisationContextValue, @Body() dto: CreateTaskFromMessageDto) {
+    return this.projects.createTaskFromMessage(ctx, dto);
+  }
+
   @Get('projects/:id/tasks')
   listTasks(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string) {
     return this.projects.listTasks(ctx, projectId);
@@ -64,6 +71,25 @@ export class ProjectsController {
   @Delete('tasks/:id')
   async deleteTask(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') taskId: string) {
     await this.projects.deleteTask(ctx, taskId);
+  }
+
+  @Get('tasks/:id/dependencies')
+  listTaskDependencies(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') taskId: string) {
+    return this.projects.listTaskDependencies(ctx, taskId);
+  }
+
+  @Post('tasks/:id/dependencies')
+  addTaskDependency(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') taskId: string, @Body() dto: CreateTaskDependencyDto) {
+    return this.projects.addTaskDependency(ctx, taskId, dto);
+  }
+
+  @Delete('tasks/:id/dependencies/:dependencyId')
+  async removeTaskDependency(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') taskId: string,
+    @Param('dependencyId') dependencyId: string,
+  ) {
+    await this.projects.removeTaskDependency(ctx, taskId, dependencyId);
   }
 
   @Get('tasks/:id/attachments')

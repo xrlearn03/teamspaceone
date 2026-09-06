@@ -56,6 +56,7 @@ model Message {
   replies        Message[]           @relation("ThreadReplies")
   attachments    MessageAttachment[]
   reactions      MessageReaction[]
+  mentions       MessageMention[]
 
   @@index([organisationId])
   @@index([channelId, createdAt])
@@ -87,6 +88,19 @@ model MessageReaction {
   @@unique([messageId, userId, emoji])
   @@index([messageId])
   @@map("message_reactions")
+}
+
+model MessageMention {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@index([userId])
+  @@map("message_mentions")
 }
 
 model OutboxEvent {

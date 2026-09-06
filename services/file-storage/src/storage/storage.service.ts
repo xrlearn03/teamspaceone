@@ -94,13 +94,36 @@ export class StorageService implements OnModuleInit {
     return { etag: result.ETag ?? '' };
   }
 
-  async getSignedUploadUrl(key: string, mimeType: string, expirySeconds = 300): Promise<string> {
+  async getSignedUploadUrl(
+    key: string,
+    mimeType: string,
+    expirySeconds = 300,
+    options?: { checksumSha256Base64?: string },
+  ): Promise<{ url: string; headers: Record<string, string> }> {
     const command = new PutObjectCommand({
       Bucket: this.bucket,
       Key: key,
       ContentType: mimeType,
+      ...(options?.checksumSha256Base64 ? { ChecksumSHA256: options.checksumSha256Base64 } : {}),
     });
-    return getSignedUrl(this.client, command, { expiresIn: expirySeconds });
+    const url = await getSignedUrl(this.client, command, { expiresIn: expirySeconds });
+    const headers: Record<string, string> = {};
+    if (options?.checksumSha256Base64) {
+      headers['x-amz-checksum-sha256'] = options.checksumSha256Base64;
+    }
+    return { url, headers };
+  }
+
+  async headObject(key: string): Promise<{ contentLength?: number; checksumSha256?: string } | null> {
+    try {
+      const response = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      return {
+        contentLength: response.ContentLength,
+        checksumSha256: response.ChecksumSHA256,
+      };
+    } catch {
+      return null;
+    }
   }
 
   async getSignedDownloadUrl(key: string, expirySeconds = 300): Promise<string> {

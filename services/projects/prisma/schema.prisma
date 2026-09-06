@@ -48,26 +48,31 @@ model ProjectMember {
 }
 
 model Task {
-  id             String    @id @default(cuid())
-  organisationId String
-  projectId      String
-  title          String
-  description    String?
-  status         String    @default("todo")
-  priority       String    @default("medium")
-  position       Int       @default(0)
-  assigneeId     String?
-  startDate      DateTime?
-  dueDate        DateTime?
-  completedAt    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  attachments    TaskAttachment[]
+  id              String    @id @default(cuid())
+  organisationId  String
+  projectId       String
+  sourceMessageId String?
+  sourceChannelId String?
+  title           String
+  description     String?
+  status          String    @default("todo")
+  priority        String    @default("medium")
+  position        Int       @default(0)
+  assigneeId      String?
+  startDate       DateTime?
+  dueDate         DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  attachments     TaskAttachment[]
+  dependencies    TaskDependency[] @relation("TaskDependencies")
+  blockedBy       TaskDependency[] @relation("TaskBlockedBy")
 
   @@index([organisationId])
   @@index([projectId, status, position])
   @@index([assigneeId])
+  @@index([sourceMessageId])
   @@map("tasks")
 }
 
@@ -82,6 +87,20 @@ model TaskAttachment {
   @@unique([taskId, fileId])
   @@index([fileId])
   @@map("task_attachments")
+}
+
+model TaskDependency {
+  id              String   @id @default(cuid())
+  taskId          String
+  dependsOnTaskId String
+  createdAt       DateTime @default(now())
+  task            Task     @relation("TaskDependencies", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOnTask   Task     @relation("TaskBlockedBy", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, dependsOnTaskId])
+  @@index([dependsOnTaskId])
+  @@index([taskId])
+  @@map("task_dependencies")
 }
 
 model ProjectComment {

@@ -19,6 +19,13 @@
 - Apply pending Prisma migration for a service (local Postgres): `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/<db>?schema=public pnpm --filter @teamspace-one/<service> db:migrate`
 - Apply pending migration on the server (Docker): `docker exec -w /app/services/<service> teamspace-one-<service>-service npx prisma migrate deploy` — containers already carry the correct `DATABASE_URL` (Postgres hostname is `postgres`, not `localhost`)
 
+## File & Storage Notes
+
+- The file-processing worker generates video thumbnails (and optional HLS previews) via `ffmpeg`/`ffprobe` — installed in `services/file-storage/Dockerfile` runner and needed on PATH for local dev (`brew install ffmpeg`).
+- Set `FILE_HLS_ENABLED=true` to enable HLS transcoding (off by default; CPU-heavy).
+- PDF/Office/CSV/EPUB text extraction uses `officeparser`; zip listings use `unzipper`.
+- Uploads: clients should use `POST /files/presign-upload` (send hex `sha256`) → `PUT` to the returned URL with `uploadHeaders` → `POST /files/:id/complete`. The service enforces the checksum via S3 `ChecksumSHA256` and re-verifies on complete.
+
 ## Frontend Stack
 
 - React 19 + TypeScript

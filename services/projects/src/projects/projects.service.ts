@@ -10,6 +10,8 @@ import { type CreateApprovalDto } from './dto/create-approval.dto.js';
 import { type CreateCommentDto } from './dto/create-comment.dto.js';
 import { type CreateProjectDto } from './dto/create-project.dto.js';
 import { type CreateTaskDto } from './dto/create-task.dto.js';
+import { type CreateTaskDependencyDto } from './dto/create-task-dependency.dto.js';
+import { type CreateTaskFromMessageDto } from './dto/create-task-from-message.dto.js';
 import { type UpdateCommentDto } from './dto/update-comment.dto.js';
 import { type ResolveApprovalDto } from './dto/resolve-approval.dto.js';
 import { type UpdateProjectDto } from './dto/update-project.dto.js';
@@ -354,6 +356,97 @@ export class ProjectsService {
       await this.event(tx, ctx, eventType, 'approval', approvalId, { approvalId, organisationId: ctx.organisationId, projectId: approval.projectId ?? undefined, requestedBy: approval.requestedBy, memberIds: project ? project.members.map((m) => m.userId) : [], status: dto.status, resolvedBy: actorId, resolvedAt: resolvedAt.toISOString(), message: updated.message ?? undefined });
       return updated;
     });
+  }
+
+  async createTaskFromMessage(ctx: OrganisationContextValue, dto: CreateTaskFromMessageDto) {
+    const actorId = this.actor(ctx);
+    const project = await this.memberProject(ctx, dto.projectId);
+    const title = this.required(dto.title, 'Task title', 300);
+    const status = this.status(dto.status);
+    const priority = this.priority(dto.priority);
+    const id = randomUUID();
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const position = dto.position ?? await tx.task.count({ where: { projectId: dto.projectId, status } });
+      const task = await tx.task.create({
+        data: {
+          id,
+          organisationId: ctx.organisationId,
+          projectId: dto.projectId,
+          sourceMessageId: dto.messageId,
+          sourceChannelId: dto.channelId,
+          title,
+          description: this.optional(dto.description, 10000),
+          assigneeId: dto.assigneeId,
+          startDate: this.date(dto.startDate),
+          dueDate: this.date(dto.dueDate),
+          status,
+          priority,
+          position,
+          completedAt: status === 'done' ? new Date() : null,
+        },
+      });
+      await this.activity(tx, ctx, dto.projectId, 'task.created.from_message', 'task', id, { title, status, messageId: dto.messageId, channelId: dto.channelId });
+      await this.event(tx, ctx, Subjects.TASK_CREATED, 'task', id, { ...task, memberIds: project.members.map((m) => m.userId) });
+      return task;
+    });
+  }
+
+  async listTaskDependencies(ctx: OrganisationContextValue, taskId: string) {
+    const task = await this.task(ctx, taskId);
+    const [dependencies, blockedBy] = await Promise.all([
+      this.prisma.taskDependency.findMany({ where: { taskId: task.id }, include: { dependsOnTask: { select: { id: true, title: true, status: true } } } }),
+      this.prisma.taskDependency.findMany({ where: { dependsOnTaskId: task.id }, include: { task: { select: { id: true, title: true, status: true } } } }),
+    ]);
+    return { dependencies, blockedBy };
+  }
+
+  async addTaskDependency(ctx: OrganisationContextValue, taskId: string, dto: CreateTaskDependencyDto) {
+    const task = await this.task(ctx, taskId);
+    if (task.id === dto.dependsOnTaskId) throw new BadRequestException('A task cannot depend on itself');
+    const dependsOn = await this.prisma.task.findFirst({
+      where: { id: dto.dependsOnTaskId, organisationId: ctx.organisationId, projectId: task.projectId },
+    });
+    if (!dependsOn) throw new NotFoundException('Dependency task not found in the same project');
+
+    const hasCycle = await this.wouldCreateCycle(task.id, dto.dependsOnTaskId);
+    if (hasCycle) throw new BadRequestException('Adding this dependency would create a cycle');
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const dep = await tx.taskDependency.create({
+        data: { id: randomUUID(), taskId: task.id, dependsOnTaskId: dto.dependsOnTaskId },
+        include: { dependsOnTask: { select: { id: true, title: true, status: true } } },
+      });
+      await this.activity(tx, ctx, task.projectId, 'task.dependency.added', 'task', taskId, { dependsOnTaskId: dto.dependsOnTaskId });
+      await this.event(tx, ctx, Subjects.TASK_UPDATED, 'task', taskId, { id: task.id, projectId: task.projectId, dependencies: [dep] });
+      return dep;
+    });
+  }
+
+  async removeTaskDependency(ctx: OrganisationContextValue, taskId: string, dependencyId: string) {
+    const task = await this.task(ctx, taskId);
+    const dep = await this.prisma.taskDependency.findFirst({ where: { id: dependencyId, taskId: task.id } });
+    if (!dep) throw new NotFoundException('Dependency not found');
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.taskDependency.delete({ where: { id: dependencyId } });
+      await this.activity(tx, ctx, task.projectId, 'task.dependency.removed', 'task', taskId, { dependsOnTaskId: dep.dependsOnTaskId });
+      await this.event(tx, ctx, Subjects.TASK_UPDATED, 'task', taskId, { id: task.id, projectId: task.projectId });
+      return { id: dependencyId, removed: true };
+    });
+  }
+
+  private async wouldCreateCycle(startTaskId: string, targetTaskId: string): Promise<boolean> {
+    const visited = new Set<string>();
+    const queue = [targetTaskId];
+    while (queue.length) {
+      const current = queue.shift()!;
+      if (current === startTaskId) return true;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      const next = await this.prisma.taskDependency.findMany({ where: { taskId: current }, select: { dependsOnTaskId: true } });
+      queue.push(...next.map((d) => d.dependsOnTaskId));
+    }
+    return false;
   }
 
   async resolveAccess(projectId: string, actorId: string) {

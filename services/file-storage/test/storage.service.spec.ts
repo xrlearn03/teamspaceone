@@ -54,8 +54,19 @@ describe('StorageService', () => {
   });
 
   it('should return a signed upload url', async () => {
-    const url = await service.getSignedUploadUrl('organisations/org-1/attachments/f.png', 'image/png');
-    expect(url).toBe('http://signed-url');
+    const result = await service.getSignedUploadUrl('organisations/org-1/attachments/f.png', 'image/png');
+    expect(result.url).toBe('http://signed-url');
+    expect(result.headers).toEqual({});
+  });
+
+  it('should include a checksum header when a sha256 is provided', async () => {
+    const sha256Hex = 'a'.repeat(64);
+    const base64 = Buffer.from(sha256Hex, 'hex').toString('base64');
+    const result = await service.getSignedUploadUrl('organisations/org-1/attachments/f.png', 'image/png', 300, {
+      checksumSha256Base64: base64,
+    });
+    expect(result.url).toBe('http://signed-url');
+    expect(result.headers['x-amz-checksum-sha256']).toBe(base64);
   });
 
   it('should return a public url using the configured endpoint', () => {

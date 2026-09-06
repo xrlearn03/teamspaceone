@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { renderEmailHtml } from './templates.js';
 
 @Processor('notification')
 export class NotificationDeliveryWorker extends WorkerHost {
@@ -65,9 +66,10 @@ export class NotificationDeliveryWorker extends WorkerHost {
     }
   }
 
-  private async sendEmail(notification: { id: string; title: string; body: string; userId: string; eventType: string }): Promise<void> {
+  private async sendEmail(notification: { id: string; title: string; body: string; userId: string; eventType: string; link?: string | null }): Promise<void> {
     const webhookUrl = this.config.get<string>('EMAIL_WEBHOOK_URL');
     if (webhookUrl) {
+      const appUrl = this.config.get<string>('APP_URL', 'https://app.teamspace.one');
       const response = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -75,6 +77,13 @@ export class NotificationDeliveryWorker extends WorkerHost {
           userId: notification.userId,
           subject: notification.title,
           body: notification.body,
+          html: renderEmailHtml({
+            eventType: notification.eventType,
+            title: notification.title,
+            body: notification.body,
+            link: notification.link,
+            appUrl,
+          }),
           notificationId: notification.id,
           eventType: notification.eventType,
         }),
@@ -98,7 +107,7 @@ export class NotificationDeliveryWorker extends WorkerHost {
     );
   }
 
-  private async sendEmailSmtp(notification: { id: string; title: string; body: string; userId: string; eventType: string }): Promise<void> {
+  private async sendEmailSmtp(notification: { id: string; title: string; body: string; userId: string; eventType: string; link?: string | null }): Promise<void> {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const nodemailer = require('nodemailer') as any;
@@ -130,11 +139,19 @@ export class NotificationDeliveryWorker extends WorkerHost {
         this.logger.log({ notificationId: notification.id, userId: notification.userId, subject: notification.title, body: notification.body }, 'Email content');
         return;
       }
+      const appUrl = this.config.get<string>('APP_URL', 'https://app.teamspace.one');
       await transporter.sendMail({
         from: this.config.get<string>('SMTP_FROM', 'no-reply@teamspace.one'),
         to,
         subject: notification.title,
         text: notification.body,
+        html: renderEmailHtml({
+          eventType: notification.eventType,
+          title: notification.title,
+          body: notification.body,
+          link: notification.link,
+          appUrl,
+        }),
       });
     } catch (err) {
       this.logger.error({ notificationId: notification.id, error: (err as Error).message }, 'Failed to send email via SMTP');
@@ -149,10 +166,35 @@ export class NotificationDeliveryWorker extends WorkerHost {
     );
   }
 
-  private async sendPush(notification: { id: string; title: string; body: string; userId: string }): Promise<void> {
+  private async sendPush(notification: { id: string; title: string; body: string; userId: string; link?: string | null }): Promise<void> {
+    const pushWebhookUrl = this.config.get<string>('PUSH_WEBHOOK_URL');
+    if (!pushWebhookUrl) {
+      this.logger.debug(
+        { notificationId: notification.id, userId: notification.userId },
+        'PUSH_WEBHOOK_URL not configured; skipping push delivery',
+      );
+      return;
+    }
+
+    const response = await fetch(pushWebhookUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        userId: notification.userId,
+        title: notification.title,
+        body: notification.body,
+        link: notification.link,
+        notificationId: notification.id,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Push webhook returned ${response.status}`);
+    }
+
     this.logger.debug(
       { notificationId: notification.id, userId: notification.userId },
-      'Sending push notification',
+      'Push notification sent via webhook',
     );
   }
 }

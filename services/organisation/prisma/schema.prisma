@@ -45,6 +45,7 @@ model OrganisationMembership {
   id             String       @id @default(cuid())
   userId         String
   organisationId String
+  clientId       String?
   roleId         String
   isGuest        Boolean      @default(false)
   createdAt      DateTime     @default(now())
@@ -55,12 +56,14 @@ model OrganisationMembership {
   @@unique([userId, organisationId])
   @@index([organisationId])
   @@index([userId])
+  @@index([clientId])
   @@map("organisation_memberships")
 }
 
 model Invitation {
   id             String       @id @default(cuid())
   organisationId String
+  clientId       String?
   email          String
   roleId         String
   token          String       @unique
@@ -72,6 +75,7 @@ model Invitation {
 
   @@index([organisationId])
   @@index([token])
+  @@index([clientId])
   @@map("invitations")
 }
 
