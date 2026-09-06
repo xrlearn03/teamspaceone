@@ -21,12 +21,14 @@ const DEFAULT_CORS_ORIGINS = [
   'tauri://localhost',
 ];
 
+const corsOrigins = (process.env.CORS_ORIGINS ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 @WebSocketGateway({
   cors: {
-    origin: (process.env.CORS_ORIGINS ?? '')
-      .split(',')
-      .map((o) => o.trim())
-      .filter(Boolean) || DEFAULT_CORS_ORIGINS,
+    origin: corsOrigins.length ? corsOrigins : DEFAULT_CORS_ORIGINS,
     credentials: true,
   },
   namespace: '/realtime',
