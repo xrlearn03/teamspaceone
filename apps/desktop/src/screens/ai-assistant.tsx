@@ -7,7 +7,7 @@ import { Card } from "../components/ui/card";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Badge } from "../components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { useAskAI, useConfirmAIAction, useCreateTask, useDeclineAIAction, useMe, useOrganisations, usePendingAIActions, useProjects } from "../hooks/api";
+import { useAskAI, useConfirmAIAction, useCreateTask, useDeclineAIAction, useMe, useOrganisations, usePendingAIActions, useProjects, useUsers } from "../hooks/api";
 import { useUIStore } from "../stores/ui";
 import { cn } from "../lib/utils";
 
@@ -60,6 +60,7 @@ export function AIAssistantScreen() {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [pendingActionsDialogOpen, setPendingActionsDialogOpen] = useState(false);
   const [editingSummaries, setEditingSummaries] = useState<Record<string, string>>({});
+  const [editingSubjects, setEditingSubjects] = useState<Record<string, string>>({});
   const hasAutoOpened = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const { data: user } = useMe();
@@ -82,6 +83,12 @@ export function AIAssistantScreen() {
     () => pendingActionsList.filter((a) => !pendingActionFilter || a.actionType === pendingActionFilter),
     [pendingActionsList, pendingActionFilter],
   );
+  const firstAction = filteredPendingActions[0];
+  const firstActionParticipantIds = useMemo(() => {
+    const ids = firstAction?.actionType === "send_meeting_summary_email" ? (firstAction.payload?.participantIds as string[] | undefined) : undefined;
+    return ids?.filter((id): id is string => Boolean(id)) ?? [];
+  }, [firstAction]);
+  const { data: firstActionParticipants } = useUsers(firstActionParticipantIds.length ? firstActionParticipantIds : undefined);
   const organisation = organisations?.find((o) => o.id === organisationId);
 
   useEffect(() => {
@@ -377,18 +384,48 @@ export function AIAssistantScreen() {
                     <p className="mt-1 line-clamp-2 text-text-secondary">{action.payload.description as string}</p>
                   ) : null}
                   {action.actionType === "send_meeting_summary_email" && (
-                    <div className="mt-2">
-                      <label className="text-xs text-text-secondary">Summary email</label>
-                      <textarea
-                        className="mt-1 w-full min-h-[140px] rounded-md border bg-background px-3 py-2 text-sm text-text outline-none focus:ring-2 focus:ring-primary"
-                        value={editingSummaries[action.id] ?? (action.payload.summary as string) ?? ""}
-                        onChange={(e) => setEditingSummaries((prev) => ({ ...prev, [action.id]: e.target.value }))}
-                      />
+                    <div className="mt-3 space-y-3 rounded-md border bg-background p-3">
+                      <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Email preview</p>
+                      <div className="space-y-2 text-sm">
+                        <div className="grid grid-cols-[3rem_1fr] gap-2">
+                          <span className="text-text-muted">From</span>
+                          <span className="text-text">
+                            {user
+                              ? `${[user.firstName, user.lastName].filter(Boolean).join(" ") || "Host"} <${user.email}>`
+                              : "Host"}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-[3rem_1fr] gap-2">
+                          <span className="text-text-muted">To</span>
+                          <span className="text-text">
+                            {firstActionParticipants
+                              ?.filter((p) => p.id !== user?.id)
+                              .map((p) => `${[p.firstName, p.lastName].filter(Boolean).join(" ") || p.email} <${p.email}>`)
+                              .join(", ") || (firstActionParticipantIds.length ? "Loading recipients…" : "No recipients")}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-[3rem_1fr] items-center gap-2">
+                          <span className="text-text-muted">Subject</span>
+                          <Input
+                            value={editingSubjects[action.id] ?? (action.payload.subject as string) ?? `Minutes of Meeting (MOM) - ${(action.payload.title as string) ?? "Meeting"}`}
+                            onChange={(e) => setEditingSubjects((prev) => ({ ...prev, [action.id]: e.target.value }))}
+                            className="h-7 border-0 bg-transparent px-0 text-text focus-visible:ring-0"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-text-secondary">Body</label>
+                        <textarea
+                          className="mt-1 w-full min-h-[220px] rounded-md border bg-surface px-3 py-2 text-sm leading-relaxed text-text outline-none focus:ring-2 focus:ring-primary"
+                          value={editingSummaries[action.id] ?? (action.payload.summary as string) ?? ""}
+                          onChange={(e) => setEditingSummaries((prev) => ({ ...prev, [action.id]: e.target.value }))}
+                        />
+                      </div>
                     </div>
                   )}
                   <div className="mt-3 flex justify-end gap-2">
                     <Button variant="ghost" size="sm" onClick={() => declineAIAction.mutate(action.id)} disabled={declineAIAction.isPending}>Decline</Button>
-                    <Button size="sm" disabled={confirmAIAction.isPending} onClick={() => confirmAIAction.mutate({ id: action.id, edits: action.actionType === "send_meeting_summary_email" ? { summary: editingSummaries[action.id] ?? action.payload.summary } : undefined })}>
+                    <Button size="sm" disabled={confirmAIAction.isPending} onClick={() => confirmAIAction.mutate({ id: action.id, edits: action.actionType === "send_meeting_summary_email" ? { summary: editingSummaries[action.id] ?? action.payload.summary, ...(editingSubjects[action.id] !== undefined ? { subject: editingSubjects[action.id] } : {}) } : undefined })}>
                       {confirmAIAction.isPending ? "Confirming…" : "Confirm"}
                     </Button>
                   </div>

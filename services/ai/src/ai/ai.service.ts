@@ -334,7 +334,39 @@ export class AiService {
 
     const doc = rows[0];
     const text = doc?.text ?? '';
-    const prompt = `Summarize the following meeting context for meeting ${data.resourceId}.`;
+    const prompt = `Draft a professional Minutes of Meeting (MOM) email body for the following meeting. Use this structure and include bracketed placeholders like [Meeting Date] for any missing details:
+
+Dear Team,
+
+Please find below the Minutes of Meeting (MOM) for the meeting titled "${doc?.title ?? '[Meeting Title]'}".
+
+Meeting Details
+- Project: [Project Name]
+- Date: [Meeting Date]
+- Time: [Meeting Time]
+- Attendees: [Names]
+- Meeting Objective: [Objective]
+
+Key Discussion Points
+1. ...
+2. ...
+
+Decisions Taken
+- ...
+
+Action Items
+1. [Action item description] | Responsible: [Name] | Status: Pending
+2. ...
+
+Next Steps
+- ...
+
+Please review the above MOM and share any corrections or additional points.
+
+Best regards,
+[Your Name]
+
+Meeting context for meeting ${data.resourceId}:`;
     const { result, model } = await this.summarize(prompt, text);
 
     const metadata = doc?.metadata ?? {};
