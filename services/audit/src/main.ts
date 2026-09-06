@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { type LoggerService } from '@nestjs/common';
+import { ValidationPipe, type LoggerService } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module.js';
 import { createLogger, type Logger } from '@teamspace-one/logger';
@@ -23,6 +23,9 @@ function adaptLogger(pino: Logger): LoggerService {
 }
 
 async function bootstrap() {
+  if (!process.env.INTERNAL_API_KEY) {
+    throw new Error('INTERNAL_API_KEY environment variable is required (enforced by OrganisationContextMiddleware)');
+  }
   initTelemetry({ serviceName: 'teamspace-one-audit-service' });
 
   const pino = createLogger({ name: 'audit-service' });
@@ -32,6 +35,8 @@ async function bootstrap() {
     const middleware = new OrganisationContextMiddleware();
     middleware.use(req, res, next);
   });
+
+  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
 
   app.enableShutdownHooks();
 

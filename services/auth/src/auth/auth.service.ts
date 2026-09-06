@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
 import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
+import { OrganisationContext } from '@teamspace-one/organisation-context';
 import { Prisma, type User } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
@@ -13,6 +14,14 @@ import { type RedeemInvitationDto } from './dto/redeem-invitation.dto.js';
 import { type UserDto } from './dto/user.dto.js';
 import { type UpdateProfileDto } from './dto/update-profile.dto.js';
 
+export interface UserProfileDto {
+  id: string;
+  email: string;
+  displayName: string | null;
+  avatar: string | null;
+  status: 'active' | 'inactive';
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -22,10 +31,37 @@ export class AuthService {
     private readonly config: ConfigService,
   ) {}
 
+  private assertPasswordPolicy(password: string): void {
+    if (!password || password.length < 12) {
+      throw new BadRequestException('Password must be at least 12 characters');
+    }
+  }
+
+  private s2sHeaders(): Record<string, string> {
+    const internalApiKey = this.config.get<string>('INTERNAL_API_KEY');
+    if (!internalApiKey) {
+      throw new Error('INTERNAL_API_KEY is not configured');
+    }
+    const ctx = OrganisationContext.get();
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      'x-internal-api-key': internalApiKey,
+      'x-internal-caller': 'auth-service',
+    };
+    if (ctx?.actorId) {
+      headers['x-actor-id'] = ctx.actorId;
+    }
+    if (ctx?.organisationId && ctx.organisationId !== 'unknown') {
+      headers['x-organisation-id'] = ctx.organisationId;
+    }
+    return headers;
+  }
+
   async register(input: RegisterDto, correlationId?: string): Promise<{ user: UserDto; tokens: TokenPair }> {
     if (!input?.email || !input?.password) {
       throw new BadRequestException('Email and password are required');
     }
+    this.assertPasswordPolicy(input.password);
     const existing = await this.prisma.user.findUnique({
       where: { email: input.email.toLowerCase() },
     });
@@ -75,6 +111,7 @@ export class AuthService {
     if (!input?.email || !input?.password || !input?.token) {
       throw new BadRequestException('Token, email and password are required');
     }
+    this.assertPasswordPolicy(input.password);
 
     const organisationUrl = this.config.get<string>('ORGANISATION_SERVICE_URL');
     const internalApiKey = this.config.get<string>('INTERNAL_API_KEY');
@@ -82,7 +119,9 @@ export class AuthService {
       throw new BadRequestException('Organisation integration not configured');
     }
 
-    const lookupRes = await fetch(`${organisationUrl}/organisations/invitations/${encodeURIComponent(input.token)}`);
+    const lookupRes = await fetch(`${organisationUrl}/organisations/invitations/${encodeURIComponent(input.token)}`, {
+      headers: this.s2sHeaders(),
+    });
     if (!lookupRes.ok) {
       throw new NotFoundException('Invitation not found');
     }
@@ -143,10 +182,7 @@ export class AuthService {
 
     const acceptRes = await fetch(`${organisationUrl}/organisations/invitations/${encodeURIComponent(input.token)}/accept`, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-internal-api-key': internalApiKey,
-      },
+      headers: this.s2sHeaders(),
       body: JSON.stringify({ userId: user.id }),
     });
 
@@ -228,9 +264,23 @@ export class AuthService {
     return this.toDto(user);
   }
 
-  async findMany(ids?: string[]): Promise<UserDto[]> {
+  async findById(id: string): Promise<UserProfileDto> {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return this.toProfileDto(user);
+  }
+
+  async findMany(ids: string[]): Promise<UserDto[]> {
+    if (!ids || ids.length === 0) {
+      throw new BadRequestException('ids query parameter is required');
+    }
+    if (ids.length > 100) {
+      throw new BadRequestException('Cannot request more than 100 users at a time');
+    }
     const users = await this.prisma.user.findMany({
-      where: ids && ids.length > 0 ? { id: { in: ids } } : undefined,
+      where: { id: { in: ids } },
       orderBy: { createdAt: 'desc' },
     });
     return users.map((user) => this.toDto(user));
@@ -246,6 +296,17 @@ export class AuthService {
       active: user.active,
       emailVerified: user.emailVerified,
       createdAt: user.createdAt.toISOString(),
+    };
+  }
+
+  private toProfileDto(user: User): UserProfileDto {
+    const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || null;
+    return {
+      id: user.id,
+      email: user.email,
+      displayName,
+      avatar: user.avatarFileId,
+      status: user.active ? 'active' : 'inactive',
     };
   }
 }

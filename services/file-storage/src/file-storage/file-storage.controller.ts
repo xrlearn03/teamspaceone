@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -18,6 +19,24 @@ import { FileStorageService } from './file-storage.service.js';
 import { PresignUploadDto } from './dto/presign-upload.dto.js';
 import { CompleteUploadDto } from './dto/complete-upload.dto.js';
 import { CreateExternalShareDto } from './dto/create-external-share.dto.js';
+
+const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_BYTES) || 200 * 1024 * 1024;
+
+/**
+ * Build a safe Content-Disposition header value. The quoted `filename` fallback
+ * strips characters that could break out of the header (", \, CR/LF and other
+ * control chars); an RFC 5987 `filename*` parameter carries the UTF-8 name.
+ */
+function contentDisposition(filename: string, type: 'inline' | 'attachment' = 'inline'): string {
+  const fallback = filename
+    // eslint-disable-next-line no-control-regex
+    .replace(/["\\\r\n\x00-\x1f\x7f]/g, '_');
+  const encoded = encodeURIComponent(filename).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  if (/^[\x20-\x7e]*$/.test(fallback)) {
+    return `${type}; filename="${fallback}"`;
+  }
+  return `${type}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
 
 @Controller('files')
 export class FileStorageController {
@@ -48,7 +67,7 @@ export class FileStorageController {
       const { stream: fileStream, contentType, contentLength, originalName, mimeType } = await this.fileStorage.getFileStream(ctx, id);
       res.setHeader('Content-Type', contentType ?? mimeType ?? 'application/octet-stream');
       if (contentLength) res.setHeader('Content-Length', String(contentLength));
-      res.setHeader('Content-Disposition', `inline; filename="${originalName}"`);
+      res.setHeader('Content-Disposition', contentDisposition(originalName));
       await pipeline(fileStream, res);
       return;
     }
@@ -71,7 +90,7 @@ export class FileStorageController {
     const { stream: previewStream, contentType, contentLength, name, mimeType } = await this.fileStorage.getPreviewStream(ctx, id, previewType);
     res.setHeader('Content-Type', contentType ?? mimeType ?? 'application/octet-stream');
     if (contentLength) res.setHeader('Content-Length', String(contentLength));
-    res.setHeader('Content-Disposition', `inline; filename="${name}"`);
+    res.setHeader('Content-Disposition', contentDisposition(name));
     await pipeline(previewStream, res);
     return;
   }
@@ -94,11 +113,30 @@ export class FileStorageController {
   }
 
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_UPLOAD_BYTES },
+      fileFilter: (_req, file, cb) => {
+        // Note: `file.mimetype` is client-supplied; the stored mimeType is kept
+        // as-is for backwards compatibility with the presign flow's contract.
+        if (!file || (file.size !== undefined && (file.size <= 0 || file.size > MAX_UPLOAD_BYTES))) {
+          cb(new BadRequestException('File payload is empty or exceeds the maximum upload size'), false);
+          return;
+        }
+        cb(null, true);
+      },
+    }),
+  )
   async upload(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @UploadedFile() file: any,
   ) {
+    if (!file || !file.size || file.size <= 0) {
+      throw new BadRequestException('File payload is empty');
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      throw new BadRequestException(`File exceeds the maximum upload size of ${MAX_UPLOAD_BYTES} bytes`);
+    }
     return this.fileStorage.upload(ctx, file);
   }
 

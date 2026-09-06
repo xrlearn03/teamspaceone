@@ -26,6 +26,14 @@ export class OutboxService {
   }
 
   async publishPending(prisma: PrismaClient): Promise<number> {
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const { count } = await prisma.outboxEvent.deleteMany({
+      where: { publishedAt: { lt: oneWeekAgo } },
+    });
+    if (count > 0) {
+      this.logger.log({ purged: count }, 'Purged old published outbox events');
+    }
+
     const pending = await prisma.outboxEvent.findMany({
       where: { publishedAt: null },
       orderBy: { createdAt: 'asc' },

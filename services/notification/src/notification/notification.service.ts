@@ -153,18 +153,11 @@ export class NotificationService {
 
   async enqueueDeliveries(deliveryIds: string[]): Promise<void> {
     for (const deliveryId of deliveryIds) {
-      try {
-        await this.notificationQueue.add(
-          'send',
-          { deliveryId },
-          { attempts: 3, backoff: { type: 'exponential', delay: 5000 } },
-        );
-      } catch (err) {
-        this.logger.error(
-          { deliveryId, error: (err as Error).message },
-          'Failed to enqueue notification delivery',
-        );
-      }
+      await this.notificationQueue.add(
+        'send',
+        { deliveryId },
+        { attempts: 3, backoff: { type: 'exponential', delay: 5000 } },
+      );
     }
   }
 

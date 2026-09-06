@@ -111,16 +111,15 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
           continue;
         }
 
-        const result = await this.inbox.handle(data, (tx, envelope) =>
-          this.notification.createFromEvent(tx, envelope),
-        );
-
-        const created = (result ?? []) as CreatedNotification[];
-        for (const n of created) {
-          if (n?.deliveryIds?.length) {
-            await this.notification.enqueueDeliveries(n.deliveryIds);
+        await this.inbox.handle(data, async (tx, envelope) => {
+          const created = await this.notification.createFromEvent(tx, envelope);
+          for (const n of created) {
+            if (n?.deliveryIds?.length) {
+              await this.notification.enqueueDeliveries(n.deliveryIds);
+            }
           }
-        }
+          return created;
+        });
 
         jsMsg.ack();
       } catch (err) {

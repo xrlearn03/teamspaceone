@@ -62,6 +62,39 @@ const MAX_ARCHIVE_LIST_BYTES = 200 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES = 200;
 const MAX_DOC_EXTRACT_BYTES = 100 * 1024 * 1024;
 const HLS_MAX_DURATION_SECONDS = 3600;
+const FETCH_TIMEOUT_MS = 30_000;
+const MAX_TEXT_FETCH_BYTES = 16 * 1024 * 1024;
+const MAX_IMAGE_FETCH_BYTES = 100 * 1024 * 1024;
+
+/** fetch() with a hard timeout; aborts via AbortController. */
+async function fetchWithTimeout(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Read a response body into a Buffer, aborting as soon as `maxBytes` is
+ * exceeded rather than trusting Content-Length alone.
+ */
+async function bufferResponse(response: Response, maxBytes: number): Promise<Buffer> {
+  if (!response.body) throw new Error('Response has no body');
+  const chunks: Buffer[] = [];
+  let total = 0;
+  const reader = (response.body as unknown as AsyncIterable<Uint8Array>);
+  for await (const chunk of reader) {
+    total += chunk.byteLength;
+    if (total > maxBytes) {
+      throw new Error(`Object exceeds in-memory processing cap of ${maxBytes} bytes`);
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
 
 @Injectable()
 export class FileProcessingService {
@@ -118,7 +151,7 @@ export class FileProcessingService {
           break;
         }
         case 'text': {
-          const text = await this.fetchText(downloadUrl);
+          const text = await this.fetchText(downloadUrl, Math.min(record.size || MAX_TEXT_FETCH_BYTES, MAX_TEXT_FETCH_BYTES));
           metadata.textPreview = text.slice(0, MAX_TEXT_PREVIEW_CHARS);
           break;
         }
@@ -240,7 +273,9 @@ export class FileProcessingService {
         where: { id: job.fileId },
         data: { status: 'failed' },
       });
-      throw err;
+      // The record is now marked 'failed'; rethrowing would only trigger a
+      // meaningless BullMQ retry that immediately marks it failed again.
+      return;
     }
   }
 
@@ -251,13 +286,17 @@ export class FileProcessingService {
     return `${prefix}/previews/${type}-${fileName}`;
   }
 
-  private async fetchText(url: string): Promise<string> {
-    const response = await fetch(url);
-    return response.text();
+  private async fetchText(url: string, maxBytes = MAX_TEXT_FETCH_BYTES): Promise<string> {
+    const response = await fetchWithTimeout(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch text: HTTP ${response.status}`);
+    }
+    const buffer = await bufferResponse(response, maxBytes);
+    return buffer.toString('utf8');
   }
 
   private async processImage(
-    record: { storageKey: string; organisationId: string; mimeType: string },
+    record: { storageKey: string; organisationId: string; mimeType: string; size: number },
     downloadUrl: string,
   ): Promise<{ thumbnailUrl?: string; previewUrl?: string; width?: number; height?: number }> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -270,8 +309,12 @@ export class FileProcessingService {
       return {};
     }
 
-    const response = await fetch(downloadUrl);
-    const buffer = Buffer.from(await response.arrayBuffer());
+    const maxBytes = Math.min(record.size > 0 ? record.size : MAX_IMAGE_FETCH_BYTES, MAX_IMAGE_FETCH_BYTES);
+    const response = await fetchWithTimeout(downloadUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to download image: HTTP ${response.status}`);
+    }
+    const buffer = await bufferResponse(response, maxBytes);
     const image = sharp(buffer);
     const imageMetadata = await image.metadata();
     const width = imageMetadata.width as number | undefined;
@@ -308,13 +351,14 @@ export class FileProcessingService {
   }
 
   private async downloadBuffer(url: string, maxBytes?: number): Promise<Buffer> {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok || !response.body) {
       throw new Error(`Failed to download object: HTTP ${response.status}`);
     }
     if (maxBytes !== undefined) {
       const length = Number(response.headers.get('content-length') ?? 0);
       if (length > maxBytes) throw new Error(`Object too large for in-memory processing (${length} bytes)`);
+      return bufferResponse(response, maxBytes);
     }
     return Buffer.from(await response.arrayBuffer());
   }

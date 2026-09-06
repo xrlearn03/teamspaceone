@@ -66,6 +66,6 @@ export class GuestInvitationEmailService {
       return;
     }
 
-    this.logger.log({ to, subject, body }, 'Email delivery not configured; logging guest invitation content');
+    this.logger.log({ to }, 'Email delivery not configured; guest invitation content redacted');
   }
 }

@@ -22,6 +22,10 @@ export class TokenService {
   async issuePair(user: User): Promise<TokenPair> {
     const accessTtl = Number(this.config.get('ACCESS_TOKEN_TTL', 900));
     const refreshTtl = Number(this.config.get('REFRESH_TOKEN_TTL', 604800));
+    const secret = this.config.get<string>('JWT_SECRET');
+    if (!secret) {
+      throw new Error('JWT_SECRET is required');
+    }
 
     const accessToken = await this.jwt.signAsync(
       {
@@ -30,8 +34,9 @@ export class TokenService {
         type: 'access',
       },
       {
-        secret: this.config.get<string>('JWT_SECRET', 'change-me'),
+        secret,
         expiresIn: accessTtl,
+        algorithm: 'HS256',
       },
     );
 
@@ -57,25 +62,18 @@ export class TokenService {
   async rotate(rawRefresh: string): Promise<TokenPair> {
     const tokenHash = createHash('sha256').update(rawRefresh).digest('hex');
 
-    const existing = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const row = await tx.refreshToken.findUnique({
-        where: { tokenHash },
-        include: { user: true },
-      });
-
-      if (!row || row.expiresAt < new Date()) {
-        return null;
-      }
-
-      await tx.refreshToken.delete({ where: { id: row.id } });
-      return row.user;
+    const existing = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
     });
 
-    if (!existing) {
+    if (!existing || existing.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    return this.issuePair(existing);
+    const pair = await this.issuePair(existing.user);
+    await this.prisma.refreshToken.delete({ where: { id: existing.id } });
+    return pair;
   }
 
   async revoke(rawRefresh: string): Promise<void> {

@@ -98,7 +98,14 @@ export class OrganisationService {
     dto: CreateMemberDto,
     actorId: string,
   ): Promise<unknown> {
-    await this.assertMemberOf(organisationId, actorId);
+    await this.assertCanManageMembers(organisationId, actorId);
+
+    const role = await this.prisma.role.findFirst({
+      where: { id: dto.roleId, organisationId },
+    });
+    if (!role) {
+      throw new BadRequestException('Role does not belong to this organisation');
+    }
 
     const membership = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.organisationMembership.findUnique({
@@ -172,7 +179,23 @@ export class OrganisationService {
     dto: CreateInvitationDto,
     actorId: string,
   ): Promise<unknown> {
-    await this.assertMemberOf(organisationId, actorId);
+    await this.assertCanManageMembers(organisationId, actorId);
+
+    const role = await this.prisma.role.findFirst({
+      where: { id: dto.roleId, organisationId },
+    });
+    if (!role) {
+      throw new BadRequestException('Role does not belong to this organisation');
+    }
+
+    if (dto.clientId) {
+      const client = await this.prisma.client.findFirst({
+        where: { id: dto.clientId, organisationId },
+      });
+      if (!client) {
+        throw new BadRequestException('Client does not belong to this organisation');
+      }
+    }
 
     const id = randomUUID();
     const token = randomUUID();
@@ -355,5 +378,35 @@ export class OrganisationService {
     if (!membership && org.ownerId !== actorId) {
       throw new ForbiddenException('Not a member of this organisation');
     }
+  }
+
+  private async assertCanManageMembers(organisationId: string, actorId: string): Promise<void> {
+    const [org, membership] = await Promise.all([
+      this.prisma.organisation.findUnique({ where: { id: organisationId } }),
+      this.prisma.organisationMembership.findUnique({
+        where: { userId_organisationId: { userId: actorId, organisationId } },
+        include: { role: true },
+      }),
+    ]);
+    if (!org) {
+      throw new NotFoundException('Organisation not found');
+    }
+    if (org.ownerId === actorId) {
+      return;
+    }
+    if (!membership) {
+      throw new ForbiddenException('Not a member of this organisation');
+    }
+    const role = membership.role;
+    const permissions = (Array.isArray(role.permissions) ? role.permissions : []) as string[];
+    if (
+      role.name === 'owner' ||
+      role.name === 'admin' ||
+      permissions.includes('*') ||
+      permissions.includes('members.manage')
+    ) {
+      return;
+    }
+    throw new ForbiddenException('Not authorized to manage members');
   }
 }

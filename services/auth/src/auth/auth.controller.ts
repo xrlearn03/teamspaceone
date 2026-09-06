@@ -67,13 +67,18 @@ export class AuthController {
   @Get('users')
   @UseGuards(AuthGuard)
   async list(@Query('ids') ids?: string | string[]) {
-    const idList = ids ? (Array.isArray(ids) ? ids : [ids]) : undefined;
+    let idList: string[] = [];
+    if (typeof ids === 'string') {
+      idList = ids.split(',').map((s) => s.trim()).filter(Boolean);
+    } else if (Array.isArray(ids)) {
+      idList = ids as string[];
+    }
     return this.auth.findMany(idList);
   }
 
   @Get('users/:id')
   @UseGuards(AuthGuard)
   async getById(@Param('id') id: string) {
-    return this.auth.me(id);
+    return this.auth.findById(id);
   }
 }

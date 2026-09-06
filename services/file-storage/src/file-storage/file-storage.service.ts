@@ -93,11 +93,11 @@ export class FileStorageService {
       throw new ForbiddenException('Missing actor');
     }
 
-    if (dto.sha256 !== undefined && !/^[a-f0-9]{64}$/i.test(dto.sha256)) {
-      throw new BadRequestException('sha256 must be a lowercase hex-encoded SHA-256 digest');
+    if (typeof dto.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(dto.sha256)) {
+      throw new BadRequestException('sha256 is required and must be a hex-encoded SHA-256 digest');
     }
-    const checksumSha256 = dto.sha256?.toLowerCase();
-    const checksumBase64 = checksumSha256 ? Buffer.from(checksumSha256, 'hex').toString('base64') : undefined;
+    const checksumSha256 = dto.sha256.toLowerCase();
+    const checksumBase64 = Buffer.from(checksumSha256, 'hex').toString('base64');
 
     const id = randomUUID();
     const storageKey = this.storage.buildStorageKey({
@@ -156,7 +156,15 @@ export class FileStorageService {
       throw new NotFoundException('File not found');
     }
 
-    const expectedSha256 = (dto.sha256 ?? existing.checksumSha256)?.toLowerCase() ?? null;
+    // Always verify against the checksum recorded at presign; a client-supplied
+    // sha256 on complete must never widen or bypass the recorded expectation.
+    const expectedSha256 = existing.checksumSha256?.toLowerCase() ?? null;
+    if (!expectedSha256) {
+      throw new BadRequestException('No checksum was recorded at presign for this upload');
+    }
+    if (dto.sha256 && dto.sha256.toLowerCase() !== expectedSha256) {
+      await this.rejectCorruptUpload(existing.id, existing.storageKey, 'checksum mismatch');
+    }
 
     const head = await this.storage.headObject(existing.storageKey);
     if (!head) {
@@ -166,7 +174,7 @@ export class FileStorageService {
       await this.rejectCorruptUpload(existing.id, existing.storageKey, `size mismatch: expected ${existing.size}, got ${head.contentLength}`);
     }
 
-    if (expectedSha256) {
+    {
       // S3 returns the stored SHA-256 (base64) when the PUT carried a checksum;
       // otherwise fall back to hashing the object ourselves.
       const storedBase64 = head.checksumSha256;
@@ -197,7 +205,7 @@ export class FileStorageService {
       size: existing.size,
       storageKey: existing.storageKey,
       bucket: this.storage.getBucket(),
-      checksumSha256: expectedSha256 ?? existing.checksumSha256,
+      checksumSha256: expectedSha256,
       url: publicUrl,
       status: 'uploaded',
     };
@@ -216,7 +224,7 @@ export class FileStorageService {
     const updated = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const record = await tx.fileRecord.update({
         where: { id },
-        data: { status: 'uploaded', url: publicUrl, checksumSha256: expectedSha256 ?? existing.checksumSha256 },
+        data: { status: 'uploaded', url: publicUrl, checksumSha256: expectedSha256 },
       });
       await this.outbox.createEvent(tx, envelope, Subjects.FILE_UPLOADED);
       return record;

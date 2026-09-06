@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Patch, Post } from '@nestjs/common';
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Patch, Post, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { OrganisationService } from './organisation.service.js';
@@ -134,8 +135,18 @@ export class OrganisationController {
     @Param('token') token: string,
     @Body() dto: { userId: string },
     @Headers('x-internal-api-key') internalApiKey?: string,
+    @Headers('x-internal-caller') internalCaller?: string,
   ) {
-    if (internalApiKey !== this.config.get<string>('INTERNAL_API_KEY')) {
+    const expected = this.config.get<string>('INTERNAL_API_KEY');
+    if (!expected) {
+      throw new UnauthorizedException('Service authentication is not configured');
+    }
+    if (!internalApiKey || !internalCaller) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+    const a = createHash('sha256').update(internalApiKey).digest();
+    const b = createHash('sha256').update(expected).digest();
+    if (!timingSafeEqual(a, b)) {
       throw new ForbiddenException('Forbidden');
     }
     return this.organisation.acceptInvitation(token, dto.userId);

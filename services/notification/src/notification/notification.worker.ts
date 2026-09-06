@@ -66,7 +66,7 @@ export class NotificationDeliveryWorker extends WorkerHost {
     }
   }
 
-  private async sendEmail(notification: { id: string; title: string; body: string; userId: string; eventType: string; link?: string | null }): Promise<void> {
+  private async sendEmail(notification: { id: string; title: string; body: string; userId: string; eventType: string; link?: string | null; organisationId?: string; actorId?: string | null }): Promise<void> {
     const webhookUrl = this.config.get<string>('EMAIL_WEBHOOK_URL');
     if (webhookUrl) {
       const appUrl = this.config.get<string>('APP_URL', 'https://app.teamspace.one');
@@ -107,7 +107,7 @@ export class NotificationDeliveryWorker extends WorkerHost {
     );
   }
 
-  private async sendEmailSmtp(notification: { id: string; title: string; body: string; userId: string; eventType: string; link?: string | null }): Promise<void> {
+  private async sendEmailSmtp(notification: { id: string; title: string; body: string; userId: string; eventType: string; link?: string | null; organisationId?: string; actorId?: string | null }): Promise<void> {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const nodemailer = require('nodemailer') as any;
@@ -125,9 +125,17 @@ export class NotificationDeliveryWorker extends WorkerHost {
       if (authUrl && !to) {
         const token = this.config.get<string>('AUTH_SERVICE_TOKEN');
         const internalKey = this.config.get<string>('INTERNAL_API_KEY');
-        const headers: Record<string, string> = { 'content-type': 'application/json' };
+        if (!internalKey) {
+          throw new Error('INTERNAL_API_KEY environment variable is required');
+        }
+        const headers: Record<string, string> = {
+          'content-type': 'application/json',
+          'x-internal-api-key': internalKey,
+          'x-internal-caller': 'notification-service',
+        };
         if (token) headers.authorization = `Bearer ${token}`;
-        if (internalKey) headers['x-internal-api-key'] = internalKey;
+        if (notification.organisationId) headers['x-organisation-id'] = notification.organisationId;
+        if (notification.actorId) headers['x-actor-id'] = notification.actorId;
         const response = await fetch(`${authUrl}/users/${encodeURIComponent(notification.userId)}`, { headers });
         if (response.ok) {
           const user = (await response.json()) as { email?: string };

@@ -23,10 +23,22 @@ function parseRedisUrl(url?: string) {
     JwtModule.registerAsync({
       global: true,
       imports: [ConfigModule],
-      useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET', 'change-me'),
-        signOptions: { expiresIn: config.get<number>('ACCESS_TOKEN_TTL', 900) },
-      }),
+      useFactory: (config: ConfigService) => {
+        const secret = config.get<string>('JWT_SECRET');
+        if (!secret) {
+          throw new Error('JWT_SECRET is required');
+        }
+        return {
+          secret,
+          signOptions: {
+            expiresIn: config.get<number>('ACCESS_TOKEN_TTL', 900),
+            algorithm: 'HS256',
+          },
+          verifyOptions: {
+            algorithms: ['HS256'],
+          },
+        };
+      },
       inject: [ConfigService],
     }),
     BullModule.forRootAsync({

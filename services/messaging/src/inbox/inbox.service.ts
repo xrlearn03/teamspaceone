@@ -15,26 +15,26 @@ export class InboxService {
     }
 
     await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const existing = await tx.inboxEvent.findUnique({
-        where: { eventId: envelope.eventId },
-      });
-
-      if (existing) {
-        this.logger.warn({ eventId: envelope.eventId }, 'Duplicate event skipped');
-        return;
-      }
-
       await this.processEvent(envelope, tx);
 
-      await tx.inboxEvent.create({
-        data: {
-          eventId: envelope.eventId,
-          eventType: envelope.eventType,
-          subject: envelope.eventType,
-          payload: envelope as any,
-          organisationId: envelope.organisationId,
-        },
-      });
+      try {
+        await tx.inboxEvent.create({
+          data: {
+            eventId: envelope.eventId,
+            eventType: envelope.eventType,
+            subject: envelope.eventType,
+            payload: envelope as any,
+            organisationId: envelope.organisationId,
+          },
+        });
+      } catch (err) {
+        const prismaError = err as { code?: string };
+        if (prismaError.code === 'P2002') {
+          this.logger.warn({ eventId: envelope.eventId }, 'Duplicate event skipped');
+          return;
+        }
+        throw err;
+      }
     });
   }
 
