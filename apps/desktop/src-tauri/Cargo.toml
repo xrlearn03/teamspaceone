@@ -48,3 +48,6 @@ tracing = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-capture = "=1.4.2"
+
+[dev-dependencies]
+tauri = { version = "2", features = ["devtools"] }
