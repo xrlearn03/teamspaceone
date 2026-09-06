@@ -59,13 +59,13 @@ const Collapsible = CollapsiblePrimitive.Root;
 const CollapsibleTrigger = CollapsiblePrimitive.Trigger;
 const CollapsibleContent = CollapsiblePrimitive.Content;
 
-function getDisplayName(member: { userId: string }, user?: UserDto) {
+function getDisplayName(_member: { userId: string }, user?: UserDto) {
   if (user) {
     const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
     if (fullName) return fullName;
     return user.email;
   }
-  return member.userId;
+  return "Unknown";
 }
 
 function getDirectMessageLabel(dm: Channel, meId: string | undefined, userMap: Map<string, UserDto>) {

@@ -29,13 +29,13 @@ export interface MessageItemProps {
   compact?: boolean;
 }
 
-function getDisplayName(member: { userId: string }, user?: UserDto) {
+function getDisplayName(_member: { userId: string }, user?: UserDto) {
   if (user) {
     const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
     if (fullName) return fullName;
     return user.email;
   }
-  return member.userId;
+  return "Unknown";
 }
 
 export function MessageItem({
@@ -56,7 +56,7 @@ export function MessageItem({
   const isMe = message.senderId === user?.id;
   const sender = userMap?.get(message.senderId);
   const author = isMe ? "You" : getDisplayName({ userId: message.senderId }, sender);
-  const mentionName = user?.firstName ?? user?.id ?? null;
+  const mentionName = user?.firstName ?? user?.email ?? null;
 
   function saveEdit() {
     if (onEdit && editDraft.trim() && editDraft.trim() !== message.content) {

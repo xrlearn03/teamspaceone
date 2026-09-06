@@ -19,13 +19,13 @@ import { useRealtime } from "../hooks/useRealtime";
 import { cn } from "../lib/utils";
 import type { Message, UserDto } from "../lib/api";
 
-function getDisplayName(member: { userId: string }, user?: UserDto) {
+function getDisplayName(_member: { userId: string }, user?: UserDto) {
   if (user) {
     const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
     if (fullName) return fullName;
     return user.email;
   }
-  return member.userId;
+  return "Unknown";
 }
 
 export function DirectMessageScreen() {

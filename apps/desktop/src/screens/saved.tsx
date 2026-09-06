@@ -9,13 +9,13 @@ import { EmptyState } from "../components/ui/empty-state";
 import { MessageContent } from "../components/chat/message-content";
 import type { UserDto } from "../lib/api";
 
-function getDisplayName(member: { userId: string }, user?: UserDto) {
+function getDisplayName(_member: { userId: string }, user?: UserDto) {
   if (user) {
     const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
     if (fullName) return fullName;
     return user.email;
   }
-  return member.userId;
+  return "Unknown";
 }
 
 export function SavedItemsScreen() {

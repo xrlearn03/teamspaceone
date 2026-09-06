@@ -15,9 +15,11 @@ import { useUIStore, type View } from "../../stores/ui";
 import { useShallow } from "zustand/shallow";
 import {
   useChannels,
+  useCreateDirectChannel,
   useFiles,
   useMeetings,
   useMembers,
+  useMe,
   useProjects,
   useSearch,
   useUsers,
@@ -39,9 +41,10 @@ interface SearchResult {
   icon: LucideIcon;
   view?: string;
   params?: { channelId?: string; projectId?: string; meetingId?: string };
+  userId?: string;
 }
 
-const filters = ["All", "Messages", "Channels", "Files", "Projects", "Meetings"];
+const filters = ["All", "Messages", "Channels", "Files", "Projects", "Meetings", "Members"];
 
 const TYPE_MAP: Record<string, { icon: LucideIcon; label: string; view: string }> = {
   message: { icon: MessageSquare, label: "Message", view: "channel" },
@@ -68,13 +71,13 @@ function pushRecentSearch(q: string) {
 
 const selectClass = "h-7 rounded-md border bg-surface px-2 text-xs text-text";
 
-function getDisplayName(member: { userId: string }, user?: UserDto) {
+function getDisplayName(_member: { userId: string }, user?: UserDto) {
   if (user) {
     const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
     if (fullName) return fullName;
     return user.email;
   }
-  return member.userId;
+  return "Unknown";
 }
 
 export function CommandMenu({
@@ -95,6 +98,8 @@ export function CommandMenu({
   const [serverResults, setServerResults] = useState<ApiSearchResult[]>([]);
   const [recents, setRecents] = useState<string[]>([]);
   const searchMutation = useSearch();
+  const createDirectChannel = useCreateDirectChannel();
+  const { data: me } = useMe();
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { setActiveView, setSearchOpen } = useUIStore(
     useShallow((s) => ({ setActiveView: s.setActiveView, setSearchOpen: s.setSearchOpen })),
@@ -119,7 +124,7 @@ export function CommandMenu({
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     const q = query.trim();
-    if (!q && !authorId && !workspaceId && !fromDate && !toDate) {
+    if ((!q && !authorId && !workspaceId && !fromDate && !toDate) || filter === "Members") {
       setServerResults([]);
       return;
     }
@@ -145,6 +150,16 @@ export function CommandMenu({
 
   const publicChannels = channels?.filter((c) => c.type !== "direct") ?? [];
   const directChannels = channels?.filter((c) => c.type === "direct") ?? [];
+
+  const oneToOneDmByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!me) return map;
+    for (const channel of directChannels) {
+      const others = channel.members.filter((m) => m.userId !== me.id).map((m) => m.userId);
+      if (others.length === 1) map.set(others[0], channel.id);
+    }
+    return map;
+  }, [directChannels, me]);
 
   const results: SearchResult[] = useMemo(() => {
     const local: SearchResult[] = [
@@ -199,6 +214,19 @@ export function CommandMenu({
         icon: FileText,
         view: "files",
       })),
+      ...(members ?? [])
+        .filter((m) => m.userId !== me?.id)
+        .map((m) => {
+          const user = userMap.get(m.userId);
+          return {
+            id: m.userId,
+            type: "Member",
+            title: getDisplayName(m, user),
+            subtitle: m.role.name,
+            icon: User,
+            userId: m.userId,
+          };
+        }),
     ];
 
     const remote: SearchResult[] = serverResults.map((r) => {
@@ -231,16 +259,23 @@ export function CommandMenu({
 
     const q = query.toLowerCase();
     const all = [...local, ...remote];
+    const singular: Record<string, string> = {
+      Channels: "Channel",
+      Messages: "Message",
+      Files: "File",
+      Projects: "Project",
+      Meetings: "Meeting",
+      Members: "Member",
+    };
     return all.filter((r) => {
       const matchesQuery = !q || r.title.toLowerCase().includes(q) || r.subtitle.toLowerCase().includes(q) || (r.preview ?? "").toLowerCase().includes(q);
       const matchesFilter =
         filter === "All" ||
-        filter === r.type ||
-        (filter === "Channels" && r.type === "Channel") ||
-        (filter === "Messages" && (r.type === "Message" || r.type === "message"));
+        r.type === singular[filter] ||
+        (filter === "Messages" && r.type === "message");
       return matchesQuery && matchesFilter;
     });
-  }, [query, filter, publicChannels, directChannels, projects, meetings, files, serverResults]);
+  }, [query, filter, publicChannels, directChannels, projects, meetings, files, serverResults, members, userMap, me]);
 
   const selectedResult = results[Math.min(selected, results.length - 1)];
 
@@ -248,6 +283,21 @@ export function CommandMenu({
     if (query.trim()) {
       pushRecentSearch(query.trim());
       setRecents(recentSearches());
+    }
+    if (result.type === "Member" && result.userId) {
+      const existingChannelId = oneToOneDmByUserId.get(result.userId);
+      if (existingChannelId) {
+        setActiveView("dm", { channelId: existingChannelId });
+        setSearchOpen(false);
+      } else {
+        createDirectChannel.mutate([result.userId], {
+          onSuccess: (channel) => {
+            setActiveView("dm", { channelId: channel.id });
+            setSearchOpen(false);
+          },
+        });
+      }
+      return;
     }
     if (result.view) {
       setActiveView(result.view as View, result.params ?? {});
@@ -262,7 +312,7 @@ export function CommandMenu({
         <div className="flex items-center gap-2 border-b px-3 py-2">
           <Search className="h-4 w-4 text-text-muted" />
           <Input
-            placeholder="Search messages, channels, files, tasks..."
+            placeholder="Search messages, channels, files, tasks, members..."
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);

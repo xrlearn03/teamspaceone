@@ -12,17 +12,17 @@ import type { OrganisationMember, UserDto } from "../lib/api";
 
 const selectClass = "h-9 w-full rounded-md border bg-surface px-3 text-sm text-text";
 
-function getDisplayName(member: OrganisationMember, user?: UserDto) {
+function getDisplayName(_member: OrganisationMember, user?: UserDto) {
   if (user) {
     const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
     if (fullName) return fullName;
     return user.email;
   }
-  return member.userId;
+  return "Unknown";
 }
 
-function getInitials(member: OrganisationMember, user?: UserDto) {
-  const name = user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() : member.userId;
+function getInitials(_member: OrganisationMember, user?: UserDto) {
+  const name = user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() : "Unknown";
   return name.slice(0, 2).toUpperCase();
 }
 

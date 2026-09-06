@@ -54,13 +54,13 @@ function formatTime(iso: string) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function getDisplayName(member: { userId: string }, user?: UserDto) {
+function getDisplayName(_member: { userId: string }, user?: UserDto) {
   if (user) {
     const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
     if (fullName) return fullName;
     return user.email;
   }
-  return member.userId;
+  return "Unknown";
 }
 
 function tryParseDigestJson(text: string): { title: string; items: string[] }[] | null {
@@ -604,7 +604,7 @@ function NewMessageDialog({
                   }}
                   className="h-4 w-4 accent-primary"
                 />
-                <span className="text-sm">{member.displayName ?? member.userId}</span>
+                <span className="text-sm">{member.displayName ?? "Unknown"}</span>
               </label>
             ))}
             {!members.length && <p className="text-sm text-text-muted">No members found.</p>}
@@ -761,7 +761,7 @@ function CreateProjectDialog({
                   }}
                   className="h-4 w-4 accent-primary"
                 />
-                <span className="text-sm">{member.displayName ?? member.userId}</span>
+                <span className="text-sm">{member.displayName ?? "Unknown"}</span>
               </label>
             ))}
           </div>

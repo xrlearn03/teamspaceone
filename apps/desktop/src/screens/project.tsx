@@ -786,29 +786,27 @@ function useActorMap(activity: ProjectActivity[] | undefined) {
   }, [users]);
 }
 
-function getActorLabel(actor: UserDto | undefined, fallbackId: string) {
-  if (!actor) return fallbackId.slice(0, 8);
+function getActorLabel(actor: UserDto | undefined, _fallbackId: string) {
+  if (!actor) return "Unknown";
   return `${actor.firstName ?? ""} ${actor.lastName ?? ""}`.trim() || actor.email;
 }
 
 function getActorInitials(actor: UserDto | undefined, fallbackId: string) {
-  if (!actor) return fallbackId.slice(0, 2).toUpperCase();
   const label = getActorLabel(actor, fallbackId);
   return label.split(/\s+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
 }
 
-function getDisplayName(member: { userId: string }, user: UserDto | undefined) {
+function getDisplayName(_member: { userId: string }, user: UserDto | undefined) {
   if (user) {
     const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
     if (fullName) return fullName;
     return user.email;
   }
-  return member.userId;
+  return "Unknown";
 }
 
-function getInitials(member: { userId: string }, user: UserDto | undefined) {
-  if (!user) return member.userId.slice(0, 2).toUpperCase();
-  const label = getDisplayName(member, user);
+function getInitials(_member: { userId: string }, user: UserDto | undefined) {
+  const label = getDisplayName(_member, user);
   return label.split(/\s+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
 }
 

@@ -123,7 +123,7 @@ export function NativeConference({
   }
 
   function remoteDisplayName(id: string) {
-    return participants.find((p) => p.id === id)?.displayName ?? id;
+    return participants.find((p) => p.id === id)?.displayName ?? "User";
   }
 
   function remoteUserId(id: string) {
@@ -832,13 +832,13 @@ function ParticipantsPanel({
   );
 }
 
-function getMemberName(member: OrganisationMember, user?: UserDto) {
+function getMemberName(_member: OrganisationMember, user?: UserDto) {
   if (user) {
     const full = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
     if (full) return full;
     return user.email;
   }
-  return member.userId;
+  return "Unknown";
 }
 
 

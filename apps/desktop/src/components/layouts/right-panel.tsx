@@ -33,13 +33,13 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function getDisplayName(member: { userId: string }, user?: UserDto) {
+function getDisplayName(_member: { userId: string }, user?: UserDto) {
   if (user) {
     const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
     if (fullName) return fullName;
     return user.email;
   }
-  return member.userId;
+  return "Unknown";
 }
 
 function MemberList({ userIds, externalIds }: { userIds: string[]; externalIds?: Set<string> }) {

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Bell, Check, Filter } from "lucide-react";
-import { useMarkAllRead, useMarkRead, useNotifications, useNotificationCounts } from "../hooks/api";
+import { useMarkAllRead, useMarkRead, useNotifications, useNotificationCounts, useUsers } from "../hooks/api";
+import type { UserDto } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { EmptyState } from "../components/ui/empty-state";
@@ -41,6 +42,13 @@ export function InboxScreen() {
 
   const unreadCount = counts?.total ?? 0;
   const typeCount = (id: string) => (id === "all" ? unreadCount : (counts?.counts[id] ?? 0));
+
+  const actorIds = useMemo(
+    () => [...new Set((notifications ?? []).map((n) => n.actorId).filter((id): id is string => typeof id === "string"))],
+    [notifications],
+  );
+  const { data: actorUsers } = useUsers(actorIds);
+  const actorMap = useMemo(() => new Map((actorUsers ?? []).map((u: UserDto) => [u.id, u])), [actorUsers]);
 
   return (
     <div className="flex h-full flex-col">
@@ -100,29 +108,35 @@ export function InboxScreen() {
           />
         ) : (
           <div className="mx-auto max-w-3xl space-y-1">
-            {filtered.map((n) => (
-              <button
-                key={n.id}
-                type="button"
-                onClick={() => n.read || markRead.mutate(n.id)}
-                className={cn(
-                  "flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-surface-elevated",
-                  !n.read && "border-l-4 border-l-primary bg-surface",
-                )}
-              >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-elevated text-xs font-medium text-primary">
-                  {(n.actorId ?? "?").slice(0, 1).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-text">{n.title}</span>
-                    <span className="text-xs text-text-muted">{formatTime(n.createdAt)}</span>
+            {filtered.map((n) => {
+              const actor = n.actorId ? actorMap.get(n.actorId) : undefined;
+              const actorName = actor
+                ? `${actor.firstName ?? ""} ${actor.lastName ?? ""}`.trim() || actor.email
+                : "?";
+              return (
+                <button
+                  key={n.id}
+                  type="button"
+                  onClick={() => n.read || markRead.mutate(n.id)}
+                  className={cn(
+                    "flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-surface-elevated",
+                    !n.read && "border-l-4 border-l-primary bg-surface",
+                  )}
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-elevated text-xs font-medium text-primary">
+                    {actorName.slice(0, 1).toUpperCase()}
                   </div>
-                  <p className="text-sm text-text-secondary">{n.body}</p>
-                </div>
-                {!n.read && <span className="mt-1.5 h-2 w-2 rounded-full bg-unread" />}
-              </button>
-            ))}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-text">{n.title}</span>
+                      <span className="text-xs text-text-muted">{formatTime(n.createdAt)}</span>
+                    </div>
+                    <p className="text-sm text-text-secondary">{n.body}</p>
+                  </div>
+                  {!n.read && <span className="mt-1.5 h-2 w-2 rounded-full bg-unread" />}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

@@ -31,7 +31,7 @@ export class AiService {
     @InjectQueue('ai-ingestion') private readonly aiQueue: Queue,
   ) {}
 
-  async summarize(prompt: string, sourceText?: string): Promise<{ result: string; model: string }> {
+  async summarize(prompt: string, sourceText?: string, options?: { system?: string }): Promise<{ result: string; model: string }> {
     const client = await this.getClient();
     const model = this.config.get<string>('AI_MODEL') ?? this.config.get<string>('OPENAI_MODEL', 'gpt-4o-mini');
 
@@ -48,7 +48,7 @@ export class AiService {
       const completion = await client.chat.completions.create({
         model,
         messages: [
-          { role: 'system', content: 'You are a helpful assistant that summarizes text.' },
+          { role: 'system', content: options?.system ?? 'You are a helpful assistant that summarizes text.' },
           { role: 'user', content },
         ],
       });
@@ -366,8 +366,10 @@ Please review the above MOM and share any corrections or additional points.
 Best regards,
 [Your Name]
 
-Meeting context for meeting ${data.resourceId}:`;
-    const { result, model } = await this.summarize(prompt, text);
+Do not include the meeting ID or a generic opening such as "The meeting with ID ... is a development video call." in the body text. Recipients are already participants. Use the meeting context below to fill the sections above:
+
+`
+    const { result, model } = await this.summarize(prompt, text, { system: 'You are an executive assistant that drafts professional Minutes of Meeting (MOM) emails.' });
 
     const metadata = doc?.metadata ?? {};
     const participantIds = Array.isArray(metadata.actorIds) ? (metadata.actorIds as string[]) : [];
