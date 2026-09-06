@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { type LoggerService, ValidationPipe } from '@nestjs/common';
+import { type LoggerService } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module.js';
 import { createLogger, type Logger } from '@teamspace-one/logger';
@@ -33,7 +33,6 @@ async function bootstrap() {
     throw new Error('INTERNAL_API_KEY environment variable is required');
   }
 
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
 
   app.use((req: any, res: any, next: any) => {
     const middleware = new OrganisationContextMiddleware();

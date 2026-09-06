@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { type LoggerService, ValidationPipe } from '@nestjs/common';
+import { type LoggerService } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module.js';
@@ -37,7 +37,6 @@ async function bootstrap() {
     throw new Error('INTERNAL_API_KEY environment variable is required');
   }
 
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
 
   app.use((req: any, res: any, next: any) => {
     const middleware = new OrganisationContextMiddleware();
