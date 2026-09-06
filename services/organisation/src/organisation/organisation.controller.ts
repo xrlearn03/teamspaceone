@@ -3,12 +3,12 @@ import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get,
 import { ConfigService } from '@nestjs/config';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { OrganisationService } from './organisation.service.js';
-import { type CreateOrganisationDto } from './dto/create-organisation.dto.js';
-import { type CreateMemberDto } from './dto/create-member.dto.js';
-import { type CreateInvitationDto } from './dto/create-invitation.dto.js';
-import { type CreateWorkspaceDto } from './dto/create-workspace.dto.js';
-import { type CreateClientDto } from './dto/create-client.dto.js';
-import { type UpdateClientDto } from './dto/update-client.dto.js';
+import { CreateOrganisationDto } from './dto/create-organisation.dto.js';
+import { CreateMemberDto } from './dto/create-member.dto.js';
+import { CreateInvitationDto } from './dto/create-invitation.dto.js';
+import { CreateWorkspaceDto } from './dto/create-workspace.dto.js';
+import { CreateClientDto } from './dto/create-client.dto.js';
+import { UpdateClientDto } from './dto/update-client.dto.js';
 
 @Controller('organisations')
 export class OrganisationController {

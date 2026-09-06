@@ -1,12 +1,12 @@
 import { Body, Controller, Get, Headers, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
 import { AuthService } from './auth.service.js';
 import { AuthGuard } from './auth.guard.js';
-import { type RegisterDto } from './dto/register.dto.js';
-import { type LoginDto } from './dto/login.dto.js';
-import { type RedeemInvitationDto } from './dto/redeem-invitation.dto.js';
-import { type RefreshDto } from './dto/refresh.dto.js';
-import { type ChangePasswordDto } from './dto/change-password.dto.js';
-import { type UpdateProfileDto } from './dto/update-profile.dto.js';
+import { RegisterDto } from './dto/register.dto.js';
+import { LoginDto } from './dto/login.dto.js';
+import { RedeemInvitationDto } from './dto/redeem-invitation.dto.js';
+import { RefreshDto } from './dto/refresh.dto.js';
+import { ChangePasswordDto } from './dto/change-password.dto.js';
+import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { OrganisationContext } from '@teamspace-one/organisation-context';
 
 @Controller('auth')
