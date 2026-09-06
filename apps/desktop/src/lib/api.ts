@@ -62,6 +62,16 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -115,7 +125,18 @@ export async function apiRequest<T>(
   }
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Gateway error ${response.status}: ${text}`);
+    let message = `Request failed with status ${response.status}`;
+    try {
+      const body = JSON.parse(text) as { message?: string | string[] };
+      if (typeof body.message === "string") {
+        message = body.message;
+      } else if (Array.isArray(body.message)) {
+        message = body.message.join(", ");
+      }
+    } catch {
+      if (text) message = text;
+    }
+    throw new ApiError(response.status, message);
   }
   if (response.status === 204) {
     return undefined as T;
@@ -542,11 +563,17 @@ function slugify(value: string): string {
     .replace(/^-|-$/g, "");
 }
 
-export function createOrganisation(name: string, slug?: string) {
-  return apiRequest<Organisation>("/organisations", {
+interface CreateOrganisationResponse {
+  organisation: Organisation;
+  membership: unknown;
+}
+
+export async function createOrganisation(name: string, slug?: string): Promise<Organisation> {
+  const res = await apiRequest<CreateOrganisationResponse>("/organisations", {
     method: "POST",
     body: { name, slug: slug ?? slugify(name) },
   });
+  return res.organisation;
 }
 
 export function getWorkspaces(organisationId: string) {

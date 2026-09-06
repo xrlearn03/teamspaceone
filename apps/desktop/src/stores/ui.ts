@@ -32,7 +32,7 @@ interface UIState {
   pendingCount: number;
   activeWorkspaceId: string | null;
   pendingActionFilter: string | null;
-  setOrganisation: (organisationId: string) => void;
+  setOrganisation: (organisationId: string | null) => void;
   setPendingCount: (count: number) => void;
   setActiveWorkspace: (workspaceId: string | null) => void;
   setTheme: (theme: "light" | "dark" | "system") => void;

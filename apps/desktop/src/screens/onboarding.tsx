@@ -5,6 +5,7 @@ import { Input } from "../components/ui/input";
 import { Card } from "../components/ui/card";
 import { useAcceptInvitation, useCreateOrganisation, useMe } from "../hooks/api";
 import { useSwitchOrganisation } from "../hooks/useOrganisationSwitch";
+import { ApiError, logout } from "../lib/api";
 import { cn } from "../lib/utils";
 
 /** Shown after sign-in when the user has no organisation yet. */
@@ -16,6 +17,11 @@ export function OnboardingScreen() {
   const [mode, setMode] = useState<"choose" | "create" | "join">("choose");
   const [name, setName] = useState("");
   const [token, setToken] = useState("");
+
+  async function signOut() {
+    await logout();
+    window.location.reload();
+  }
 
   const firstName = user?.firstName || user?.email || "there";
 
@@ -35,6 +41,10 @@ export function OnboardingScreen() {
 
   const busy = createOrganisation.isPending || acceptInvitation.isPending;
   const error = createOrganisation.error ?? acceptInvitation.error;
+  const errorMessage =
+    mode === "create" && error instanceof ApiError && error.status === 409
+      ? "An organisation with this name already exists. Try a different name."
+      : error?.message;
 
   return (
     <div className="flex h-full items-center justify-center bg-background p-6">
@@ -102,7 +112,7 @@ export function OnboardingScreen() {
                 onKeyDown={(e) => e.key === "Enter" && submitJoin()}
               />
             )}
-            {error ? <p className="text-sm text-error">{error.message}</p> : null}
+            {errorMessage ? <p className="text-sm text-error">{errorMessage}</p> : null}
             <div className="flex justify-between">
               <Button variant="ghost" onClick={() => setMode("choose")} disabled={busy}>
                 Back
@@ -117,6 +127,13 @@ export function OnboardingScreen() {
             </div>
           </Card>
         )}
+
+        <p className="mt-6 text-center text-xs text-text-muted">
+          Signed in as {user?.email ?? "…"} ·{" "}
+          <button type="button" className="text-primary hover:underline" onClick={signOut}>
+            Sign out
+          </button>
+        </p>
       </div>
     </div>
   );

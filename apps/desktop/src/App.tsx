@@ -6,6 +6,7 @@ import { RealtimeProvider } from "./hooks/useRealtime";
 import { AuthScreen } from "./screens/auth";
 import { OnboardingScreen } from "./screens/onboarding";
 import { getAccessToken, getOrganisations, getActiveOrganisation, setActiveOrganisation } from "./lib/api";
+import { Button } from "./components/ui/button";
 import { useUIStore } from "./stores/ui";
 
 const MIN_SPLASH_DURATION_MS = 4000;
@@ -21,7 +22,13 @@ function AuthGate() {
   const [minSplashElapsed, setMinSplashElapsed] = useState(false);
   const organisationId = useUIStore((s) => s.organisationId);
   const setOrganisation = useUIStore((s) => s.setOrganisation);
-  const { data: organisations } = useQuery({
+  const {
+    data: organisations,
+    isLoading: organisationsLoading,
+    isError: organisationsError,
+    error: organisationsErrorDetail,
+    refetch: refetchOrganisations,
+  } = useQuery({
     queryKey: ["organisations"],
     queryFn: getOrganisations,
     enabled: Boolean(token),
@@ -29,9 +36,20 @@ function AuthGate() {
     retry: false,
   });
 
-  // Auto-select the first organisation when none is active yet.
+  // Keep the active organisation in sync with what the backend reports:
+  // pick the first org when none (or a stale one) is selected, and clear
+  // the selection entirely when the user belongs to no organisation.
   useEffect(() => {
-    if (organisations && organisations.length > 0 && !getActiveOrganisation()) {
+    if (!organisations) return;
+    const active = getActiveOrganisation();
+    if (organisations.length === 0) {
+      if (active) {
+        setActiveOrganisation(null);
+        setOrganisation(null);
+      }
+      return;
+    }
+    if (!active || !organisations.some((o) => o.id === active)) {
       setActiveOrganisation(organisations[0].id);
       setOrganisation(organisations[0].id);
     }
@@ -42,7 +60,7 @@ function AuthGate() {
     return () => clearTimeout(timer);
   }, []);
 
-  if (isLoading || !minSplashElapsed) {
+  if (isLoading || !minSplashElapsed || (token && organisationsLoading)) {
     return <SplashScreen />;
   }
 
@@ -50,9 +68,28 @@ function AuthGate() {
     return (
       <AuthScreen
         onAuthenticated={() => {
+          // Drop every cached query so data from a previously signed-in
+          // account (e.g. an empty organisation list) cannot leak through.
+          queryClient.clear();
           queryClient.invalidateQueries({ queryKey: ["access-token"] });
         }}
       />
+    );
+  }
+
+  if (organisationsError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-background p-6 text-center">
+        <p className="text-sm font-medium text-text">Couldn&apos;t load your organisations</p>
+        <p className="max-w-sm text-xs text-text-muted">
+          {organisationsErrorDetail instanceof Error
+            ? organisationsErrorDetail.message
+            : "Check your connection and try again."}
+        </p>
+        <Button variant="secondary" onClick={() => refetchOrganisations()}>
+          Retry
+        </Button>
+      </div>
     );
   }
 
