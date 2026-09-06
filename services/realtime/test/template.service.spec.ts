@@ -3,8 +3,16 @@
 import { RealtimeGateway } from '../src/realtime/realtime.gateway.js';
 
 describe('RealtimeGateway', () => {
+  const config = { get: jest.fn().mockReturnValue('test-secret') } as any;
+  const access = { canAccess: jest.fn() } as any;
+  const presence = { onMessage: jest.fn(), publish: jest.fn() } as any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('should broadcast message.created to the right room', () => {
-    const gateway = new RealtimeGateway({ get: jest.fn().mockReturnValue('test-secret') } as any);
+    const gateway = new RealtimeGateway(config, access, presence);
     const to = jest.fn().mockReturnThis();
     const emit = jest.fn();
     (gateway as any).server = { to, emit } as any;
@@ -24,24 +32,21 @@ describe('RealtimeGateway', () => {
     expect(emit).toHaveBeenCalledWith('message.created', { channelId: 'ch-1', content: 'hello' });
   });
 
-  it('joins a project room only after resource and organisation access checks', async () => {
-    const gateway = new RealtimeGateway({ get: jest.fn((key: string, fallback: string) => fallback) } as any);
-    const fetchMock = jest.fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ organisationId: 'org-1' }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ allowed: true }) });
-    global.fetch = fetchMock as any;
+  it('joins a project room only after resource access check succeeds', async () => {
+    access.canAccess.mockResolvedValueOnce(true);
     const client = { data: { userId: 'user-1' }, join: jest.fn() } as any;
+    const gateway = new RealtimeGateway(config, access, presence);
     await gateway.handleJoinProject(client, 'project-1');
     expect(client.join).toHaveBeenCalledWith('project:project-1');
+    expect(access.canAccess).toHaveBeenCalledWith('user-1', 'project', 'project-1');
   });
 
-  it('denies a channel room when organisation access is rejected', async () => {
-    const gateway = new RealtimeGateway({ get: jest.fn((key: string, fallback: string) => fallback) } as any);
-    global.fetch = jest.fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ organisationId: 'org-1' }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ allowed: false }) }) as any;
+  it('denies a channel room when access check fails', async () => {
+    access.canAccess.mockResolvedValueOnce(false);
     const client = { data: { userId: 'user-1' }, join: jest.fn() } as any;
+    const gateway = new RealtimeGateway(config, access, presence);
     await gateway.handleJoin(client, 'channel-1');
     expect(client.join).not.toHaveBeenCalled();
+    expect(access.canAccess).toHaveBeenCalledWith('user-1', 'channel', 'channel-1');
   });
 });

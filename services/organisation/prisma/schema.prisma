@@ -29,12 +29,17 @@ model Role {
   id             String       @id @default(cuid())
   organisationId String
   name           String
+  description    String?
   permissions    Json         @default("[]")
+  isSystem       Boolean      @default(false)
   isDefault      Boolean      @default(false)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   memberships    OrganisationMembership[]
+  rolePermissions RolePermission[]
+  userRoles      UserRole[]
+  roleScopes     RoleScope[]
 
   @@unique([organisationId, name])
   @@index([organisationId])
@@ -52,6 +57,8 @@ model OrganisationMembership {
   updatedAt      DateTime     @updatedAt
   organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   role           Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  userRoles      UserRole[]
+  dataScopes     DataScope[]
 
   @@unique([userId, organisationId])
   @@index([organisationId])
@@ -129,4 +136,94 @@ model InboxEvent {
 
   @@index([eventId])
   @@index([organisationId])
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  module      String
+  resource    String
+  action      String
+  description String?
+  createdAt   DateTime @default(now())
+
+  rolePermissions RolePermission[]
+
+  @@unique([module, resource, action])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id           String                 @id @default(cuid())
+  membershipId String
+  roleId       String
+  createdAt    DateTime               @default(now())
+  membership   OrganisationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role         Role                   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, roleId])
+  @@index([membershipId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model DataScope {
+  id           String                 @id @default(cuid())
+  membershipId String
+  module       String
+  scope        String
+  scopeValue   String?
+  createdAt    DateTime               @default(now())
+  membership   OrganisationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([membershipId])
+  @@index([module, scope])
+  @@map("data_scopes")
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organisationId String
+  userId         String?
+  action         String
+  resourceType   String?
+  resourceId     String?
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  @@index([organisationId])
+  @@index([userId])
+  @@index([action])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model RoleScope {
+  id           String   @id @default(cuid())
+  roleId       String
+  module       String
+  scope        String
+  scopeValue   String?
+  createdAt    DateTime @default(now())
+  role         Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([roleId])
+  @@index([module, scope])
+  @@map("role_scopes")
 }

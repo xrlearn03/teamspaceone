@@ -68,3 +68,10 @@ Semantic tokens live in `apps/desktop/src/styles/index.css`:
 - Sidebar is resizable and collapsible via the app rail or resizer.
 - Right details panel can be toggled from channel/project headers.
 - Connection status shown in the bottom status bar.
+
+## Phase 0 — Repository Audit
+
+- Architecture audit, current-state assessment, technical decisions, implementation roadmap, and permission matrix are in `docs/`.
+- Current gaps: granular RBAC/data scopes, HRMS, AI Interview, employee/candidate identity separation, and permission-aware UI.
+- Reusable assets: existing auth flow, organisation context middleware, outbox/NATS event plumbing, search service, AI service, file storage, notification service, realtime gateway, and desktop UI primitives.
+- Next phase: Phase 1 — Authentication + RBAC (`packages/authorization`, extended `organisation` schema, permission guards, dynamic navigation).

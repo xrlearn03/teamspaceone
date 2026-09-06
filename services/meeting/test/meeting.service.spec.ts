@@ -113,6 +113,7 @@ describe('MeetingService', () => {
       roomName: 'room-1',
       status: 'ended',
       createdBy: 'user-1',
+      participants: [],
     });
 
     await expect(service.join(ctx, 'm1', {})).rejects.toThrow(ConflictException);
@@ -125,6 +126,7 @@ describe('MeetingService', () => {
       roomName: 'room-1',
       status: 'scheduled',
       createdBy: 'user-1',
+      participants: [],
     });
     txClient.meeting.update.mockResolvedValue({ id: 'm1', status: 'started' });
 

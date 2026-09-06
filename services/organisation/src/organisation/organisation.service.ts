@@ -4,6 +4,7 @@ import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { Prisma, type Organisation } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
+import { AuthorizationService } from './authorization.service.js';
 import { type CreateOrganisationDto } from './dto/create-organisation.dto.js';
 import { type CreateMemberDto } from './dto/create-member.dto.js';
 import { type CreateInvitationDto } from './dto/create-invitation.dto.js';
@@ -20,6 +21,7 @@ export class OrganisationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
+    private readonly authorization: AuthorizationService,
   ) {}
 
   async create(
@@ -56,25 +58,11 @@ export class OrganisationService {
         },
       });
 
-      const ownerRole = await tx.role.create({
-        data: {
-          id: randomUUID(),
-          organisationId: id,
-          name: 'owner',
-          permissions: ['*'],
-          isDefault: false,
-        },
-      });
-
-      await tx.role.create({
-        data: {
-          id: randomUUID(),
-          organisationId: id,
-          name: 'member',
-          permissions: [],
-          isDefault: true,
-        },
-      });
+      const defaultRoles = await this.authorization.createDefaultRoles(id, tx);
+      const ownerRole = defaultRoles.find((r) => r.name === 'owner');
+      if (!ownerRole) {
+        throw new Error('Owner role was not seeded');
+      }
 
       const membership = await tx.organisationMembership.create({
         data: {
@@ -84,6 +72,8 @@ export class OrganisationService {
           roleId: ownerRole.id,
         },
       });
+
+      await this.authorization.applyRoleScopesToMembership(tx, membership.id, ownerRole.id, id);
 
       await this.outbox.createEvent(tx, orgEnvelope, Subjects.ORGANISATION_CREATED);
 
@@ -123,6 +113,8 @@ export class OrganisationService {
           roleId: dto.roleId,
         },
       });
+
+      await this.authorization.applyRoleScopesToMembership(tx, created.id, dto.roleId, organisationId);
 
       const envelope = createEventEnvelope({
         eventType: Subjects.ORGANISATION_MEMBER_ADDED,
@@ -307,6 +299,9 @@ export class OrganisationService {
         create: { id: randomUUID(), userId, organisationId: invitation.organisationId, clientId: invitation.clientId, roleId: invitation.roleId, isGuest: true },
         update: {},
       });
+
+      await this.authorization.applyRoleScopesToMembership(tx, membership.id, invitation.roleId, invitation.organisationId);
+
       await tx.invitation.update({ where: { id: invitation.id }, data: { status: 'accepted' } });
       const envelope = createEventEnvelope({
         eventType: Subjects.GUEST_CREATED,
@@ -365,6 +360,10 @@ export class OrganisationService {
     if (!organisation) return false;
     if (organisation.ownerId === actorId) return true;
     return Boolean(await this.prisma.organisationMembership.findUnique({ where: { userId_organisationId: { userId: actorId, organisationId } } }));
+  }
+
+  async getUserContext(organisationId: string, actorId: string) {
+    return this.authorization.getUserContext(this.prisma, organisationId, actorId);
   }
 
   private async assertMemberOf(organisationId: string, actorId: string): Promise<void> {

@@ -27,7 +27,8 @@
     "src/health/**/*",
     "src/events/**/*",
     "src/outbox/**/*",
-    "src/organisation/**/*"
+    "src/organisation/**/*",
+    "src/seed/**/*"
   ],
   "exclude": ["dist", "node_modules"]
 }

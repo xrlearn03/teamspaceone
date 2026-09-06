@@ -1,8 +1,9 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Patch, Post, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Patch, Post, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { OrganisationService } from './organisation.service.js';
+import { OrganisationPermissionGuard, RequirePermissions } from './permission.guard.js';
 import { CreateOrganisationDto } from './dto/create-organisation.dto.js';
 import { CreateMemberDto } from './dto/create-member.dto.js';
 import { CreateInvitationDto } from './dto/create-invitation.dto.js';
@@ -10,6 +11,7 @@ import { CreateWorkspaceDto } from './dto/create-workspace.dto.js';
 import { CreateClientDto } from './dto/create-client.dto.js';
 import { UpdateClientDto } from './dto/update-client.dto.js';
 
+@UseGuards(OrganisationPermissionGuard)
 @Controller('organisations')
 export class OrganisationController {
   constructor(
@@ -51,6 +53,7 @@ export class OrganisationController {
   }
 
   @Post(':id/members')
+  @RequirePermissions('admin.user.manage')
   async addMember(
     @Param('id') id: string,
     @CurrentOrganisation() ctx: OrganisationContextValue,
@@ -61,6 +64,7 @@ export class OrganisationController {
   }
 
   @Post(':id/workspaces')
+  @RequirePermissions('collaboration.workspace.create')
   async createWorkspace(
     @Param('id') id: string,
     @CurrentOrganisation() ctx: OrganisationContextValue,
@@ -71,6 +75,7 @@ export class OrganisationController {
   }
 
   @Post(':id/invitations')
+  @RequirePermissions('admin.user.manage')
   async createInvitation(
     @Param('id') id: string,
     @CurrentOrganisation() ctx: OrganisationContextValue,
@@ -187,6 +192,19 @@ export class OrganisationController {
   ) {
     this.assertOrg(id, ctx);
     return this.organisation.listMembers(ctx.organisationId, ctx.actorId as string);
+  }
+
+  @Get(':id/me/context')
+  async getMeContext(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    const userContext = await this.organisation.getUserContext(ctx.organisationId, ctx.actorId as string);
+    if (!userContext) {
+      throw new ForbiddenException('Not a member of this organisation');
+    }
+    return userContext;
   }
 
   private assertOrg(id: string, ctx: OrganisationContextValue): void {

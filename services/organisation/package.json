@@ -36,6 +36,7 @@
     "@teamspace-one/logger": "workspace:*",
     "@teamspace-one/opentelemetry": "workspace:*",
     "@teamspace-one/organisation-context": "workspace:*",
+    "@teamspace-one/authorization": "workspace:*",
     "bullmq": "^5.12.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
