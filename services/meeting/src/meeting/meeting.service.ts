@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHmac } from 'node:crypto';
 import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { Prisma } from '#prisma';
@@ -129,19 +129,32 @@ export class MeetingService {
   }
 
   async list(ctx: OrganisationContextValue) {
+    const userId = ctx.actorId;
+    if (!userId) throw new ForbiddenException('Missing actor');
     return this.prisma.meeting.findMany({
-      where: { organisationId: ctx.organisationId },
+      where: {
+        organisationId: ctx.organisationId,
+        OR: [
+          { createdBy: userId },
+          { participants: { some: { userId, leftAt: null } } },
+        ],
+      },
       include: { participants: { where: { leftAt: null } } },
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async getById(ctx: OrganisationContextValue, id: string) {
+    const userId = ctx.actorId;
+    if (!userId) throw new ForbiddenException('Missing actor');
     const meeting = await this.prisma.meeting.findFirst({
       where: { id, organisationId: ctx.organisationId },
       include: { participants: { where: { leftAt: null } } },
     });
     if (!meeting) throw new NotFoundException('Meeting not found');
+    const isParticipant = meeting.participants.some((p) => p.userId === userId);
+    const isCreator = meeting.createdBy === userId;
+    if (!isParticipant && !isCreator) throw new NotFoundException('Meeting not found');
     return meeting;
   }
 
@@ -408,6 +421,23 @@ export class MeetingService {
     return { token, roomName: meeting.roomName };
   }
 
+  async getSfuToken(ctx: OrganisationContextValue, id: string) {
+    const userId = ctx.actorId;
+    if (!userId) throw new ForbiddenException('Missing actor');
+
+    const meeting = await this.getById(ctx, id);
+    const secret = process.env.SFU_TOKEN_SECRET;
+    if (!secret) throw new Error('SFU_TOKEN_SECRET environment variable is required');
+
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    const roomB64 = Buffer.from(meeting.id).toString('base64url');
+    const userB64 = Buffer.from(userId).toString('base64url');
+    const base = `${roomB64}.${userB64}.${exp}`;
+    const signature = createHmac('sha256', secret).update(base).digest('hex');
+
+    return { token: `${base}.${signature}`, roomId: meeting.id, userId };
+  }
+
   async createMeetingMessage(ctx: OrganisationContextValue, meetingId: string, content: string) {
     const userId = ctx.actorId;
     if (!userId) throw new ForbiddenException('Missing actor');
@@ -550,15 +580,13 @@ export class MeetingService {
     const eventType = recording ? Subjects.MEETING_RECORDING_STARTED : Subjects.MEETING_RECORDING_STOPPED;
 
     let egressId: string | undefined | null = meeting.recordingEgressId;
-    try {
-      if (recording && !egressId) {
-        egressId = await this.livekit.startRecording(meeting.roomName);
-      } else if (!recording && egressId) {
-        await this.livekit.stopRecording(egressId);
-        egressId = null;
-      }
-    } catch (err) {
-      this.logger.warn({ err, meetingId }, 'LiveKit recording failed; continuing with local recording state');
+    if (recording && !egressId) {
+      const started = await this.livekit.startRecording(meeting.roomName);
+      if (!started) throw new BadRequestException('Recording cannot be started');
+      egressId = started;
+    } else if (!recording && egressId) {
+      await this.livekit.stopRecording(egressId);
+      egressId = null;
     }
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {

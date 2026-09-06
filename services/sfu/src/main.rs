@@ -1,14 +1,23 @@
 use anyhow::{anyhow, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use futures::{SinkExt, StreamExt};
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{info, warn};
+
+type HmacSha256 = Hmac<Sha256>;
+const MAX_DISPLAY_NAME_CHARS: usize = 128;
+const MAX_SDP_BYTES: usize = 65536;
+const MAX_CANDIDATE_BYTES: usize = 65536;
 use webrtc::api::{API, APIBuilder};
 use webrtc::ice_transport::ice_candidate::{RTCIceCandidate, RTCIceCandidateInit};
 use webrtc::ice_transport::ice_server::RTCIceServer;
@@ -46,6 +55,7 @@ enum Signal {
         room_id: RoomId,
         display_name: String,
         user_id: Option<String>,
+        token: String,
     },
     #[serde(rename = "leave")]
     Leave,
@@ -152,6 +162,10 @@ type SharedState = Arc<RwLock<State>>;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
+    let token_secret = std::env::var("SFU_TOKEN_SECRET").map_err(|_| {
+        anyhow!("SFU_TOKEN_SECRET environment variable is required")
+    })?;
+
     let api = Arc::new(APIBuilder::new().build());
     let state: SharedState = Arc::new(RwLock::new(State::new(api)));
     let host = std::env::var("SFU_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
@@ -162,13 +176,14 @@ async fn main() -> Result<()> {
 
     while let Ok((stream, _)) = listener.accept().await {
         let state = state.clone();
-        tokio::spawn(handle_peer(stream, state));
+        let token_secret = token_secret.clone();
+        tokio::spawn(handle_peer(stream, state, token_secret));
     }
 
     Ok(())
 }
 
-async fn handle_peer(stream: TcpStream, state: SharedState) {
+async fn handle_peer(stream: TcpStream, state: SharedState, token_secret: String) {
     let addr = match stream.peer_addr() {
         Ok(a) => a,
         Err(_) => return,
@@ -220,7 +235,7 @@ async fn handle_peer(stream: TcpStream, state: SharedState) {
             Ok(Message::Text(text)) => {
                 match serde_json::from_str::<Signal>(&text) {
                     Ok(signal) => {
-                        if let Err(e) = process_signal(&peer_id, signal, &state).await {
+                        if let Err(e) = process_signal(&peer_id, signal, &state, &token_secret).await {
                             warn!("Signal processing failed for {}: {}", peer_id, e);
                             let _ = tx.send(Event::Error {
                                 message: e.to_string(),
@@ -248,10 +263,108 @@ async fn handle_peer(stream: TcpStream, state: SharedState) {
     let _ = send_task.await;
 }
 
-async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState) -> Result<()> {
+fn now_unix() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn decode_base64url(s: &str) -> Result<String> {
+    URL_SAFE_NO_PAD
+        .decode(s)
+        .ok()
+        .and_then(|b| String::from_utf8(b).ok())
+        .ok_or_else(|| anyhow!("invalid base64url encoding"))
+}
+
+fn decode_hex(s: &str) -> Option<Vec<u8>> {
+    if s.len() % 2 != 0 {
+        return None;
+    }
+    let mut out = Vec::with_capacity(s.len() / 2);
+    for chunk in s.as_bytes().chunks(2) {
+        let a = hex_value(chunk[0])?;
+        let b = hex_value(chunk[1])?;
+        out.push((a << 4) | b);
+    }
+    Some(out)
+}
+
+fn hex_value(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn verify_sfu_token(token: &str, expected_room: &str, expected_user: &Option<String>, token_secret: &str) -> Result<()> {
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() != 4 {
+        return Err(anyhow!("invalid token format"));
+    }
+    let room_b64 = parts[0];
+    let user_b64 = parts[1];
+    let exp_str = parts[2];
+    let sig_hex = parts[3];
+
+    let room = decode_base64url(room_b64)?;
+    let token_user = if user_b64.is_empty() {
+        None
+    } else {
+        Some(decode_base64url(user_b64)?)
+    };
+    let exp: u64 = exp_str.parse().map_err(|_| anyhow!("invalid token expiration"))?;
+    if exp < now_unix() {
+        return Err(anyhow!("token expired"));
+    }
+
+    if room != expected_room {
+        return Err(anyhow!("token room mismatch"));
+    }
+    if &token_user != expected_user {
+        return Err(anyhow!("token user mismatch"));
+    }
+
+    let base = format!("{}.{}.{}", room_b64, user_b64, exp_str);
+    let mut mac = HmacSha256::new_from_slice(token_secret.as_bytes())
+        .map_err(|_| anyhow!("invalid hmac key"))?;
+    mac.update(base.as_bytes());
+    let expected = decode_hex(sig_hex).ok_or_else(|| anyhow!("invalid signature encoding"))?;
+    mac.verify_slice(&expected).map_err(|_| anyhow!("invalid token signature"))?;
+
+    Ok(())
+}
+
+fn validate_display_name(name: &str) -> Result<()> {
+    if name.chars().count() > MAX_DISPLAY_NAME_CHARS {
+        return Err(anyhow!("display name too long"));
+    }
+    Ok(())
+}
+
+fn validate_sdp(sdp: &str) -> Result<()> {
+    if sdp.len() > MAX_SDP_BYTES {
+        return Err(anyhow!("sdp too large"));
+    }
+    Ok(())
+}
+
+fn validate_candidate(candidate: &str) -> Result<()> {
+    if candidate.len() > MAX_CANDIDATE_BYTES {
+        return Err(anyhow!("ice candidate too large"));
+    }
+    Ok(())
+}
+
+async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, token_secret: &str) -> Result<()> {
     match signal {
-        Signal::Join { room_id, display_name, user_id } => {
+        Signal::Join { room_id, display_name, user_id, token } => {
             let _ = leave_room(peer_id, state).await;
+            verify_sfu_token(&token, &room_id, &user_id, token_secret)?;
+            validate_display_name(&display_name)?;
 
             let (tx, api, old_pc) = {
                 let mut s = state.write().await;
@@ -437,8 +550,17 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState) -> R
             let _ = leave_room(peer_id, state).await;
         }
         Signal::Offer { target, sdp } => {
+            validate_sdp(&sdp)?;
             let s = state.read().await;
+            let sender = s.peers.get(peer_id).ok_or(anyhow!("peer not found: {}", peer_id))?;
+            let sender_room = sender.room_id.as_ref().ok_or(anyhow!("peer not in a room"))?;
             if let Some(target_peer) = s.peers.get(&target) {
+                if target_peer.room_id.as_ref() != Some(sender_room) {
+                    let _ = sender.tx.send(Event::Error {
+                        message: format!("Target not in the same room: {}", target),
+                    });
+                    return Err(anyhow!("target not in the same room"));
+                }
                 let _ = target_peer.tx.send(Event::Offer {
                     from: peer_id.to_string(),
                     sdp,
@@ -450,6 +572,7 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState) -> R
             }
         }
         Signal::Answer { target, sdp } if target == SFU_ID => {
+            validate_sdp(&sdp)?;
             let pc = {
                 let s = state.read().await;
                 let peer = s
@@ -464,8 +587,17 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState) -> R
             pc.set_remote_description(answer).await?;
         }
         Signal::Answer { target, sdp } => {
+            validate_sdp(&sdp)?;
             let s = state.read().await;
+            let sender = s.peers.get(peer_id).ok_or(anyhow!("peer not found: {}", peer_id))?;
+            let sender_room = sender.room_id.as_ref().ok_or(anyhow!("peer not in a room"))?;
             if let Some(target_peer) = s.peers.get(&target) {
+                if target_peer.room_id.as_ref() != Some(sender_room) {
+                    let _ = sender.tx.send(Event::Error {
+                        message: format!("Target not in the same room: {}", target),
+                    });
+                    return Err(anyhow!("target not in the same room"));
+                }
                 let _ = target_peer.tx.send(Event::Answer {
                     from: peer_id.to_string(),
                     sdp,
@@ -482,6 +614,7 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState) -> R
             sdp_m_line_index,
             sdp_mid,
         } if target == SFU_ID => {
+            validate_candidate(&candidate)?;
             let pc = {
                 let s = state.read().await;
                 let peer = s
@@ -508,8 +641,17 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState) -> R
             sdp_m_line_index,
             sdp_mid,
         } => {
+            validate_candidate(&candidate)?;
             let s = state.read().await;
+            let sender = s.peers.get(peer_id).ok_or(anyhow!("peer not found: {}", peer_id))?;
+            let sender_room = sender.room_id.as_ref().ok_or(anyhow!("peer not in a room"))?;
             if let Some(target_peer) = s.peers.get(&target) {
+                if target_peer.room_id.as_ref() != Some(sender_room) {
+                    let _ = sender.tx.send(Event::Error {
+                        message: format!("Target not in the same room: {}", target),
+                    });
+                    return Err(anyhow!("target not in the same room"));
+                }
                 let _ = target_peer.tx.send(Event::Ice {
                     from: peer_id.to_string(),
                     candidate,

@@ -14,12 +14,26 @@ import { Subjects } from '@teamspace-one/event-contracts';
 import { AccessService } from './access.service.js';
 import { PresenceService } from './presence.service.js';
 
+const DEFAULT_CORS_ORIGINS = [
+  'http://localhost:1420',
+  'http://localhost:5173',
+  'http://tauri.localhost',
+  'tauri://localhost',
+];
+
 @WebSocketGateway({
-  cors: { origin: '*' },
+  cors: {
+    origin: (process.env.CORS_ORIGINS ?? '')
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean) || DEFAULT_CORS_ORIGINS,
+    credentials: true,
+  },
   namespace: '/realtime',
 })
 export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   private readonly logger = new Logger(RealtimeGateway.name);
+  private jwtSecret!: string;
 
   constructor(
     private readonly config: ConfigService,
@@ -30,6 +44,12 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   @WebSocketServer() server!: Server;
 
   afterInit() {
+    const jwtSecret = this.config.get<string>('JWT_SECRET');
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET environment variable is required');
+    }
+    this.jwtSecret = jwtSecret;
+
     this.presence.onMessage((room, event, payload) => {
       if (!this.server) return;
       this.server.to(room).emit(event, payload);
@@ -43,11 +63,12 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       : client.handshake.headers.authorization?.replace(/^Bearer\s+/i, '');
     try {
       if (!token) throw new Error('Missing token');
-      const payload = verify(token, this.config.get<string>('JWT_SECRET', 'change-me')) as { sub?: string; type?: string };
+      const payload = verify(token, this.jwtSecret, { algorithms: ['HS256'] }) as { sub?: string; type?: string };
       if (!payload.sub || payload.type !== 'access') throw new Error('Invalid access token');
       client.data.userId = payload.sub;
       client.join(`user:${payload.sub}`);
-    } catch {
+    } catch (err) {
+      this.logger.warn({ clientId: client.id, error: (err as Error).message }, 'Realtime connection rejected');
       client.disconnect(true);
     }
   }
@@ -112,21 +133,21 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   @SubscribeMessage('typing')
   handleTyping(client: Socket, data: { room: string; isTyping: boolean }): void {
     const userId = client.data.userId as string | undefined;
-    if (!userId) return;
+    if (!userId || !client.rooms.has(data.room)) return;
     this.presence.publish('realtime:typing', data.room, 'typing', { userId, isTyping: data.isTyping, room: data.room });
   }
 
   @SubscribeMessage('presence')
   handlePresence(client: Socket, data: { room: string; status: string }): void {
     const userId = client.data.userId as string | undefined;
-    if (!userId) return;
+    if (!userId || !client.rooms.has(data.room)) return;
     this.presence.publish('realtime:presence', data.room, 'presence', { userId, status: data.status, room: data.room });
   }
 
   @SubscribeMessage('connection-state')
   handleConnectionState(client: Socket, data: { room: string; state: string }): void {
     const userId = client.data.userId as string | undefined;
-    if (!userId) return;
+    if (!userId || !client.rooms.has(data.room)) return;
     this.presence.publish('realtime:connection', data.room, 'connection-state', { userId, state: data.state, room: data.room });
   }
 
@@ -144,6 +165,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   ): Promise<void> {
     const userId = client.data.userId as string | undefined;
     if (!userId || !data.meetingId || !Array.isArray(data.userIds)) return;
+    if (!(await this.access.canAccess(userId, 'meeting', data.meetingId))) return;
     if (data.channelId && !(await this.access.canAccess(userId, 'channel', data.channelId))) return;
     const payload = {
       meetingId: data.meetingId,
@@ -161,9 +183,10 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   }
 
   @SubscribeMessage('call.cancel')
-  handleCallCancel(client: Socket, data: { meetingId: string; userIds?: string[] }): void {
+  async handleCallCancel(client: Socket, data: { meetingId: string; userIds?: string[] }): Promise<void> {
     const userId = client.data.userId as string | undefined;
     if (!userId || !data.meetingId || !Array.isArray(data.userIds)) return;
+    if (!(await this.access.canAccess(userId, 'meeting', data.meetingId))) return;
     const payload = { meetingId: data.meetingId, callerId: userId };
     for (const target of data.userIds) {
       if (typeof target !== 'string' || target === userId) continue;
@@ -189,7 +212,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   @SubscribeMessage('message.read')
   handleMessageRead(client: Socket, data: { room: string; messageId: string }): void {
     const userId = client.data.userId as string | undefined;
-    if (!userId || !data.room || !data.messageId) return;
+    if (!userId || !data.room || !data.messageId || !client.rooms.has(data.room)) return;
     this.presence.publish('realtime:presence', data.room, 'read-receipt', {
       userId,
       messageId: data.messageId,

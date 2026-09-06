@@ -31,8 +31,13 @@ export class LiveKitService {
 
   constructor(private readonly config: ConfigService) {
     const host = this.config.get<string>('LIVEKIT_URL', 'ws://localhost:7880').replace(/^wss?:\/\//, 'http://');
-    this.apiKey = this.config.get<string>('LIVEKIT_API_KEY', 'devkey');
-    this.apiSecret = this.config.get<string>('LIVEKIT_API_SECRET', 'secret');
+    const apiKey = this.config.get<string>('LIVEKIT_API_KEY');
+    const apiSecret = this.config.get<string>('LIVEKIT_API_SECRET');
+    if (!apiKey || !apiSecret) {
+      throw new Error('LIVEKIT_API_KEY and LIVEKIT_API_SECRET environment variables are required');
+    }
+    this.apiKey = apiKey;
+    this.apiSecret = apiSecret;
     this.roomClient = new RoomServiceClient(host, this.apiKey, this.apiSecret);
 
     const egressHost = this.config.get<string>('LIVEKIT_EGRESS_URL')?.replace(/^wss?:\/\//, 'http://');

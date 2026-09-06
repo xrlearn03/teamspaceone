@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { type LoggerService } from '@nestjs/common';
+import { type LoggerService, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module.js';
 import { createLogger, type Logger } from '@teamspace-one/logger';
@@ -28,6 +28,13 @@ async function bootstrap() {
   const pino = createLogger({ name: 'meeting-service' });
   const app = await NestFactory.create(AppModule, { logger: adaptLogger(pino) });
 
+  const config = app.get(ConfigService);
+  if (!config.get<string>('INTERNAL_API_KEY')) {
+    throw new Error('INTERNAL_API_KEY environment variable is required');
+  }
+
+  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+
   app.use((req: any, res: any, next: any) => {
     const middleware = new OrganisationContextMiddleware();
     middleware.use(req, res, next);
@@ -35,7 +42,6 @@ async function bootstrap() {
 
   app.enableShutdownHooks();
 
-  const config = app.get(ConfigService);
   const port = config.get<number>('PORT', 3009);
 
   await app.listen(port);

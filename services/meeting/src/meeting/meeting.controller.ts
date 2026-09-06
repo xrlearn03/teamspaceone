@@ -100,6 +100,14 @@ export class MeetingController {
     return this.meeting.getToken(ctx, id, name);
   }
 
+  @Post(':id/sfu-token')
+  async getSfuToken(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') id: string,
+  ) {
+    return this.meeting.getSfuToken(ctx, id);
+  }
+
   @Post(':id/messages')
   async createMessage(
     @CurrentOrganisation() ctx: OrganisationContextValue,

@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type Event } from "@tauri-apps/api/event";
+import { getSfuToken } from "../lib/api";
 
 export interface SfuParticipant {
   id: string;
@@ -42,7 +43,7 @@ interface Signal {
 }
 
 type SendSignal =
-  | { type: "join"; room_id: string; display_name: string; user_id?: string }
+  | { type: "join"; room_id: string; display_name: string; user_id?: string; token: string }
   | { type: "answer"; target: string; sdp: string }
   | {
       type: "ice";
@@ -355,6 +356,16 @@ export function useSfu() {
       setLocalAudioEnabled(stream.getAudioTracks()[0]?.enabled ?? false);
       setLocalVideoEnabled(stream.getVideoTracks()[0]?.enabled ?? false);
 
+      let sfuToken: string;
+      try {
+        const result = await getSfuToken(roomId);
+        sfuToken = result.token;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to get SFU token");
+        await leave();
+        throw err;
+      }
+
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: STUN_SERVER }],
       });
@@ -385,7 +396,7 @@ export function useSfu() {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        send({ type: "join", room_id: roomId, display_name: displayName, user_id: userId });
+        send({ type: "join", room_id: roomId, display_name: displayName, user_id: userId, token: sfuToken });
         setConnected(true);
       };
 
@@ -470,10 +481,18 @@ export function useSfu() {
       ws.onerror = () => {
         setError("SFU WebSocket error");
         setConnected(false);
+        pcRef.current?.close();
+        pcRef.current = null;
+        cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+        screenStreamRef.current?.getTracks().forEach((t) => t.stop());
       };
 
       ws.onclose = () => {
         setConnected(false);
+        pcRef.current?.close();
+        pcRef.current = null;
+        cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+        screenStreamRef.current?.getTracks().forEach((t) => t.stop());
       };
     },
     [leave],

@@ -591,6 +591,12 @@ export interface MeetingTokenResult {
   roomName: string;
 }
 
+export interface MeetingSfuTokenResult {
+  token: string;
+  roomId: string;
+  userId: string;
+}
+
 export interface MeetingMessage {
   id: string;
   meetingId: string;
@@ -1106,6 +1112,10 @@ export function joinMeeting(id: string, name?: string) {
 export function getMeetingToken(id: string, name?: string) {
   const query = name ? `?name=${encodeURIComponent(name)}` : "";
   return apiRequest<MeetingTokenResult>(`/meetings/${id}/token${query}`);
+}
+
+export function getSfuToken(id: string) {
+  return apiRequest<MeetingSfuTokenResult>(`/meetings/${id}/sfu-token`, { method: "POST" });
 }
 
 export function leaveMeeting(id: string) {
