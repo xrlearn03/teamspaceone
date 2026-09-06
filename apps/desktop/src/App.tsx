@@ -69,9 +69,15 @@ function AuthGate() {
       <AuthScreen
         onAuthenticated={() => {
           // Drop every cached query so data from a previously signed-in
-          // account (e.g. an empty organisation list) cannot leak through.
-          queryClient.clear();
-          queryClient.invalidateQueries({ queryKey: ["access-token"] });
+          // account (e.g. an empty organisation list) cannot leak through,
+          // then seed the token query directly — clearing the cache removes
+          // the mounted access-token query, so invalidation alone would not
+          // refetch it and the user would be bounced back to sign-in.
+          void (async () => {
+            const newToken = await getAccessToken();
+            queryClient.clear();
+            queryClient.setQueryData(["access-token"], newToken);
+          })();
         }}
       />
     );
