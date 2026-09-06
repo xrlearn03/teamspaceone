@@ -75,7 +75,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
         try {
           await (s.drain ? s.drain() : s.unsubscribe?.());
         } catch (err) {
-          this.logger.error(`Failed to drain subscription: ${(err as Error).message}`);
+          this.logger.error(`Failed to drain subscription: ${(err as Error).message}`, (err as Error).stack);
         }
       }),
     );
@@ -91,7 +91,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
         const data = JSON.parse(raw) as EventEnvelope;
 
         if (!isEventEnvelope(data)) {
-          this.logger.warn({ stream: def.stream, subject: def.subject }, 'Received invalid event envelope');
+          this.logger.warn(`Received invalid event envelope [${def.stream}/${def.subject}]`);
           jsMsg.ack();
           continue;
         }
@@ -122,14 +122,11 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
 
         jsMsg.ack();
       } catch (err) {
+        const e = err as Error;
         this.logger.error(
-          {
-            stream: def.stream,
-            subject: def.subject,
-            deliveryCount: jsMsg.info.deliveryCount,
-            error: (err as Error).message,
-          },
-          'Event processing failed',
+          `Event processing failed [${def.stream}/${def.subject}] ` +
+            `delivery=${jsMsg.info.deliveryCount}: ${e.message}`,
+          e.stack,
         );
 
         if (jsMsg.info.deliveryCount >= 5) {
@@ -153,7 +150,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
         deliveryCount: jsMsg.info.deliveryCount,
         occurredAt: new Date().toISOString(),
       };
-      await js.publish('teamspace-one.notification.dead', JSON.stringify(payload));
+      await js.publish('teamspace-one.dlq.notification', JSON.stringify(payload));
     } catch (publishErr) {
       this.logger.error(
         { error: (publishErr as Error).message },

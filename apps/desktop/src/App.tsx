@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "./components/layouts/app-shell";
 import { SplashScreen } from "./components/splash/splash-screen";
@@ -12,14 +13,42 @@ import { useUIStore } from "./stores/ui";
 const MIN_SPLASH_DURATION_MS = 4000;
 
 function AuthGate() {
+  const [session, setSession] = useState(0);
   const queryClient = useQueryClient();
+  const [minSplashElapsed, setMinSplashElapsed] = useState(false);
+
+  // Minimum splash duration applies only at app launch: AuthGate never
+  // remounts, so this timer does not replay on login or org switches.
+  useEffect(() => {
+    const timer = setTimeout(() => setMinSplashElapsed(true), MIN_SPLASH_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!minSplashElapsed) {
+    return <SplashScreen />;
+  }
+
+  return (
+    <AuthGateInner
+      key={session}
+      onAuthenticated={() => {
+        // Drop every cached query so data from a previously signed-in
+        // account cannot leak through, then remount the gate so the
+        // access-token query refetches from localStorage.
+        queryClient.clear();
+        setSession((s) => s + 1);
+      }}
+    />
+  );
+}
+
+function AuthGateInner({ onAuthenticated }: { onAuthenticated: () => void }) {
   const { data: token, isLoading } = useQuery({
     queryKey: ["access-token"],
     queryFn: getAccessToken,
     staleTime: Infinity,
     retry: false,
   });
-  const [minSplashElapsed, setMinSplashElapsed] = useState(false);
   const organisationId = useUIStore((s) => s.organisationId);
   const setOrganisation = useUIStore((s) => s.setOrganisation);
   const {
@@ -55,31 +84,20 @@ function AuthGate() {
     }
   }, [organisations, setOrganisation]);
 
-  useEffect(() => {
-    const timer = setTimeout(() => setMinSplashElapsed(true), MIN_SPLASH_DURATION_MS);
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (isLoading || !minSplashElapsed || (token && organisationsLoading)) {
-    return <SplashScreen />;
+  // The branded splash only shows at app launch (handled in AuthGate).
+  // Post-login/org transitions get a lightweight spinner while the token
+  // read and organisation fetch are in flight.
+  if (isLoading || (token && organisationsLoading)) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
   }
 
   if (!token) {
     return (
-      <AuthScreen
-        onAuthenticated={() => {
-          // Drop every cached query so data from a previously signed-in
-          // account (e.g. an empty organisation list) cannot leak through,
-          // then seed the token query directly — clearing the cache removes
-          // the mounted access-token query, so invalidation alone would not
-          // refetch it and the user would be bounced back to sign-in.
-          void (async () => {
-            const newToken = await getAccessToken();
-            queryClient.clear();
-            queryClient.setQueryData(["access-token"], newToken);
-          })();
-        }}
-      />
+      <AuthScreen onAuthenticated={onAuthenticated} />
     );
   }
 
