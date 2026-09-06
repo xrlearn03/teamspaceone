@@ -124,13 +124,13 @@ export function AIAssistantScreen() {
           }
         }, 24);
       });
-    } catch {
+    } catch (err) {
       setMessages((prev) => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
           role: "assistant",
-          content: "Sorry, I couldn't process that. Please try again.",
+          content: err instanceof Error ? `Error: ${err.message}` : "Sorry, I couldn't process that. Please try again.",
         },
       ]);
     } finally {

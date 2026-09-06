@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { Eye, EyeOff } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { login, register, setActiveOrganisation } from "../lib/api";
@@ -15,6 +16,8 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [registered, setRegistered] = useState(false);
 
   const loginMutation = useMutation({
     mutationFn: (args: { email: string; password: string }) =>
@@ -28,9 +31,12 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
   const registerMutation = useMutation({
     mutationFn: () => register(email, password, firstName, lastName),
-    onSuccess: (data) => {
-      if (data.user) setActiveOrganisation(null);
-      onAuthenticated?.();
+    onSuccess: () => {
+      setMode("login");
+      setPassword("");
+      setFirstName("");
+      setLastName("");
+      setRegistered(true);
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -38,6 +44,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setRegistered(false);
     if (mode === "login") {
       loginMutation.mutate({ email, password });
     } else {
@@ -90,13 +97,30 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             onChange={(e) => setEmail(e.target.value)}
             required
           />
-          <Input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+          <div className="relative">
+            <Input
+              type={showPassword ? "text" : "password"}
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="pr-9"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-text-muted hover:text-text-secondary"
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+
+          {registered && mode === "login" && (
+            <p className="text-sm text-success">
+              Account successfully created. Please sign in.
+            </p>
+          )}
 
           {error && (
             <p className="text-sm text-danger">{error}</p>
@@ -117,7 +141,11 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           {mode === "login" ? "No account?" : "Already have an account?"}{" "}
           <button
             type="button"
-            onClick={() => setMode(mode === "login" ? "register" : "login")}
+            onClick={() => {
+              setMode(mode === "login" ? "register" : "login");
+              setError(null);
+              setRegistered(false);
+            }}
             className="font-medium text-primary hover:underline"
           >
             {mode === "login" ? "Create one" : "Sign in"}

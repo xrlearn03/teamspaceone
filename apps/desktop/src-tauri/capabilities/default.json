@@ -4,13 +4,22 @@
   "description": "Capability for the main window",
   "windows": ["main"],
   "remote": {
-    "urls": ["http://localhost:*"]
+    "urls": [
+      "http://localhost:*/*",
+      "http://34.93.42.133:*/*",
+      "ws://34.93.42.133:*/*"
+    ]
   },
   "permissions": [
     "core:default",
     {
       "identifier": "http:default",
-      "allow": [{ "url": "http://localhost:3000" }]
+      "allow": [
+        { "url": "http://localhost:3000/*" },
+        { "url": "http://34.93.42.133:3000/*" },
+        { "url": "http://34.93.42.133:3005/*" },
+        { "url": "http://34.93.42.133:9000/*" }
+      ]
     },
     "opener:default",
     "dialog:default",

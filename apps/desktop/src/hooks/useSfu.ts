@@ -52,8 +52,11 @@ type SendSignal =
       sdp_mid?: string;
     };
 
-const SFU_URL = "ws://127.0.0.1:8443";
-const STUN_SERVER = "stun:stun.l.google.com:19302";
+const SFU_URL =
+  (import.meta.env.VITE_SFU_URL as string | undefined) ?? "ws://127.0.0.1:8443";
+const STUN_SERVER =
+  (import.meta.env.VITE_STUN_SERVER_URL as string | undefined) ??
+  "stun:stun.l.google.com:19302";
 
 export function useSfu() {
   const wsRef = useRef<WebSocket | null>(null);
