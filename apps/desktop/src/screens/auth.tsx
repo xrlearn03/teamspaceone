@@ -9,6 +9,16 @@ export interface AuthScreenProps {
   onAuthenticated?: () => void;
 }
 
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [mode, setMode] = useState<"login" | "register" | "accept-invite">("login");
   const [email, setEmail] = useState("");
@@ -27,7 +37,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       if (data.user) setActiveOrganisation(null);
       onAuthenticated?.();
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(errorMessage(err)),
   });
 
   const registerMutation = useMutation({
@@ -39,7 +49,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       setLastName("");
       setRegistered(true);
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(errorMessage(err)),
   });
 
   const acceptInviteMutation = useMutation({
@@ -50,7 +60,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       return user;
     },
     onSuccess: () => onAuthenticated?.(),
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(errorMessage(err)),
   });
 
   function submit(e: React.FormEvent) {

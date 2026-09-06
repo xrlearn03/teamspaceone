@@ -19,6 +19,10 @@
   },
   "permissions": [
     "core:default",
+    "http:allow-fetch",
+    "http:allow-fetch-cancel",
+    "http:allow-fetch-read-body",
+    "http:allow-fetch-send",
     {
       "identifier": "http:default",
       "allow": [
