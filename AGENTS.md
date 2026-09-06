@@ -13,6 +13,7 @@
 - Build only the frontend: `pnpm --filter @teamspace-one/desktop build`
 - Start desktop dev: `pnpm dev:desktop`
 - Start backend services: `pnpm docker:up` then `pnpm dev:gateway` etc.
+- Voice calls need the native SFU running: `pnpm dev:sfu` (or `pnpm docker:up` includes it).
 - Run tests: `pnpm test`
 - Lint/typecheck: `pnpm lint` / `pnpm typecheck`
 - Apply pending Prisma migration for a service (local Postgres): `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/<db>?schema=public pnpm --filter @teamspace-one/<service> db:migrate`

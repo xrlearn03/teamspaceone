@@ -62,11 +62,50 @@ function getDisplayName(member: { userId: string }, user?: UserDto) {
   return member.userId;
 }
 
+function tryParseDigestJson(text: string): { title: string; items: string[] }[] | null {
+  // Models often wrap JSON in a markdown code fence; strip it before parsing.
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const cleaned = (fenceMatch ? fenceMatch[1] : text).trim();
+  try {
+    const parsed = JSON.parse(cleaned) as { sections?: unknown };
+    if (Array.isArray(parsed.sections)) {
+      const sections: { title: string; items: string[] }[] = [];
+      for (const raw of parsed.sections) {
+        if (!raw || typeof raw !== "object") continue;
+        const s = raw as { title?: unknown; items?: unknown };
+        const title = typeof s.title === "string" && s.title.trim() ? s.title.trim() : "Brief";
+        let items: string[] = [];
+        if (Array.isArray(s.items)) {
+          items = s.items.filter((i: unknown): i is string => typeof i === "string").map((i) => i.trim());
+        } else if (typeof s.items === "string") {
+          items = [s.items.trim()];
+        }
+        if (title !== "Brief" || items.length > 0) {
+          sections.push({ title, items });
+        }
+      }
+      return sections.length > 0 ? sections : null;
+    }
+  } catch {
+    // fall through
+  }
+  return null;
+}
+
 function normalizeDigest(result: unknown): DailyDigestResult {
   if (!result || typeof result !== "object") {
     return { sections: [{ title: "Daily brief", items: ["Failed to load daily brief."] }], model: "none" };
   }
   const typed = result as Partial<DailyDigestResult> & { sections?: unknown };
+
+  // If the AI response is wrapped in a markdown code fence, parse the JSON directly.
+  if (typeof typed.raw === "string") {
+    const parsed = tryParseDigestJson(typed.raw);
+    if (parsed && parsed.length > 0) {
+      return { sections: parsed, model: typeof typed.model === "string" ? typed.model : "none", raw: typed.raw };
+    }
+  }
+
   const rawSections = Array.isArray(typed.sections) ? typed.sections : [];
   const sections: { title: string; items: string[] }[] = [];
   for (const raw of rawSections) {

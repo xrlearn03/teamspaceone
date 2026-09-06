@@ -561,7 +561,10 @@ export class AiService {
 
   private parseDigestSections(text: string): { title: string; items: string[] }[] {
     try {
-      const parsed = JSON.parse(text) as { sections?: unknown };
+      // Models often wrap JSON in a markdown code fence; strip it before parsing.
+      const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      const cleaned = (fenceMatch ? fenceMatch[1] : text).trim();
+      const parsed = JSON.parse(cleaned) as { sections?: unknown };
       if (Array.isArray(parsed.sections)) {
         return parsed.sections
           .map((s: unknown) => {

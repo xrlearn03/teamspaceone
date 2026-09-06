@@ -26,6 +26,7 @@ import { cn } from "../lib/utils";
 import { useRealtime } from "../hooks/useRealtime";
 import { useUIStore } from "../stores/ui";
 import { useMembers, useUsers } from "../hooks/api";
+import { UserAvatar } from "./user-avatar";
 import {
   createMeetingMessage,
   createMeetingReaction,
@@ -100,6 +101,20 @@ export function NativeConference({
 
   const participantCount = connected ? 1 + remoteStreams.length : 0;
   const streamToRecord = recordingStream || localStream;
+
+  const participantUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (user?.id) ids.add(user.id);
+    for (const p of participants) {
+      if (p.userId) ids.add(p.userId);
+    }
+    return [...ids];
+  }, [user?.id, participants]);
+  const { data: participantUsers } = useUsers(participantUserIds);
+  const participantUserMap = useMemo(
+    () => new Map((participantUsers ?? []).map((u) => [u.id, u])),
+    [participantUsers],
+  );
 
   function resolveName(userId: string) {
     if (user?.id === userId) return displayName;
@@ -337,6 +352,7 @@ export function NativeConference({
           <div className="grid w-full max-w-6xl auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <ParticipantTile
               name={displayName}
+              user={user}
               isLocal
               stream={localStream}
               nativeFrame={nativeFrame}
@@ -350,8 +366,9 @@ export function NativeConference({
                 <ParticipantTile
                   key={participantId}
                   name={remoteDisplayName(participantId)}
+                  user={pUserId ? participantUserMap.get(pUserId) : undefined}
                   stream={stream}
-                  videoEnabled={stream.getVideoTracks().some((t) => t.enabled)}
+                  videoEnabled={stream.getVideoTracks().some((t) => t.enabled && !t.muted && t.readyState !== "ended")}
                   isHandRaised={pUserId ? raisedHands.has(pUserId) : false}
                   isScreenSharing={pUserId ? screenSharingUsers.has(pUserId) : false}
                 />
@@ -528,6 +545,7 @@ function ControlButton({
 
 function ParticipantTile({
   name,
+  user,
   stream,
   nativeFrame,
   isLocal,
@@ -536,6 +554,7 @@ function ParticipantTile({
   isScreenSharing,
 }: {
   name: string;
+  user?: Pick<UserDto, "firstName" | "lastName" | "email" | "avatarFileId"> | null;
   stream?: MediaStream | null;
   nativeFrame?: string | null;
   isLocal?: boolean;
@@ -584,12 +603,14 @@ function ParticipantTile({
         )
       ) : (
         <div className="flex h-full flex-col items-center justify-center gap-3">
-          <div className="flex h-24 w-24 items-center justify-center rounded-full bg-surface text-4xl font-semibold text-primary">
-            {name.charAt(0).toUpperCase()}
-          </div>
+          <UserAvatar
+            user={user ?? { firstName: name, email: "" }}
+            className="h-24 w-24"
+            fallbackClassName="bg-surface text-primary text-4xl"
+          />
           <span className="text-sm text-text-secondary">{name}</span>
           {stream && (
-            <audio ref={audioRef} autoPlay playsInline className="hidden" />
+            <audio ref={audioRef} autoPlay playsInline muted={isLocal} className="hidden" />
           )}
         </div>
       )}
@@ -699,7 +720,17 @@ function ParticipantsPanel({
   const [invited, setInvited] = useState<Set<string>>(new Set());
   const realtime = useRealtime();
 
-  const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
+  const panelUserIds = useMemo(
+    () =>
+      [...new Set([...(currentUserId ? [currentUserId] : []), ...participants.map((p) => p.userId).filter((u): u is string => Boolean(u))])],
+    [currentUserId, participants],
+  );
+  const { data: panelUsers } = useUsers(panelUserIds);
+
+  const userMap = useMemo(
+    () => new Map([...(users ?? []), ...(panelUsers ?? [])].map((u) => [u.id, u])),
+    [users, panelUsers],
+  );
 
   const existingIds = useMemo(
     () =>
@@ -752,8 +783,13 @@ function ParticipantsPanel({
                   key={member.userId}
                   type="button"
                   onClick={() => addToCall(member)}
-                  className="flex w-full cursor-pointer items-center rounded px-2 py-1.5 text-sm text-left hover:bg-surface-elevated"
+                  className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-left hover:bg-surface-elevated"
                 >
+                  <UserAvatar
+                    user={user ?? { firstName: name, email: "" }}
+                    className="h-6 w-6"
+                    fallbackClassName="bg-surface text-text text-xs"
+                  />
                   <span className="truncate">{name}</span>
                 </button>
               );
@@ -763,27 +799,34 @@ function ParticipantsPanel({
       </div>
       <div className="flex-1 overflow-y-auto space-y-2">
         <div className="flex items-center gap-2 rounded-md bg-surface-elevated p-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white">
-            {displayName.charAt(0).toUpperCase()}
-          </div>
+          <UserAvatar
+            user={currentUserId ? userMap.get(currentUserId) : undefined}
+            className="h-8 w-8"
+            fallbackClassName="bg-primary text-white text-xs"
+          />
           <span className="flex-1 truncate text-sm text-text">
             {displayName} <span className="text-text-muted">(You)</span>
           </span>
         </div>
-        {participants.map((p) => (
-          <div key={p.id} className="flex items-center gap-2 rounded-md bg-surface-elevated p-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-surface text-xs font-semibold text-text">
-              {p.displayName.charAt(0).toUpperCase()}
+        {participants.map((p) => {
+          const pUser = p.userId ? userMap.get(p.userId) : undefined;
+          return (
+            <div key={p.id} className="flex items-center gap-2 rounded-md bg-surface-elevated p-2">
+              <UserAvatar
+                user={pUser ?? { firstName: p.displayName, email: "" }}
+                className="h-8 w-8"
+                fallbackClassName="bg-surface text-text text-xs"
+              />
+              <span className="flex-1 truncate text-sm text-text">{p.displayName}</span>
+              {p.userId && raisedHands.has(p.userId) && (
+                <Hand className="h-4 w-4 text-warning" />
+              )}
+              {p.userId && screenSharingUsers.has(p.userId) && (
+                <Monitor className="h-4 w-4 text-primary" />
+              )}
             </div>
-            <span className="flex-1 truncate text-sm text-text">{p.displayName}</span>
-            {p.userId && raisedHands.has(p.userId) && (
-              <Hand className="h-4 w-4 text-warning" />
-            )}
-            {p.userId && screenSharingUsers.has(p.userId) && (
-              <Monitor className="h-4 w-4 text-primary" />
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

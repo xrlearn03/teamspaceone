@@ -246,21 +246,51 @@ export function useSfu() {
   }, []);
 
   const toggleVideo = useCallback(async () => {
-    const camera = cameraStreamRef.current;
-    const track = camera?.getVideoTracks()[0];
-    if (!track) return;
+    const pc = pcRef.current;
+    if (!pc) return;
 
     if (screenShareEnabled) {
       await stopScreenShare();
     }
 
-    track.enabled = !track.enabled;
-    setLocalVideoEnabled(track.enabled);
+    const videoSender = pc
+      .getTransceivers()
+      .find((tr) => tr.receiver.track.kind === "video")?.sender;
+    if (!videoSender) return;
 
-    const audioTracks = localStreamRef.current?.getAudioTracks() ?? [];
-    const preview = new MediaStream([track, ...audioTracks]);
-    localStreamRef.current = preview;
-    setLocalStream(preview);
+    const currentVideoTrack = cameraStreamRef.current?.getVideoTracks()[0];
+    const audioTracks = cameraStreamRef.current?.getAudioTracks() ?? [];
+
+    if (currentVideoTrack) {
+      // Stop sending and release the camera.
+      try {
+        await videoSender.replaceTrack(null);
+      } catch (err) {
+        console.error("Failed to stop video sender", err);
+      }
+      currentVideoTrack.stop();
+      const preview = new MediaStream([...audioTracks]);
+      cameraStreamRef.current = preview;
+      localStreamRef.current = preview;
+      setLocalStream(preview);
+      setLocalVideoEnabled(false);
+      return;
+    }
+
+    try {
+      const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const newTrack = videoStream.getVideoTracks()[0];
+      if (!newTrack) return;
+      newTrack.enabled = true;
+      await videoSender.replaceTrack(newTrack);
+      const preview = new MediaStream([...audioTracks, newTrack]);
+      cameraStreamRef.current = preview;
+      localStreamRef.current = preview;
+      setLocalStream(preview);
+      setLocalVideoEnabled(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not access camera");
+    }
   }, [screenShareEnabled, stopScreenShare]);
 
   const leave = useCallback(async () => {
@@ -293,17 +323,18 @@ export function useSfu() {
 
       let stream: MediaStream | null = null;
       try {
-        // Try to get both tracks so in-call toggles work. If that fails (e.g. no camera),
-        // fall back to the user's selected devices.
+        // Request audio always so it can be toggled in-call. Request video only
+        // when the user has it enabled (e.g. voice rooms start audio-only).
         stream = await navigator.mediaDevices.getUserMedia({
           audio: true,
-          video: true,
+          video: mediaOptions.videoEnabled,
         });
       } catch {
         try {
+          // Fall back to audio-only if the camera is unavailable or disabled.
           stream = await navigator.mediaDevices.getUserMedia({
-            audio: mediaOptions.audioEnabled,
-            video: mediaOptions.videoEnabled,
+            audio: true,
+            video: false,
           });
         } catch (err) {
           setError(err instanceof Error ? err.message : "Could not access camera/mic");

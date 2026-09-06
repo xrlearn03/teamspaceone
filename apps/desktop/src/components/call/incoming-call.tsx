@@ -3,8 +3,8 @@ import { Phone, PhoneOff, Video } from "lucide-react";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 import { useRealtime, type RealtimeEventPayloads } from "../../hooks/useRealtime";
 import { useUIStore } from "../../stores/ui";
-import { useMe } from "../../hooks/api";
-import { Avatar, AvatarFallback } from "../ui/avatar";
+import { useMe, useUsers } from "../../hooks/api";
+import { UserAvatar } from "../user-avatar";
 import { Button } from "../ui/button";
 import { SOUNDS, loopSound } from "../../lib/sounds";
 
@@ -68,9 +68,13 @@ export function IncomingCallOverlay() {
     };
   }, [call]);
 
+  const callerUserIds = call ? [call.callerId] : [];
+  const { data: callerUsers } = useUsers(callerUserIds);
+
   if (!call) return null;
 
   const callerLabel = call.callerName ?? "Someone";
+  const callerUser = callerUsers?.[0];
 
   function accept() {
     if (!call) return;
@@ -89,9 +93,11 @@ export function IncomingCallOverlay() {
     <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center">
       <div className="pointer-events-auto flex items-center gap-4 rounded-xl border border-border bg-surface-elevated px-5 py-4 shadow-2xl">
         <div className="relative">
-          <Avatar className="h-11 w-11">
-            <AvatarFallback>{callerLabel.charAt(0).toUpperCase()}</AvatarFallback>
-          </Avatar>
+          <UserAvatar
+            user={callerUser ?? { firstName: callerLabel, email: "" }}
+            className="h-11 w-11"
+            fallbackClassName="text-sm"
+          />
           <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary">
             {call.kind === "video" ? (
               <Video className="h-2.5 w-2.5 text-white" />

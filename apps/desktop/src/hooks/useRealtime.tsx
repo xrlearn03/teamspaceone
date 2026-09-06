@@ -5,7 +5,7 @@ import { isPermissionGranted, requestPermission, sendNotification } from "@tauri
 import { getAccessToken, getActiveOrganisation, leaveMeeting, type Message, type MessagePage, type MessageReaction } from "../lib/api";
 import { useUIStore } from "../stores/ui";
 import { flushQueue, queuedMessageCount } from "../lib/offline-queue";
-import { SOUNDS, playSound, playSoundOnce } from "../lib/sounds";
+import { SOUNDS, loopSound, playSound, playSoundOnce } from "../lib/sounds";
 
 const CALL_RING_TIMEOUT_MS = 30_000;
 
@@ -299,12 +299,14 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
             if (outgoing) {
               if (r.response === "accepted") {
                 clearTimeout(outgoing.timer);
+                outgoing.stopRingback();
                 outgoingCallsRef.current.delete(r.meetingId);
               } else {
                 outgoing.declined.add(r.userId);
                 if (outgoing.declined.size >= outgoing.userIds.length) {
                   // Everyone declined (or the only callee declined) — stop ringing.
                   clearTimeout(outgoing.timer);
+                  outgoing.stopRingback();
                   outgoingCallsRef.current.delete(r.meetingId);
                   dropOutgoingCall(r.meetingId, outgoing.userIds);
                 }
@@ -390,7 +392,10 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const outgoingCallsRef = useRef<
-    Map<string, { userIds: string[]; declined: Set<string>; timer: ReturnType<typeof setTimeout> }>
+    Map<
+      string,
+      { userIds: string[]; declined: Set<string>; timer: ReturnType<typeof setTimeout>; stopRingback: () => void }
+    >
   >(new Map());
 
   function dropOutgoingCall(meetingId: string, userIds: string[]) {
@@ -418,10 +423,16 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       userIds: string[];
     }) => {
       const existing = outgoingCallsRef.current.get(ring.meetingId);
-      if (existing) clearTimeout(existing.timer);
+      if (existing) {
+        clearTimeout(existing.timer);
+        existing.stopRingback();
+      }
+      const stopRingback = loopSound(SOUNDS.incomingCall);
       const timer = setTimeout(() => {
         // Nobody answered within the ring window — hang up the call.
-        if (outgoingCallsRef.current.delete(ring.meetingId)) {
+        const outgoing = outgoingCallsRef.current.get(ring.meetingId);
+        if (outgoing && outgoingCallsRef.current.delete(ring.meetingId)) {
+          outgoing.stopRingback();
           dropOutgoingCall(ring.meetingId, ring.userIds);
         }
       }, CALL_RING_TIMEOUT_MS);
@@ -429,6 +440,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         userIds: ring.userIds,
         declined: new Set(),
         timer,
+        stopRingback,
       });
       socketRef.current?.emit("call.ring", ring);
     },
@@ -439,6 +451,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     const outgoing = outgoingCallsRef.current.get(meetingId);
     if (!outgoing) return;
     clearTimeout(outgoing.timer);
+    outgoing.stopRingback();
     outgoingCallsRef.current.delete(meetingId);
     socketRef.current?.emit("call.cancel", { meetingId, userIds: outgoing.userIds });
   }, []);

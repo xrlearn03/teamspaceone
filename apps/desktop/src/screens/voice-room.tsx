@@ -22,6 +22,8 @@ export function VoiceRoomScreen() {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [mediaOptions, setMediaOptions] = useState<MediaJoinOptions | null>(null);
+  const [lobbyAudio, setLobbyAudio] = useState(true);
+  const [lobbyVideo, setLobbyVideo] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -175,6 +177,10 @@ export function VoiceRoomScreen() {
         user={user}
         onJoin={handleJoin}
         onCancel={() => setActiveView("home")}
+        nativeAudioEnabled={lobbyAudio}
+        setNativeAudioEnabled={setLobbyAudio}
+        nativeVideoEnabled={lobbyVideo}
+        setNativeVideoEnabled={setLobbyVideo}
       />
     );
   }

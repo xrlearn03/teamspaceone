@@ -34,6 +34,7 @@
     "dev:search": "pnpm --filter @teamspace-one/search-service start:dev",
     "dev:ai": "pnpm --filter @teamspace-one/ai-service start:dev",
     "dev:template": "pnpm --filter @teamspace-one/service-template start:dev",
+    "dev:sfu": "cargo run --manifest-path services/sfu/Cargo.toml",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "db:generate": "pnpm -r --filter './services/**' db:generate",
