@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DailyDigestResult, UserDto } from "../lib/api";
+import type { DailyDigestResult, Meeting, UserDto } from "../lib/api";
 import {
   Calendar,
   CheckSquare,
@@ -164,7 +164,10 @@ export function HomeScreen() {
   const endedMeetingsCount = meetings?.filter((m) => m.status === "ended")?.length ?? 0;
 
   const upcomingMeetings = useMemo(
-    () => (meetings ?? []).filter((m) => m.scheduledAt).sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime()),
+    () =>
+      (meetings ?? [])
+        .filter((m): m is Meeting & { scheduledAt: string } => Boolean(m.scheduledAt) && m.status !== "ended")
+        .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()),
     [meetings],
   );
 
