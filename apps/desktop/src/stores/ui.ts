@@ -16,6 +16,14 @@ export type View =
   | "drafts"
   | "settings";
 
+export interface NotificationToast {
+  id: string;
+  title: string;
+  body: string;
+  resourceType?: string | null;
+  link?: string | null;
+}
+
 interface UIState {
   organisationId: string | null;
   theme: "light" | "dark" | "system";
@@ -32,6 +40,7 @@ interface UIState {
   pendingCount: number;
   activeWorkspaceId: string | null;
   pendingActionFilter: string | null;
+  notificationToasts: NotificationToast[];
   setOrganisation: (organisationId: string | null) => void;
   setPendingCount: (count: number) => void;
   setActiveWorkspace: (workspaceId: string | null) => void;
@@ -48,6 +57,8 @@ interface UIState {
   setRightPanelWidth: (width: number) => void;
   setSearchOpen: (open: boolean) => void;
   setConnection: (connection: UIState["connection"]) => void;
+  addNotificationToast: (toast: Omit<NotificationToast, "id">) => void;
+  removeNotificationToast: (id: string) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -68,6 +79,7 @@ export const useUIStore = create<UIState>((set) => ({
     `teamspace-one:${getActiveOrganisation() ?? "none"}:activeWorkspace`,
   ),
   pendingActionFilter: null,
+  notificationToasts: [],
   setOrganisation: (organisationId) =>
     set({
       organisationId,
@@ -106,4 +118,12 @@ export const useUIStore = create<UIState>((set) => ({
     set({ rightPanelWidth: Math.max(240, Math.min(480, width)) }),
   setSearchOpen: (open) => set({ searchOpen: open }),
   setConnection: (connection) => set({ connection }),
+  addNotificationToast: (toast) =>
+    set((s) => ({
+      notificationToasts: [...s.notificationToasts, { ...toast, id: `${Date.now()}-${Math.random().toString(36).slice(2)}` }],
+    })),
+  removeNotificationToast: (id) =>
+    set((s) => ({
+      notificationToasts: s.notificationToasts.filter((t) => t.id !== id),
+    })),
 }));

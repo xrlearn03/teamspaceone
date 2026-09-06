@@ -231,13 +231,13 @@ export class ProjectsService {
 
   async createComment(ctx: OrganisationContextValue, projectId: string, dto: CreateCommentDto) {
     const authorId = this.actor(ctx);
-    await this.memberProject(ctx, projectId);
+    const project = await this.memberProject(ctx, projectId);
     const content = this.required(dto.content, 'Comment', 10000);
     const id = randomUUID();
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const comment = await tx.projectComment.create({ data: { id, organisationId: ctx.organisationId, projectId, authorId, content } });
       await this.activity(tx, ctx, projectId, 'comment.created', 'comment', id);
-      await this.event(tx, ctx, Subjects.PROJECT_COMMENT_CREATED, 'project-comment', id, comment);
+      await this.event(tx, ctx, Subjects.PROJECT_COMMENT_CREATED, 'project-comment', id, { ...comment, memberIds: project.members.map((m) => m.userId) });
       return comment;
     });
   }
@@ -328,13 +328,13 @@ export class ProjectsService {
     const actorId = this.actor(ctx);
     if (!['task', 'file', 'deliverable'].includes(dto.resourceType)) throw new BadRequestException('Invalid approval resource type');
     if (!dto.resourceId?.trim()) throw new BadRequestException('Resource ID is required');
-    if (dto.projectId) await this.memberProject(ctx, dto.projectId);
+    const project = dto.projectId ? await this.memberProject(ctx, dto.projectId) : null;
     const id = randomUUID();
     const requestedAt = new Date();
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const approval = await tx.approval.create({ data: { id, organisationId: ctx.organisationId, projectId: dto.projectId, resourceType: dto.resourceType, resourceId: dto.resourceId.trim(), requestedBy: actorId, requestedAt, message: this.optional(dto.message, 2000) } });
       if (dto.projectId) await this.activity(tx, ctx, dto.projectId, 'approval.created', 'approval', id, { resourceType: dto.resourceType, resourceId: dto.resourceId });
-      await this.event(tx, ctx, Subjects.APPROVAL_CREATED, 'approval', id, { approvalId: id, organisationId: ctx.organisationId, projectId: dto.projectId, resourceType: dto.resourceType, resourceId: dto.resourceId, requestedBy: actorId, requestedAt: requestedAt.toISOString(), message: approval.message ?? undefined });
+      await this.event(tx, ctx, Subjects.APPROVAL_CREATED, 'approval', id, { approvalId: id, organisationId: ctx.organisationId, projectId: dto.projectId, resourceType: dto.resourceType, resourceId: dto.resourceId, requestedBy: actorId, memberIds: project ? project.members.map((m) => m.userId) : [], requestedAt: requestedAt.toISOString(), message: approval.message ?? undefined });
       return approval;
     });
   }
@@ -345,13 +345,13 @@ export class ProjectsService {
     const approval = await this.prisma.approval.findFirst({ where: { id: approvalId, organisationId: ctx.organisationId } });
     if (!approval) throw new NotFoundException('Approval not found');
     if (approval.status !== 'pending') throw new BadRequestException('Approval has already been resolved');
-    if (approval.projectId) await this.memberProject(ctx, approval.projectId);
+    const project = approval.projectId ? await this.memberProject(ctx, approval.projectId) : null;
     const resolvedAt = new Date();
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const updated = await tx.approval.update({ where: { id: approvalId }, data: { status: dto.status, resolvedBy: actorId, resolvedAt, message: dto.message === undefined ? approval.message : this.optional(dto.message, 2000) } });
       if (approval.projectId) await this.activity(tx, ctx, approval.projectId, `approval.${dto.status}`, 'approval', approvalId);
       const eventType = dto.status === 'approved' ? Subjects.APPROVAL_APPROVED : Subjects.APPROVAL_REJECTED;
-      await this.event(tx, ctx, eventType, 'approval', approvalId, { approvalId, organisationId: ctx.organisationId, projectId: approval.projectId ?? undefined, status: dto.status, resolvedBy: actorId, resolvedAt: resolvedAt.toISOString(), message: updated.message ?? undefined });
+      await this.event(tx, ctx, eventType, 'approval', approvalId, { approvalId, organisationId: ctx.organisationId, projectId: approval.projectId ?? undefined, requestedBy: approval.requestedBy, memberIds: project ? project.members.map((m) => m.userId) : [], status: dto.status, resolvedBy: actorId, resolvedAt: resolvedAt.toISOString(), message: updated.message ?? undefined });
       return updated;
     });
   }

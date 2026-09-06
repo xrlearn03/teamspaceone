@@ -13,7 +13,6 @@ import {
   Plus,
   Search,
   Settings,
-  Sparkles,
   Star,
   Trash2,
   Users,
@@ -35,11 +34,12 @@ import {
   useAcceptInvitation,
   useCreateOrganisation,
   useProjects,
+  useMe,
   useUnreadCount,
   useUsers,
   useWorkspaces,
 } from "../../hooks/api";
-import { type Meeting, type OrganisationMember, type UserDto } from "../../lib/api";
+import { type Channel, type Meeting, type UserDto } from "../../lib/api";
 import { useSwitchOrganisation } from "../../hooks/useOrganisationSwitch";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -59,13 +59,21 @@ const Collapsible = CollapsiblePrimitive.Root;
 const CollapsibleTrigger = CollapsiblePrimitive.Trigger;
 const CollapsibleContent = CollapsiblePrimitive.Content;
 
-function getDisplayName(member: OrganisationMember, user?: UserDto) {
+function getDisplayName(member: { userId: string }, user?: UserDto) {
   if (user) {
     const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
     if (fullName) return fullName;
     return user.email;
   }
   return member.userId;
+}
+
+function getDirectMessageLabel(dm: Channel, meId: string | undefined, userMap: Map<string, UserDto>) {
+  const others = dm.members.filter((m) => m.userId !== meId);
+  const names = others.map((m) => getDisplayName({ userId: m.userId }, userMap.get(m.userId)));
+  if (names.length === 0) return dm.name || "Direct message";
+  if (names.length <= 2) return names.join(", ");
+  return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
 }
 
 interface SidebarItemData {
@@ -233,6 +241,7 @@ export function WorkspaceSidebar() {
   const { data: users } = useUsers(memberUserIds);
   const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
   const { data: channels } = useChannels();
+  const { data: me } = useMe();
   const createChannel = useCreateChannel();
   const createDirectChannel = useCreateDirectChannel();
   const createProject = useCreateProject();
@@ -337,7 +346,12 @@ export function WorkspaceSidebar() {
   const inWorkspace = (workspaceId?: string | null) =>
     !activeWorkspaceId || !workspaceId || workspaceId === activeWorkspaceId;
   const publicChannels = channels?.filter((c) => c.type !== "direct" && inWorkspace(c.workspaceId)) ?? [];
-  const directMessages = channels?.filter((c) => c.type === "direct") ?? [];
+  const directMessages = useMemo(() => {
+    const dms = channels?.filter((c) => c.type === "direct") ?? [];
+    return dms
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 10);
+  }, [channels]);
   const visibleProjects = projects?.filter((p) => inWorkspace(p.workspaceId)) ?? [];
   const visibleMeetings = meetings?.filter((m) => inWorkspace((m as { workspaceId?: string }).workspaceId)) ?? [];
 
@@ -523,7 +537,7 @@ export function WorkspaceSidebar() {
                 <SidebarItem
                   key={dm.id}
                   icon={Icon}
-                  label={dm.name}
+                  label={getDirectMessageLabel(dm, me?.id, userMap)}
                   active={activeView === "dm" && activeChannelId === dm.id}
                   onClick={() => navigate("dm", { channelId: dm.id })}
                 />
@@ -590,7 +604,6 @@ export function WorkspaceSidebar() {
             active={activeView === "files"}
             onClick={() => navigate("files")}
           />
-          <SidebarItem icon={Sparkles} label="Integrations" />
           <SidebarItem
             icon={Settings}
             label="Settings"

@@ -55,17 +55,17 @@ export class NotificationService {
       [
         Subjects.MESSAGE_CREATED,
         Subjects.MESSAGE_UPDATED,
-        Subjects.MESSAGE_DELETED,
         Subjects.TASK_CREATED,
         Subjects.TASK_UPDATED,
         Subjects.TASK_COMPLETED,
-        Subjects.MEETING_CREATED,
         Subjects.MEETING_STARTED,
-        Subjects.MEETING_ENDED,
-        Subjects.MEETING_PARTICIPANT_JOINED,
         Subjects.FILE_UPLOADED,
         Subjects.FILE_PROCESSED,
         Subjects.AI_SUMMARY_CONFIRMED,
+        Subjects.PROJECT_COMMENT_CREATED,
+        Subjects.APPROVAL_CREATED,
+        Subjects.APPROVAL_APPROVED,
+        Subjects.APPROVAL_REJECTED,
       ] as string[]
     ).includes(eventType);
   }
@@ -296,6 +296,54 @@ export class NotificationService {
             link: this.meetingLink(organisationId, payload.resourceId as string),
           }));
       }
+      case Subjects.PROJECT_COMMENT_CREATED: {
+        const memberIds = Array.isArray(payload.memberIds) ? (payload.memberIds as string[]) : [];
+        const mentionedUserIds = this.extractMentions(String(payload.content ?? ''));
+        const allRecipients = [...new Set([...memberIds, ...mentionedUserIds])];
+        return allRecipients
+          .filter((userId) => userId !== actorId)
+          .map((userId) => ({
+            organisationId,
+            workspaceId,
+            userId,
+            actorId,
+            eventId: envelope.eventId,
+            eventType,
+            resourceType: 'project',
+            resourceId: payload.projectId as string,
+            title: 'New project comment',
+            body: this.truncate(String(payload.content ?? ''), 120),
+            link: this.projectLink(organisationId, payload.projectId as string),
+          }));
+      }
+      case Subjects.APPROVAL_CREATED:
+      case Subjects.APPROVAL_APPROVED:
+      case Subjects.APPROVAL_REJECTED: {
+        const memberIds = Array.isArray(payload.memberIds) ? (payload.memberIds as string[]) : [];
+        const requestedBy = (payload.requestedBy as string) || undefined;
+        const allRecipients = [...new Set([...memberIds, ...(requestedBy ? [requestedBy] : [])])];
+        const status =
+          eventType === Subjects.APPROVAL_CREATED
+            ? 'requested'
+            : eventType === Subjects.APPROVAL_APPROVED
+              ? 'approved'
+              : 'rejected';
+        return allRecipients
+          .filter((userId) => userId !== actorId)
+          .map((userId) => ({
+            organisationId,
+            workspaceId,
+            userId,
+            actorId,
+            eventId: envelope.eventId,
+            eventType,
+            resourceType: 'approval',
+            resourceId: payload.approvalId as string,
+            title: `Approval ${status}`,
+            body: `A ${payload.resourceType as string} approval was ${status}`,
+            link: this.approvalLink(organisationId, payload.approvalId as string),
+          }));
+      }
       default:
         return [];
     }
@@ -305,6 +353,10 @@ export class NotificationService {
     if (!content) return [];
     const matches = content.match(/<@([a-zA-Z0-9_-]+)>/g) || [];
     return matches.map((m) => m.slice(2, -1));
+  }
+
+  private truncate(text: string, length: number): string {
+    return text.length > length ? `${text.slice(0, length)}...` : text;
   }
 
   private messageLink(organisationId: string, channelId: string | undefined, messageId: string | undefined) {
@@ -321,6 +373,14 @@ export class NotificationService {
 
   private fileLink(organisationId: string, fileId: string | undefined) {
     return `/organisations/${organisationId}/files/${fileId ?? ''}`;
+  }
+
+  private projectLink(organisationId: string, projectId: string | undefined) {
+    return `/organisations/${organisationId}/projects/${projectId ?? ''}`;
+  }
+
+  private approvalLink(organisationId: string, approvalId: string | undefined) {
+    return `/organisations/${organisationId}/approvals/${approvalId ?? ''}`;
   }
 
   private buildDeliveryCreates(channels: ChannelFlags) {

@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bell,
   Bot,
   Briefcase,
+  Camera,
   Code,
   Command,
   CreditCard,
@@ -38,13 +39,14 @@ import {
   useRoles,
   useSetNotificationPreference,
   useUpdateProfile,
+  useUploadFile,
   useWorkspaces,
 } from "../hooks/api";
-import { getActiveOrganisation, setActiveOrganisation } from "../lib/api";
+import { getActiveOrganisation, setActiveOrganisation, type UserDto } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
+import { UserAvatar } from "../components/user-avatar";
 import { Badge } from "../components/ui/badge";
 import { cn } from "../lib/utils";
 
@@ -103,13 +105,67 @@ export function SettingsScreen() {
   );
 }
 
-function AccountSettings({ user }: { user?: { email: string; firstName?: string | null; lastName?: string | null } }) {
+function AccountSettings({ user }: { user?: UserDto }) {
   const update = useUpdateProfile();
+  const upload = useUploadFile();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   useEffect(() => { setFirstName(user?.firstName ?? ""); setLastName(user?.lastName ?? ""); }, [user]);
   const name = `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() || user?.email || "User";
-  return <SettingsSection title="My account"><div className="flex items-center gap-4"><Avatar className="h-16 w-16"><AvatarFallback className="text-xl">{name.charAt(0).toUpperCase()}</AvatarFallback></Avatar><div><p className="font-semibold">{name}</p><p className="text-sm text-text-muted">{user?.email}</p></div></div><div className="mt-4 grid max-w-lg grid-cols-2 gap-3"><Input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="First name" /><Input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Last name" /></div>{update.error ? <p className="mt-2 text-sm text-error">{update.error.message}</p> : null}<Button className="mt-3" disabled={update.isPending} onClick={() => update.mutate({ firstName, lastName })}>Save profile</Button></SettingsSection>;
+  const avatarBusy = upload.isPending || update.isPending;
+
+  function onAvatarSelected(file?: File) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    upload.mutate(file, {
+      onSuccess: (record) => update.mutate({ avatarFileId: record.id }),
+    });
+  }
+
+  return (
+    <SettingsSection title="My account">
+      <div className="flex items-center gap-4">
+        <div className="relative">
+          <UserAvatar user={user} className="h-16 w-16" fallbackClassName="text-xl" />
+          <button
+            type="button"
+            title="Change avatar"
+            disabled={avatarBusy}
+            onClick={() => fileInputRef.current?.click()}
+            className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface-elevated text-text-secondary transition-colors hover:bg-surface hover:text-text disabled:opacity-50"
+          >
+            <Camera className="h-3.5 w-3.5" />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => { onAvatarSelected(event.target.files?.[0]); event.currentTarget.value = ""; }}
+          />
+        </div>
+        <div>
+          <p className="font-semibold">{name}</p>
+          <p className="text-sm text-text-muted">{user?.email}</p>
+          <div className="mt-1 flex gap-2">
+            <Button variant="ghost" size="sm" disabled={avatarBusy} onClick={() => fileInputRef.current?.click()}>
+              {upload.isPending ? "Uploading…" : user?.avatarFileId ? "Change photo" : "Upload photo"}
+            </Button>
+            {user?.avatarFileId ? (
+              <Button variant="ghost" size="sm" className="text-error" disabled={avatarBusy} onClick={() => update.mutate({ avatarFileId: null })}>
+                Remove
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 grid max-w-lg grid-cols-2 gap-3"><Input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="First name" /><Input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Last name" /></div>
+      {update.error ? <p className="mt-2 text-sm text-error">{update.error.message}</p> : null}
+      {upload.error ? <p className="mt-2 text-sm text-error">{upload.error.message}</p> : null}
+      <Button className="mt-3" disabled={update.isPending} onClick={() => update.mutate({ firstName, lastName })}>Save profile</Button>
+    </SettingsSection>
+  );
 }
 
 function AppearanceSettings({ theme, setTheme }: { theme: "light" | "dark" | "system"; setTheme: (theme: "light" | "dark" | "system") => void }) {

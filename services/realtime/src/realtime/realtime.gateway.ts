@@ -130,6 +130,62 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
     this.presence.publish('realtime:connection', data.room, 'connection-state', { userId, state: data.state, room: data.room });
   }
 
+  @SubscribeMessage('call.ring')
+  async handleCallRing(
+    client: Socket,
+    data: {
+      meetingId: string;
+      kind: 'audio' | 'video';
+      title?: string;
+      channelId?: string;
+      callerName?: string;
+      userIds?: string[];
+    },
+  ): Promise<void> {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !data.meetingId || !Array.isArray(data.userIds)) return;
+    if (data.channelId && !(await this.access.canAccess(userId, 'channel', data.channelId))) return;
+    const payload = {
+      meetingId: data.meetingId,
+      kind: data.kind === 'audio' ? 'audio' : 'video',
+      title: data.title,
+      channelId: data.channelId,
+      callerId: userId,
+      callerName: data.callerName,
+      at: new Date().toISOString(),
+    };
+    for (const target of data.userIds) {
+      if (typeof target !== 'string' || target === userId) continue;
+      this.server.to(`user:${target}`).emit('call.incoming', payload);
+    }
+  }
+
+  @SubscribeMessage('call.cancel')
+  handleCallCancel(client: Socket, data: { meetingId: string; userIds?: string[] }): void {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !data.meetingId || !Array.isArray(data.userIds)) return;
+    const payload = { meetingId: data.meetingId, callerId: userId };
+    for (const target of data.userIds) {
+      if (typeof target !== 'string' || target === userId) continue;
+      this.server.to(`user:${target}`).emit('call.ended', payload);
+    }
+  }
+
+  @SubscribeMessage('call.response')
+  handleCallResponse(
+    client: Socket,
+    data: { meetingId: string; callerId: string; response: 'accepted' | 'declined'; userName?: string },
+  ): void {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !data.meetingId || !data.callerId) return;
+    this.server.to(`user:${data.callerId}`).emit('call.response', {
+      meetingId: data.meetingId,
+      userId,
+      userName: data.userName,
+      response: data.response === 'accepted' ? 'accepted' : 'declined',
+    });
+  }
+
   @SubscribeMessage('message.read')
   handleMessageRead(client: Socket, data: { room: string; messageId: string }): void {
     const userId = client.data.userId as string | undefined;

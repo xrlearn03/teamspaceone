@@ -15,7 +15,8 @@
 - Start backend services: `pnpm docker:up` then `pnpm dev:gateway` etc.
 - Run tests: `pnpm test`
 - Lint/typecheck: `pnpm lint` / `pnpm typecheck`
-- Apply pending Prisma migration for a service: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/<db>?schema=public pnpm --filter @teamspace-one/<service> db:migrate`
+- Apply pending Prisma migration for a service (local Postgres): `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/<db>?schema=public pnpm --filter @teamspace-one/<service> db:migrate`
+- Apply pending migration on the server (Docker): `docker exec -w /app/services/<service> teamspace-one-<service>-service npx prisma migrate deploy` — containers already carry the correct `DATABASE_URL` (Postgres hostname is `postgres`, not `localhost`)
 
 ## Frontend Stack
 

@@ -6,7 +6,7 @@ import { SplashScreen } from "./components/splash/splash-screen";
 import { RealtimeProvider } from "./hooks/useRealtime";
 import { AuthScreen } from "./screens/auth";
 import { OnboardingScreen } from "./screens/onboarding";
-import { getAccessToken, getOrganisations, getActiveOrganisation, setActiveOrganisation } from "./lib/api";
+import { getAccessToken, getOrganisations, getActiveOrganisation, setActiveOrganisation, setOnSessionCleared } from "./lib/api";
 import { Button } from "./components/ui/button";
 import { useUIStore } from "./stores/ui";
 
@@ -23,6 +23,17 @@ function AuthGate() {
     const timer = setTimeout(() => setMinSplashElapsed(true), MIN_SPLASH_DURATION_MS);
     return () => clearTimeout(timer);
   }, []);
+
+  // If an API call invalidates the session (expired/rotated refresh token),
+  // clear the cached auth state and remount the gate so the login screen
+  // is shown instead of leaving the user on an error screen.
+  useEffect(() => {
+    setOnSessionCleared(() => {
+      queryClient.clear();
+      setSession((s) => s + 1);
+    });
+    return () => setOnSessionCleared(null);
+  }, [queryClient]);
 
   if (!minSplashElapsed) {
     return <SplashScreen />;

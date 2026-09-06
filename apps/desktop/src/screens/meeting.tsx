@@ -31,7 +31,7 @@ export function MeetingScreen() {
   const { activeMeetingId, setActiveView } = useUIStore(
     useShallow((s) => ({ activeMeetingId: s.activeMeetingId, setActiveView: s.setActiveView })),
   );
-  const { joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent } = useRealtime();
+  const { joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent, sendCallCancel } = useRealtime();
   const { data: user } = useMe();
 
   const [meeting, setMeeting] = useState<Meeting | null>(null);
@@ -152,6 +152,7 @@ export function MeetingScreen() {
 
   async function handleLeave() {
     if (activeMeetingId) {
+      sendCallCancel(activeMeetingId);
       try {
         await leaveMeeting(activeMeetingId);
       } catch {

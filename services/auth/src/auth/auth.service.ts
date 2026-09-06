@@ -103,7 +103,16 @@ export class AuthService {
     if ((firstName?.length ?? 0) > 100 || (lastName?.length ?? 0) > 100) {
       throw new BadRequestException('Names must not exceed 100 characters');
     }
-    const user = await this.prisma.user.update({ where: { id: userId }, data: { firstName, lastName } });
+    const data: Prisma.UserUpdateInput = {};
+    if ('firstName' in input) data.firstName = firstName;
+    if ('lastName' in input) data.lastName = lastName;
+    if ('avatarFileId' in input) {
+      if (input.avatarFileId !== null && typeof input.avatarFileId !== 'string') {
+        throw new BadRequestException('avatarFileId must be a string or null');
+      }
+      data.avatarFileId = input.avatarFileId ?? null;
+    }
+    const user = await this.prisma.user.update({ where: { id: userId }, data });
     return this.toDto(user);
   }
 
@@ -142,6 +151,7 @@ export class AuthService {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      avatarFileId: user.avatarFileId,
       active: user.active,
       emailVerified: user.emailVerified,
       createdAt: user.createdAt.toISOString(),

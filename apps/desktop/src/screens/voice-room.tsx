@@ -15,7 +15,7 @@ export function VoiceRoomScreen() {
   const { activeMeetingId, setActiveView } = useUIStore(
     useShallow((s) => ({ activeMeetingId: s.activeMeetingId, setActiveView: s.setActiveView })),
   );
-  const { joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent } = useRealtime();
+  const { joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent, sendCallCancel } = useRealtime();
   const { data: user } = useMe();
   const sfu = useSfu();
 
@@ -106,6 +106,7 @@ export function VoiceRoomScreen() {
 
   async function handleLeave() {
     if (activeMeetingId) {
+      sendCallCancel(activeMeetingId);
       try {
         await leaveMeeting(activeMeetingId);
       } catch {

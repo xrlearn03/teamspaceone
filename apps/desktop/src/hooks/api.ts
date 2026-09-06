@@ -658,12 +658,32 @@ export function useUnreadCount() {
   });
 }
 
+export function useNotificationCounts() {
+  return useQuery({
+    queryKey: ["notification-counts", orgId()],
+    queryFn: () => api.getNotifications(true, 1000),
+    enabled: getActiveOrganisation() !== null,
+    select: (notifications) => {
+      const counts: Record<string, number> = {};
+      for (const n of notifications) {
+        if (n.read) continue;
+        const type = n.resourceType ?? "other";
+        counts[type] = (counts[type] ?? 0) + 1;
+      }
+      return { total: Object.values(counts).reduce((a, b) => a + b, 0), counts };
+    },
+  });
+}
+
 export function useMarkRead() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.markNotificationRead,
-    onSuccess: () =>
-      client.invalidateQueries({ queryKey: ["notifications", orgId()] }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["notifications", orgId()] });
+      void client.invalidateQueries({ queryKey: ["unread-count", orgId()] });
+      void client.invalidateQueries({ queryKey: ["notification-counts", orgId()] });
+    },
   });
 }
 
@@ -671,8 +691,11 @@ export function useMarkAllRead() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.markAllNotificationsRead,
-    onSuccess: () =>
-      client.invalidateQueries({ queryKey: ["notifications", orgId()] }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["notifications", orgId()] });
+      void client.invalidateQueries({ queryKey: ["unread-count", orgId()] });
+      void client.invalidateQueries({ queryKey: ["notification-counts", orgId()] });
+    },
   });
 }
 

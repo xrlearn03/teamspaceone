@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Bell, Check, Filter } from "lucide-react";
-import { useMarkAllRead, useMarkRead, useNotifications } from "../hooks/api";
+import { useMarkAllRead, useMarkRead, useNotifications, useNotificationCounts } from "../hooks/api";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { EmptyState } from "../components/ui/empty-state";
@@ -32,13 +32,15 @@ export function InboxScreen() {
   const { data: notifications, isLoading } = useNotifications(unreadOnly);
   const markRead = useMarkRead();
   const markAllRead = useMarkAllRead();
+  const { data: counts } = useNotificationCounts();
 
   const filtered =
     active === "all"
       ? notifications ?? []
       : (notifications ?? []).filter((n) => n.resourceType === active);
 
-  const unreadCount = filtered.filter((n) => !n.read).length;
+  const unreadCount = counts?.total ?? 0;
+  const typeCount = (id: string) => (id === "all" ? unreadCount : (counts?.counts[id] ?? 0));
 
   return (
     <div className="flex h-full flex-col">
@@ -78,6 +80,11 @@ export function InboxScreen() {
             )}
           >
             {c.label}
+            {typeCount(c.id) > 0 && (
+              <Badge variant="secondary" className="ml-1.5 h-4 min-w-4 justify-center px-1.5 text-[10px]">
+                {typeCount(c.id)}
+              </Badge>
+            )}
           </button>
         ))}
       </div>

@@ -33,6 +33,8 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
     const consumers: ConsumerDefinition[] = [
       { stream: Streams.MESSAGING, subject: 'teamspace-one.message.>', durable: 'notification-messaging-consumer' },
       { stream: Streams.PROJECTS, subject: 'teamspace-one.task.>', durable: 'notification-projects-consumer' },
+      { stream: Streams.PROJECTS, subject: 'teamspace-one.project.>', durable: 'notification-project-consumer' },
+      { stream: Streams.PROJECTS, subject: 'teamspace-one.approval.>', durable: 'notification-approval-consumer' },
       { stream: Streams.MEETINGS, subject: 'teamspace-one.meeting.>', durable: 'notification-meetings-consumer' },
       { stream: Streams.FILES, subject: 'teamspace-one.file.>', durable: 'notification-files-consumer' },
       { stream: Streams.AI, subject: Subjects.AI_SUMMARY_CONFIRMED, durable: 'notification-ai-consumer' },

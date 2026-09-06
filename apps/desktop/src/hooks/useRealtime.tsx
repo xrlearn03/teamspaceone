@@ -2,9 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { io, type Socket } from "socket.io-client";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { getAccessToken, getActiveOrganisation, type Message, type MessagePage, type MessageReaction } from "../lib/api";
+import { getAccessToken, getActiveOrganisation, leaveMeeting, type Message, type MessagePage, type MessageReaction } from "../lib/api";
 import { useUIStore } from "../stores/ui";
 import { flushQueue, queuedMessageCount } from "../lib/offline-queue";
+import { SOUNDS, playSound, playSoundOnce } from "../lib/sounds";
+
+const CALL_RING_TIMEOUT_MS = 30_000;
 
 const REALTIME_URL = (import.meta.env.VITE_REALTIME_URL as string | undefined) ?? "http://localhost:3005";
 
@@ -30,7 +33,7 @@ export interface RealtimeEventPayloads {
   "message.created": Message;
   "message.updated": Message;
   "message.deleted": { id: string; channelId: string; deletedAt: string };
-  "notification.created": { id: string; title: string; body: string; userId: string };
+  "notification.created": { id: string; title: string; body: string; userId: string; resourceType?: string | null; link?: string | null };
   "meeting.created": { id: string; title: string; organisationId: string };
   "meeting.started": { id: string; roomName: string };
   "meeting.ended": { id: string };
@@ -42,6 +45,22 @@ export interface RealtimeEventPayloads {
   "meeting.raise_hand.changed": { id: string; meetingId: string; userId: string; raised: boolean };
   "meeting.recording.changed": { meetingId: string; isRecording: boolean; recordedBy?: string };
   "voice.room.created": { id: string; title: string; workspaceId: string };
+  "call.incoming": {
+    meetingId: string;
+    kind: "audio" | "video";
+    title?: string;
+    channelId?: string;
+    callerId: string;
+    callerName?: string;
+    at: string;
+  };
+  "call.ended": { meetingId: string; callerId: string };
+  "call.response": {
+    meetingId: string;
+    userId: string;
+    userName?: string;
+    response: "accepted" | "declined";
+  };
   "message.reaction.updated": { id: string; channelId: string; reactions: MessageReaction[] };
   "typing": { userId: string; isTyping: boolean; room: string };
   "presence": { userId: string; status: string; room: string };
@@ -62,6 +81,21 @@ interface RealtimeContextValue {
   sendTyping: (channelId: string, isTyping: boolean) => void;
   sendPresence: (channelId: string, status: string) => void;
   sendReadReceipt: (channelId: string, messageId: string) => void;
+  sendCallRing: (ring: {
+    meetingId: string;
+    kind: "audio" | "video";
+    title?: string;
+    channelId?: string;
+    callerName?: string;
+    userIds: string[];
+  }) => void;
+  sendCallCancel: (meetingId: string) => void;
+  sendCallResponse: (response: {
+    meetingId: string;
+    callerId: string;
+    response: "accepted" | "declined";
+    userName?: string;
+  }) => void;
   onRealtimeEvent: <E extends RealtimeEvent>(event: E, handler: (payload: RealtimeEventPayloads[E]) => void) => () => void;
 }
 
@@ -161,6 +195,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         "meeting.raise_hand.changed",
         "meeting.recording.changed",
         "voice.room.created",
+        "call.incoming",
+        "call.ended",
+        "call.response",
         "message.reaction.updated",
         "typing",
         "presence",
@@ -241,10 +278,37 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           }
           if (event === "notification.created") {
             const n = payload as RealtimeEventPayloads["notification.created"];
+            playSound(SOUNDS.notification);
             try {
               void sendNotification({ title: n.title, body: n.body });
             } catch {
               // Ignore notification errors in browser/dev.
+            }
+            useUIStore.getState().addNotificationToast({
+              title: n.title,
+              body: n.body,
+              resourceType: n.resourceType,
+              link: n.link,
+            });
+            void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+            void queryClient.invalidateQueries({ queryKey: ["unread-count"] });
+          }
+          if (event === "call.response") {
+            const r = payload as RealtimeEventPayloads["call.response"];
+            const outgoing = outgoingCallsRef.current.get(r.meetingId);
+            if (outgoing) {
+              if (r.response === "accepted") {
+                clearTimeout(outgoing.timer);
+                outgoingCallsRef.current.delete(r.meetingId);
+              } else {
+                outgoing.declined.add(r.userId);
+                if (outgoing.declined.size >= outgoing.userIds.length) {
+                  // Everyone declined (or the only callee declined) — stop ringing.
+                  clearTimeout(outgoing.timer);
+                  outgoingCallsRef.current.delete(r.meetingId);
+                  dropOutgoingCall(r.meetingId, outgoing.userIds);
+                }
+              }
             }
           }
           if (event === "meeting.chat.created") {
@@ -325,6 +389,72 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     socketRef.current?.emit("message.read", { room: `channel:${channelId}`, messageId });
   }, []);
 
+  const outgoingCallsRef = useRef<
+    Map<string, { userIds: string[]; declined: Set<string>; timer: ReturnType<typeof setTimeout> }>
+  >(new Map());
+
+  function dropOutgoingCall(meetingId: string, userIds: string[]) {
+    // Stop any still-ringing callees.
+    socketRef.current?.emit("call.cancel", { meetingId, userIds });
+    // Play one full hang-up cycle, then drop the caller out of the call.
+    void playSoundOnce(SOUNDS.hangup).then(() => {
+      void leaveMeeting(meetingId).catch(() => {
+        // Best-effort — the callee never joined.
+      });
+      const ui = useUIStore.getState();
+      if (ui.activeMeetingId === meetingId) {
+        ui.setActiveView("home");
+      }
+    });
+  }
+
+  const sendCallRing = useCallback(
+    (ring: {
+      meetingId: string;
+      kind: "audio" | "video";
+      title?: string;
+      channelId?: string;
+      callerName?: string;
+      userIds: string[];
+    }) => {
+      const existing = outgoingCallsRef.current.get(ring.meetingId);
+      if (existing) clearTimeout(existing.timer);
+      const timer = setTimeout(() => {
+        // Nobody answered within the ring window — hang up the call.
+        if (outgoingCallsRef.current.delete(ring.meetingId)) {
+          dropOutgoingCall(ring.meetingId, ring.userIds);
+        }
+      }, CALL_RING_TIMEOUT_MS);
+      outgoingCallsRef.current.set(ring.meetingId, {
+        userIds: ring.userIds,
+        declined: new Set(),
+        timer,
+      });
+      socketRef.current?.emit("call.ring", ring);
+    },
+    [],
+  );
+
+  const sendCallCancel = useCallback((meetingId: string) => {
+    const outgoing = outgoingCallsRef.current.get(meetingId);
+    if (!outgoing) return;
+    clearTimeout(outgoing.timer);
+    outgoingCallsRef.current.delete(meetingId);
+    socketRef.current?.emit("call.cancel", { meetingId, userIds: outgoing.userIds });
+  }, []);
+
+  const sendCallResponse = useCallback(
+    (response: {
+      meetingId: string;
+      callerId: string;
+      response: "accepted" | "declined";
+      userName?: string;
+    }) => {
+      socketRef.current?.emit("call.response", response);
+    },
+    [],
+  );
+
   const onRealtimeEvent = <E extends RealtimeEvent>(event: E, handler: (payload: RealtimeEventPayloads[E]) => void) => {
     const typedHandler = (payload: unknown) => handler(payload as RealtimeEventPayloads[E]);
     if (!handlersRef.current.has(event)) {
@@ -338,7 +468,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
   return (
     <RealtimeContext.Provider
-      value={{ socket: socketRef.current, connected, joinRealtimeChannel, leaveRealtimeChannel, joinRealtimeProject, leaveRealtimeProject, joinRealtimeMeeting, leaveRealtimeMeeting, sendTyping, sendPresence, sendReadReceipt, onRealtimeEvent }}
+      value={{ socket: socketRef.current, connected, joinRealtimeChannel, leaveRealtimeChannel, joinRealtimeProject, leaveRealtimeProject, joinRealtimeMeeting, leaveRealtimeMeeting, sendTyping, sendPresence, sendReadReceipt, sendCallRing, sendCallCancel, sendCallResponse, onRealtimeEvent }}
     >
       {children}
     </RealtimeContext.Provider>

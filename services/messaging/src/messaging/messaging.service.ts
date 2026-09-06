@@ -168,7 +168,7 @@ export class MessagingService {
 
   async createMessage(ctx: OrganisationContextValue, dto: CreateMessageDto) {
     const senderId = this.actor(ctx);
-    await this.accessibleChannel(ctx, dto.channelId);
+    const channel = await this.accessibleChannel(ctx, dto.channelId);
     const content = dto.content?.trim() ?? '';
     const attachmentIds = this.uniqueIds(dto.attachmentIds ?? []);
     if (!content && !attachmentIds.length) throw new BadRequestException('Message content or an attachment is required');
@@ -199,7 +199,8 @@ export class MessagingService {
         include: messageInclude,
       });
       await tx.channel.update({ where: { id: dto.channelId }, data: { updatedAt: new Date() } });
-      await this.event(tx, ctx, Subjects.MESSAGE_CREATED, 'message', id, message);
+      const recipientIds = channel.members.map((m) => m.userId);
+      await this.event(tx, ctx, Subjects.MESSAGE_CREATED, 'message', id, { ...message, recipientIds });
       return message;
     });
   }
@@ -245,7 +246,12 @@ export class MessagingService {
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const updated = await tx.message.update({ where: { id: messageId }, data: { content, editedAt }, include: messageInclude });
-      await this.event(tx, ctx, Subjects.MESSAGE_UPDATED, 'message', messageId, updated);
+      const channel = await tx.channel.findUnique({
+        where: { id: updated.channelId },
+        include: { members: { select: { userId: true } } },
+      });
+      const recipientIds = channel?.members.map((m) => m.userId) ?? [];
+      await this.event(tx, ctx, Subjects.MESSAGE_UPDATED, 'message', messageId, { ...updated, recipientIds });
       return updated;
     });
   }

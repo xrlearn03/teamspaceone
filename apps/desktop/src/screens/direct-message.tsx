@@ -62,10 +62,28 @@ export function DirectMessageScreen() {
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [presenceMap, setPresenceMap] = useState<Record<string, { status: string; at: number }>>({});
   const [readMap, setReadMap] = useState<Record<string, { messageId: string; readAt: string }>>({});
-  const { onRealtimeEvent, sendPresence, sendReadReceipt } = useRealtime();
+  const { onRealtimeEvent, sendPresence, sendReadReceipt, sendCallRing } = useRealtime();
 
-  const otherMemberId = contact?.members.find((m) => m.userId !== user?.id)?.userId;
+  const otherMembers = useMemo(() => contact?.members.filter((m) => m.userId !== user?.id) ?? [], [contact, user]);
+  const contactName = useMemo(() => {
+    const names = otherMembers.map((m) => getDisplayName({ userId: m.userId }, userMap.get(m.userId)));
+    if (names.length === 0) return contact?.name ?? "Direct message";
+    if (names.length <= 2) return names.join(", ");
+    return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+  }, [contact, otherMembers, userMap]);
+  const otherMemberId = otherMembers[0]?.userId;
   const otherPresence = otherMemberId ? presenceMap[otherMemberId] : undefined;
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+  const status = useMemo(() => {
+    if (!otherPresence) return "offline";
+    if (now - otherPresence.at > 2 * 60 * 60 * 1000) return "offline";
+    if (["online", "away", "busy"].includes(otherPresence.status)) return otherPresence.status;
+    return "offline";
+  }, [otherPresence, now]);
 
   useEffect(() => {
     if (!contact) return;
@@ -127,9 +145,17 @@ export function DirectMessageScreen() {
 
   function startCall(video: boolean) {
     if (!contact) return;
-    const title = `${contact.name} ${video ? "video call" : "voice call"}`;
-    if (video) createMeeting.mutate({ title }, { onSuccess: (meeting) => setActiveView("meeting", { meetingId: meeting.id }) });
-    else createVoiceRoom.mutate({ title }, { onSuccess: (meeting) => setActiveView("voice", { meetingId: meeting.id }) });
+    const title = `${contactName} ${video ? "video call" : "voice call"}`;
+    const ring = (meetingId: string) => {
+      const userIds = contact.members.map((m) => m.userId).filter((id) => id !== user?.id);
+      if (userIds.length === 0) return;
+      const callerName = user
+        ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
+        : undefined;
+      sendCallRing({ meetingId, kind: video ? "video" : "audio", title, channelId: contact.id, callerName, userIds });
+    };
+    if (video) createMeeting.mutate({ title }, { onSuccess: (meeting) => { ring(meeting.id); setActiveView("meeting", { meetingId: meeting.id }); } });
+    else createVoiceRoom.mutate({ title }, { onSuccess: (meeting) => { ring(meeting.id); setActiveView("voice", { meetingId: meeting.id }); } });
   }
 
   const visibleMessages = searchQuery.trim() ? messages?.filter((message) => message.content.toLowerCase().includes(searchQuery.trim().toLowerCase())) : messages;
@@ -151,31 +177,29 @@ export function DirectMessageScreen() {
           <div className="relative">
             <Avatar className="h-8 w-8">
               <AvatarFallback>
-                {contact?.name?.charAt(0).toUpperCase() ?? "?"}
+                {contactName.charAt(0).toUpperCase() ?? "?"}
               </AvatarFallback>
             </Avatar>
             <span
               className={cn(
                 "absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-surface",
-                otherPresence?.status === "online"
+                status === "online"
                   ? "bg-online"
-                  : otherPresence?.status === "away"
+                  : status === "away"
                     ? "bg-away"
-                    : otherPresence?.status === "busy"
+                    : status === "busy"
                       ? "bg-busy"
                       : "bg-offline",
               )}
             />
           </div>
           <div>
-            <h1 className="text-base font-semibold text-text">{contact?.name ?? "Direct message"}</h1>
+            <h1 className="text-base font-semibold text-text">{contactName}</h1>
             <p className="text-xs text-text-muted capitalize">
               {typingUsers.length > 0
                 ? "typing…"
-                : otherPresence
-                  ? otherPresence.status
-                  : "offline"}
-              {otherPresence && otherPresence.status !== "online"
+                : status}
+              {otherPresence && status !== "online"
                 ? ` · last seen ${new Date(otherPresence.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
                 : ""}
             </p>

@@ -8,6 +8,8 @@ import { WorkspaceSidebar } from "../navigation/workspace-sidebar";
 import { StatusBar } from "./status-bar";
 import { RightPanel } from "./right-panel";
 import { CommandMenu } from "../search/command-menu";
+import { IncomingCallOverlay } from "../call/incoming-call";
+import { NotificationToasts } from "../ui/notification-toasts";
 import { TooltipProvider } from "../ui/tooltip";
 import { HomeScreen } from "../../screens/home";
 import { InboxScreen } from "../../screens/inbox";
@@ -114,6 +116,8 @@ export function AppShell() {
         <StatusBar />
       </div>
       <CommandMenu open={searchOpen} onOpenChange={setSearchOpen} />
+      <IncomingCallOverlay />
+      <NotificationToasts />
     </TooltipProvider>
   );
 }

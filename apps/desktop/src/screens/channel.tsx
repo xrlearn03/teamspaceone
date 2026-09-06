@@ -79,7 +79,7 @@ export function ChannelScreen() {
   const [channelMemberIds, setChannelMemberIds] = useState<string[]>([]);
   const [threadMessage, setThreadMessage] = useState<Message | null>(null);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
-  const { onRealtimeEvent, sendPresence } = useRealtime();
+  const { onRealtimeEvent, sendPresence, sendCallRing } = useRealtime();
 
   useEffect(() => {
     if (!channel) return;
@@ -107,14 +107,26 @@ export function ChannelScreen() {
     });
   }
 
+  function ringChannelMembers(meetingId: string, kind: "audio" | "video", title: string) {
+    if (!channel) return;
+    const userIds = channel.members.map((m) => m.userId).filter((id) => id !== user?.id);
+    if (userIds.length === 0) return;
+    const callerName = user
+      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
+      : undefined;
+    sendCallRing({ meetingId, kind, title, channelId: channel.id, callerName, userIds });
+  }
+
   function startVoiceCall() {
     if (!channel) return;
-    createVoiceRoom.mutate({ title: `${channel.name} voice` }, { onSuccess: (meeting) => setActiveView("voice", { meetingId: meeting.id }) });
+    const title = `${channel.name} voice`;
+    createVoiceRoom.mutate({ title }, { onSuccess: (meeting) => { ringChannelMembers(meeting.id, "audio", title); setActiveView("voice", { meetingId: meeting.id }); } });
   }
 
   function startVideoCall() {
     if (!channel) return;
-    createMeeting.mutate({ title: `${channel.name} video call` }, { onSuccess: (meeting) => setActiveView("meeting", { meetingId: meeting.id }) });
+    const title = `${channel.name} video call`;
+    createMeeting.mutate({ title }, { onSuccess: (meeting) => { ringChannelMembers(meeting.id, "video", title); setActiveView("meeting", { meetingId: meeting.id }); } });
   }
 
   const visibleMessages = searchQuery.trim() ? messages?.filter((message) => message.content.toLowerCase().includes(searchQuery.trim().toLowerCase())) : messages;

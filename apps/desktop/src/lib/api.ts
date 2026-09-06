@@ -8,6 +8,11 @@ const REFRESH_TOKEN_KEY = "teamspace-one:refreshToken";
 
 let refreshPromise: Promise<string | null> | null = null;
 let activeOrganisationId: string | null = null;
+let sessionClearedCallback: (() => void) | null = null;
+
+export function setOnSessionCleared(callback: (() => void) | null): void {
+  sessionClearedCallback = callback;
+}
 
 export function setActiveOrganisation(organisationId: string | null): void {
   activeOrganisationId = organisationId;
@@ -34,6 +39,7 @@ export async function getAccessToken(): Promise<string | null> {
 export async function clearAccessToken(): Promise<void> {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
+  sessionClearedCallback?.();
 }
 
 async function storeTokens(tokens: TokenPair): Promise<void> {
@@ -149,6 +155,7 @@ export interface UserDto {
   email: string;
   firstName?: string | null;
   lastName?: string | null;
+  avatarFileId?: string | null;
   active: boolean;
   emailVerified: boolean;
   createdAt: string;
@@ -533,7 +540,7 @@ export function getUsers(ids?: string[]) {
   return apiRequest<UserDto[]>(`/auth/users${query ? `?${query}` : ""}`);
 }
 
-export function updateProfile(body: { firstName?: string; lastName?: string }) {
+export function updateProfile(body: { firstName?: string; lastName?: string; avatarFileId?: string | null }) {
   return apiRequest<UserDto>("/auth/me", { method: "PATCH", body });
 }
 
