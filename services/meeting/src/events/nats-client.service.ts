@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { connect, type NatsConnection, type JetStreamClient } from 'nats';
+import { connect, type NatsConnection, type JetStreamClient, type ConnectionOptions } from 'nats';
 
 @Injectable()
 export class NatsClientService implements OnModuleInit, OnModuleDestroy {
@@ -18,8 +18,15 @@ export class NatsClientService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     const url = this.config.get<string>('NATS_URL', 'nats://localhost:4222');
-    this.logger.log(`Connecting to NATS at ${url}`);
-    this.connectingPromise = connect({ servers: url });
+    // The nats client cannot parse credentials embedded in the server URL;
+    // pass them as dedicated options instead.
+    const parsed = new URL(url);
+    const servers = `${parsed.protocol}//${parsed.host}`;
+    const options: ConnectionOptions = { servers };
+    if (parsed.username) options.user = decodeURIComponent(parsed.username);
+    if (parsed.password) options.pass = decodeURIComponent(parsed.password);
+    this.logger.log(`Connecting to NATS at ${servers}`);
+    this.connectingPromise = connect(options);
     this.nc = await this.connectingPromise;
     this.js = this.nc.jetstream();
     this.logger.log('Connected to NATS JetStream');
