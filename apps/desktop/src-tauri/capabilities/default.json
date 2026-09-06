@@ -5,16 +5,12 @@
   "windows": ["main"],
   "remote": {
     "urls": [
-      "http://localhost:1420/*",
-      "http://localhost:3000/*",
-      "http://localhost:3005/*",
-      "http://localhost:5173/*",
-      "ws://localhost:7880/*",
-      "ws://localhost:8443/*",
-      "http://34.93.42.133:3000/*",
-      "http://34.93.42.133:3005/*",
-      "ws://34.93.42.133:7880/*",
-      "ws://34.93.42.133:8443/*"
+      "http://localhost:*/*",
+      "ws://localhost:*/*",
+      "tauri://localhost/*",
+      "http://tauri.localhost/*",
+      "http://34.93.42.133:*/*",
+      "ws://34.93.42.133:*/*"
     ]
   },
   "permissions": [
