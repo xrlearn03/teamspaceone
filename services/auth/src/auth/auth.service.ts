@@ -20,6 +20,9 @@ export class AuthService {
   ) {}
 
   async register(input: RegisterDto, correlationId?: string): Promise<{ user: UserDto; tokens: TokenPair }> {
+    if (!input?.email || !input?.password) {
+      throw new BadRequestException('Email and password are required');
+    }
     const existing = await this.prisma.user.findUnique({
       where: { email: input.email.toLowerCase() },
     });
@@ -66,6 +69,9 @@ export class AuthService {
   }
 
   async login(input: LoginDto): Promise<{ user: UserDto; tokens: TokenPair }> {
+    if (!input?.email || !input?.password) {
+      throw new BadRequestException('Email and password are required');
+    }
     const user = await this.prisma.user.findUnique({
       where: { email: input.email.toLowerCase() },
     });
