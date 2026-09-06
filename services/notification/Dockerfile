@@ -10,4 +10,4 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/services/notification ./services/notification
 EXPOSE 3008
-CMD ["node", "services/notification/dist/main"]
+CMD ["sh", "-c", "node services/notification/node_modules/prisma/build/index.js migrate deploy --schema services/notification/prisma/schema.prisma && node services/notification/dist/main"]

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DailyDigestResult, Meeting, UserDto } from "../lib/api";
+import type { DailyDigestResult, Meeting, Message, UserDto } from "../lib/api";
 import {
   Calendar,
   CheckSquare,
@@ -40,6 +40,7 @@ import { Badge } from "../components/ui/badge";
 import { EmptyState } from "../components/ui/empty-state";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
+import { UserAvatar } from "../components/user-avatar";
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -180,6 +181,20 @@ export function HomeScreen() {
   const firstChannelId = channels?.[0]?.id;
   const { data: messages } = useMessages(firstChannelId);
   const messageSenderIds = useMemo(() => [...new Set((messages ?? []).map((m) => m.senderId))], [messages]);
+  const recentConversations = useMemo(() => {
+    if (!messages?.length || !user) return [];
+    const seen = new Set<string>();
+    const items: Message[] = [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.senderId === user.id) continue;
+      if (seen.has(m.senderId)) continue;
+      seen.add(m.senderId);
+      items.push(m);
+      if (items.length >= 6) break;
+    }
+    return items;
+  }, [messages, user]);
   const userIds = useMemo(() => [...new Set([...memberUserIds, ...messageSenderIds])], [memberUserIds, messageSenderIds]);
   const { data: users } = useUsers(userIds);
   const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
@@ -342,25 +357,35 @@ export function HomeScreen() {
             <CardTitle>Recent conversations</CardTitle>
           </CardHeader>
           <CardContent>
-            {messages && messages.length > 0 ? (
-              <div className="space-y-3">
-                {messages.slice(-6).reverse().map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setActiveView("channel", { channelId: m.channelId })}
-                    className="flex w-full flex-col gap-0.5 rounded-md p-1.5 text-left hover:bg-surface-elevated"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-text">{getDisplayName({ userId: m.senderId }, userMap.get(m.senderId))}</span>
-                      <span className="text-xs text-text-muted">{formatRelative(m.createdAt)}</span>
-                    </div>
-                    <p className="line-clamp-1 text-xs text-text-secondary">{m.content}</p>
-                  </button>
-                ))}
+            {recentConversations.length > 0 ? (
+              <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                {recentConversations.map((m) => {
+                  const sender = userMap.get(m.senderId);
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() =>
+                        createDirectChannel.mutate([m.senderId], {
+                          onSuccess: (channel) => setActiveView("dm", { channelId: channel.id }),
+                        })
+                      }
+                      className="flex min-w-[10rem] max-w-[12rem] shrink-0 flex-col gap-2 rounded-lg border bg-surface p-3 text-left transition hover:bg-surface-elevated"
+                    >
+                      <div className="flex items-center gap-2">
+                        <UserAvatar user={sender} className="h-9 w-9" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-text">{getDisplayName({ userId: m.senderId }, sender)}</p>
+                          <p className="text-xs text-text-muted">{formatRelative(m.createdAt)}</p>
+                        </div>
+                      </div>
+                      <p className="line-clamp-2 text-xs text-text-secondary">{m.content}</p>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
-              <EmptyState icon={MessageSquare} title="No messages" description="Send a message in a channel to see it here." />
+              <EmptyState icon={MessageSquare} title="No conversations" description="Send a message to start a conversation." />
             )}
           </CardContent>
         </Card>

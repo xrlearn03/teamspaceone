@@ -10,4 +10,4 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/services/realtime ./services/realtime
 EXPOSE 3005
-CMD ["node", "services/realtime/dist/main"]
+CMD ["sh", "-c", "node services/realtime/node_modules/prisma/build/index.js migrate deploy --schema services/realtime/prisma/schema.prisma && node services/realtime/dist/main"]

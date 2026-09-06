@@ -29,7 +29,7 @@ function getInitials(member: OrganisationMember, user?: UserDto) {
 export function MemberDirectoryScreen() {
   const organisationId = useUIStore((s) => s.organisationId) ?? undefined;
   const { data: organisations } = useOrganisations();
-  const { data: members, isLoading: membersLoading } = useMembers(organisationId);
+  const { data: members, isLoading: membersLoading, error: membersError } = useMembers(organisationId);
   const { data: roles } = useRoles(organisationId);
   const { data: invitations } = useInvitations(organisationId);
   const createInvitation = useCreateInvitation();
@@ -88,7 +88,9 @@ export function MemberDirectoryScreen() {
       <div className="flex-1 overflow-y-auto p-6">
         {isLoading ? (
           <p className="text-sm text-text-muted">Loading members…</p>
-        ) : filtered.length === 0 ? (
+        ) : membersError ? (
+          <p className="text-sm text-error">Failed to load members: {membersError.message}</p>
+        ) : filtered.length === 0 && pendingInvitations.length === 0 ? (
           <EmptyState icon={Users} title="No members found" description="Try a different search or invite someone to this organisation." />
         ) : (
           <div className="space-y-6">

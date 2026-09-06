@@ -11,4 +11,4 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/services/file-storage ./services/file-storage
 EXPOSE 3010
-CMD ["node", "services/file-storage/dist/main"]
+CMD ["sh", "-c", "node services/file-storage/node_modules/prisma/build/index.js migrate deploy --schema services/file-storage/prisma/schema.prisma && node services/file-storage/dist/main"]

@@ -10,4 +10,4 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/services/ai ./services/ai
 EXPOSE 3012
-CMD ["node", "services/ai/dist/main"]
+CMD ["sh", "-c", "node services/ai/node_modules/prisma/build/index.js migrate deploy --schema services/ai/prisma/schema.prisma && node services/ai/dist/main"]
