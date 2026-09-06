@@ -110,3 +110,8 @@ export async function getCache(key: string, organisationId: string): Promise<unk
     return rows[0].value;
   }
 }
+
+export async function deleteCache(key: string, organisationId: string): Promise<void> {
+  const database = await initLocalDb();
+  await database.execute('DELETE FROM cache WHERE key = ? AND organisation_id = ?', [key, organisationId]);
+}

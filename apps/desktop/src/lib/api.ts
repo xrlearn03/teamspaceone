@@ -1,10 +1,23 @@
 import { fetch } from "@tauri-apps/plugin-http";
+import { invoke } from "@tauri-apps/api/core";
+import { getCache, setCache, deleteCache } from "./desktop";
 
 const GATEWAY_URL =
   (import.meta.env.VITE_GATEWAY_URL as string | undefined) ??
   "http://localhost:3000";
 const TOKEN_KEY = "teamspace-one:accessToken";
 const REFRESH_TOKEN_KEY = "teamspace-one:refreshToken";
+const KEYCHAIN_SERVICE = "teamspace-one";
+const TOKEN_ORG = "__auth__";
+const isTauri =
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+// The webview is served from http://localhost:<random port> in packaged
+// builds, so localStorage does not survive app restarts. Auth tokens live
+// in the OS keychain instead, with localStorage as a fallback for plain
+// browser dev. An in-memory mirror avoids a keychain read per request.
+let accessTokenCache: string | null | undefined;
+let refreshTokenCache: string | null | undefined;
 
 let refreshPromise: Promise<string | null> | null = null;
 let activeOrganisationId: string | null = null;
@@ -28,29 +41,104 @@ export function getActiveOrganisation(): string | null {
   return localStorage.getItem("teamspace-one:organisationId");
 }
 
+async function readToken(key: string): Promise<string | null> {
+  if (!isTauri) return localStorage.getItem(key);
+  // SQLite persists in the app data dir regardless of the webview's
+  // random localhost port, so it is the reliable store. The keychain and
+  // localStorage entries are fallbacks/migration paths.
+  try {
+    const cached = await getCache(key, TOKEN_ORG);
+    if (typeof cached === "string" && cached) return cached;
+  } catch {
+    // fall through
+  }
+  try {
+    const value = await invoke<string | null>("get_secure_token", {
+      service: KEYCHAIN_SERVICE,
+      account: key,
+    });
+    if (value) return value;
+  } catch {
+    // fall through
+  }
+  return localStorage.getItem(key);
+}
+
+async function writeToken(key: string, value: string): Promise<void> {
+  localStorage.setItem(key, value);
+  if (!isTauri) return;
+  try {
+    await setCache(key, TOKEN_ORG, value);
+  } catch {
+    // sqlite unavailable; keychain/localStorage still cover it
+  }
+  try {
+    await invoke("store_secure_token", {
+      service: KEYCHAIN_SERVICE,
+      account: key,
+      token: value,
+    });
+  } catch {
+    // keychain write failed; sqlite copy already persisted
+  }
+}
+
+async function deleteToken(key: string): Promise<void> {
+  localStorage.removeItem(key);
+  if (!isTauri) return;
+  try {
+    await deleteCache(key, TOKEN_ORG);
+  } catch {
+    // already gone
+  }
+  try {
+    await invoke("delete_secure_token", {
+      service: KEYCHAIN_SERVICE,
+      account: key,
+    });
+  } catch {
+    // already gone
+  }
+}
+
 export async function setAccessToken(token: string): Promise<void> {
-  localStorage.setItem(TOKEN_KEY, token);
+  accessTokenCache = token;
+  await writeToken(TOKEN_KEY, token);
 }
 
 export async function getAccessToken(): Promise<string | null> {
-  return localStorage.getItem(TOKEN_KEY);
+  if (accessTokenCache === undefined) {
+    accessTokenCache = await readToken(TOKEN_KEY);
+  }
+  return accessTokenCache;
 }
 
 export async function clearAccessToken(): Promise<void> {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  accessTokenCache = null;
+  refreshTokenCache = null;
+  await deleteToken(TOKEN_KEY);
+  await deleteToken(REFRESH_TOKEN_KEY);
   sessionClearedCallback?.();
 }
 
+async function getRefreshToken(): Promise<string | null> {
+  if (refreshTokenCache === undefined) {
+    refreshTokenCache = await readToken(REFRESH_TOKEN_KEY);
+  }
+  return refreshTokenCache;
+}
+
 async function storeTokens(tokens: TokenPair): Promise<void> {
-  localStorage.setItem(TOKEN_KEY, tokens.accessToken);
-  localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
+  accessTokenCache = tokens.accessToken;
+  refreshTokenCache = tokens.refreshToken;
+  await writeToken(TOKEN_KEY, tokens.accessToken);
+  await writeToken(REFRESH_TOKEN_KEY, tokens.refreshToken);
 }
 
 async function refreshAccessToken(): Promise<string | null> {
   if (refreshPromise) return refreshPromise;
   refreshPromise = (async () => {
-    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+    const refreshToken = await getRefreshToken();
     if (!refreshToken) return null;
     const response = await fetch(`${GATEWAY_URL}/auth/refresh`, {
       method: "POST",
@@ -549,7 +637,7 @@ export function changePassword(currentPassword: string, newPassword: string) {
 }
 
 export async function logout(): Promise<void> {
-  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+  const refreshToken = await getRefreshToken();
   if (refreshToken) {
     await apiRequest<void>("/auth/logout", { method: "POST", body: { refreshToken }, org: null }, false).catch(() => undefined);
   }
