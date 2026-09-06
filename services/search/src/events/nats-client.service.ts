@@ -10,6 +10,7 @@ import {
   type NatsConnection,
   type JetStreamClient,
   type JetStreamManager,
+  type ConnectionOptions,
 } from 'nats';
 
 @Injectable()

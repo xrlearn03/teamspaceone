@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { connect, NatsError, nanos, RetentionPolicy, type NatsConnection, type JetStreamClient } from 'nats';
+import { connect, NatsError, nanos, RetentionPolicy, type NatsConnection, type JetStreamClient, type ConnectionOptions } from 'nats';
 import { streamConfigs } from '@teamspace-one/event-contracts';
 
 @Injectable()
