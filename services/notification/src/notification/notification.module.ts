@@ -5,6 +5,7 @@ import { PrismaModule } from '../prisma/prisma.module.js';
 import { NotificationService } from './notification.service.js';
 import { NotificationController } from './notification.controller.js';
 import { NotificationDeliveryWorker } from './notification.worker.js';
+import { GuestInvitationEmailService } from './guest-invitation-email.service.js';
 
 @Module({
   imports: [
@@ -13,7 +14,7 @@ import { NotificationDeliveryWorker } from './notification.worker.js';
     BullModule.registerQueue({ name: 'notification' }),
   ],
   controllers: [NotificationController],
-  providers: [NotificationService, NotificationDeliveryWorker],
-  exports: [NotificationService],
+  providers: [NotificationService, NotificationDeliveryWorker, GuestInvitationEmailService],
+  exports: [NotificationService, GuestInvitationEmailService],
 })
 export class NotificationModule {}

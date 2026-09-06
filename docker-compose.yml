@@ -259,6 +259,7 @@ services:
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       AUTH_SERVICE_URL: http://auth-service:3002
+      APP_URL: ${APP_URL:-https://app.teamspace.one}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}

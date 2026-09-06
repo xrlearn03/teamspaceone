@@ -3,18 +3,19 @@ import { useMutation } from "@tanstack/react-query";
 import { Eye, EyeOff } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { login, register, setActiveOrganisation } from "../lib/api";
+import { login, register, setActiveOrganisation, acceptInvitation } from "../lib/api";
 
 export interface AuthScreenProps {
   onAuthenticated?: () => void;
 }
 
 export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "accept-invite">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [registered, setRegistered] = useState(false);
@@ -41,14 +42,27 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     onError: (err: Error) => setError(err.message),
   });
 
+  const acceptInviteMutation = useMutation({
+    mutationFn: async () => {
+      const { user } = await register(email, password, firstName, lastName);
+      const member = await acceptInvitation(token.trim());
+      setActiveOrganisation(member.organisationId);
+      return user;
+    },
+    onSuccess: () => onAuthenticated?.(),
+    onError: (err: Error) => setError(err.message),
+  });
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setRegistered(false);
     if (mode === "login") {
       loginMutation.mutate({ email, password });
-    } else {
+    } else if (mode === "register") {
       registerMutation.mutate();
+    } else {
+      acceptInviteMutation.mutate();
     }
   }
 
@@ -67,16 +81,30 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       <div className="relative z-10 flex h-full items-center justify-center p-6">
       <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-8 shadow-sm">
         <h1 className="text-2xl font-semibold text-text">
-          {mode === "login" ? "Sign in" : "Create account"}
+          {mode === "login"
+            ? "Sign in"
+            : mode === "register"
+              ? "Create account"
+              : "Accept invitation"}
         </h1>
         <p className="mt-1 text-sm text-text-muted">
           {mode === "login"
             ? "Welcome back to Teamspace One."
-            : "Get started with your workspace."}
+            : mode === "register"
+              ? "Get started with your workspace."
+              : "Set your password and join with your invitation token."}
         </p>
 
         <form onSubmit={submit} className="mt-6 space-y-4">
-          {mode === "register" && (
+          {mode === "accept-invite" && (
+            <Input
+              placeholder="Invitation token"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              required
+            />
+          )}
+          {(mode === "register" || mode === "accept-invite") && (
             <>
               <Input
                 placeholder="First name"
@@ -129,28 +157,68 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           <Button
             type="submit"
             className="w-full"
-            disabled={loginMutation.isPending || registerMutation.isPending}
+            disabled={
+              loginMutation.isPending ||
+              registerMutation.isPending ||
+              acceptInviteMutation.isPending
+            }
           >
-            {loginMutation.isPending || registerMutation.isPending
+            {loginMutation.isPending ||
+            registerMutation.isPending ||
+            acceptInviteMutation.isPending
               ? "Working…"
-              : mode === "login" ? "Sign in" : "Create account"}
+              : mode === "login"
+                ? "Sign in"
+                : mode === "register"
+                  ? "Create account"
+                  : "Join organisation"}
           </Button>
         </form>
 
         <p className="mt-4 text-center text-sm text-text-secondary">
-          {mode === "login" ? "No account?" : "Already have an account?"}{" "}
+          {mode === "login"
+            ? "No account?"
+            : mode === "register"
+              ? "Already have an account?"
+              : "Have an account?"}{" "}
           <button
             type="button"
             onClick={() => {
-              setMode(mode === "login" ? "register" : "login");
+              setMode(
+                mode === "login"
+                  ? "register"
+                  : mode === "register"
+                    ? "login"
+                    : "login",
+              );
               setError(null);
               setRegistered(false);
             }}
             className="font-medium text-primary hover:underline"
           >
-            {mode === "login" ? "Create one" : "Sign in"}
+            {mode === "login"
+              ? "Create one"
+              : mode === "register"
+                ? "Sign in"
+                : "Sign in"}
           </button>
         </p>
+        {mode !== "accept-invite" && (
+          <p className="mt-2 text-center text-sm text-text-secondary">
+            Have an invitation token?{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setMode("accept-invite");
+                setError(null);
+                setRegistered(false);
+              }}
+              className="font-medium text-primary hover:underline"
+            >
+              Accept invite
+            </button>
+          </p>
+        )}
       </div>
     </div>
     </div>

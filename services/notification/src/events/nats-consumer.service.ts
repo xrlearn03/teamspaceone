@@ -3,6 +3,7 @@ import { AckPolicy, DeliverPolicy, nanos, type JsMsg } from 'nats';
 import { isEventEnvelope, Subjects, type EventEnvelope, Streams } from '@teamspace-one/event-contracts';
 import { InboxService } from '../inbox/inbox.service.js';
 import { NotificationService, type CreatedNotification } from '../notification/notification.service.js';
+import { GuestInvitationEmailService } from '../notification/guest-invitation-email.service.js';
 import { NatsClientService } from './nats-client.service.js';
 
 interface ConsumerDefinition {
@@ -21,6 +22,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
     private readonly natsClient: NatsClientService,
     private readonly inbox: InboxService,
     private readonly notification: NotificationService,
+    private readonly guestInvitation: GuestInvitationEmailService,
   ) {}
 
   async onModuleInit() {
@@ -34,6 +36,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
       { stream: Streams.MEETINGS, subject: 'teamspace-one.meeting.>', durable: 'notification-meetings-consumer' },
       { stream: Streams.FILES, subject: 'teamspace-one.file.>', durable: 'notification-files-consumer' },
       { stream: Streams.AI, subject: Subjects.AI_SUMMARY_CONFIRMED, durable: 'notification-ai-consumer' },
+      { stream: Streams.ORGANISATION, subject: Subjects.GUEST_INVITED, durable: 'notification-guest-invited-consumer' },
     ];
 
     for (const c of consumers) {
@@ -94,6 +97,14 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
         }
 
         if (data.eventType === Subjects.NOTIFICATION_CREATED) {
+          jsMsg.ack();
+          continue;
+        }
+
+        if (data.eventType === Subjects.GUEST_INVITED) {
+          await this.inbox.handle(data, (_tx, envelope) =>
+            this.guestInvitation.send(envelope),
+          );
           jsMsg.ack();
           continue;
         }
