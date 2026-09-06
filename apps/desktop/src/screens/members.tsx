@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { UserPlus, Users } from "lucide-react";
-import { useMembers, useRoles, useCreateInvitation, useOrganisations, useUsers } from "../hooks/api";
+import { useMembers, useRoles, useCreateInvitation, useInvitations, useOrganisations, useUsers } from "../hooks/api";
 import { useUIStore } from "../stores/ui";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Badge } from "../components/ui/badge";
@@ -31,6 +31,7 @@ export function MemberDirectoryScreen() {
   const { data: organisations } = useOrganisations();
   const { data: members, isLoading: membersLoading } = useMembers(organisationId);
   const { data: roles } = useRoles(organisationId);
+  const { data: invitations } = useInvitations(organisationId);
   const createInvitation = useCreateInvitation();
   const [query, setQuery] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -52,6 +53,11 @@ export function MemberDirectoryScreen() {
   });
   const external = filtered.filter((m) => /client|external/i.test(m.role.name));
   const internal = filtered.filter((m) => !/client|external/i.test(m.role.name));
+  const pendingInvitations = (invitations ?? []).filter((inv) => {
+    if (inv.status !== "pending") return false;
+    if (!query.trim()) return true;
+    return inv.email.toLowerCase().includes(query.trim().toLowerCase());
+  });
 
   function invite() {
     if (!organisationId || !email.trim() || !roleId) return;
@@ -123,6 +129,22 @@ export function MemberDirectoryScreen() {
                 {external.length === 0 ? <p className="px-4 py-6 text-center text-sm text-text-muted">No external collaborators.</p> : null}
               </div>
             </div>
+            {pendingInvitations.length > 0 ? (
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">Pending invitations ({pendingInvitations.length})</p>
+                <div className="overflow-hidden rounded-lg border border-dashed">
+                  {pendingInvitations.map((inv) => (
+                    <div key={inv.id} className="flex items-center gap-3 border-b px-4 py-2.5 last:border-0">
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback>{inv.email.slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <span className="flex-1 truncate text-sm text-text">{inv.email}</span>
+                      <Badge variant="secondary">Invited</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

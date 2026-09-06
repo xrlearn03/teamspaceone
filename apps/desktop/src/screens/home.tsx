@@ -163,6 +163,11 @@ export function HomeScreen() {
   const deleteEndedMeetings = useDeleteEndedMeetings();
   const endedMeetingsCount = meetings?.filter((m) => m.status === "ended")?.length ?? 0;
 
+  const upcomingMeetings = useMemo(
+    () => (meetings ?? []).filter((m) => m.scheduledAt).sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime()),
+    [meetings],
+  );
+
   function handleDeleteEndedMeetings() {
     if (endedMeetingsCount === 0) return;
     if (!window.confirm(`Delete ${endedMeetingsCount} ended meeting${endedMeetingsCount === 1 ? "" : "s"}? This cannot be undone.`)) return;
@@ -307,9 +312,9 @@ export function HomeScreen() {
             )}
           </CardHeader>
           <CardContent>
-            {meetings && meetings.length > 0 ? (
+            {upcomingMeetings.length > 0 ? (
               <div className="space-y-2">
-                {meetings.slice(0, 6).map((m) => (
+                {upcomingMeetings.slice(0, 6).map((m) => (
                   <button
                     key={m.id}
                     type="button"

@@ -116,7 +116,16 @@ export function useRevokeInvitation() {
 
 export function useAcceptInvitation() {
   const client = useQueryClient();
-  return useMutation({ mutationFn: api.acceptInvitation, onSuccess: () => client.invalidateQueries({ queryKey: ["organisations"] }) });
+  return useMutation({
+    mutationFn: api.acceptInvitation,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["organisations"] });
+      client.invalidateQueries({ queryKey: ["members"] });
+      client.invalidateQueries({ queryKey: ["invitations"] });
+      client.invalidateQueries({ queryKey: ["users"] });
+      client.invalidateQueries({ queryKey: ["channels"] });
+    },
+  });
 }
 
 export function useClients(organisationId?: string) {

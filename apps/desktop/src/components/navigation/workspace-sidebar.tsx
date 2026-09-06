@@ -237,10 +237,18 @@ export function WorkspaceSidebar() {
   const { data: organisations } = useOrganisations();
   const { data: workspaces } = useWorkspaces(activeOrgId ?? undefined);
   const { data: members } = useMembers(activeOrgId ?? undefined);
-  const memberUserIds = useMemo(() => [...new Set((members ?? []).map((m) => m.userId))], [members]);
+  const { data: channels } = useChannels();
+  const memberUserIds = useMemo(() => {
+    const ids = new Set((members ?? []).map((m) => m.userId));
+    for (const channel of channels ?? []) {
+      for (const member of channel.members ?? []) {
+        ids.add(member.userId);
+      }
+    }
+    return [...ids];
+  }, [members, channels]);
   const { data: users } = useUsers(memberUserIds);
   const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
-  const { data: channels } = useChannels();
   const { data: me } = useMe();
   const createChannel = useCreateChannel();
   const createDirectChannel = useCreateDirectChannel();
