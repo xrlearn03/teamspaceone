@@ -62,7 +62,22 @@ interface RateLimitEntry {
 function createRateLimitMiddleware(windowMs: number, maxRequests: number) {
   const store = new Map<string, RateLimitEntry>();
 
+  // Drop expired buckets periodically so the map cannot grow unboundedly.
+  const sweep = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of store) {
+      if (entry.resetAt <= now) store.delete(key);
+    }
+  }, windowMs);
+  sweep.unref();
+
   return (req: Request, res: Response, next: NextFunction) => {
+    // CORS preflights and health probes must not consume the rate-limit bucket.
+    if (req.method === 'OPTIONS' || req.path === '/health') {
+      next();
+      return;
+    }
+
     const now = Date.now();
     const key = (req.ip || req.socket.remoteAddress || 'unknown').toString();
     let entry = store.get(key);
@@ -93,6 +108,11 @@ async function bootstrap() {
 
   const pino = createLogger({ name: 'api-gateway' });
   const app = await NestFactory.create(AppModule, { logger: adaptLogger(pino) });
+
+  // Trust the first proxy hop so req.ip reflects the real client address
+  // (Docker bridge, load balancer) instead of giving every client a shared
+  // rate-limit bucket.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
   // CORS must be set up before any proxy middlewares so preflight OPTIONS
   // are handled at the gateway, not forwarded to services.

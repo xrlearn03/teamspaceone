@@ -173,10 +173,16 @@ interface RequestOptions {
   org?: string | null;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const MAX_RATE_LIMIT_RETRIES = 2;
+const MAX_RETRY_AFTER_MS = 15_000;
+
 export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
   retryAfterRefresh = true,
+  rateLimitRetries = MAX_RATE_LIMIT_RETRIES,
 ): Promise<T> {
   const token = await getAccessToken();
   const org = options.org ?? getActiveOrganisation();
@@ -216,6 +222,17 @@ export async function apiRequest<T>(
     }
     await clearAccessToken();
     throw new Error("Unauthorized");
+  }
+  if (response.status === 429) {
+    if (rateLimitRetries > 0) {
+      const retryAfter = Number(response.headers.get("Retry-After"));
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, MAX_RETRY_AFTER_MS)
+        : 1000 * (MAX_RATE_LIMIT_RETRIES - rateLimitRetries + 1);
+      await sleep(delay);
+      return apiRequest<T>(path, options, retryAfterRefresh, rateLimitRetries - 1);
+    }
+    throw new ApiError(429, "Too many requests — please try again in a moment.");
   }
   if (!response.ok) {
     const text = await response.text();
