@@ -47,13 +47,9 @@ fn setup_deep_link(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         app.deep_link().register("teamspace-one")?;
     }
 
-    app.deep_link().on_open_url(|event| {
-        println!("deep link URLs: {:?}", event.urls());
-    });
+    app.deep_link().on_open_url(|_| {});
 
-    if let Some(urls) = app.deep_link().get_current()? {
-        println!("app opened with deep links: {:?}", urls);
-    }
+    let _ = app.deep_link().get_current()?;
 
     Ok(())
 }

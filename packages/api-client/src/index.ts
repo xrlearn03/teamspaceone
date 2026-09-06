@@ -34,7 +34,8 @@ export class ApiClient {
   private async handle<T>(res: Response): Promise<T> {
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`API error ${res.status}: ${text}`);
+      const truncated = text.length > 500 ? `${text.slice(0, 500)}...` : text;
+      throw new Error(`API error ${res.status}: ${truncated}`);
     }
     return res.json() as Promise<T>;
   }

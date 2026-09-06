@@ -1,126 +1,132 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
-    container_name: teamspace-one-postgres
+    image: 'pgvector/pgvector:pg16'
+    container_name: 'teamspace-one-postgres'
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./docker/postgres-init:/docker-entrypoint-initdb.d
     ports:
-      - "5432:5432"
+      - '127.0.0.1:5432:5432'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: [ 'CMD-SHELL', 'PGPASSWORD="$POSTGRES_PASSWORD" pg_isready -U "$POSTGRES_USER"' ]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
-    image: redis:7-alpine
-    container_name: teamspace-one-redis
+    image: 'redis:7-alpine'
+    container_name: 'teamspace-one-redis'
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command: [ 'redis-server', '--requirepass', '${REDIS_PASSWORD:?REDIS_PASSWORD is required}' ]
     ports:
-      - "6379:6379"
+      - '127.0.0.1:6379:6379'
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ 'CMD-SHELL', 'redis-cli -a "$REDIS_PASSWORD" ping | grep PONG' ]
       interval: 5s
       timeout: 3s
       retries: 5
 
   nats:
-    image: nats:2-alpine
-    container_name: teamspace-one-nats
+    image: 'nats:2-alpine'
+    container_name: 'teamspace-one-nats'
     restart: unless-stopped
+    environment:
+      NATS_USER: ${NATS_USER:?NATS_USER is required}
+      NATS_PASSWORD: ${NATS_PASSWORD:?NATS_PASSWORD is required}
     command:
-      - "--js"
-      - "--config"
-      - "/etc/nats/nats-server.conf"
+      - '--js'
+      - '--config'
+      - '/etc/nats/nats-server.conf'
     volumes:
       - nats-data:/data/jetstream
       - ./docker/nats/nats-server.conf:/etc/nats/nats-server.conf:ro
     ports:
-      - "4222:4222"
-      - "8222:8222"
+      - '127.0.0.1:4222:4222'
+      - '127.0.0.1:8222:8222'
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:8222/healthz' ]
       interval: 5s
       timeout: 3s
       retries: 5
 
   minio:
-    image: minio/minio:RELEASE.2024-08-17T01-24-54Z
-    container_name: teamspace-one-minio
+    image: 'minio/minio:RELEASE.2024-08-17T01-24-54Z'
+    container_name: 'teamspace-one-minio'
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    command: [ 'server', '/data', '--console-address', ':9001' ]
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
     volumes:
       - minio-data:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: [ 'CMD', 'mc', 'ready', 'local' ]
       interval: 5s
       timeout: 3s
       retries: 5
 
   jaeger:
-    image: jaegertracing/all-in-one:1.59
-    container_name: teamspace-one-jaeger
+    image: 'jaegertracing/all-in-one:1.59'
+    container_name: 'teamspace-one-jaeger'
     restart: unless-stopped
     ports:
-      - "16686:16686"
-      - "4318:4318"
+      - '127.0.0.1:16686:16686'
+      - '127.0.0.1:4318:4318'
     environment:
-      COLLECTOR_OTLP_ENABLED: "true"
+      COLLECTOR_OTLP_ENABLED: 'true'
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.109.0
-    container_name: teamspace-one-otel-collector
+    image: 'otel/opentelemetry-collector-contrib:0.109.0'
+    container_name: 'teamspace-one-otel-collector'
     restart: unless-stopped
-    command: ["--config=/etc/otel-collector.yaml"]
+    command: [ '--config=/etc/otel-collector.yaml' ]
     volumes:
       - ./docker/otel/otel-collector.yaml:/etc/otel-collector.yaml:ro
     ports:
-      - "4317:4317"
+      - '127.0.0.1:4317:4317'
     depends_on:
       - jaeger
 
   base:
-    image: teamspace-one-base
+    image: 'teamspace-one-base'
     build:
       context: .
-      dockerfile: docker/Dockerfile.base
-    container_name: teamspace-one-base-builder
-    command: ["true"]
-    restart: "no"
+      dockerfile: 'docker/Dockerfile.base'
+    container_name: 'teamspace-one-base-builder'
+    command: [ 'true' ]
+    restart: 'no'
 
   auth-service:
     build:
       additional_contexts:
-        teamspace-one-base: "service:base"
+        teamspace-one-base: 'service:base'
       context: .
-      dockerfile: services/auth/Dockerfile
-    container_name: teamspace-one-auth-service
+      dockerfile: 'services/auth/Dockerfile'
+    container_name: 'teamspace-one-auth-service'
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3002
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/identity_db?schema=public
-      NATS_URL: nats://nats:4222
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-auth}
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
-      ORGANISATION_SERVICE_URL: http://organisation-service:3003
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: teamspace-one-auth-service
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/identity_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-auth-service'
     ports:
-      - "3002:3002"
+      - '127.0.0.1:3002:3002'
     depends_on:
       - postgres
       - nats
@@ -130,22 +136,22 @@ services:
   organisation-service:
     build:
       additional_contexts:
-        teamspace-one-base: "service:base"
+        teamspace-one-base: 'service:base'
       context: .
-      dockerfile: services/organisation/Dockerfile
-    container_name: teamspace-one-organisation-service
+      dockerfile: 'services/organisation/Dockerfile'
+    container_name: 'teamspace-one-organisation-service'
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3003
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/organisation_db?schema=public
-      NATS_URL: nats://nats:4222
-      REDIS_URL: redis://redis:6379
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: teamspace-one-organisation-service
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/organisation_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-organisation-service'
     ports:
-      - "3003:3003"
+      - '127.0.0.1:3003:3003'
     depends_on:
       - postgres
       - nats
@@ -155,21 +161,22 @@ services:
   messaging-service:
     build:
       additional_contexts:
-        teamspace-one-base: "service:base"
+        teamspace-one-base: 'service:base'
       context: .
-      dockerfile: services/messaging/Dockerfile
-    container_name: teamspace-one-messaging-service
+      dockerfile: 'services/messaging/Dockerfile'
+    container_name: 'teamspace-one-messaging-service'
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3004
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/messaging_db?schema=public
-      NATS_URL: nats://nats:4222
-      REDIS_URL: redis://redis:6379
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: teamspace-one-messaging-service
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/messaging_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-messaging-service'
     ports:
-      - "3004:3004"
+      - '127.0.0.1:3004:3004'
     depends_on:
       - postgres
       - nats
@@ -179,22 +186,23 @@ services:
   realtime-service:
     build:
       additional_contexts:
-        teamspace-one-base: "service:base"
+        teamspace-one-base: 'service:base'
       context: .
-      dockerfile: services/realtime/Dockerfile
-    container_name: teamspace-one-realtime-service
+      dockerfile: 'services/realtime/Dockerfile'
+    container_name: 'teamspace-one-realtime-service'
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3005
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/realtime_db?schema=public
-      NATS_URL: nats://nats:4222
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-auth}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: teamspace-one-realtime-service
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/realtime_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-realtime-service'
     ports:
-      - "3005:3005"
+      - '3005:3005'
     depends_on:
       - postgres
       - nats
@@ -203,21 +211,22 @@ services:
   projects-service:
     build:
       additional_contexts:
-        teamspace-one-base: "service:base"
+        teamspace-one-base: 'service:base'
       context: .
-      dockerfile: services/projects/Dockerfile
-    container_name: teamspace-one-projects-service
+      dockerfile: 'services/projects/Dockerfile'
+    container_name: 'teamspace-one-projects-service'
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3006
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/project_db?schema=public
-      NATS_URL: nats://nats:4222
-      REDIS_URL: redis://redis:6379
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: teamspace-one-projects-service
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/project_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-projects-service'
     ports:
-      - "3006:3006"
+      - '127.0.0.1:3006:3006'
     depends_on:
       - postgres
       - nats
@@ -227,20 +236,21 @@ services:
   audit-service:
     build:
       additional_contexts:
-        teamspace-one-base: "service:base"
+        teamspace-one-base: 'service:base'
       context: .
-      dockerfile: services/audit/Dockerfile
-    container_name: teamspace-one-audit-service
+      dockerfile: 'services/audit/Dockerfile'
+    container_name: 'teamspace-one-audit-service'
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3007
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/audit_db?schema=public
-      NATS_URL: nats://nats:4222
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: teamspace-one-audit-service
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/audit_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-audit-service'
     ports:
-      - "3007:3007"
+      - '127.0.0.1:3007:3007'
     depends_on:
       - postgres
       - nats
@@ -249,18 +259,18 @@ services:
   notification-service:
     build:
       additional_contexts:
-        teamspace-one-base: "service:base"
+        teamspace-one-base: 'service:base'
       context: .
-      dockerfile: services/notification/Dockerfile
-    container_name: teamspace-one-notification-service
+      dockerfile: 'services/notification/Dockerfile'
+    container_name: 'teamspace-one-notification-service'
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3008
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/notification_db?schema=public
-      NATS_URL: nats://nats:4222
-      REDIS_URL: redis://redis:6379
-      AUTH_SERVICE_URL: http://auth-service:3002
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/notification_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
+      AUTH_SERVICE_URL: 'http://auth-service:3002'
       APP_URL: ${APP_URL:-https://app.teamspace.one}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -268,11 +278,11 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-no-reply@teamspace.one}
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: teamspace-one-notification-service
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-notification-service'
     ports:
-      - "3008:3008"
+      - '127.0.0.1:3008:3008'
     depends_on:
       - postgres
       - nats
@@ -280,16 +290,20 @@ services:
       - otel-collector
 
   livekit:
-    image: livekit/livekit-server:v1.7.2
-    container_name: teamspace-one-livekit
+    image: 'livekit/livekit-server:v1.7.2'
+    container_name: 'teamspace-one-livekit'
     restart: unless-stopped
-    command: ["--dev", "--bind", "0.0.0.0"]
+    environment:
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}
+      LIVEKIT_KEYS: '${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}:${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}'
+    command: [ '--bind', '0.0.0.0' ]
     ports:
-      - "7880:7880"
-      - "7881:7881/udp"
-      - "7882:7882"
+      - '7880:7880'
+      - '7881:7881/udp'
+      - '7882:7882'
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:7880"]
+      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:7880' ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -297,36 +311,39 @@ services:
   sfu:
     build:
       context: .
-      dockerfile: services/sfu/Dockerfile
-    container_name: teamspace-one-sfu
+      dockerfile: 'services/sfu/Dockerfile'
+    container_name: 'teamspace-one-sfu'
     restart: unless-stopped
     environment:
       SFU_HOST: 0.0.0.0
       SFU_PORT: 8443
+      SFU_TOKEN_SECRET: ${SFU_TOKEN_SECRET:?SFU_TOKEN_SECRET is required}
     ports:
-      - "8443:8443"
+      - '8443:8443'
 
   meeting-service:
     build:
       additional_contexts:
-        teamspace-one-base: "service:base"
+        teamspace-one-base: 'service:base'
       context: .
-      dockerfile: services/meeting/Dockerfile
-    container_name: teamspace-one-meeting-service
+      dockerfile: 'services/meeting/Dockerfile'
+    container_name: 'teamspace-one-meeting-service'
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3009
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/meeting_db?schema=public
-      NATS_URL: nats://nats:4222
-      REDIS_URL: redis://redis:6379
-      LIVEKIT_URL: ws://livekit:7880
-      LIVEKIT_API_KEY: devkey
-      LIVEKIT_API_SECRET: secret
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: teamspace-one-meeting-service
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/meeting_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
+      LIVEKIT_URL: 'ws://livekit:7880'
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}
+      SFU_TOKEN_SECRET: ${SFU_TOKEN_SECRET:?SFU_TOKEN_SECRET is required}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-meeting-service'
     ports:
-      - "3009:3009"
+      - '127.0.0.1:3009:3009'
     depends_on:
       - postgres
       - nats
@@ -337,52 +354,55 @@ services:
   file-storage-service:
     build:
       additional_contexts:
-        teamspace-one-base: "service:base"
+        teamspace-one-base: 'service:base'
       context: .
-      dockerfile: services/file-storage/Dockerfile
-    container_name: teamspace-one-file-storage-service
+      dockerfile: 'services/file-storage/Dockerfile'
+    container_name: 'teamspace-one-file-storage-service'
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3010
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/file_db?schema=public
-      NATS_URL: nats://nats:4222
-      REDIS_URL: redis://redis:6379
-      S3_ENDPOINT: http://minio:9000
-      S3_REGION: us-east-1
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
-      S3_BUCKET: teamspace-one
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/file_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
+      S3_ENDPOINT: 'http://minio:9000'
+      S3_REGION: 'us-east-1'
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
+      S3_BUCKET: 'teamspace-one'
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
       FILE_HLS_ENABLED: ${FILE_HLS_ENABLED:-false}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: teamspace-one-file-storage-service
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-file-storage-service'
     ports:
-      - "3010:3010"
+      - '127.0.0.1:3010:3010'
     depends_on:
       - postgres
       - nats
       - redis
+      - minio
       - otel-collector
 
   search-service:
     build:
       additional_contexts:
-        teamspace-one-base: "service:base"
+        teamspace-one-base: 'service:base'
       context: .
-      dockerfile: services/search/Dockerfile
-    container_name: teamspace-one-search-service
+      dockerfile: 'services/search/Dockerfile'
+    container_name: 'teamspace-one-search-service'
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3011
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/search_db?schema=public
-      NATS_URL: nats://nats:4222
-      REDIS_URL: redis://redis:6379
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: teamspace-one-search-service
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/search_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-search-service'
     ports:
-      - "3011:3011"
+      - '127.0.0.1:3011:3011'
     depends_on:
       - postgres
       - nats
@@ -392,23 +412,24 @@ services:
   ai-service:
     build:
       additional_contexts:
-        teamspace-one-base: "service:base"
+        teamspace-one-base: 'service:base'
       context: .
-      dockerfile: services/ai/Dockerfile
-    container_name: teamspace-one-ai-service
+      dockerfile: 'services/ai/Dockerfile'
+    container_name: 'teamspace-one-ai-service'
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3012
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_db?schema=public
-      NATS_URL: nats://nats:4222
-      REDIS_URL: redis://redis:6379
-      PROJECTS_SERVICE_URL: http://projects-service:3006
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/ai_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
+      PROJECTS_SERVICE_URL: 'http://projects-service:3006'
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: teamspace-one-ai-service
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-ai-service'
     ports:
-      - "3012:3012"
+      - '127.0.0.1:3012:3012'
     depends_on:
       - postgres
       - nats
@@ -418,33 +439,34 @@ services:
   api-gateway:
     build:
       additional_contexts:
-        teamspace-one-base: "service:base"
+        teamspace-one-base: 'service:base'
       context: .
-      dockerfile: services/api-gateway/Dockerfile
-    container_name: teamspace-one-api-gateway
+      dockerfile: 'services/api-gateway/Dockerfile'
+    container_name: 'teamspace-one-api-gateway'
     restart: unless-stopped
     environment:
       NODE_ENV: production
       GATEWAY_PORT: 3000
-      AUTH_SERVICE_URL: http://auth-service:3002
-      ORGANISATION_SERVICE_URL: http://organisation-service:3003
-      MESSAGING_SERVICE_URL: http://messaging-service:3004
-      REALTIME_SERVICE_URL: http://realtime-service:3005
-      PROJECTS_SERVICE_URL: http://projects-service:3006
-      AUDIT_SERVICE_URL: http://audit-service:3007
-      NOTIFICATION_SERVICE_URL: http://notification-service:3008
-      MEETING_SERVICE_URL: http://meeting-service:3009
-      FILE_STORAGE_SERVICE_URL: http://file-storage-service:3010
-      SEARCH_SERVICE_URL: http://search-service:3011
-      AI_SERVICE_URL: http://ai-service:3012
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-auth}
+      AUTH_SERVICE_URL: 'http://auth-service:3002'
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
+      MESSAGING_SERVICE_URL: 'http://messaging-service:3004'
+      REALTIME_SERVICE_URL: 'http://realtime-service:3005'
+      PROJECTS_SERVICE_URL: 'http://projects-service:3006'
+      AUDIT_SERVICE_URL: 'http://audit-service:3007'
+      NOTIFICATION_SERVICE_URL: 'http://notification-service:3008'
+      MEETING_SERVICE_URL: 'http://meeting-service:3009'
+      FILE_STORAGE_SERVICE_URL: 'http://file-storage-service:3010'
+      SEARCH_SERVICE_URL: 'http://search-service:3011'
+      AI_SERVICE_URL: 'http://ai-service:3012'
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
       RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
-      NATS_URL: nats://nats:4222
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: teamspace-one-api-gateway
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-api-gateway'
     ports:
-      - "3000:3000"
+      - '3000:3000'
     depends_on:
       - auth-service
       - organisation-service

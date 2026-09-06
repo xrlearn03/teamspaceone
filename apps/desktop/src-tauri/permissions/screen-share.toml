@@ -1,0 +1,7 @@
+[[permission]]
+identifier = "screen-share"
+description = "Allow screen share start/stop commands"
+commands.allow = [
+  "start-screen-share",
+  "stop-screen-share",
+]
