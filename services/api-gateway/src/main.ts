@@ -26,6 +26,26 @@ function adaptLogger(pino: Logger): LoggerService {
   };
 }
 
+/**
+ * Headers that must never be accepted from external clients. The gateway sets
+ * `x-actor-id` itself after verifying the JWT; `x-internal-api-key` and
+ * `x-internal-caller` are attached when proxying / used for service-to-service
+ * calls and must not be spoofable.
+ */
+const SPOOFABLE_HEADERS = [
+  'x-actor-id',
+  'x-internal-api-key',
+  'x-internal-caller',
+  'x-causation-id',
+] as const;
+
+function stripSpoofableHeaders(req: Request, _res: Response, next: NextFunction) {
+  for (const header of SPOOFABLE_HEADERS) {
+    delete req.headers[header];
+  }
+  next();
+}
+
 function createAuthMiddleware(jwtSecret: string) {
   return (req: Request, res: Response, next: NextFunction) => {
     const header = req.headers['authorization'] as string | undefined;
@@ -35,7 +55,7 @@ function createAuthMiddleware(jwtSecret: string) {
     }
     const token = header.slice(7);
     try {
-      const payload = verify(token, jwtSecret) as { sub: string };
+      const payload = verify(token, jwtSecret, { algorithms: ['HS256'] }) as { sub: string };
       req.headers['x-actor-id'] = payload.sub;
       next();
     } catch {
@@ -114,9 +134,20 @@ async function bootstrap() {
   // rate-limit bucket.
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
+  const config = app.get(ConfigService);
+
   // CORS must be set up before any proxy middlewares so preflight OPTIONS
   // are handled at the gateway, not forwarded to services.
-  app.enableCors({ origin: true, credentials: true });
+  const corsOrigins = (config.get<string>('CORS_ORIGINS') ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  app.enableCors({
+    origin: corsOrigins.length
+      ? corsOrigins
+      : ['http://localhost:1420', 'http://localhost:5173', 'http://tauri.localhost', 'tauri://localhost'],
+    credentials: true,
+  });
 
   const metrics = app.get(MetricsService);
   const requestCounter = metrics.counter(
@@ -144,13 +175,13 @@ async function bootstrap() {
 
   app.use(securityHeaders);
   app.use(metricsMiddleware);
+  app.use(stripSpoofableHeaders);
 
   app.use((req: Request, res: Response, next: NextFunction) => {
-    const middleware = new OrganisationContextMiddleware();
+    const middleware = new OrganisationContextMiddleware({ requireInternalApiKey: false });
     middleware.use(req, res, next);
   });
 
-  const config = app.get(ConfigService);
   const rateLimitWindow = config.get<number>('RATE_LIMIT_WINDOW_MS', 60000);
   const rateLimitMax = config.get<number>('RATE_LIMIT_MAX', 100);
   app.use(createRateLimitMiddleware(rateLimitWindow, rateLimitMax));
@@ -164,92 +195,56 @@ async function bootstrap() {
   const fileStorageUrl = config.get<string>('FILE_STORAGE_SERVICE_URL', 'http://localhost:3010');
   const searchUrl = config.get<string>('SEARCH_SERVICE_URL', 'http://localhost:3011');
   const aiUrl = config.get<string>('AI_SERVICE_URL', 'http://localhost:3012');
-  const jwtSecret = config.get<string>('JWT_SECRET', 'change-me');
+  const jwtSecret = config.get<string>('JWT_SECRET');
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET environment variable is required');
+  }
+  const internalApiKey = config.get<string>('INTERNAL_API_KEY');
+  if (!internalApiKey) {
+    throw new Error('INTERNAL_API_KEY environment variable is required');
+  }
 
-  app.use(
-    '/auth',
+  // Attach the shared internal key to every proxied request so downstream
+  // services can verify the request transited the gateway. Public routes
+  // (e.g. /auth, /shares) get the key but no x-actor-id.
+  const proxy = (target: string) =>
     createProxyMiddleware({
-      target: authUrl,
+      target,
       changeOrigin: true,
-    }),
-  );
+      on: {
+        proxyReq: (proxyReq) => {
+          proxyReq.setHeader('x-internal-api-key', internalApiKey);
+        },
+      },
+    });
+
+  app.use('/auth', proxy(authUrl));
 
   app.use('/organisations', createAuthMiddleware(jwtSecret));
-  app.use(
-    '/organisations',
-    createProxyMiddleware({
-      target: orgUrl,
-      changeOrigin: true,
-    }),
-  );
+  app.use('/organisations', proxy(orgUrl));
 
   app.use(['/channels', '/messages'], createAuthMiddleware(jwtSecret));
-  app.use(
-    ['/channels', '/messages'],
-    createProxyMiddleware({
-      target: msgUrl,
-      changeOrigin: true,
-    }),
-  );
+  app.use(['/channels', '/messages'], proxy(msgUrl));
 
   app.use(['/projects', '/tasks', '/project-comments', '/approvals'], createAuthMiddleware(jwtSecret));
-  app.use(
-    ['/projects', '/tasks', '/project-comments', '/approvals'],
-    createProxyMiddleware({
-      target: projectsUrl,
-      changeOrigin: true,
-    }),
-  );
+  app.use(['/projects', '/tasks', '/project-comments', '/approvals'], proxy(projectsUrl));
 
   app.use('/notifications', createAuthMiddleware(jwtSecret));
-  app.use(
-    '/notifications',
-    createProxyMiddleware({
-      target: notificationUrl,
-      changeOrigin: true,
-    }),
-  );
+  app.use('/notifications', proxy(notificationUrl));
 
   app.use('/meetings', createAuthMiddleware(jwtSecret));
-  app.use(
-    '/meetings',
-    createProxyMiddleware({
-      target: meetingUrl,
-      changeOrigin: true,
-    }),
-  );
+  app.use('/meetings', proxy(meetingUrl));
 
-  app.use(
-    '/shares',
-    createProxyMiddleware({ target: fileStorageUrl, changeOrigin: true }),
-  );
+  app.use('/shares', proxy(fileStorageUrl));
 
   app.use('/files', createAuthMiddleware(jwtSecret));
-  app.use(
-    '/files',
-    createProxyMiddleware({
-      target: fileStorageUrl,
-      changeOrigin: true,
-    }),
-  );
+  app.use('/files', proxy(fileStorageUrl));
 
   app.use('/search', createAuthMiddleware(jwtSecret));
-  app.use(
-    '/search',
-    createProxyMiddleware({
-      target: searchUrl,
-      changeOrigin: true,
-    }),
-  );
+  app.use('/search', proxy(searchUrl));
 
   app.use('/ai', createAuthMiddleware(jwtSecret));
-  app.use(
-    '/ai',
-    createProxyMiddleware({
-      target: aiUrl,
-      changeOrigin: true,
-    }),
-  );
+  app.use('/ai', proxy(aiUrl));
 
   app.enableShutdownHooks();
 
