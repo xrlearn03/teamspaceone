@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Teamspace One — native desktop collaboration platform",
   "scripts": {
-    "build:desktop": "pnpm --filter @teamspace-one/desktop tauri:build",
+   "build:desktop": "pnpm --filter @teamspace-one/authorization build && pnpm --filter @teamspace-one/desktop tauri:build",
     "dev:web": "pnpm --filter @teamspace-one/web dev",
     "build:web": "pnpm --filter @teamspace-one/web build",
     "dev:desktop": "pnpm --filter @teamspace-one/desktop tauri dev",
