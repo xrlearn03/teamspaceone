@@ -1,6 +1,32 @@
 import { create } from "zustand";
 import { getActiveOrganisation } from "../lib/api";
 
+function getSidebarWidthDefault() {
+  if (typeof window === "undefined") return 256;
+  return Math.min(288, Math.round(window.innerWidth * 0.18));
+}
+
+function getRightPanelWidthDefault() {
+  if (typeof window === "undefined") return 320;
+  return Math.min(320, Math.round(window.innerWidth * 0.18));
+}
+
+function clampSidebarWidth(width: number) {
+  const max =
+    typeof window === "undefined"
+      ? 400
+      : Math.min(360, Math.round(window.innerWidth * 0.25));
+  return Math.max(180, Math.min(max, width));
+}
+
+function clampRightPanelWidth(width: number) {
+  const max =
+    typeof window === "undefined"
+      ? 480
+      : Math.min(420, Math.round(window.innerWidth * 0.25));
+  return Math.max(220, Math.min(max, width));
+}
+
 export type View =
   | "home"
   | "inbox"
@@ -72,9 +98,9 @@ export const useUIStore = create<UIState>((set) => ({
   activeProjectId: null,
   activeMeetingId: null,
   sidebarCollapsed: false,
-  sidebarWidth: 256,
+  sidebarWidth: getSidebarWidthDefault(),
   rightPanelOpen: false,
-  rightPanelWidth: 320,
+  rightPanelWidth: getRightPanelWidthDefault(),
   searchOpen: false,
   connection: "connected",
   pendingCount: 0,
@@ -114,11 +140,11 @@ export const useUIStore = create<UIState>((set) => ({
   setPendingActionFilter: (filter) => set({ pendingActionFilter: filter }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setSidebarWidth: (width) =>
-    set({ sidebarWidth: Math.max(180, Math.min(400, width)) }),
+    set({ sidebarWidth: clampSidebarWidth(width) }),
   toggleRightPanel: () =>
     set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
   setRightPanelWidth: (width) =>
-    set({ rightPanelWidth: Math.max(240, Math.min(480, width)) }),
+    set({ rightPanelWidth: clampRightPanelWidth(width) }),
   setSearchOpen: (open) => set({ searchOpen: open }),
   setConnection: (connection) => set({ connection }),
   addNotificationToast: (toast) =>

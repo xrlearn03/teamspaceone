@@ -84,6 +84,10 @@
   border-color: var(--border);
 }
 
+html {
+  font-size: clamp(14px, calc(0.45vw + 10.8px), 18px);
+}
+
 html,
 body,
 #root {

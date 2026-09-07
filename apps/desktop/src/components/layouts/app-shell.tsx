@@ -53,18 +53,33 @@ const screens: Record<View, React.ComponentType> = {
 export function AppShell() {
   useTheme();
 
-  const { activeView, rightPanelOpen, searchOpen, connection, setSearchOpen, setActiveView, setConnection } =
-    useUIStore(
-      useShallow((s) => ({
-        activeView: s.activeView,
-        rightPanelOpen: s.rightPanelOpen,
-        searchOpen: s.searchOpen,
-        connection: s.connection,
-        setSearchOpen: s.setSearchOpen,
-        setActiveView: s.setActiveView,
-        setConnection: s.setConnection,
-      })),
-    );
+  const {
+    activeView,
+    rightPanelOpen,
+    searchOpen,
+    connection,
+    sidebarWidth,
+    rightPanelWidth,
+    setSearchOpen,
+    setActiveView,
+    setConnection,
+    setSidebarWidth,
+    setRightPanelWidth,
+  } = useUIStore(
+    useShallow((s) => ({
+      activeView: s.activeView,
+      rightPanelOpen: s.rightPanelOpen,
+      searchOpen: s.searchOpen,
+      connection: s.connection,
+      sidebarWidth: s.sidebarWidth,
+      rightPanelWidth: s.rightPanelWidth,
+      setSearchOpen: s.setSearchOpen,
+      setActiveView: s.setActiveView,
+      setConnection: s.setConnection,
+      setSidebarWidth: s.setSidebarWidth,
+      setRightPanelWidth: s.setRightPanelWidth,
+    })),
+  );
 
   useEffect(() => {
     function onOffline() {
@@ -96,6 +111,15 @@ export function AppShell() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [setSearchOpen, setActiveView]);
+
+  useEffect(() => {
+    function onResize() {
+      setSidebarWidth(sidebarWidth);
+      setRightPanelWidth(rightPanelWidth);
+    }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [setSidebarWidth, setRightPanelWidth, sidebarWidth, rightPanelWidth]);
 
   const { user } = usePermissionContext();
   const viewAllowed = canAccessView(user, activeView);

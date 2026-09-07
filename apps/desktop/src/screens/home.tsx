@@ -20,7 +20,7 @@ export function HomeScreen() {
     user?.firstName ?? user?.email?.split("@")[0] ?? "there";
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto">
+    <div className="mx-auto flex h-full max-w-[1600px] flex-col overflow-y-auto">
       <header className="sticky top-0 z-10 border-b bg-background/95 px-6 py-4 backdrop-blur">
         <h1 className="text-xl font-semibold text-text">
           {getGreeting()}, {firstName}
