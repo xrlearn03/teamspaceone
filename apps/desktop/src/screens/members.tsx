@@ -26,11 +26,15 @@ function getInitials(_member: OrganisationMember, user?: UserDto) {
   return name.slice(0, 2).toUpperCase();
 }
 
+function formatRoleName(name: string) {
+  return name.toLowerCase() === "owner" ? "super admin" : name;
+}
+
 export function MemberDirectoryScreen() {
   const organisationId = useUIStore((s) => s.organisationId) ?? undefined;
   const { data: organisations } = useOrganisations();
   const { data: members, isLoading: membersLoading, error: membersError } = useMembers(organisationId);
-  const { data: roles } = useRoles(organisationId);
+  const { data: roles, isLoading: rolesLoading, error: rolesError } = useRoles(organisationId);
   const { data: invitations } = useInvitations(organisationId);
   const createInvitation = useCreateInvitation();
   const [query, setQuery] = useState("");
@@ -105,7 +109,7 @@ export function MemberDirectoryScreen() {
                         <AvatarFallback>{getInitials(member, user)}</AvatarFallback>
                       </Avatar>
                       <span className="flex-1 truncate text-sm text-text">{getDisplayName(member, user)}</span>
-                      <Badge variant="secondary" className="capitalize">{member.role.name}</Badge>
+                      <Badge variant="secondary" className="capitalize">{formatRoleName(member.role.name)}</Badge>
                     </div>
                   );
                 })}
@@ -124,7 +128,7 @@ export function MemberDirectoryScreen() {
                       </Avatar>
                       <span className="flex-1 truncate text-sm text-text">{getDisplayName(member, user)}</span>
                       <Badge variant="warning">External</Badge>
-                      <Badge variant="secondary" className="capitalize">{member.role.name}</Badge>
+                      <Badge variant="secondary" className="capitalize">{formatRoleName(member.role.name)}</Badge>
                     </div>
                   );
                 })}
@@ -159,12 +163,13 @@ export function MemberDirectoryScreen() {
           </DialogHeader>
           <div className="space-y-3 px-4 pb-4">
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email address" autoFocus />
-            <select className={selectClass} value={roleId} onChange={(e) => setRoleId(e.target.value)}>
-              <option value="">Select a role</option>
+            <select className={selectClass} value={roleId} onChange={(e) => setRoleId(e.target.value)} disabled={rolesLoading}>
+              <option value="">{rolesLoading ? "Loading roles…" : "Select a role"}</option>
               {roles?.map((role) => (
                 <option key={role.id} value={role.id}>{role.name}</option>
               ))}
             </select>
+            {rolesError ? <p className="text-sm text-error">Failed to load roles: {rolesError.message}</p> : null}
             {createInvitation.error ? <p className="text-sm text-error">{createInvitation.error.message}</p> : null}
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setInviteOpen(false)}>Cancel</Button>

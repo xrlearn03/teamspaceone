@@ -1011,7 +1011,7 @@ export function useAttendance(params?: { employeeId?: string; from?: string; to?
   return useQuery({
     queryKey: ["hrms", "attendance", orgId(), params ?? {}],
     queryFn: () => api.getAttendance(params),
-    enabled: hrmsEnabled(),
+    enabled: hrmsEnabled() && Boolean(params?.employeeId),
     staleTime: 30 * 1000,
   });
 }

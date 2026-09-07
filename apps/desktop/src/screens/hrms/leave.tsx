@@ -108,7 +108,9 @@ export function LeaveSection() {
   const review = useReviewLeaveRequest();
   const [applyOpen, setApplyOpen] = useState(false);
 
-  if (balances.isLoading || myRequests.isLoading) return <SectionSkeleton />;
+  if (me.isLoading || balances.isLoading || myRequests.isLoading) return <SectionSkeleton />;
+  if (me.isError) return <SectionError onRetry={() => me.refetch()} message={me.error?.message} />;
+  if (!me.data) return <EmptyState icon={CalendarClock} title="No employee record" description="Leave management is only available for employees." />;
   if (balances.isError) return <SectionError onRetry={() => balances.refetch()} />;
 
   return (

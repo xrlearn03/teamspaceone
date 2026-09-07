@@ -2,6 +2,7 @@ import { usePermissionContext } from "@teamspace-one/authorization/react";
 import { LayoutDashboard } from "lucide-react";
 import { useMe } from "../hooks/api";
 import { EmptyState } from "../components/ui/empty-state";
+import { cn } from "../lib/utils";
 import { filterDashboardWidgets } from "../features/dashboard/registry";
 
 function getGreeting() {
@@ -31,11 +32,11 @@ export function HomeScreen() {
       </header>
 
       {widgets.length > 0 ? (
-        <div className="grid auto-rows-min grid-cols-1 gap-4 p-6 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid auto-rows-[minmax(14rem,1fr)] grid-cols-1 gap-4 p-6 sm:grid-cols-2 xl:grid-cols-3">
           {widgets.map((widget) => {
             const WidgetComponent = widget.component;
             return (
-              <div key={widget.id} className={widget.gridClass}>
+              <div key={widget.id} className={cn("h-full", widget.gridClass)}>
                 <WidgetComponent />
               </div>
             );

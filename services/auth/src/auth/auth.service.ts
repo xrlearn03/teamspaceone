@@ -329,6 +329,12 @@ export class AuthService {
     return this.toProfileDto(user);
   }
 
+  async findByIdInternal(id: string): Promise<UserDto | null> {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) return null;
+    return this.toDto(user);
+  }
+
   async findMany(ids: string[]): Promise<UserDto[]> {
     if (!ids || ids.length === 0) {
       throw new BadRequestException('ids query parameter is required');

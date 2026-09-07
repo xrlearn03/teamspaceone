@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { Body, Controller, ForbiddenException, Get, Headers, Param, Patch, Post, Query, UnauthorizedException, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Headers, NotFoundException, Param, Patch, Post, Query, UnauthorizedException, UseGuards, Request } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service.js';
 import { AuthGuard } from './auth.guard.js';
@@ -42,17 +42,9 @@ export class AuthController {
     return this.auth.redeemInvitation(dto, ctx?.correlationId ?? correlationId);
   }
 
-  /**
-   * Service-to-service only: provision a user account for an admin-driven
-   * invite. The gateway strips `x-internal-caller` from inbound client
-   * traffic, so only trusted services can satisfy both checks.
-   */
-  @Post('internal/provision')
-  async provisionUser(
-    @Body() dto: ProvisionUserDto,
-    @Headers('x-internal-api-key') internalApiKey?: string,
-    @Headers('x-internal-caller') internalCaller?: string,
-    @Headers('x-correlation-id') correlationId?: string,
+  private assertInternal(
+    internalApiKey: string | undefined,
+    internalCaller: string | undefined,
   ) {
     const expected = this.config.get<string>('INTERNAL_API_KEY');
     if (!expected) {
@@ -66,8 +58,40 @@ export class AuthController {
     if (!timingSafeEqual(a, b)) {
       throw new ForbiddenException('Forbidden');
     }
+  }
+
+  /**
+   * Service-to-service only: provision a user account for an admin-driven
+   * invite. The gateway strips `x-internal-caller` from inbound client
+   * traffic, so only trusted services can satisfy both checks.
+   */
+  @Post('internal/provision')
+  async provisionUser(
+    @Body() dto: ProvisionUserDto,
+    @Headers('x-internal-api-key') internalApiKey?: string,
+    @Headers('x-internal-caller') internalCaller?: string,
+    @Headers('x-correlation-id') correlationId?: string,
+  ) {
+    this.assertInternal(internalApiKey, internalCaller);
     const ctx = OrganisationContext.get();
     return this.auth.provisionUser(dto, ctx?.correlationId ?? correlationId);
+  }
+
+  /**
+   * Service-to-service only: fetch a user record by id.
+   */
+  @Get('internal/users/:id')
+  async internalFindById(
+    @Param('id') id: string,
+    @Headers('x-internal-api-key') internalApiKey?: string,
+    @Headers('x-internal-caller') internalCaller?: string,
+  ) {
+    this.assertInternal(internalApiKey, internalCaller);
+    const user = await this.auth.findByIdInternal(id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user;
   }
 
   @Post('refresh')

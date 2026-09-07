@@ -7,9 +7,11 @@ import {
 import { AckPolicy, DeliverPolicy, type JsMsg, type JetStreamSubscription } from 'nats';
 import { ModuleRef } from '@nestjs/core';
 import { isEventEnvelope, type EventEnvelope } from '@teamspace-one/event-contracts';
+import { Prisma } from '#prisma';
 import { NatsClientService } from './nats-client.service.js';
 import { InboxService } from '../inbox/inbox.service.js';
 import { LifecycleService } from '../hrms/lifecycle.service.js';
+import { EmployeesService } from '../hrms/employees.service.js';
 
 const MAX_DELIVER = 5;
 const ACK_WAIT_NANOS = 30_000_000_000;
@@ -107,19 +109,49 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
    * ModuleRef to avoid an EventsModule ↔ HrmsModule provider cycle.
    */
   private handlerFor(envelope: EventEnvelope) {
-    if (envelope.eventType !== 'teamspace-one.hrms.employee.created') {
-      return undefined;
+    if (envelope.eventType === 'teamspace-one.hrms.employee.created') {
+      const employeeId = envelope.resourceId;
+      if (typeof employeeId !== 'string' || !employeeId) return undefined;
+      return async () => {
+        const lifecycle = this.moduleRef.get(LifecycleService, { strict: false });
+        await lifecycle.autoStartForEmployee(
+          envelope.organisationId,
+          employeeId,
+          envelope.actorId ?? undefined,
+        );
+      };
     }
-    const employeeId = envelope.resourceId;
-    if (typeof employeeId !== 'string' || !employeeId) return undefined;
-    return async () => {
-      const lifecycle = this.moduleRef.get(LifecycleService, { strict: false });
-      await lifecycle.autoStartForEmployee(
-        envelope.organisationId,
-        employeeId,
-        envelope.actorId ?? undefined,
-      );
-    };
+
+    if (envelope.eventType === 'teamspace-one.hrms.employee.create') {
+      const payload = (envelope.payload ?? {}) as Record<string, unknown>;
+      if (
+        typeof payload.userId !== 'string' ||
+        typeof payload.firstName !== 'string' ||
+        typeof payload.lastName !== 'string'
+      ) {
+        return undefined;
+      }
+      return async (tx: Prisma.TransactionClient) => {
+        const employees = this.moduleRef.get(EmployeesService, { strict: false });
+        if (!employees) return;
+        await employees.create(
+          {
+            organisationId: envelope.organisationId,
+            actorId: envelope.actorId ?? '',
+            correlationId: envelope.correlationId ?? undefined,
+            userId: payload.userId as string,
+            firstName: payload.firstName as string,
+            lastName: payload.lastName as string,
+            membershipId: typeof payload.membershipId === 'string' ? payload.membershipId : undefined,
+            workEmail: typeof payload.workEmail === 'string' ? payload.workEmail : undefined,
+            joiningDate: new Date(),
+          },
+          tx,
+        );
+      };
+    }
+
+    return undefined;
   }
 
   private async sendToDeadLetter(jsMsg: JsMsg, envelope: EventEnvelope, reason: string) {

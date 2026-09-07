@@ -160,9 +160,14 @@ export class EmployeesService {
     return sanitizeEmployee(actorEmployee, user);
   }
 
-  async create(input: CreateEmployeeInput) {
-    const employee = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const created = await tx.employee.create({
+  async create(input: CreateEmployeeInput, tx?: Prisma.TransactionClient) {
+    const run = async (t: Prisma.TransactionClient) => {
+      const existing = await t.employee.findUnique({
+        where: { organisationId_userId: { organisationId: input.organisationId, userId: input.userId } },
+      });
+      if (existing) return existing;
+
+      const created = await t.employee.create({
         data: {
           organisationId: input.organisationId,
           userId: input.userId,
@@ -187,7 +192,7 @@ export class EmployeesService {
         },
       });
 
-      await tx.employeeHistory.create({
+      await t.employeeHistory.create({
         data: {
           organisationId: input.organisationId,
           employeeId: created.id,
@@ -210,12 +215,13 @@ export class EmployeesService {
           departmentId: created.departmentId,
         },
       });
-      await this.outbox.createEvent(tx, finalEnvelope, finalEnvelope.eventType);
+      await this.outbox.createEvent(t, finalEnvelope, finalEnvelope.eventType);
 
       return created;
-    });
+    };
 
-    return employee;
+    if (tx) return run(tx);
+    return this.prisma.$transaction(run);
   }
 
   async update(

@@ -276,7 +276,7 @@ export function MyTasksWidget() {
       <CardContent>
         {tasks && tasks.length > 0 ? (
           <div className="space-y-2">
-            {tasks.map((t) => (
+            {tasks.slice(0, 1).map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -339,7 +339,7 @@ export function UpcomingMeetingsWidget() {
       <CardContent>
         {upcomingMeetings.length > 0 ? (
           <div className="space-y-2">
-            {upcomingMeetings.slice(0, 6).map((m) => (
+            {upcomingMeetings.slice(0, 1).map((m) => (
               <button
                 key={m.id}
                 type="button"
@@ -382,7 +382,7 @@ export function RecentConversationsWidget() {
       if (seen.has(m.senderId)) continue;
       seen.add(m.senderId);
       items.push(m);
-      if (items.length >= 6) break;
+      if (items.length >= 1) break;
     }
     return items;
   }, [messages, user]);
@@ -440,7 +440,7 @@ export function RecentProjectsWidget() {
       <CardContent>
         {projects && projects.length > 0 ? (
           <div className="space-y-3">
-            {projects.map((p) => (
+            {projects.slice(0, 1).map((p) => (
               <button
                 key={p.id}
                 type="button"
@@ -529,7 +529,7 @@ export function DailyBriefWidget() {
           <p className="text-sm leading-relaxed text-text-secondary">Generating daily brief...</p>
         ) : digest ? (
           <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
-            {digest.sections.map((section) => (
+            {digest.sections.slice(0, 1).map((section) => (
               <div key={section.title} className="rounded-md border bg-surface-elevated p-3 text-sm">
                 <p className="font-medium text-text">{section.title}</p>
                 <ul className="mt-1.5 space-y-1">
@@ -614,7 +614,7 @@ export function NotificationsWidget() {
       <CardContent>
         {notifications && notifications.length > 0 ? (
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            {notifications.slice(0, 8).map((n) => (
+            {notifications.slice(0, 1).map((n) => (
               <button
                 key={n.id}
                 type="button"
@@ -658,7 +658,7 @@ export function MyLeaveWidget() {
           <p className="text-sm text-text-secondary">Loading balances…</p>
         ) : balances && balances.length > 0 ? (
           <div className="space-y-2">
-            {balances.slice(0, 5).map((b) => (
+            {balances.slice(0, 1).map((b) => (
               <div key={b.id} className="flex items-center justify-between">
                 <span className="text-sm text-text">{b.leaveTypeName ?? "Leave"}</span>
                 <span className="text-xs text-text-muted">
@@ -684,12 +684,16 @@ export function MyLeaveWidget() {
 
 export function MyAttendanceWidget() {
   const setActiveView = useUIStore((s) => s.setActiveView);
-  const { data: me } = useMyEmployee();
+  const { data: me, isLoading: meLoading, isError: meError, error: meErrorDetail } = useMyEmployee();
   const today = new Date().toISOString().slice(0, 10);
-  const { data: records, isLoading } = useAttendance({ employeeId: me?.id, from: today, to: today });
+  const {
+    data: records,
+    isLoading: attendanceLoading,
+    isError: attendanceError,
+  } = useAttendance({ employeeId: me?.id, from: today, to: today });
   const checkin = useAttendanceCheckin();
   const checkout = useAttendanceCheckout();
-  const record = records?.[0];
+  const record = me?.id ? records?.[0] : undefined;
 
   return (
     <Card>
@@ -698,8 +702,12 @@ export function MyAttendanceWidget() {
         {record ? <Badge variant={record.status === "present" ? "success" : "secondary"}>{record.status}</Badge> : null}
       </CardHeader>
       <CardContent>
-        {isLoading ? (
+        {meLoading || attendanceLoading ? (
           <p className="text-sm text-text-secondary">Loading…</p>
+        ) : meError ? (
+          <p className="text-sm text-error">{meErrorDetail?.message ?? "Couldn’t load employee record."}</p>
+        ) : attendanceError ? (
+          <p className="text-sm text-error">Couldn’t load today&apos;s attendance.</p>
         ) : (
           <div className="space-y-1 text-sm text-text-secondary">
             <p>
@@ -712,9 +720,11 @@ export function MyAttendanceWidget() {
             </p>
           </div>
         )}
+        {checkin.error ? <p className="mt-2 text-xs text-error">{checkin.error.message}</p> : null}
+        {checkout.error ? <p className="mt-2 text-xs text-error">{checkout.error.message}</p> : null}
         <div className="mt-3 flex flex-wrap gap-2">
           <PermissionGate permission="hrms.attendance.checkin">
-            {!record?.checkInAt ? (
+            {me?.id && !record?.checkInAt ? (
               <Button size="sm" disabled={checkin.isPending} onClick={() => checkin.mutate()}>
                 <LogIn className="mr-1.5 h-4 w-4" />
                 Check in
@@ -722,7 +732,7 @@ export function MyAttendanceWidget() {
             ) : null}
           </PermissionGate>
           <PermissionGate permission="hrms.attendance.checkout">
-            {record?.checkInAt && !record?.checkOutAt ? (
+            {me?.id && record?.checkInAt && !record?.checkOutAt ? (
               <Button variant="secondary" size="sm" disabled={checkout.isPending} onClick={() => checkout.mutate()}>
                 <LogOut className="mr-1.5 h-4 w-4" />
                 Check out
@@ -780,7 +790,7 @@ export function HrmsOverviewWidget() {
             </div>
             {overview.byDepartment.length > 0 ? (
               <div className="mt-3 space-y-1.5">
-                {overview.byDepartment.slice(0, 5).map((d) => (
+                {overview.byDepartment.slice(0, 3).map((d) => (
                   <div key={d.name} className="flex items-center justify-between">
                     <span className="text-sm text-text-secondary">{d.name}</span>
                     <span className="text-xs text-text-muted">{d.count}</span>
@@ -1089,7 +1099,7 @@ export function OpenPositionsWidget() {
           <p className="text-sm text-text-secondary">Loading…</p>
         ) : jobs && jobs.length > 0 ? (
           <div className="space-y-2">
-            {jobs.slice(0, 5).map((j) => (
+            {jobs.slice(0, 1).map((j) => (
               <div key={j.id} className="flex items-center justify-between">
                 <span className="truncate text-sm text-text">{j.title}</span>
                 <span className="text-xs text-text-muted">{j.departmentName ?? ""}</span>
@@ -1161,7 +1171,7 @@ export function InterviewsTodayWidget() {
           <p className="text-sm text-text-secondary">Loading…</p>
         ) : sessions && sessions.length > 0 ? (
           <div className="space-y-2">
-            {sessions.slice(0, 5).map((s) => (
+            {sessions.slice(0, 1).map((s) => (
               <button
                 key={s.id}
                 type="button"

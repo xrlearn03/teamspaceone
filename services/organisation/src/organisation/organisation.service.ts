@@ -42,6 +42,57 @@ export class OrganisationService {
     return headers;
   }
 
+  private shouldAutoProvisionEmployee(roleCategory: string) {
+    return roleCategory !== 'external' && roleCategory !== 'guest';
+  }
+
+  private async fetchAuthUser(actorId: string, userId: string, organisationId: string) {
+    const authUrl = this.config.get<string>('AUTH_SERVICE_URL');
+    if (!authUrl) {
+      throw new BadGatewayException('Auth service integration is not configured');
+    }
+    const res = await fetch(`${authUrl}/auth/internal/users/${encodeURIComponent(userId)}`, {
+      headers: this.s2sHeaders(actorId, organisationId),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => 'User lookup failed');
+      throw new BadGatewayException(`User lookup failed: ${body}`);
+    }
+    const user = (await res.json()) as { email: string; firstName: string | null; lastName: string | null };
+    return {
+      email: user.email,
+      firstName: user.firstName ?? user.email.split('@')[0] ?? 'Unknown',
+      lastName: user.lastName ?? '',
+    };
+  }
+
+  private emitEmployeeCreate(
+    tx: Prisma.TransactionClient,
+    roleCategory: string,
+    userId: string,
+    membershipId: string,
+    organisationId: string,
+    actorId: string,
+    names: { firstName: string; lastName: string; workEmail: string },
+  ) {
+    if (!this.shouldAutoProvisionEmployee(roleCategory)) return;
+    const envelope = createEventEnvelope({
+      eventType: Subjects.HRMS_EMPLOYEE_CREATE,
+      organisationId,
+      actorId,
+      resourceType: 'employee',
+      resourceId: userId,
+      payload: {
+        userId,
+        membershipId,
+        firstName: names.firstName,
+        lastName: names.lastName,
+        workEmail: names.workEmail,
+      },
+    });
+    return this.outbox.createEvent(tx, envelope, Subjects.HRMS_EMPLOYEE_CREATE);
+  }
+
   async create(
     dto: CreateOrganisationDto,
     ownerId: string,
@@ -55,6 +106,7 @@ export class OrganisationService {
     }
 
     const id = randomUUID();
+    const ownerUser = await this.fetchAuthUser(ownerId, ownerId, id);
 
     const orgEnvelope = createEventEnvelope({
       eventType: Subjects.ORGANISATION_CREATED,
@@ -95,6 +147,16 @@ export class OrganisationService {
 
       await this.outbox.createEvent(tx, orgEnvelope, Subjects.ORGANISATION_CREATED);
 
+      await this.emitEmployeeCreate(
+        tx,
+        ownerRole.roleCategory ?? 'administrative',
+        ownerId,
+        membership.id,
+        id,
+        ownerId,
+        { firstName: ownerUser.firstName, lastName: ownerUser.lastName, workEmail: ownerUser.email },
+      );
+
       return { organisation: org, membership };
     });
 
@@ -114,9 +176,13 @@ export class OrganisationService {
     if (!role) {
       throw new BadRequestException('Role does not belong to this organisation');
     }
-    // Employee/member/external/candidate/guest access is provisioned through
-    // dedicated onboarding workflows, not administrative member management.
+    // Employee/candidate access is provisioned through HR/recruitment workflows.
+    // Other role categories are also auto-provisioned as employees (except external).
     assertAdminManagedCategory(role.roleCategory);
+
+    const user = this.shouldAutoProvisionEmployee(role.roleCategory)
+      ? await this.fetchAuthUser(actorId, dto.userId, organisationId)
+      : null;
 
     const membership = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.organisationMembership.findUnique({
@@ -148,6 +214,18 @@ export class OrganisationService {
 
       await this.outbox.createEvent(tx, envelope, Subjects.ORGANISATION_MEMBER_ADDED);
 
+      if (user) {
+        await this.emitEmployeeCreate(
+          tx,
+          role.roleCategory,
+          dto.userId,
+          created.id,
+          organisationId,
+          actorId,
+          { firstName: user.firstName, lastName: user.lastName, workEmail: user.email },
+        );
+      }
+
       return created;
     });
 
@@ -159,7 +237,8 @@ export class OrganisationService {
    * (temporary password for new accounts), creates the membership, and emits
    * MEMBER_INVITED so the notification service emails the credentials.
    * Employee/candidate roles are not allowed here — they onboard through the
-   * HR and recruitment workflows respectively.
+   * HR and recruitment workflows respectively. All other invited roles
+   * (except external) are auto-provisioned as HRMS employees.
    */
   async inviteMember(
     organisationId: string,
@@ -239,6 +318,18 @@ export class OrganisationService {
         },
       });
       await this.outbox.createEvent(tx, envelope, Subjects.MEMBER_INVITED);
+
+      const firstName = (dto.firstName ?? '').trim() || email.split('@')[0] || 'Unknown';
+      const lastName = (dto.lastName ?? '').trim();
+      await this.emitEmployeeCreate(
+        tx,
+        role.roleCategory,
+        provisioned.user.id,
+        created.id,
+        organisationId,
+        actorId,
+        { firstName, lastName, workEmail: provisioned.user.email },
+      );
 
       await tx.auditLog.create({
         data: {

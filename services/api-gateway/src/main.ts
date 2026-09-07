@@ -182,8 +182,10 @@ async function bootstrap() {
     middleware.use(req, res, next);
   });
 
-  const rateLimitWindow = config.get<number>('RATE_LIMIT_WINDOW_MS', 60000);
-  const rateLimitMax = config.get<number>('RATE_LIMIT_MAX', 100);
+  // ConfigService returns raw env strings — coerce explicitly, otherwise
+  // `now + windowMs` below string-concatenates and resetAt never expires.
+  const rateLimitWindow = Number(config.get('RATE_LIMIT_WINDOW_MS')) || 60000;
+  const rateLimitMax = Number(config.get('RATE_LIMIT_MAX')) || 100;
   app.use(createRateLimitMiddleware(rateLimitWindow, rateLimitMax));
 
   const authUrl = config.get<string>('AUTH_SERVICE_URL', 'http://localhost:3002');
