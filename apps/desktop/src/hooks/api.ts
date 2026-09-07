@@ -83,6 +83,50 @@ export function useRoles(organisationId?: string) {
   return useQuery({ queryKey: ["roles", organisationId], queryFn: () => api.getRoles(organisationId as string), enabled: Boolean(organisationId) });
 }
 
+export function usePermissionsList(organisationId?: string) {
+  return useQuery({
+    queryKey: ["permissions", organisationId],
+    queryFn: () => api.getPermissions(organisationId as string),
+    enabled: Boolean(organisationId),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateRole() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; name: string; description?: string; permissionIds: string[]; scopes?: api.UserDataScope[] }) =>
+      api.createRole(args.organisationId, args),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["roles", args.organisationId] }),
+  });
+}
+
+export function useUpdateRole() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; roleId: string; name?: string; description?: string; permissionIds?: string[]; scopes?: api.UserDataScope[] }) =>
+      api.updateRole(args.organisationId, args.roleId, args),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["roles", args.organisationId] }),
+  });
+}
+
+export function useDeleteRole() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; roleId: string }) => api.deleteRole(args.organisationId, args.roleId),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["roles", args.organisationId] }),
+  });
+}
+
+export function useUpdateMemberRole() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; membershipId: string; roleId: string }) =>
+      api.updateMemberRole(args.organisationId, args.membershipId, args.roleId),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["members", args.organisationId] }),
+  });
+}
+
 export function useCreateWorkspace() {
   const client = useQueryClient();
   return useMutation({
@@ -761,8 +805,8 @@ export function useDeleteFile() {
 
 export function useUploadFile() {
   const client = useQueryClient();
-  return useMutation({
-    mutationFn: api.uploadFile,
+  return useMutation<api.FileRecord, unknown, { file: File; resource?: api.UploadResource }>({
+    mutationFn: (args) => api.uploadFile(args.file, args.resource),
     onSuccess: () =>
       client.invalidateQueries({ queryKey: ["files", orgId()] }),
   });

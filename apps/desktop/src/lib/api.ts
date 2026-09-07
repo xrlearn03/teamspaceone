@@ -287,12 +287,31 @@ export interface Workspace {
   createdAt: string;
 }
 
+export interface Permission {
+  id: string;
+  module: string;
+  resource: string;
+  action: string;
+  description?: string | null;
+}
+
+export interface RolePermission {
+  id: string;
+  roleId: string;
+  permissionId: string;
+  permission: Permission;
+}
+
 export interface OrganisationRole {
   id: string;
   organisationId: string;
   name: string;
-  permissions: string[];
+  description?: string | null;
+  isSystem?: boolean;
   isDefault: boolean;
+  rolePermissions: RolePermission[];
+  roleScopes: UserDataScope[];
+  createdAt: string;
 }
 
 export interface Client {
@@ -743,6 +762,26 @@ export function getRoles(organisationId: string) {
   return apiRequest<OrganisationRole[]>(`/organisations/${organisationId}/roles`);
 }
 
+export function getPermissions(organisationId: string) {
+  return apiRequest<Permission[]>(`/organisations/${organisationId}/permissions`);
+}
+
+export function createRole(organisationId: string, body: { name: string; description?: string; permissionIds: string[]; scopes?: UserDataScope[] }) {
+  return apiRequest<OrganisationRole>(`/organisations/${organisationId}/roles`, { method: "POST", body });
+}
+
+export function updateRole(organisationId: string, roleId: string, body: { name?: string; description?: string; permissionIds?: string[]; scopes?: UserDataScope[] }) {
+  return apiRequest<OrganisationRole>(`/organisations/${organisationId}/roles/${roleId}`, { method: "PATCH", body });
+}
+
+export function deleteRole(organisationId: string, roleId: string) {
+  return apiRequest<void>(`/organisations/${organisationId}/roles/${roleId}`, { method: "DELETE" });
+}
+
+export function updateMemberRole(organisationId: string, membershipId: string, roleId: string) {
+  return apiRequest<void>(`/organisations/${organisationId}/members/${membershipId}/role`, { method: "PATCH", body: { roleId } });
+}
+
 export async function createWorkspace(organisationId: string | null, name: string): Promise<Workspace> {
   let orgId = organisationId ?? getActiveOrganisation();
   if (!orgId) {
@@ -995,7 +1034,13 @@ async function sha256Hex(file: File): Promise<string | undefined> {
   }
 }
 
-export async function uploadFile(file: File) {
+export interface UploadResource {
+  resourceType: "channel" | "project" | "task" | "meeting";
+  resourceId: string;
+  workspaceId?: string;
+}
+
+export async function uploadFile(file: File, resource?: UploadResource) {
   const mimeType = file.type || "application/octet-stream";
   const sha256 = await sha256Hex(file);
 
@@ -1007,6 +1052,9 @@ export async function uploadFile(file: File) {
         mimeType,
         size: file.size,
         category: "attachment",
+        resourceType: resource?.resourceType,
+        resourceId: resource?.resourceId,
+        workspaceId: resource?.workspaceId,
         sha256,
       },
     });

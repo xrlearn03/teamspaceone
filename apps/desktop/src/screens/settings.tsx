@@ -118,7 +118,7 @@ function AccountSettings({ user }: { user?: UserDto }) {
   function onAvatarSelected(file?: File) {
     if (!file) return;
     if (!file.type.startsWith("image/")) return;
-    upload.mutate(file, {
+    upload.mutate({ file }, {
       onSuccess: (record) => update.mutate({ avatarFileId: record.id }),
     });
   }
@@ -162,7 +162,7 @@ function AccountSettings({ user }: { user?: UserDto }) {
       </div>
       <div className="mt-4 grid max-w-lg grid-cols-2 gap-3"><Input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="First name" /><Input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Last name" /></div>
       {update.error ? <p className="mt-2 text-sm text-error">{update.error.message}</p> : null}
-      {upload.error ? <p className="mt-2 text-sm text-error">{upload.error.message}</p> : null}
+      {upload.error ? <p className="mt-2 text-sm text-error">{upload.error instanceof Error ? upload.error.message : "Upload failed"}</p> : null}
       <Button className="mt-3" disabled={update.isPending} onClick={() => update.mutate({ firstName, lastName })}>Save profile</Button>
     </SettingsSection>
   );

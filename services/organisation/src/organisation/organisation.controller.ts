@@ -10,6 +10,8 @@ import { CreateInvitationDto } from './dto/create-invitation.dto.js';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto.js';
 import { CreateClientDto } from './dto/create-client.dto.js';
 import { UpdateClientDto } from './dto/update-client.dto.js';
+import { CreateRoleDto, UpdateRoleDto } from './dto/role.dto.js';
+import { UpdateMemberRoleDto } from './dto/update-member-role.dto.js';
 
 @UseGuards(OrganisationPermissionGuard)
 @Controller('organisations')
@@ -192,6 +194,62 @@ export class OrganisationController {
   ) {
     this.assertOrg(id, ctx);
     return this.organisation.listMembers(ctx.organisationId, ctx.actorId as string);
+  }
+
+  @Patch(':id/members/:membershipId/role')
+  @RequirePermissions('admin.user.manage')
+  async updateMemberRole(
+    @Param('id') id: string,
+    @Param('membershipId') membershipId: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: UpdateMemberRoleDto,
+  ) {
+    this.assertOrg(id, ctx);
+    await this.organisation.updateMemberRole(ctx.organisationId, membershipId, dto.roleId, ctx.actorId as string);
+  }
+
+  @Get(':id/permissions')
+  @RequirePermissions('admin.role.manage')
+  async listPermissions(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.listPermissions(ctx.organisationId, ctx.actorId as string);
+  }
+
+  @Post(':id/roles')
+  @RequirePermissions('admin.role.manage')
+  async createRole(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: CreateRoleDto,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.createRole(ctx.organisationId, dto, ctx.actorId as string);
+  }
+
+  @Patch(':id/roles/:roleId')
+  @RequirePermissions('admin.role.manage')
+  async updateRole(
+    @Param('id') id: string,
+    @Param('roleId') roleId: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: UpdateRoleDto,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.updateRole(ctx.organisationId, roleId, dto, ctx.actorId as string);
+  }
+
+  @Delete(':id/roles/:roleId')
+  @RequirePermissions('admin.role.manage')
+  async deleteRole(
+    @Param('id') id: string,
+    @Param('roleId') roleId: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    await this.organisation.deleteRole(ctx.organisationId, roleId, ctx.actorId as string);
   }
 
   @Get(':id/me/context')

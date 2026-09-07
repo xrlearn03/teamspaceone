@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { Prisma, type PrismaClient, type Role, type OrganisationMembership } from '#prisma';
+import { PrismaService } from '../prisma/prisma.service.js';
 import {
   ALL_PERMISSIONS,
   permissionMatches,
@@ -183,6 +185,8 @@ export function expandPermissions(
 @Injectable()
 export class AuthorizationService {
   private readonly defaultRoles = DEFAULT_ROLES;
+
+  constructor(private readonly prisma: PrismaService) {}
 
   getDefaultRoleNames(): string[] {
     return this.defaultRoles.map((r) => r.name);
@@ -390,5 +394,168 @@ export class AuthorizationService {
       permissions: Array.from(permissionSet),
       dataScopes: Array.from(dataScopeSet),
     };
+  }
+
+  async listPermissions() {
+    return this.prisma.permission.findMany({
+      orderBy: [{ module: 'asc' }, { resource: 'asc' }, { action: 'asc' }],
+    });
+  }
+
+  async createRole(
+    organisationId: string,
+    input: {
+      name: string;
+      description?: string;
+      permissionIds: string[];
+      scopes?: Array<{ module: string; scope: string; scopeValue?: string | null }>;
+    },
+  ): Promise<Role> {
+    const { name, description, permissionIds, scopes } = input;
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.role.findFirst({ where: { organisationId, name } });
+      if (existing) throw new Error('A role with this name already exists');
+
+      const role = await tx.role.create({
+        data: {
+          id: randomUUID(),
+          organisationId,
+          name,
+          description: description ?? null,
+          isSystem: false,
+          isDefault: false,
+          permissions: [],
+        },
+      });
+
+      if (permissionIds.length > 0) {
+        await tx.rolePermission.createMany({
+          data: permissionIds.map((permissionId) => ({
+            id: randomUUID(),
+            roleId: role.id,
+            permissionId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      if (scopes && scopes.length > 0) {
+        await tx.roleScope.createMany({
+          data: scopes.map((s) => ({
+            id: randomUUID(),
+            roleId: role.id,
+            module: s.module,
+            scope: s.scope,
+            scopeValue: s.scopeValue ?? null,
+          })),
+        });
+      }
+
+      return role;
+    });
+  }
+
+  async updateRole(
+    roleId: string,
+    organisationId: string,
+    input: {
+      name?: string;
+      description?: string;
+      permissionIds?: string[];
+      scopes?: Array<{ module: string; scope: string; scopeValue?: string | null }>;
+    },
+  ): Promise<Role> {
+    return this.prisma.$transaction(async (tx) => {
+      const role = await tx.role.findFirst({
+        where: { id: roleId, organisationId },
+        include: { rolePermissions: true, roleScopes: true },
+      });
+      if (!role) throw new Error('Role not found');
+      if (role.isSystem) throw new Error('System roles cannot be edited');
+
+      if (input.name) {
+        const existing = await tx.role.findFirst({
+          where: { organisationId, name: input.name, id: { not: roleId } },
+        });
+        if (existing) throw new Error('A role with this name already exists');
+      }
+
+      const updated = await tx.role.update({
+        where: { id: roleId },
+        data: {
+          name: input.name,
+          description: input.description ?? role.description,
+        },
+      });
+
+      if (input.permissionIds !== undefined) {
+        await tx.rolePermission.deleteMany({ where: { roleId } });
+        if (input.permissionIds.length > 0) {
+          await tx.rolePermission.createMany({
+            data: input.permissionIds.map((permissionId) => ({
+              id: randomUUID(),
+              roleId,
+              permissionId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
+      if (input.scopes !== undefined) {
+        await tx.roleScope.deleteMany({ where: { roleId } });
+        if (input.scopes.length > 0) {
+          await tx.roleScope.createMany({
+            data: input.scopes.map((s) => ({
+              id: randomUUID(),
+              roleId,
+              module: s.module,
+              scope: s.scope,
+              scopeValue: s.scopeValue ?? null,
+            })),
+          });
+        }
+      }
+
+      return updated;
+    });
+  }
+
+  async deleteRole(roleId: string, organisationId: string): Promise<void> {
+    return this.prisma.$transaction(async (tx) => {
+      const role = await tx.role.findFirst({
+        where: { id: roleId, organisationId },
+        include: { _count: { select: { memberships: true } } },
+      });
+      if (!role) throw new Error('Role not found');
+      if (role.isSystem) throw new Error('System roles cannot be deleted');
+      if ((role._count as { memberships: number }).memberships > 0) {
+        throw new Error('Cannot delete a role that has members assigned to it');
+      }
+      await tx.role.delete({ where: { id: roleId } });
+    });
+  }
+
+  async assignMembershipRole(
+    organisationId: string,
+    membershipId: string,
+    roleId: string,
+  ): Promise<void> {
+    return this.prisma.$transaction(async (tx) => {
+      const [membership, role] = await Promise.all([
+        tx.organisationMembership.findFirst({ where: { id: membershipId, organisationId } }),
+        tx.role.findFirst({ where: { id: roleId, organisationId } }),
+      ]);
+      if (!membership) throw new Error('Membership not found');
+      if (!role) throw new Error('Role not found');
+
+      await tx.organisationMembership.update({
+        where: { id: membershipId },
+        data: { roleId },
+      });
+
+      await tx.dataScope.deleteMany({ where: { membershipId } });
+      await this.applyRoleScopesToMembership(tx, membershipId, roleId, organisationId);
+    });
   }
 }

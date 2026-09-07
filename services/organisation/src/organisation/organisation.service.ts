@@ -325,7 +325,14 @@ export class OrganisationService {
 
   async listRoles(organisationId: string, actorId: string): Promise<unknown[]> {
     await this.assertMemberOf(organisationId, actorId);
-    return this.prisma.role.findMany({ where: { organisationId }, orderBy: [{ isDefault: 'desc' }, { name: 'asc' }] });
+    return this.prisma.role.findMany({
+      where: { organisationId },
+      include: {
+        rolePermissions: { include: { permission: true } },
+        roleScopes: true,
+      },
+      orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+    });
   }
 
   async listMembers(organisationId: string, actorId: string): Promise<unknown[]> {
@@ -335,6 +342,31 @@ export class OrganisationService {
       include: { role: true },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async listPermissions(organisationId: string, actorId: string): Promise<unknown[]> {
+    await this.assertMemberOf(organisationId, actorId);
+    return this.authorization.listPermissions();
+  }
+
+  async createRole(organisationId: string, dto: { name: string; description?: string; permissionIds: string[]; scopes?: Array<{ module: string; scope: string; scopeValue?: string | null }> }, actorId: string): Promise<unknown> {
+    await this.assertMemberOf(organisationId, actorId);
+    return this.authorization.createRole(organisationId, dto);
+  }
+
+  async updateRole(organisationId: string, roleId: string, dto: { name?: string; description?: string; permissionIds?: string[]; scopes?: Array<{ module: string; scope: string; scopeValue?: string | null }> }, actorId: string): Promise<unknown> {
+    await this.assertMemberOf(organisationId, actorId);
+    return this.authorization.updateRole(roleId, organisationId, dto);
+  }
+
+  async deleteRole(organisationId: string, roleId: string, actorId: string): Promise<void> {
+    await this.assertMemberOf(organisationId, actorId);
+    await this.authorization.deleteRole(roleId, organisationId);
+  }
+
+  async updateMemberRole(organisationId: string, membershipId: string, roleId: string, actorId: string): Promise<void> {
+    await this.assertCanManageMembers(organisationId, actorId);
+    await this.authorization.assignMembershipRole(organisationId, membershipId, roleId);
   }
 
   async listForActor(actorId: string): Promise<unknown[]> {
