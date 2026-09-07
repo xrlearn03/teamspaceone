@@ -832,6 +832,14 @@ export function revokeInvitation(organisationId: string, invitationId: string) {
   return apiRequest<void>(`/organisations/${organisationId}/invitations/${invitationId}`, { method: "DELETE" });
 }
 
+export function resendInvitation(organisationId: string, invitationId: string) {
+  return apiRequest<void>(`/organisations/${organisationId}/invitations/${invitationId}/resend`, { method: "POST" });
+}
+
+export function removeMember(organisationId: string, membershipId: string) {
+  return apiRequest<void>(`/organisations/${organisationId}/members/${membershipId}`, { method: "DELETE" });
+}
+
 export function acceptInvitation(token: string) {
   return apiRequest<OrganisationMember>("/organisations/invitations/accept", { method: "POST", body: { token }, org: null });
 }
@@ -1592,7 +1600,8 @@ export function getEmployee(id: string) {
 }
 
 export function createEmployee(body: {
-  userId?: string;
+  userId: string;
+  membershipId?: string;
   firstName: string;
   lastName: string;
   workEmail?: string;

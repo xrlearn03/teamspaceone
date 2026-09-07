@@ -181,6 +181,7 @@ export class OrganisationController {
   }
 
   @Delete(':id/invitations/:invitationId')
+  @RequirePermissions('admin.user.manage')
   async revokeInvitation(
     @Param('id') id: string,
     @Param('invitationId') invitationId: string,
@@ -188,6 +189,28 @@ export class OrganisationController {
   ) {
     this.assertOrg(id, ctx);
     await this.organisation.revokeInvitation(ctx.organisationId, invitationId, ctx.actorId as string);
+  }
+
+  @Post(':id/invitations/:invitationId/resend')
+  @RequirePermissions('admin.user.manage')
+  async resendInvitation(
+    @Param('id') id: string,
+    @Param('invitationId') invitationId: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    await this.organisation.resendInvitation(ctx.organisationId, invitationId, ctx.actorId as string);
+  }
+
+  @Delete(':id/members/:membershipId')
+  @RequirePermissions('admin.user.manage')
+  async removeMember(
+    @Param('id') id: string,
+    @Param('membershipId') membershipId: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    await this.organisation.removeMember(ctx.organisationId, membershipId, ctx.actorId as string);
   }
 
   @Get(':id/roles')

@@ -164,6 +164,49 @@ export class AuthService {
     return { user: this.toDto(user), temporaryPassword, accountCreated: true };
   }
 
+  /**
+   * Service-to-service: regenerate a temporary password for an invited account
+   * that has not yet activated (mustChangePassword still true). Used when an
+   * admin resends an invitation. Activated accounts are never reset here.
+   */
+  async resetTemporaryPassword(userId: string): Promise<{ user: UserDto; temporaryPassword: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!user.mustChangePassword) {
+      throw new ConflictException('Account is already activated');
+    }
+
+    const temporaryPassword = randomBytes(12).toString('base64url');
+    const passwordHash = await hash(temporaryPassword, 12);
+    const updated = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const u = await tx.user.update({ where: { id: userId }, data: { passwordHash } });
+      await tx.refreshToken.deleteMany({ where: { userId } });
+      return u;
+    });
+    return { user: this.toDto(updated), temporaryPassword };
+  }
+
+  /**
+   * Service-to-service: delete an invited account that never activated
+   * (mustChangePassword still true). Activated accounts are refused so an
+   * admin revoke can never delete a real user account.
+   */
+  async deleteUnactivatedUser(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return;
+    }
+    if (!user.mustChangePassword) {
+      throw new ConflictException('Account is already activated');
+    }
+    await this.prisma.$transaction([
+      this.prisma.refreshToken.deleteMany({ where: { userId } }),
+      this.prisma.user.delete({ where: { id: userId } }),
+    ]);
+  }
+
   async redeemInvitation(input: RedeemInvitationDto, correlationId?: string): Promise<{ user: UserDto; tokens: TokenPair }> {
     if (!input?.email || !input?.password || !input?.token) {
       throw new BadRequestException('Token, email and password are required');
@@ -307,10 +350,21 @@ export class AuthService {
       throw new UnauthorizedException('Current password is incorrect');
     }
     const passwordHash = await hash(newPassword, 12);
-    await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false } }),
-      this.prisma.refreshToken.deleteMany({ where: { userId } }),
-    ]);
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false } });
+      await tx.refreshToken.deleteMany({ where: { userId } });
+      if (user.mustChangePassword) {
+        const envelope = createEventEnvelope({
+          eventType: Subjects.USER_UPDATED,
+          organisationId: 'global',
+          actorId: userId,
+          resourceType: 'user',
+          resourceId: userId,
+          payload: { id: userId, email: user.email, activated: true },
+        });
+        await this.outbox.createEvent(tx, envelope, Subjects.USER_UPDATED);
+      }
+    });
   }
 
   async me(userId: string): Promise<UserDto> {

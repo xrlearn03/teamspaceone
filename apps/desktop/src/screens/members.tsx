@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { UserPlus, Users } from "lucide-react";
-import { useMembers, useRoles, useInviteMember, useInvitations, useOrganisations, useUsers } from "../hooks/api";
+import { MailPlus, Trash2, UserPlus, Users, XCircle } from "lucide-react";
+import { useMembers, useRoles, useInviteMember, useInvitations, useOrganisations, useRemoveMember, useResendInvitation, useRevokeInvitation, useUsers } from "../hooks/api";
 import { useUIStore } from "../stores/ui";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Badge } from "../components/ui/badge";
@@ -37,6 +37,9 @@ export function MemberDirectoryScreen() {
   const { data: roles, isLoading: rolesLoading, error: rolesError } = useRoles(organisationId);
   const { data: invitations } = useInvitations(organisationId);
   const inviteMember = useInviteMember();
+  const revokeInvitation = useRevokeInvitation();
+  const resendInvitation = useResendInvitation();
+  const removeMember = useRemoveMember();
   const [query, setQuery] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteExternal, setInviteExternal] = useState(false);
@@ -120,6 +123,17 @@ export function MemberDirectoryScreen() {
                       </Avatar>
                       <span className="flex-1 truncate text-sm text-text">{getDisplayName(member, user)}</span>
                       <Badge variant="secondary" className="capitalize">{formatRoleName(member.role.name)}</Badge>
+                      {member.role.name.toLowerCase() === "owner" ? null : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-error"
+                          disabled={removeMember.isPending}
+                          onClick={() => organisationId && removeMember.mutate({ organisationId, membershipId: member.id })}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </div>
                   );
                 })}
@@ -145,6 +159,15 @@ export function MemberDirectoryScreen() {
                       <span className="flex-1 truncate text-sm text-text">{getDisplayName(member, user)}</span>
                       <Badge variant="warning">External</Badge>
                       <Badge variant="secondary" className="capitalize">{formatRoleName(member.role.name)}</Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-error"
+                        disabled={removeMember.isPending}
+                        onClick={() => organisationId && removeMember.mutate({ organisationId, membershipId: member.id })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   );
                 })}
@@ -162,6 +185,25 @@ export function MemberDirectoryScreen() {
                       </Avatar>
                       <span className="flex-1 truncate text-sm text-text">{inv.email}</span>
                       <Badge variant="secondary">Invited</Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={resendInvitation.isPending || revokeInvitation.isPending}
+                        onClick={() => organisationId && resendInvitation.mutate({ organisationId, invitationId: inv.id })}
+                      >
+                        <MailPlus className="mr-1 h-3.5 w-3.5" />
+                        Resend
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-error"
+                        disabled={resendInvitation.isPending || revokeInvitation.isPending}
+                        onClick={() => organisationId && revokeInvitation.mutate({ organisationId, invitationId: inv.id })}
+                      >
+                        <XCircle className="mr-1 h-3.5 w-3.5" />
+                        Revoke
+                      </Button>
                     </div>
                   ))}
                 </div>

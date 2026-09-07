@@ -158,7 +158,29 @@ export function useRevokeInvitation() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (args: { organisationId: string; invitationId: string }) => api.revokeInvitation(args.organisationId, args.invitationId),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["invitations", args.organisationId] });
+      client.invalidateQueries({ queryKey: ["members", args.organisationId] });
+    },
+  });
+}
+
+export function useResendInvitation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; invitationId: string }) => api.resendInvitation(args.organisationId, args.invitationId),
     onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["invitations", args.organisationId] }),
+  });
+}
+
+export function useRemoveMember() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; membershipId: string }) => api.removeMember(args.organisationId, args.membershipId),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["members", args.organisationId] });
+      client.invalidateQueries({ queryKey: ["invitations", args.organisationId] });
+    },
   });
 }
 

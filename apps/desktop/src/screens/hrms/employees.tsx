@@ -1,16 +1,19 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Pencil, Search, UserPlus, Users } from "lucide-react";
 import {
+  useActiveOrganisation,
   useCreateEmployee,
   useDepartments,
   useDesignations,
   useEmployee,
   useEmployeeDocuments,
   useEmployees,
+  useMembers,
   useUpdateEmployee,
+  useUsers,
 } from "../../hooks/api";
 import { usePermissions } from "../../hooks/usePermissions";
-import type { Employee } from "../../lib/api";
+import type { Employee, OrganisationMember, UserDto } from "../../lib/api";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -38,7 +41,19 @@ function employeeTitle(e: Employee) {
   return e.designation?.title ?? e.designation?.name ?? e.designationName ?? "—";
 }
 
+interface Draft {
+  id: string;
+  userId: string;
+  membershipId: string;
+  firstName: string;
+  lastName: string;
+  workEmail: string | null;
+  phone: string | null;
+}
+
 interface EmployeeFormState {
+  userId: string;
+  membershipId: string;
   firstName: string;
   lastName: string;
   workEmail: string;
@@ -51,6 +66,8 @@ interface EmployeeFormState {
 }
 
 const EMPTY_FORM: EmployeeFormState = {
+  userId: "",
+  membershipId: "",
   firstName: "",
   lastName: "",
   workEmail: "",
@@ -66,70 +83,148 @@ function EmployeeFormDialog({
   open,
   onOpenChange,
   employee,
+  draft,
+  availableDrafts,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   employee?: Employee | null;
+  draft?: Draft | null;
+  availableDrafts?: Draft[];
 }) {
-  const [form, setForm] = useState<EmployeeFormState>(
-    employee
-      ? {
-          firstName: employee.firstName,
-          lastName: employee.lastName,
-          workEmail: employee.workEmail ?? "",
-          phone: employee.phone ?? "",
-          departmentId: employee.departmentId ?? "",
-          designationId: employee.designationId ?? "",
-          joiningDate: employee.joiningDate?.slice(0, 10) ?? "",
-          employmentType: employee.employmentType || "full_time",
-          employeeNumber: employee.employeeNumber ?? "",
-        }
-      : EMPTY_FORM,
-  );
+  const init = (): EmployeeFormState => {
+    if (employee) {
+      return {
+        userId: employee.userId,
+        membershipId: "",
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        workEmail: employee.workEmail ?? "",
+        phone: employee.phone ?? "",
+        departmentId: employee.departmentId ?? "",
+        designationId: employee.designationId ?? "",
+        joiningDate: employee.joiningDate?.slice(0, 10) ?? "",
+        employmentType: employee.employmentType || "full_time",
+        employeeNumber: employee.employeeNumber ?? "",
+      };
+    }
+    if (draft) {
+      return {
+        userId: draft.userId,
+        membershipId: draft.membershipId,
+        firstName: draft.firstName,
+        lastName: draft.lastName,
+        workEmail: draft.workEmail ?? "",
+        phone: draft.phone ?? "",
+        departmentId: "",
+        designationId: "",
+        joiningDate: "",
+        employmentType: "full_time",
+        employeeNumber: "",
+      };
+    }
+    return EMPTY_FORM;
+  };
+
+  const [form, setForm] = useState<EmployeeFormState>(init);
   const departments = useDepartments();
   const designations = useDesignations();
   const createEmployee = useCreateEmployee();
   const updateEmployee = useUpdateEmployee();
   const busy = createEmployee.isPending || updateEmployee.isPending;
 
+  useEffect(() => {
+    setForm(init());
+  }, [employee?.id, draft?.id, open]);
+
   function field<K extends keyof EmployeeFormState>(key: K, value: EmployeeFormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  function pickDraft(userId: string) {
+    const selected = (availableDrafts ?? []).find((d) => d.userId === userId) ?? draft;
+    if (!selected) return;
+    setForm({
+      ...form,
+      userId: selected.userId,
+      membershipId: selected.membershipId,
+      firstName: selected.firstName,
+      lastName: selected.lastName,
+      workEmail: selected.workEmail ?? "",
+      phone: selected.phone ?? "",
+    });
+  }
+
   function submit() {
     if (!form.firstName.trim() || !form.lastName.trim()) return;
-    const body = {
-      firstName: form.firstName.trim(),
-      lastName: form.lastName.trim(),
-      workEmail: form.workEmail || undefined,
-      phone: form.phone || undefined,
-      departmentId: form.departmentId || undefined,
-      designationId: form.designationId || undefined,
-      joiningDate: form.joiningDate || undefined,
-      employmentType: form.employmentType || undefined,
-      employeeNumber: form.employeeNumber || undefined,
-    };
     if (employee) {
+      const body = {
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        workEmail: form.workEmail || undefined,
+        phone: form.phone || undefined,
+        departmentId: form.departmentId || undefined,
+        designationId: form.designationId || undefined,
+        joiningDate: form.joiningDate || undefined,
+        employmentType: form.employmentType || undefined,
+        employeeNumber: form.employeeNumber || undefined,
+      };
       updateEmployee.mutate(
         { id: employee.id, body },
         { onSuccess: () => onOpenChange(false) },
       );
     } else {
+      if (!form.userId) return;
+      const body = {
+        userId: form.userId,
+        membershipId: form.membershipId || undefined,
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        workEmail: form.workEmail || undefined,
+        phone: form.phone || undefined,
+        departmentId: form.departmentId || undefined,
+        designationId: form.designationId || undefined,
+        joiningDate: form.joiningDate || undefined,
+        employmentType: form.employmentType || undefined,
+        employeeNumber: form.employeeNumber || undefined,
+      };
       createEmployee.mutate(body, { onSuccess: () => onOpenChange(false) });
     }
   }
 
   const label = "text-xs font-medium text-text-secondary";
+  const selectingMember = !employee && !draft;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{employee ? "Edit employee" : "Add employee"}</DialogTitle>
+          <DialogTitle>{employee ? "Edit employee" : draft ? "Edit draft employee" : "Add employee"}</DialogTitle>
           <DialogDescription>
-            {employee ? "Update this employee's record." : "Create a new employee record."}
+            {employee
+              ? "Update this employee's record."
+              : draft
+                ? "Complete this employee's record."
+                : "Create a new employee record."}
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3 p-4 pt-2">
+          {selectingMember ? (
+            <label className="col-span-2 flex flex-col gap-1">
+              <span className={label}>Member *</span>
+              <select
+                className="h-9 rounded-md border bg-background px-2 text-sm text-text"
+                value={form.userId}
+                onChange={(e) => pickDraft(e.target.value)}
+              >
+                <option value="">Select an invited member…</option>
+                {(availableDrafts ?? []).map((d) => (
+                  <option key={d.userId} value={d.userId}>
+                    {employeeName(d)} {d.workEmail ? `(${d.workEmail})` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label className="flex flex-col gap-1">
             <span className={label}>First name *</span>
             <Input value={form.firstName} onChange={(e) => field("firstName", e.target.value)} />
@@ -196,7 +291,10 @@ function EmployeeFormDialog({
         </div>
         <div className="flex justify-end gap-2 p-4 pt-0">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit} disabled={busy || !form.firstName.trim() || !form.lastName.trim()}>
+          <Button
+            onClick={submit}
+            disabled={busy || !form.firstName.trim() || !form.lastName.trim() || (!employee && !form.userId)}
+          >
             {employee ? "Save changes" : "Add employee"}
           </Button>
         </div>
@@ -299,22 +397,80 @@ function EmployeeDetail({ employeeId, onBack }: { employeeId: string; onBack: ()
   );
 }
 
+function isInternalMember(m: OrganisationMember) {
+  return m.role.roleCategory !== "external" && m.role.roleCategory !== "guest";
+}
+
 export function EmployeesSection() {
   const { can } = usePermissions();
+  const { id: orgId } = useActiveOrganisation();
   const [search, setSearch] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [editingDraft, setEditingDraft] = useState<Draft | null>(null);
 
   const departments = useDepartments();
   const employees = useEmployees({
     search: search || undefined,
     departmentId: departmentId || undefined,
   });
+  const members = useMembers(orgId ?? undefined);
+  const memberUserIds = useMemo(
+    () => [...new Set((members.data ?? []).map((m) => m.userId))],
+    [members.data],
+  );
+  const users = useUsers(memberUserIds);
+
+  const userMap = useMemo(() => {
+    const map = new Map<string, UserDto>();
+    (users.data ?? []).forEach((u) => map.set(u.id, u));
+    return map;
+  }, [users.data]);
+
+  const employeeUserIds = useMemo(
+    () => new Set((employees.data ?? []).map((e) => e.userId)),
+    [employees.data],
+  );
+
+  const drafts = useMemo<Draft[]>(() => {
+    return (members.data ?? [])
+      .filter((m) => isInternalMember(m) && !employeeUserIds.has(m.userId))
+      .map((m) => {
+        const u = userMap.get(m.userId);
+        return {
+          id: m.id,
+          userId: m.userId,
+          membershipId: m.id,
+          firstName: u?.firstName ?? u?.email?.split("@")[0] ?? "Unknown",
+          lastName: u?.lastName ?? "",
+          workEmail: u?.email ?? null,
+          phone: null,
+        };
+      });
+  }, [members.data, employeeUserIds, userMap]);
+
+  const allRows = useMemo(() => {
+    const term = search.toLowerCase().trim();
+    const employeesFiltered = (employees.data ?? []).filter((e) => {
+      if (!term) return true;
+      const text = `${e.firstName} ${e.lastName} ${e.workEmail ?? ""} ${e.employeeNumber ?? ""}`.toLowerCase();
+      return text.includes(term);
+    });
+    const draftsFiltered = term
+      ? drafts.filter((d) =>
+          `${d.firstName} ${d.lastName} ${d.workEmail ?? ""}`.toLowerCase().includes(term)
+        )
+      : drafts;
+    return [...employeesFiltered, ...draftsFiltered];
+  }, [employees.data, drafts, search]);
 
   if (selectedId) {
     return <EmployeeDetail employeeId={selectedId} onBack={() => setSelectedId(null)} />;
   }
+
+  const isLoading = employees.isLoading || members.isLoading || users.isLoading;
+  const isError = employees.isError || members.isError || users.isError;
 
   return (
     <div className="flex flex-col gap-4">
@@ -347,11 +503,11 @@ export function EmployeesSection() {
 
       <Card>
         <CardContent className="p-0">
-          {employees.isLoading ? (
+          {isLoading ? (
             <div className="p-4"><SectionSkeleton /></div>
-          ) : employees.isError ? (
-            <SectionError onRetry={() => employees.refetch()} />
-          ) : (employees.data ?? []).length === 0 ? (
+          ) : isError ? (
+            <SectionError onRetry={() => { employees.refetch(); members.refetch(); users.refetch(); }} />
+          ) : allRows.length === 0 ? (
             <EmptyState
               icon={Users}
               title="No employees found"
@@ -369,26 +525,44 @@ export function EmployeesSection() {
                 </tr>
               </thead>
               <tbody>
-                {(employees.data ?? []).map((e) => (
-                  <tr
-                    key={e.id}
-                    className="cursor-pointer border-b last:border-0 hover:bg-surface-elevated"
-                    onClick={() => setSelectedId(e.id)}
-                  >
-                    <td className="px-4 py-2.5 text-text">{employeeName(e)}</td>
-                    <td className="px-4 py-2.5 text-text-secondary">{employeeTitle(e)}</td>
-                    <td className="px-4 py-2.5 text-text-secondary">{employeeDept(e)}</td>
-                    <td className="px-4 py-2.5 text-text-secondary">{e.employmentType}</td>
-                    <td className="px-4 py-2.5"><StatusBadge status={e.status} /></td>
-                  </tr>
-                ))}
+                {allRows.map((row) => {
+                  const isDraft = "membershipId" in row;
+                  return (
+                    <tr
+                      key={row.id}
+                      className="cursor-pointer border-b last:border-0 hover:bg-surface-elevated"
+                      onClick={() => {
+                        if (isDraft) {
+                          setEditingDraft(row as Draft);
+                        } else {
+                          setSelectedId(row.id);
+                        }
+                      }}
+                    >
+                      <td className="px-4 py-2.5 text-text">{employeeName(row as Employee)}</td>
+                      <td className="px-4 py-2.5 text-text-secondary">{isDraft ? "—" : employeeTitle(row as Employee)}</td>
+                      <td className="px-4 py-2.5 text-text-secondary">{isDraft ? "—" : employeeDept(row as Employee)}</td>
+                      <td className="px-4 py-2.5 text-text-secondary">{isDraft ? "—" : (row as Employee).employmentType}</td>
+                      <td className="px-4 py-2.5"><StatusBadge status={isDraft ? "draft" : (row as Employee).status} /></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
         </CardContent>
       </Card>
 
-      <EmployeeFormDialog open={addOpen} onOpenChange={setAddOpen} />
+      <EmployeeFormDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        availableDrafts={drafts}
+      />
+      <EmployeeFormDialog
+        open={!!editingDraft}
+        onOpenChange={(open) => { if (!open) setEditingDraft(null); }}
+        draft={editingDraft ?? undefined}
+      />
     </div>
   );
 }

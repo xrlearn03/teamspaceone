@@ -76,6 +76,7 @@ model Invitation {
   email          String
   roleId         String
   token          String       @unique
+  userId         String?
   status         String       @default("pending")
   expiresAt      DateTime
   createdAt      DateTime     @default(now())

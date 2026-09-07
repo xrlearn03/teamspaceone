@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { Body, Controller, ForbiddenException, Get, Headers, NotFoundException, Param, Patch, Post, Query, UnauthorizedException, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Headers, NotFoundException, Param, Patch, Post, Query, UnauthorizedException, UseGuards, Request } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service.js';
 import { AuthGuard } from './auth.guard.js';
@@ -92,6 +92,35 @@ export class AuthController {
       throw new NotFoundException('User not found');
     }
     return user;
+  }
+
+  /**
+   * Service-to-service only: regenerate a temporary password for an invited
+   * account that has not activated yet (used when resending an invitation).
+   */
+  @Post('internal/users/:id/reset-temporary-password')
+  async resetTemporaryPassword(
+    @Param('id') id: string,
+    @Headers('x-internal-api-key') internalApiKey?: string,
+    @Headers('x-internal-caller') internalCaller?: string,
+  ) {
+    this.assertInternal(internalApiKey, internalCaller);
+    return this.auth.resetTemporaryPassword(id);
+  }
+
+  /**
+   * Service-to-service only: delete an invited account that never activated.
+   * Refuses to delete accounts that have already set a real password.
+   */
+  @Delete('internal/users/:id')
+  async deleteUnactivatedUser(
+    @Param('id') id: string,
+    @Headers('x-internal-api-key') internalApiKey?: string,
+    @Headers('x-internal-caller') internalCaller?: string,
+  ) {
+    this.assertInternal(internalApiKey, internalCaller);
+    await this.auth.deleteUnactivatedUser(id);
+    return { deleted: true };
   }
 
   @Post('refresh')

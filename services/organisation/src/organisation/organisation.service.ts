@@ -319,6 +319,21 @@ export class OrganisationService {
       });
       await this.outbox.createEvent(tx, envelope, Subjects.MEMBER_INVITED);
 
+      // Track the invite so it can be listed, resent, and revoked. The
+      // membership already exists — the invitation row only represents the
+      // pending account activation.
+      await tx.invitation.create({
+        data: {
+          id: randomUUID(),
+          organisationId,
+          email,
+          roleId: dto.roleId,
+          token: randomUUID(),
+          userId: provisioned.user.id,
+          expiresAt: hoursFromNow(168),
+        },
+      });
+
       const firstName = (dto.firstName ?? '').trim() || email.split('@')[0] || 'Unknown';
       const lastName = (dto.lastName ?? '').trim();
       await this.emitEmployeeCreate(
@@ -611,10 +626,197 @@ export class OrganisationService {
   }
 
   async revokeInvitation(organisationId: string, invitationId: string, actorId: string): Promise<void> {
-    await this.assertMemberOf(organisationId, actorId);
+    await this.assertCanManageMembers(organisationId, actorId);
     const invitation = await this.prisma.invitation.findFirst({ where: { id: invitationId, organisationId, status: 'pending' } });
     if (!invitation) throw new NotFoundException('Pending invitation not found');
     await this.prisma.invitation.update({ where: { id: invitationId }, data: { status: 'revoked' } });
+
+    // Account-based invites (created via members/invite) also carry a
+    // provisioned membership + unactivated auth account — remove both so the
+    // invitee loses access and the email can be invited again.
+    if (invitation.userId) {
+      await this.prisma.organisationMembership.deleteMany({
+        where: { userId: invitation.userId, organisationId },
+      });
+      await this.deleteUnactivatedAuthUser(invitation.userId, actorId, organisationId);
+      await this.prisma.auditLog.create({
+        data: {
+          id: randomUUID(),
+          organisationId,
+          userId: actorId,
+          action: 'member.invitation_revoked',
+          resourceType: 'invitation',
+          resourceId: invitation.id,
+          metadata: { email: invitation.email, userId: invitation.userId },
+        },
+      });
+    }
+  }
+
+  /**
+   * Resend an invitation: for account-based invites a fresh temporary password
+   * is generated in the auth service and the credentials email is re-sent via
+   * MEMBER_INVITED. Legacy token invites get a rotated token and a fresh
+   * GUEST_INVITED email.
+   */
+  async resendInvitation(organisationId: string, invitationId: string, actorId: string): Promise<void> {
+    await this.assertCanManageMembers(organisationId, actorId);
+    const invitation = await this.prisma.invitation.findFirst({ where: { id: invitationId, organisationId } });
+    if (!invitation || invitation.status !== 'pending') throw new NotFoundException('Pending invitation not found');
+
+    const expiresAt = hoursFromNow(168);
+    const [org, role] = await Promise.all([
+      this.prisma.organisation.findUnique({ where: { id: organisationId } }),
+      this.prisma.role.findUnique({ where: { id: invitation.roleId } }),
+    ]);
+
+    if (invitation.userId) {
+      const authUrl = this.config.get<string>('AUTH_SERVICE_URL');
+      if (!authUrl) {
+        throw new BadGatewayException('Auth service integration is not configured');
+      }
+      const resetRes = await fetch(
+        `${authUrl}/auth/internal/users/${encodeURIComponent(invitation.userId)}/reset-temporary-password`,
+        { method: 'POST', headers: this.s2sHeaders(actorId, organisationId) },
+      );
+      if (!resetRes.ok) {
+        const body = await resetRes.text().catch(() => 'Password reset failed');
+        throw new BadGatewayException(`Password reset failed: ${body}`);
+      }
+      const reset = (await resetRes.json()) as {
+        user: { email: string; firstName: string | null; lastName: string | null };
+        temporaryPassword: string;
+      };
+
+      await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.invitation.update({ where: { id: invitation.id }, data: { expiresAt } });
+        const envelope = createEventEnvelope({
+          eventType: Subjects.MEMBER_INVITED,
+          organisationId,
+          actorId,
+          resourceType: 'invitation',
+          resourceId: invitation.id,
+          payload: {
+            email: invitation.email,
+            firstName: reset.user.firstName ?? undefined,
+            lastName: reset.user.lastName ?? undefined,
+            organisationId,
+            organisationName: org?.name,
+            roleName: role?.name,
+            invitedBy: actorId,
+            temporaryPassword: reset.temporaryPassword,
+            accountCreated: false,
+          },
+        });
+        await this.outbox.createEvent(tx, envelope, Subjects.MEMBER_INVITED);
+        await tx.auditLog.create({
+          data: {
+            id: randomUUID(),
+            organisationId,
+            userId: actorId,
+            action: 'member.invitation_resent',
+            resourceType: 'invitation',
+            resourceId: invitation.id,
+            metadata: { email: invitation.email },
+          },
+        });
+      });
+      return;
+    }
+
+    // Legacy token invitation: rotate the token and re-send the invite email.
+    const token = randomUUID();
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.invitation.update({ where: { id: invitation.id }, data: { token, expiresAt } });
+      const envelope = createEventEnvelope({
+        eventType: Subjects.GUEST_INVITED,
+        organisationId,
+        actorId,
+        resourceType: 'invitation',
+        resourceId: invitation.id,
+        payload: {
+          email: invitation.email,
+          clientId: invitation.clientId ?? undefined,
+          organisationId,
+          invitedBy: actorId,
+          token,
+          expiresAt: expiresAt.toISOString(),
+        },
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.GUEST_INVITED);
+    });
+  }
+
+  /**
+   * Remove a member from the organisation. If the account is still an
+   * unactivated invited account it is deleted in the auth service as well.
+   */
+  async removeMember(organisationId: string, membershipId: string, actorId: string): Promise<void> {
+    await this.assertCanManageMembers(organisationId, actorId);
+    const membership = await this.prisma.organisationMembership.findFirst({
+      where: { id: membershipId, organisationId },
+      include: { role: true },
+    });
+    if (!membership) throw new NotFoundException('Member not found');
+
+    const org = await this.prisma.organisation.findUnique({ where: { id: organisationId } });
+    if (org?.ownerId === membership.userId) {
+      throw new BadRequestException('The organisation owner cannot be removed');
+    }
+
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.organisationMembership.delete({ where: { id: membership.id } });
+      await tx.invitation.updateMany({
+        where: { userId: membership.userId, organisationId, status: 'pending' },
+        data: { status: 'revoked' },
+      });
+      await tx.auditLog.create({
+        data: {
+          id: randomUUID(),
+          organisationId,
+          userId: actorId,
+          action: 'member.removed',
+          resourceType: 'organisation-membership',
+          resourceId: membership.id,
+          metadata: { userId: membership.userId, roleId: membership.roleId },
+        },
+      });
+    });
+
+    // Only pending single-org invited accounts are cleaned up; the auth
+    // service refuses to delete activated accounts anyway.
+    const remaining = await this.prisma.organisationMembership.count({ where: { userId: membership.userId } });
+    if (remaining === 0) {
+      await this.deleteUnactivatedAuthUser(membership.userId, actorId, organisationId);
+    }
+  }
+
+  /**
+   * Called by the user-activation consumer when an invited account completes
+   * its first password change — marks the pending invitation as accepted.
+   */
+  async markInvitationAccepted(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+    await tx.invitation.updateMany({
+      where: { userId, status: 'pending' },
+      data: { status: 'accepted' },
+    });
+  }
+
+  /**
+   * Best-effort delete of an auth account that is still unactivated. Activated
+   * accounts are kept — the auth service returns 409 which is ignored here.
+   */
+  private async deleteUnactivatedAuthUser(userId: string, actorId: string, organisationId: string): Promise<void> {
+    const authUrl = this.config.get<string>('AUTH_SERVICE_URL');
+    if (!authUrl) return;
+    try {
+      await fetch(`${authUrl}/auth/internal/users/${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+        headers: this.s2sHeaders(actorId, organisationId),
+      });
+    } catch {
+      // best effort — membership is already removed
+    }
   }
 
   async listRoles(organisationId: string, actorId: string): Promise<unknown[]> {
