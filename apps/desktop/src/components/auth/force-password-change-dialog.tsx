@@ -17,6 +17,7 @@ export function ForcePasswordChangeDialog() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -95,16 +96,25 @@ export function ForcePasswordChangeDialog() {
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </label>
-          <label className="flex flex-col gap-1">
+          <label className="relative flex flex-col gap-1">
             <span className="text-xs font-medium text-text-secondary">Confirm new password</span>
             <Input
-              type="password"
+              type={showConfirmPassword ? "text" : "password"}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
+              className="pr-9"
               autoComplete="new-password"
               minLength={12}
               required
             />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword((v) => !v)}
+              aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+              className="absolute bottom-2 right-2 rounded p-1 text-text-muted hover:text-text-secondary"
+            >
+              {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
           </label>
 
           {error ? <p className="text-sm text-error">{error}</p> : null}
