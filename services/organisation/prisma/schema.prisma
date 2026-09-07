@@ -31,7 +31,7 @@ model Role {
   name           String
   description    String?
   roleCategory   String       @default("member")
-  isSystem       Boolean      @default(false)
+  isSystem       Boolean      @default(false) @map("is_system")
   isDefault      Boolean      @default(false)
   createdBy      String?
   permissions    Json         @default("[]")
