@@ -38,4 +38,7 @@ BEGIN
   IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'audit_db') THEN
     PERFORM dblink_exec('dbname=' || current_database() || '', 'CREATE DATABASE audit_db');
   END IF;
+  IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'hrms_db') THEN
+    PERFORM dblink_exec('dbname=' || current_database() || '', 'CREATE DATABASE hrms_db');
+  END IF;
 END $$;

@@ -173,6 +173,7 @@ services:
       NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
       REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       OTEL_SERVICE_NAME: 'teamspace-one-messaging-service'
     ports:
@@ -223,6 +224,7 @@ services:
       NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
       REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       OTEL_SERVICE_NAME: 'teamspace-one-projects-service'
     ports:
@@ -436,6 +438,33 @@ services:
       - redis
       - otel-collector
 
+  hrms-service:
+    build:
+      additional_contexts:
+        teamspace-one-base: 'service:base'
+      context: .
+      dockerfile: 'services/hrms/Dockerfile'
+    container_name: 'teamspace-one-hrms-service'
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3013
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/hrms_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-hrms-service'
+    ports:
+      - '127.0.0.1:3013:3013'
+    depends_on:
+      - postgres
+      - nats
+      - redis
+      - organisation-service
+      - otel-collector
+
   api-gateway:
     build:
       additional_contexts:
@@ -458,6 +487,7 @@ services:
       FILE_STORAGE_SERVICE_URL: 'http://file-storage-service:3010'
       SEARCH_SERVICE_URL: 'http://search-service:3011'
       AI_SERVICE_URL: 'http://ai-service:3012'
+      HRMS_SERVICE_URL: 'http://hrms-service:3013'
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
       RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
@@ -479,6 +509,7 @@ services:
       - file-storage-service
       - search-service
       - ai-service
+      - hrms-service
       - otel-collector
 
 volumes:

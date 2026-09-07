@@ -41,7 +41,14 @@ import { Input } from "../components/ui/input";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { MessageAttachment } from "../components/ui/message-attachment";
+import { usePermissionContext } from "@teamspace-one/authorization/react";
+import { hasPermission } from "@teamspace-one/authorization";
 import { cn } from "../lib/utils";
+
+function useCan(permission: string) {
+  const { user } = usePermissionContext();
+  return user ? hasPermission(user, permission) : false;
+}
 
 const tabs = ["overview", "board", "list", "timeline", "files", "discussions", "approvals", "activity"] as const;
 const statuses = ["backlog", "todo", "in_progress", "in_review", "blocked", "done"];
@@ -81,11 +88,16 @@ export function ProjectScreen() {
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
+  const canCreateProject = useCan("collaboration.project.create");
+  const canManageProject = useCan("collaboration.project.manage");
+  const canDeleteProject = useCan("collaboration.project.delete");
+  const canCreateTask = useCan("collaboration.task.create");
+  const canEditTask = useCan("collaboration.task.edit");
 
   const grouped = useMemo(() => Object.fromEntries(statuses.map((status) => [status, (tasks ?? []).filter((task) => task.status === status)])), [tasks]);
 
   function dropTask(status: string) {
-    if (!dragTaskId || !project) return;
+    if (!dragTaskId || !project || !canEditTask) return;
     const task = (tasks ?? []).find((item) => item.id === dragTaskId);
     setDragTaskId(null);
     setDragOverStatus(null);
@@ -107,7 +119,11 @@ export function ProjectScreen() {
       <div className="flex h-full flex-col items-center justify-center gap-3 text-text-muted">
         <Folder className="h-10 w-10" />
         <p>No projects yet.</p>
-        <Button onClick={() => setProjectDialog("create")}><Plus className="mr-1 h-4 w-4" />Create project</Button>
+        {canCreateProject ? (
+          <Button onClick={() => setProjectDialog("create")}><Plus className="mr-1 h-4 w-4" />Create project</Button>
+        ) : (
+          <p className="text-xs">You don&apos;t have permission to create projects.</p>
+        )}
         <ProjectDialog mode="create" open={projectDialog === "create"} onOpenChange={(open) => setProjectDialog(open ? "create" : null)} members={members ?? []} userMap={userMap} workspaces={workspaces ?? []} clients={clients ?? []} />
       </div>
     );
@@ -135,12 +151,12 @@ export function ProjectScreen() {
             </div>
             <div className="flex items-center gap-2">
               <div className="flex -space-x-2">{project.members.slice(0, 4).map((member) => <Avatar key={member.id} className="h-7 w-7 border-2 border-surface"><AvatarFallback className="text-[10px]">{getInitials(member, userMap.get(member.userId))}</AvatarFallback></Avatar>)}</div>
-              {project.ownerId === user?.id ? <Button variant="ghost" size="icon" onClick={() => setProjectDialog("settings")}><Settings className="h-4 w-4" /></Button> : null}
+              {project.ownerId === user?.id && (canManageProject || canDeleteProject) ? <Button variant="ghost" size="icon" onClick={() => setProjectDialog("settings")}><Settings className="h-4 w-4" /></Button> : null}
             </div>
           </div>
           <div className="mt-4 flex items-center justify-between">
             <div className="flex items-center gap-1 overflow-x-auto">{tabs.map((item) => <button key={item} type="button" onClick={() => setTab(item)} className={cn("rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-colors", tab === item ? "bg-primary-subtle text-primary" : "text-text-secondary hover:bg-surface-elevated hover:text-text")}>{item}</button>)}</div>
-            <Button size="sm" onClick={() => setCreateTaskOpen(true)}><Plus className="mr-1.5 h-4 w-4" />New task</Button>
+            {canCreateTask ? <Button size="sm" onClick={() => setCreateTaskOpen(true)}><Plus className="mr-1.5 h-4 w-4" />New task</Button> : null}
           </div>
           {project.clientId ? (
             <div className="mt-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
@@ -165,8 +181,8 @@ export function ProjectScreen() {
               onDrop={(event) => { event.preventDefault(); dropTask(status); }}
             >
               <div className="flex items-center justify-between px-3 py-2"><span className="text-xs font-semibold text-text">{labels[status]}</span><span className="text-xs text-text-muted">{grouped[status]?.length ?? 0}</span></div>
-              <div className="flex-1 space-y-2 p-2">{grouped[status]?.map((task) => <TaskCard key={task.id} task={task} userMap={userMap} dragging={dragTaskId === task.id} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", task.id); setDragTaskId(task.id); }} onDragEnd={() => { setDragTaskId(null); setDragOverStatus(null); }} onClick={() => setSelectedTask(task)} />)}{!grouped[status]?.length ? <div className="rounded-md border border-dashed py-6 text-center text-xs text-text-muted">Drop tasks here</div> : null}</div>
-              {status === "todo" ? (
+              <div className="flex-1 space-y-2 p-2">{grouped[status]?.map((task) => <TaskCard key={task.id} task={task} userMap={userMap} dragging={dragTaskId === task.id} draggable={canEditTask} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", task.id); setDragTaskId(task.id); }} onDragEnd={() => { setDragTaskId(null); setDragOverStatus(null); }} onClick={() => setSelectedTask(task)} />)}{!grouped[status]?.length ? <div className="rounded-md border border-dashed py-6 text-center text-xs text-text-muted">Drop tasks here</div> : null}</div>
+              {status === "todo" && canCreateTask ? (
                 <div className="m-2 space-y-1"><Input placeholder="Add task…" value={newTask[status] ?? ""} onChange={(event) => setNewTask((current) => ({ ...current, [status]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") addTask(status); }} className="h-7 text-xs" /><button type="button" onClick={() => addTask(status)} className="flex w-full items-center justify-center gap-1 rounded-md py-1.5 text-xs font-medium text-text-muted hover:bg-surface-elevated hover:text-text"><Plus className="h-3.5 w-3.5" />Add task</button></div>
               ) : null}
             </div>
@@ -186,14 +202,14 @@ export function ProjectScreen() {
   );
 }
 
-function TaskCard({ task, userMap, onClick, dragging, onDragStart, onDragEnd }: { task: Task; userMap: Map<string, UserDto>; onClick: () => void; dragging?: boolean; onDragStart?: (event: React.DragEvent) => void; onDragEnd?: () => void }) {
+function TaskCard({ task, userMap, onClick, dragging, draggable, onDragStart, onDragEnd }: { task: Task; userMap: Map<string, UserDto>; onClick: () => void; dragging?: boolean; draggable?: boolean; onDragStart?: (event: React.DragEvent) => void; onDragEnd?: () => void }) {
   return (
     <Card
       className={cn("cursor-pointer p-3 hover:border-primary/30", dragging && "opacity-40")}
       onClick={onClick}
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
+      draggable={draggable}
+      onDragStart={draggable ? onDragStart : undefined}
+      onDragEnd={draggable ? onDragEnd : undefined}
       role="button"
       tabIndex={0}
       onKeyDown={(event) => { if (event.key === "Enter") onClick(); }}
@@ -212,6 +228,10 @@ function ProjectDialog({ mode, project, open, onOpenChange, members, userMap, wo
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
   const deleteProject = useDeleteProject();
+  const canCreateProject = useCan("collaboration.project.create");
+  const canManageProject = useCan("collaboration.project.manage");
+  const canDeleteProject = useCan("collaboration.project.delete");
+  const canSubmit = mode === "create" ? canCreateProject : canManageProject;
   const [name, setName] = useState(project?.name ?? "");
   const [description, setDescription] = useState(project?.description ?? "");
   const [workspaceId, setWorkspaceId] = useState(project?.workspaceId ?? "");
@@ -227,12 +247,15 @@ function ProjectDialog({ mode, project, open, onOpenChange, members, userMap, wo
     else if (project) updateProject.mutate({ projectId: project.id, body: { ...body, clientId: clientId || null, status } }, { onSuccess: () => onOpenChange(false) });
   }
 
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-lg p-0 top-[55%]"><DialogHeader><DialogTitle>{mode === "create" ? "Create project" : "Project settings"}</DialogTitle><DialogDescription>Configure project ownership, schedule, and access.</DialogDescription></DialogHeader><div className="space-y-3 px-4 pb-4"><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Project name" /><Input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" />{mode === "create" ? <select className={selectClass} value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}><option value="">No workspace</option>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select> : <select className={selectClass} value={status} onChange={(event) => setStatus(event.target.value)}><option value="active">Active</option><option value="on_hold">On hold</option><option value="completed">Completed</option><option value="archived">Archived</option></select>}<select className={selectClass} value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">No client</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select><div className="grid grid-cols-2 gap-2"><label className="text-xs text-text-muted">Start date<Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label className="text-xs text-text-muted">Target date<Input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} /></label></div><div className="max-h-36 overflow-y-auto rounded-md border p-2">{members.map((member) => <label key={member.userId} className="flex items-center gap-2 px-2 py-1 text-sm"><input type="checkbox" checked={memberIds.includes(member.userId)} disabled={member.userId === project?.ownerId} onChange={() => setMemberIds((ids) => ids.includes(member.userId) ? ids.filter((id) => id !== member.userId) : [...ids, member.userId])} /><span className="flex-1 truncate">{getDisplayName(member, userMap.get(member.userId))}</span>{isExternalMember(member.role.name) ? <Badge variant="warning">External</Badge> : <span className="text-xs text-text-muted">{member.role.name}</span>}</label>)}</div><div className="flex justify-between">{mode === "settings" ? <Button variant="ghost" className="text-error" onClick={() => project && deleteProject.mutate(project.id, { onSuccess: () => { onOpenChange(false); useUIStore.getState().setActiveView("home"); } })}>Delete project</Button> : <span />}<div className="flex gap-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={!name.trim() || createProject.isPending || updateProject.isPending} onClick={submit}>Save</Button></div></div></div></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-lg p-0 top-[55%]"><DialogHeader><DialogTitle>{mode === "create" ? "Create project" : "Project settings"}</DialogTitle><DialogDescription>Configure project ownership, schedule, and access.</DialogDescription></DialogHeader><div className="space-y-3 px-4 pb-4"><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Project name" /><Input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" />{mode === "create" ? <select className={selectClass} value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}><option value="">No workspace</option>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select> : <select className={selectClass} value={status} onChange={(event) => setStatus(event.target.value)}><option value="active">Active</option><option value="on_hold">On hold</option><option value="completed">Completed</option><option value="archived">Archived</option></select>}<select className={selectClass} value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">No client</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select><div className="grid grid-cols-2 gap-2"><label className="text-xs text-text-muted">Start date<Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label className="text-xs text-text-muted">Target date<Input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} /></label></div><div className="max-h-36 overflow-y-auto rounded-md border p-2">{members.map((member) => <label key={member.userId} className="flex items-center gap-2 px-2 py-1 text-sm"><input type="checkbox" checked={memberIds.includes(member.userId)} disabled={member.userId === project?.ownerId} onChange={() => setMemberIds((ids) => ids.includes(member.userId) ? ids.filter((id) => id !== member.userId) : [...ids, member.userId])} /><span className="flex-1 truncate">{getDisplayName(member, userMap.get(member.userId))}</span>{isExternalMember(member.role.name) ? <Badge variant="warning">External</Badge> : <span className="text-xs text-text-muted">{member.role.name}</span>}</label>)}</div><div className="flex justify-between">{mode === "settings" && canDeleteProject ? <Button variant="ghost" className="text-error" onClick={() => project && deleteProject.mutate(project.id, { onSuccess: () => { onOpenChange(false); useUIStore.getState().setActiveView("home"); } })}>Delete project</Button> : <span />}<div className="flex gap-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={!canSubmit || !name.trim() || createProject.isPending || updateProject.isPending} onClick={submit}>Save</Button></div></div></div></DialogContent></Dialog>;
 }
 
 function TaskDialog({ task, members, userMap, open, onOpenChange, onSave }: { task: Task | null; members: { userId: string; role?: { name: string } }[]; userMap: Map<string, UserDto>; open: boolean; onOpenChange: (open: boolean) => void; onSave: (body: Parameters<ReturnType<typeof useUpdateTask>["mutate"]>[0]["body"]) => void }) {
   const deleteTask = useDeleteTask();
   const createTask = useCreateTask();
+  const canCreateTask = useCan("collaboration.task.create");
+  const canEditTask = useCan("collaboration.task.edit");
+  const canDeleteTask = useCan("collaboration.task.delete");
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const [status, setStatus] = useState(task?.status ?? "todo");
@@ -333,22 +356,26 @@ function TaskDialog({ task, members, userMap, open, onOpenChange, onSave }: { ta
           ) : null}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex gap-1">
-              <Button variant="ghost" size="sm" onClick={() => onSave({ status: isDone ? "todo" : "done" })}>
-                <CheckCircle2 className={cn("mr-1 h-4 w-4", isDone ? "text-success" : undefined)} />
-                {isDone ? "Reopen" : "Mark complete"}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={duplicate} disabled={createTask.isPending}>Duplicate</Button>
+              {canEditTask ? (
+                <Button variant="ghost" size="sm" onClick={() => onSave({ status: isDone ? "todo" : "done" })}>
+                  <CheckCircle2 className={cn("mr-1 h-4 w-4", isDone ? "text-success" : undefined)} />
+                  {isDone ? "Reopen" : "Mark complete"}
+                </Button>
+              ) : null}
+              {canCreateTask ? <Button variant="ghost" size="sm" onClick={duplicate} disabled={createTask.isPending}>Duplicate</Button> : null}
               <Button variant="ghost" size="sm" onClick={copyLink}>
                 <Copy className="mr-1 h-4 w-4" />
                 {copied ? "Copied" : "Copy link"}
               </Button>
-              <Button variant="ghost" size="sm" className="text-error" onClick={() => deleteTask.mutate({ taskId: task.id, projectId: task.projectId }, { onSuccess: () => onOpenChange(false) })}>
-                <Trash2 className="mr-1 h-4 w-4" />Delete
-              </Button>
+              {canDeleteTask ? (
+                <Button variant="ghost" size="sm" className="text-error" onClick={() => deleteTask.mutate({ taskId: task.id, projectId: task.projectId }, { onSuccess: () => onOpenChange(false) })}>
+                  <Trash2 className="mr-1 h-4 w-4" />Delete
+                </Button>
+              ) : null}
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button onClick={() => onSave({ title: title.trim(), description: description.trim() || null, status, priority, assigneeId: assigneeId || null, startDate: startDate || null, dueDate: dueDate || null })}>Save</Button>
+              <Button disabled={!canEditTask} onClick={() => onSave({ title: title.trim(), description: description.trim() || null, status, priority, assigneeId: assigneeId || null, startDate: startDate || null, dueDate: dueDate || null })}>Save</Button>
             </div>
           </div>
         </div>

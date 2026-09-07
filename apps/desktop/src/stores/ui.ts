@@ -14,6 +14,9 @@ export type View =
   | "members"
   | "saved"
   | "drafts"
+  | "hrms"
+  | "interview"
+  | "admin"
   | "settings";
 
 export interface NotificationToast {

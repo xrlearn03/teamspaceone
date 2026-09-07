@@ -195,6 +195,7 @@ async function bootstrap() {
   const fileStorageUrl = config.get<string>('FILE_STORAGE_SERVICE_URL', 'http://localhost:3010');
   const searchUrl = config.get<string>('SEARCH_SERVICE_URL', 'http://localhost:3011');
   const aiUrl = config.get<string>('AI_SERVICE_URL', 'http://localhost:3012');
+  const hrmsUrl = config.get<string>('HRMS_SERVICE_URL', 'http://localhost:3013');
   const jwtSecret = config.get<string>('JWT_SECRET');
   if (!jwtSecret) {
     throw new Error('JWT_SECRET environment variable is required');
@@ -245,6 +246,9 @@ async function bootstrap() {
 
   app.use('/ai', createAuthMiddleware(jwtSecret));
   app.use('/ai', proxy(aiUrl));
+
+  app.use('/hrms', createAuthMiddleware(jwtSecret));
+  app.use('/hrms', proxy(hrmsUrl));
 
   app.enableShutdownHooks();
 

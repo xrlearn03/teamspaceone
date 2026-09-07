@@ -160,6 +160,24 @@ export const ALL_PERMISSIONS: readonly string[] = Object.freeze([
   ...Object.values(ADMIN_PERMISSIONS),
 ]);
 
+/**
+ * Canonical permission string for a registry row. Two-part permissions such
+ * as 'hrms.access' are stored with resource='*' so the
+ * (module, resource, action) key reconstructs to the original string.
+ */
+export function permissionKey(module: string, resource: string, action: string): string {
+  return resource === '*' ? `${module}.${action}` : `${module}.${resource}.${action}`;
+}
+
+/** Split a canonical permission string into registry columns. */
+export function permissionParts(permission: string): { module: string; resource: string; action: string } {
+  const parts = permission.split('.');
+  if (parts.length === 2) {
+    return { module: parts[0], resource: '*', action: parts[1] };
+  }
+  return { module: parts[0] ?? '', resource: parts[1] ?? '', action: parts[2] ?? '' };
+}
+
 export function isValidPermission(value: string): boolean {
   if (value === '*') return true;
   return ALL_PERMISSIONS.includes(value);
@@ -172,11 +190,18 @@ export function permissionMatches(granted: string, required: string): boolean {
   const grantedParts = granted.split('.');
   const requiredParts = required.split('.');
 
-  if (grantedParts.length !== 3 || requiredParts.length !== 3) {
+  if (grantedParts.length > requiredParts.length) {
     return false;
   }
 
-  for (let i = 0; i < 3; i++) {
+  // A grant may be shorter than the required permission only when it ends
+  // in a wildcard segment (e.g. 'hrms.*' covers 'hrms.employee.view' and
+  // 'hrms.access').
+  if (grantedParts.length < requiredParts.length && grantedParts[grantedParts.length - 1] !== '*') {
+    return false;
+  }
+
+  for (let i = 0; i < grantedParts.length; i++) {
     if (grantedParts[i] === '*') continue;
     if (grantedParts[i] !== requiredParts[i]) return false;
   }

@@ -1,5 +1,5 @@
 import { PrismaClient, Prisma } from '#prisma';
-import { ALL_PERMISSIONS } from '@teamspace-one/authorization';
+import { ALL_PERMISSIONS, permissionParts } from '@teamspace-one/authorization';
 
 const prisma = new PrismaClient();
 
@@ -7,7 +7,7 @@ async function main() {
   const operations: Prisma.PrismaPromise<unknown>[] = [];
 
   for (const permission of ALL_PERMISSIONS) {
-    const [module, resource, action] = permission.split('.');
+    const { module, resource, action } = permissionParts(permission);
     if (!module || !resource || !action) {
       console.warn(`Skipping malformed permission: ${permission}`);
       continue;

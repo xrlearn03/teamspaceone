@@ -33,6 +33,8 @@ import { Composer } from "../components/chat/composer";
 import { ThreadPanel } from "../components/chat/thread-panel";
 import { getActiveOrganisation } from "../lib/api";
 import { useRealtime } from "../hooks/useRealtime";
+import { usePermissionContext } from "@teamspace-one/authorization/react";
+import { hasPermission } from "@teamspace-one/authorization";
 import type { Message, UserDto } from "../lib/api";
 
 function getDisplayName(_member: { userId: string }, user?: UserDto) {
@@ -80,6 +82,12 @@ export function ChannelScreen() {
   const [threadMessage, setThreadMessage] = useState<Message | null>(null);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const { onRealtimeEvent, sendPresence, sendCallRing } = useRealtime();
+  const { user: authzUser } = usePermissionContext();
+  const canSendMessage = authzUser ? hasPermission(authzUser, "collaboration.message.send") : false;
+  const canUploadFile = authzUser ? hasPermission(authzUser, "collaboration.file.upload") : false;
+  const canManageChannel = authzUser ? hasPermission(authzUser, "collaboration.channel.manage") : false;
+  const canDeleteChannel = authzUser ? hasPermission(authzUser, "collaboration.channel.delete") : false;
+  const canCreateMeeting = authzUser ? hasPermission(authzUser, "collaboration.meeting.create") : false;
 
   useEffect(() => {
     if (!channel) return;
@@ -160,18 +168,24 @@ export function ChannelScreen() {
           <Button variant={searchOpen ? "secondary" : "ghost"} size="icon" onClick={() => setSearchOpen((open) => !open)}>
             <Search className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" disabled={createVoiceRoom.isPending} onClick={startVoiceCall}>
-            <Phone className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" disabled={createMeeting.isPending} onClick={startVideoCall}>
-            <Video className="h-4 w-4" />
-          </Button>
+          {canCreateMeeting ? (
+            <>
+              <Button variant="ghost" size="icon" disabled={createVoiceRoom.isPending} onClick={startVoiceCall}>
+                <Phone className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" disabled={createMeeting.isPending} onClick={startVideoCall}>
+                <Video className="h-4 w-4" />
+              </Button>
+            </>
+          ) : null}
           <Button variant="ghost" size="icon" onClick={toggleRightPanel}>
             <Info className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => { setChannelName(channel?.name ?? ""); setPrivateChannel(channel?.type === "private"); setChannelMemberIds(channel?.members.map((member) => member.userId) ?? []); setSettingsOpen(true); }}>
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
+          {canManageChannel || canDeleteChannel ? (
+            <Button variant="ghost" size="icon" onClick={() => { setChannelName(channel?.name ?? ""); setPrivateChannel(channel?.type === "private"); setChannelMemberIds(channel?.members.map((member) => member.userId) ?? []); setSettingsOpen(true); }}>
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          ) : null}
         </div>
       </header>
       {searchOpen ? <div className="border-b p-2"><Input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search messages in this channel" /></div> : null}
@@ -231,9 +245,9 @@ export function ChannelScreen() {
               channelId={channel?.id}
               members={(members ?? []).map((m) => ({ id: m.userId, name: getDisplayName(m, userMap.get(m.userId)) }))}
               sending={sending}
-              disabled={!channel}
+              disabled={!channel || !canSendMessage}
               onSend={send}
-              onAttach={attach}
+              onAttach={canUploadFile ? attach : undefined}
             />
           </div>
         </div>
@@ -255,9 +269,9 @@ export function ChannelScreen() {
           <DialogDescription>Rename the channel, change its visibility, or permanently remove it.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 px-4 pb-4">
-          <Input value={channelName} onChange={(e) => setChannelName(e.target.value)} />
+          <Input value={channelName} onChange={(e) => setChannelName(e.target.value)} disabled={!canManageChannel} />
           <label className="flex items-center gap-2 text-sm text-text-secondary">
-            <input type="checkbox" checked={privateChannel} onChange={(e) => setPrivateChannel(e.target.checked)} />
+            <input type="checkbox" checked={privateChannel} onChange={(e) => setPrivateChannel(e.target.checked)} disabled={!canManageChannel} />
             Private channel
           </label>
           <div>
@@ -268,7 +282,7 @@ export function ChannelScreen() {
                   <input
                     type="checkbox"
                     checked={channelMemberIds.includes(member.userId)}
-                    disabled={member.userId === channel?.createdBy}
+                    disabled={!canManageChannel || member.userId === channel?.createdBy}
                     onChange={() => setChannelMemberIds((ids) => ids.includes(member.userId) ? ids.filter((id) => id !== member.userId) : [...ids, member.userId])}
                   />
                   <span className="flex-1 truncate">{getDisplayName(member, userMap.get(member.userId))}</span>
@@ -283,18 +297,20 @@ export function ChannelScreen() {
           </div>
           {(updateChannel.error || replaceMembers.error) ? <p className="text-sm text-error">{(updateChannel.error ?? replaceMembers.error)?.message}</p> : null}
           <div className="flex justify-between gap-2">
-            <Button
-              variant="ghost"
-              className="text-error"
-              disabled={!channel || deleteChannel.isPending}
-              onClick={() => channel && deleteChannel.mutate(channel.id, { onSuccess: () => { setSettingsOpen(false); useUIStore.getState().setActiveView("home"); } })}
-            >
-              Delete channel
-            </Button>
+            {canDeleteChannel ? (
+              <Button
+                variant="ghost"
+                className="text-error"
+                disabled={!channel || deleteChannel.isPending}
+                onClick={() => channel && deleteChannel.mutate(channel.id, { onSuccess: () => { setSettingsOpen(false); useUIStore.getState().setActiveView("home"); } })}
+              >
+                Delete channel
+              </Button>
+            ) : <span />}
             <div className="flex gap-2">
               <Button variant="ghost" onClick={() => setSettingsOpen(false)}>Cancel</Button>
               <Button
-                disabled={!channel || !channelName.trim() || updateChannel.isPending || replaceMembers.isPending}
+                disabled={!canManageChannel || !channel || !channelName.trim() || updateChannel.isPending || replaceMembers.isPending}
                 onClick={() => {
                   if (!channel) return;
                   void updateChannel.mutateAsync({ channelId: channel.id, body: { name: channelName.trim(), type: privateChannel ? "private" : "public" } })

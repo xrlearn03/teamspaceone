@@ -144,6 +144,56 @@ export class MeetingService {
     });
   }
 
+  /**
+   * Calendar foundation: exposes scheduled meetings the actor can see as
+   * generic calendar events. Other modules (e.g. HRMS leave) can be merged
+   * into this shape later without changing the API.
+   */
+  async listCalendarEvents(ctx: OrganisationContextValue, from?: string, to?: string) {
+    const userId = ctx.actorId;
+    if (!userId) throw new ForbiddenException('Missing actor');
+
+    const fromDate = from ? new Date(from) : undefined;
+    const toDate = to ? new Date(to) : undefined;
+    if ((fromDate && Number.isNaN(fromDate.getTime())) || (toDate && Number.isNaN(toDate.getTime()))) {
+      throw new BadRequestException('Invalid calendar range');
+    }
+    if (fromDate && toDate && fromDate > toDate) {
+      throw new BadRequestException('Calendar range start must be before end');
+    }
+
+    const meetings = await this.prisma.meeting.findMany({
+      where: {
+        organisationId: ctx.organisationId,
+        scheduledAt: {
+          not: null,
+          ...(fromDate ? { gte: fromDate } : {}),
+          ...(toDate ? { lte: toDate } : {}),
+        },
+        OR: [
+          { createdBy: userId },
+          { participants: { some: { userId, leftAt: null } } },
+        ],
+      },
+      include: { participants: { where: { leftAt: null } } },
+      orderBy: { scheduledAt: 'asc' },
+    });
+
+    return meetings.map((meeting) => ({
+      id: `meeting:${meeting.id}`,
+      type: 'meeting' as const,
+      sourceId: meeting.id,
+      title: meeting.title,
+      description: meeting.description,
+      startsAt: meeting.scheduledAt,
+      endsAt: meeting.endedAt ?? meeting.scheduledAt,
+      status: meeting.status,
+      meetingType: meeting.type,
+      workspaceId: meeting.workspaceId,
+      participantCount: meeting.participants.length,
+    }));
+  }
+
   async getById(ctx: OrganisationContextValue, id: string) {
     const userId = ctx.actorId;
     if (!userId) throw new ForbiddenException('Missing actor');

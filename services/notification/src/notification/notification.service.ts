@@ -175,19 +175,24 @@ export class NotificationService {
         const allRecipients = [...new Set([...recipientIds, ...mentionedUserIds])];
         return allRecipients
           .filter((userId) => userId !== actorId)
-          .map((userId) => ({
-            organisationId,
-            workspaceId,
-            userId,
-            actorId,
-            eventId: envelope.eventId,
-            eventType,
-            resourceType: 'message',
-            resourceId: payload.id as string,
-            title: 'New message',
-            body: `New message in channel ${payload.channelId as string}`,
-            link: this.messageLink(organisationId, payload.channelId as string, payload.id as string),
-          }));
+          .map((userId) => {
+            const mentioned = mentionedUserIds.includes(userId);
+            return {
+              organisationId,
+              workspaceId,
+              userId,
+              actorId,
+              eventId: envelope.eventId,
+              eventType,
+              resourceType: 'message',
+              resourceId: payload.id as string,
+              title: mentioned ? 'You were mentioned' : 'New message',
+              body: mentioned
+                ? `You were mentioned in channel ${payload.channelId as string}`
+                : `New message in channel ${payload.channelId as string}`,
+              link: this.messageLink(organisationId, payload.channelId as string, payload.id as string),
+            };
+          });
       }
       case Subjects.MESSAGE_UPDATED: {
         const recipientIds = Array.isArray(payload.recipientIds) ? (payload.recipientIds as string[]) : [];

@@ -41,6 +41,15 @@ export class MeetingController {
     return this.meeting.list(ctx);
   }
 
+  @Get('calendar/events')
+  async listCalendarEvents(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.meeting.listCalendarEvents(ctx, from, to);
+  }
+
   @Get(':id')
   async getById(
     @CurrentOrganisation() ctx: OrganisationContextValue,

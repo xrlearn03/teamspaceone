@@ -523,6 +523,16 @@ export function useMeetings() {
   });
 }
 
+export function useCalendarEvents(range?: { from?: string; to?: string }) {
+  return useQuery({
+    queryKey: ["calendar-events", orgId(), range?.from ?? null, range?.to ?? null],
+    queryFn: () => api.getCalendarEvents(range),
+    enabled: getActiveOrganisation() !== null,
+    staleTime: 60 * 1000,
+    retry: 2,
+  });
+}
+
 export function useCreateMeeting() {
   const client = useQueryClient();
   return useMutation({
@@ -810,5 +820,295 @@ export function useDeclineAIAction() {
   return useMutation({
     mutationFn: (id: string) => api.declineAIAction(id),
     onSuccess: () => client.invalidateQueries({ queryKey: ["ai-pending-actions"] }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// HRMS (Phase 4)
+// ---------------------------------------------------------------------------
+
+const hrmsEnabled = () => getActiveOrganisation() !== null;
+
+export function useHrmsOverview() {
+  return useQuery({
+    queryKey: ["hrms", "overview", orgId()],
+    queryFn: api.getHrmsOverview,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function useEmployees(params?: api.EmployeeListParams) {
+  return useQuery({
+    queryKey: ["hrms", "employees", orgId(), params ?? {}],
+    queryFn: () => api.getEmployees(params),
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useMyEmployee() {
+  return useQuery({
+    queryKey: ["hrms", "employees", "me", orgId()],
+    queryFn: api.getMyEmployee,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function useEmployee(id?: string) {
+  return useQuery({
+    queryKey: ["hrms", "employees", orgId(), id],
+    queryFn: () => api.getEmployee(id as string),
+    enabled: Boolean(id),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateEmployee() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createEmployee,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "employees"] });
+      client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+    },
+  });
+}
+
+export function useUpdateEmployee() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateEmployee>[1] }) =>
+      api.updateEmployee(args.id, args.body),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["hrms", "employees"] });
+      client.invalidateQueries({ queryKey: ["hrms", "employees", orgId(), args.id] });
+      client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+    },
+  });
+}
+
+export function useDepartments() {
+  return useQuery({
+    queryKey: ["hrms", "departments", orgId()],
+    queryFn: api.getDepartments,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateDepartment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createDepartment,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "departments"] }),
+  });
+}
+
+export function useUpdateDepartment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateDepartment>[1] }) =>
+      api.updateDepartment(args.id, args.body),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "departments"] }),
+  });
+}
+
+export function useDeleteDepartment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteDepartment,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "departments"] }),
+  });
+}
+
+export function useDesignations() {
+  return useQuery({
+    queryKey: ["hrms", "designations", orgId()],
+    queryFn: api.getDesignations,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateDesignation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createDesignation,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "designations"] }),
+  });
+}
+
+export function useOrgChart() {
+  return useQuery({
+    queryKey: ["hrms", "org-chart", orgId()],
+    queryFn: api.getOrgChart,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useAttendance(params?: { employeeId?: string; from?: string; to?: string }) {
+  return useQuery({
+    queryKey: ["hrms", "attendance", orgId(), params ?? {}],
+    queryFn: () => api.getAttendance(params),
+    enabled: hrmsEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useAttendanceCheckin() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.attendanceCheckin,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "attendance"] });
+      client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+    },
+  });
+}
+
+export function useAttendanceCheckout() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.attendanceCheckout,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "attendance"] }),
+  });
+}
+
+export function useAttendanceCorrections(status?: string) {
+  return useQuery({
+    queryKey: ["hrms", "attendance-corrections", orgId(), status ?? "all"],
+    queryFn: () => api.getAttendanceCorrections(status ? { status } : undefined),
+    enabled: hrmsEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useRequestAttendanceCorrection() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.requestAttendanceCorrection,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "attendance-corrections"] }),
+  });
+}
+
+export function useReviewAttendanceCorrection() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; action: "approve" | "reject"; note?: string }) =>
+      api.reviewAttendanceCorrection(args.id, args.action, args.note),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "attendance-corrections"] });
+      client.invalidateQueries({ queryKey: ["hrms", "attendance"] });
+      client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+    },
+  });
+}
+
+export function useLeaveTypes() {
+  return useQuery({
+    queryKey: ["hrms", "leave-types", orgId()],
+    queryFn: api.getLeaveTypes,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useLeaveBalances(employeeId?: string) {
+  return useQuery({
+    queryKey: ["hrms", "leave-balances", orgId(), employeeId ?? "me"],
+    queryFn: () => api.getLeaveBalances(employeeId),
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useLeaveRequests(params?: { status?: string; employeeId?: string; mine?: boolean }) {
+  return useQuery({
+    queryKey: ["hrms", "leave-requests", orgId(), params ?? {}],
+    queryFn: () => api.getLeaveRequests(params),
+    enabled: hrmsEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useApplyLeave() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.applyLeave,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "leave-requests"] });
+      client.invalidateQueries({ queryKey: ["hrms", "leave-balances"] });
+      client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+    },
+  });
+}
+
+export function useReviewLeaveRequest() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; action: "approve" | "reject" | "cancel"; note?: string }) =>
+      api.reviewLeaveRequest(args.id, args.action, args.note),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "leave-requests"] });
+      client.invalidateQueries({ queryKey: ["hrms", "leave-balances"] });
+      client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+    },
+  });
+}
+
+export function useHolidays() {
+  return useQuery({
+    queryKey: ["hrms", "holidays", orgId()],
+    queryFn: api.getHolidays,
+    enabled: hrmsEnabled(),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function usePayrollPeriods() {
+  return useQuery({
+    queryKey: ["hrms", "payroll-periods", orgId()],
+    queryFn: api.getPayrollPeriods,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function usePayslips(params?: { employeeId?: string; payrollPeriodId?: string }) {
+  return useQuery({
+    queryKey: ["hrms", "payslips", orgId(), params ?? {}],
+    queryFn: () => api.getPayslips(params),
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useEmployeeDocuments(employeeId?: string) {
+  return useQuery({
+    queryKey: ["hrms", "documents", orgId(), employeeId ?? "me"],
+    queryFn: () => api.getEmployeeDocuments(employeeId),
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useUploadEmployeeDocument() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.uploadEmployeeDocument,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "documents"] }),
+  });
+}
+
+export function useDeleteEmployeeDocument() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteEmployeeDocument,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "documents"] }),
   });
 }

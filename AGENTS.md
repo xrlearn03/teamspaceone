@@ -15,6 +15,7 @@
 - The SFU (`services/sfu`, Rust) requires an HMAC token in `Join`: clients call `POST /meetings/:id/sfu-token` (issued by meeting-service after participant check) and pass it in the join message.
 - CORS: gateway + realtime use `CORS_ORIGINS` (comma-separated); defaults cover Tauri/Vite dev origins.
 - Direct calls to a service port in local dev need the `x-internal-api-key` header (value = `INTERNAL_API_KEY`).
+- RBAC: `packages/authorization` holds the permission catalogue, `can()` policy engine, React `PermissionProvider`/`useCan`/`PermissionGate`, and `RemotePermissionGuard` + `RequirePermissions` for Nest services. The organisation service resolves `AuthorizableUser` from its own DB; other services fetch `GET /organisations/:id/me/context` (internal key + actor headers, 30s cache) — they need `ORGANISATION_SERVICE_URL` and `@teamspace-one/authorization` as a dep (see `services/messaging`/`services/projects` for the wiring pattern). Frontend view gating lives in `apps/desktop/src/lib/view-permissions.ts`; blocked views render `screens/access-denied.tsx`.
 
 ## Useful Commands
 
@@ -26,7 +27,15 @@
 - Run tests: `pnpm test`
 - Lint/typecheck: `pnpm lint` / `pnpm typecheck`
 - Apply pending Prisma migration for a service (local Postgres): `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/<db>?schema=public pnpm --filter @teamspace-one/<service> db:migrate`
+- Seed/backfill RBAC (permissions registry, system role permissions + scopes, membership data scopes): `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/<org-db>?schema=public pnpm --filter @teamspace-one/organisation-service db:seed:rbac`
 - Service containers auto-apply pending Prisma migrations on start (`migrate deploy` runs in each Dockerfile's `CMD` before `node dist/main`). To apply manually on the server (Docker): `docker exec -w /app/services/<service> teamspace-one-<service>-service npx prisma migrate deploy` — containers already carry the correct `DATABASE_URL` (Postgres hostname is `postgres`, not `localhost`)
+- HRMS service: `pnpm dev:hrms` / `pnpm build:hrms` (port 3013, db `hrms_db`, gateway prefix `/hrms`). See `docs/hrms.md`.
+
+## Authorization notes
+
+- Canonical permissions live in `packages/authorization/src/permissions.ts`. Two-part permissions (e.g. `hrms.access`, `dashboard.view`) are stored in the `permissions` table with `resource='*'`; always use `permissionParts()`/`permissionKey()` from `@teamspace-one/authorization` when reading/writing registry rows — never split/join manually.
+- `permissionMatches(granted, required)` supports trailing wildcards: `hrms.*` covers `hrms.employee.view` and `hrms.access`.
+- Other services resolve a caller's permissions/scopes via `GET {ORGANISATION_SERVICE_URL}/organisations/:id/me/context` (send `x-internal-api-key`, `x-internal-caller`, `x-actor-id`, `x-organisation-id`). See `services/hrms/src/hrms/authorization.client.ts` + `permission.guard.ts` for the pattern.
 
 ## File & Storage Notes
 
@@ -59,6 +68,9 @@ Semantic tokens live in `apps/desktop/src/styles/index.css`:
 - `src/components/search/` — global command/search
 - `src/screens/` — top-level route screens
 - `src/stores/ui.ts` — Zustand store for view, theme, panels, connection
+- `src/features/dashboard/` — permission-filtered dashboard widget registry
+- `src/lib/view-permissions.ts` — view → permission map enforced by `AppShell`
+- `src/hooks/usePermissions.ts` — `usePermissions()`/`useMyContext()` RBAC helpers; `<PermissionGate>`/`useCan` come from `@teamspace-one/authorization/react`
 - `src/lib/data.ts` — isolated mock data for visual development
 
 ## Key Behaviors
@@ -74,4 +86,10 @@ Semantic tokens live in `apps/desktop/src/styles/index.css`:
 - Architecture audit, current-state assessment, technical decisions, implementation roadmap, and permission matrix are in `docs/`.
 - Current gaps: granular RBAC/data scopes, HRMS, AI Interview, employee/candidate identity separation, and permission-aware UI.
 - Reusable assets: existing auth flow, organisation context middleware, outbox/NATS event plumbing, search service, AI service, file storage, notification service, realtime gateway, and desktop UI primitives.
-- Next phase: Phase 1 — Authentication + RBAC (`packages/authorization`, extended `organisation` schema, permission guards, dynamic navigation).
+
+## Phase 1–2 — RBAC + Role-Based Shell (status)
+
+- `packages/authorization` holds the permission registry, policy engine (`can`/`hasAnyPermission`), navigation filter, React provider/gates (`./react` export), and Nest guards (`./guard`, `./nest`). Built CJS+ESM via `pnpm --filter @teamspace-one/authorization build`.
+- Frontend permission context: `PermissionBoundary` in `App.tsx` fetches `GET /organisations/:id/me/context` → `PermissionProvider`. Views are gated via `src/lib/view-permissions.ts`; unauthorized views render `screens/access-denied.tsx`.
+- Navigation and dashboard widgets are permission-filtered (`features/dashboard/registry.ts`). Views: `hrms`, `interview`, `admin` added to the `View` union.
+- IMPORTANT: existing orgs/roles/memberships need `db:seed:rbac` (see commands) or users get no permissions.

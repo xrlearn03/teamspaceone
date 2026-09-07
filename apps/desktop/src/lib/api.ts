@@ -720,6 +720,25 @@ export function getMembers(organisationId: string) {
   return apiRequest<OrganisationMember[]>(`/organisations/${organisationId}/members`);
 }
 
+export interface UserDataScope {
+  module: string;
+  scope: "own" | "assigned" | "team" | "department" | "organisation";
+  scopeValue?: string | null;
+}
+
+/** Authorisation context for the current user in the active organisation. */
+export interface UserContext {
+  id: string;
+  organisationId: string;
+  permissions: string[];
+  dataScopes: UserDataScope[];
+  isSuperAdmin?: boolean;
+}
+
+export function getMyContext(organisationId: string) {
+  return apiRequest<UserContext>(`/organisations/${organisationId}/me/context`);
+}
+
 export function getRoles(organisationId: string) {
   return apiRequest<OrganisationRole[]>(`/organisations/${organisationId}/roles`);
 }
@@ -1069,9 +1088,31 @@ export function search(query: string, filters?: SearchFilters) {
   return apiRequest<SearchResult[]>(`/search?${params.toString()}`);
 }
 
+export interface CalendarEvent {
+  id: string;
+  type: "meeting";
+  sourceId: string;
+  title: string;
+  description?: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  status: string;
+  meetingType: string;
+  workspaceId?: string | null;
+  participantCount: number;
+}
+
 // Meetings
 export function getMeetings() {
   return apiRequest<Meeting[]>("/meetings");
+}
+
+export function getCalendarEvents(range?: { from?: string; to?: string }) {
+  const params = new URLSearchParams();
+  if (range?.from) params.set("from", range.from);
+  if (range?.to) params.set("to", range.to);
+  const qs = params.toString();
+  return apiRequest<CalendarEvent[]>(`/meetings/calendar/events${qs ? `?${qs}` : ""}`);
 }
 
 export function getMeeting(id: string) {
@@ -1254,4 +1295,369 @@ export function confirmAIAction(id: string, edits?: Record<string, unknown>) {
 
 export function declineAIAction(id: string) {
   return apiRequest<AIPendingAction>(`/ai/actions/${encodeURIComponent(id)}/decline`, { method: "POST" });
+}
+
+// ---------------------------------------------------------------------------
+// HRMS (Phase 4)
+// ---------------------------------------------------------------------------
+
+export interface Employee {
+  id: string;
+  organisationId: string;
+  userId: string;
+  firstName: string;
+  lastName: string;
+  workEmail?: string | null;
+  phone?: string | null;
+  avatarFileId?: string | null;
+  departmentId?: string | null;
+  designationId?: string | null;
+  managerEmployeeId?: string | null;
+  joiningDate?: string | null;
+  employmentType: string;
+  status: string;
+  employeeNumber?: string | null;
+  departmentName?: string | null;
+  designationName?: string | null;
+  department?: { id: string; name: string } | null;
+  designation?: { id: string; title?: string; name?: string } | null;
+  manager?: { id: string; firstName?: string; lastName?: string } | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface Department {
+  id: string;
+  organisationId: string;
+  name: string;
+  description?: string | null;
+  parentDepartmentId?: string | null;
+  headEmployeeId?: string | null;
+  memberCount?: number;
+  createdAt?: string;
+}
+
+export interface Designation {
+  id: string;
+  organisationId: string;
+  title: string;
+  name?: string;
+  level?: string | null;
+  departmentId?: string | null;
+  createdAt?: string;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  organisationId?: string;
+  employeeId: string;
+  employeeName?: string | null;
+  date: string;
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+  workedMinutes?: number | null;
+  status: string;
+  createdAt?: string;
+}
+
+export interface AttendanceCorrection {
+  id: string;
+  attendanceId?: string;
+  attendanceRecordId?: string;
+  employeeId: string;
+  employeeName?: string | null;
+  date?: string | null;
+  requestedCheckInAt?: string | null;
+  requestedCheckOutAt?: string | null;
+  reason?: string | null;
+  status: string;
+  reviewerNote?: string | null;
+  createdAt?: string;
+}
+
+export interface LeaveType {
+  id: string;
+  organisationId?: string;
+  name: string;
+  code?: string | null;
+  paid?: boolean;
+  annualEntitlement?: number | null;
+  createdAt?: string;
+}
+
+export interface LeaveBalance {
+  id: string;
+  employeeId: string;
+  leaveTypeId: string;
+  leaveTypeName?: string | null;
+  year?: number;
+  entitled: number;
+  used: number;
+  remaining: number;
+}
+
+export interface LeaveRequest {
+  id: string;
+  employeeId: string;
+  employeeName?: string | null;
+  leaveTypeId: string;
+  leaveTypeName?: string | null;
+  startDate: string;
+  endDate: string;
+  days?: number | null;
+  reason?: string | null;
+  status: string;
+  reviewerNote?: string | null;
+  createdAt?: string;
+}
+
+export interface Holiday {
+  id: string;
+  organisationId?: string;
+  name: string;
+  date: string;
+  description?: string | null;
+}
+
+export interface PayrollPeriod {
+  id: string;
+  organisationId?: string;
+  name?: string | null;
+  startDate: string;
+  endDate: string;
+  status: string;
+}
+
+export interface Payslip {
+  id: string;
+  employeeId: string;
+  employeeName?: string | null;
+  payrollPeriodId: string;
+  periodName?: string | null;
+  gross?: number | null;
+  net?: number | null;
+  currency?: string | null;
+  status: string;
+  createdAt?: string;
+}
+
+export interface EmployeeDocument {
+  id: string;
+  employeeId: string;
+  fileId: string;
+  name?: string | null;
+  category?: string | null;
+  uploadedBy?: string | null;
+  createdAt?: string;
+}
+
+export interface HrmsOverview {
+  totalEmployees: number;
+  byDepartment: { name: string; count: number }[];
+  pendingLeaveRequests: number;
+  pendingCorrections: number;
+  presentToday: number;
+}
+
+export interface OrgChartNode {
+  id: string;
+  name: string;
+  designation?: string | null;
+  department?: string | null;
+  children: OrgChartNode[];
+}
+
+export function getHrmsOverview() {
+  return apiRequest<HrmsOverview>("/hrms/overview");
+}
+
+export interface EmployeeListParams {
+  departmentId?: string;
+  status?: string;
+  search?: string;
+}
+
+export function getEmployees(params?: EmployeeListParams) {
+  const query = new URLSearchParams();
+  if (params?.departmentId) query.set("departmentId", params.departmentId);
+  if (params?.status) query.set("status", params.status);
+  if (params?.search) query.set("search", params.search);
+  const qs = query.toString();
+  return apiRequest<Employee[]>(`/hrms/employees${qs ? `?${qs}` : ""}`);
+}
+
+export function getMyEmployee() {
+  return apiRequest<Employee>("/hrms/employees/me");
+}
+
+export function getEmployee(id: string) {
+  return apiRequest<Employee>(`/hrms/employees/${encodeURIComponent(id)}`);
+}
+
+export function createEmployee(body: {
+  userId?: string;
+  firstName: string;
+  lastName: string;
+  workEmail?: string;
+  phone?: string;
+  departmentId?: string;
+  designationId?: string;
+  managerEmployeeId?: string;
+  joiningDate?: string;
+  employmentType?: string;
+  employeeNumber?: string;
+}) {
+  return apiRequest<Employee>("/hrms/employees", { method: "POST", body });
+}
+
+export function updateEmployee(
+  id: string,
+  body: Partial<{
+    firstName: string;
+    lastName: string;
+    workEmail: string | null;
+    phone: string | null;
+    departmentId: string | null;
+    designationId: string | null;
+    managerEmployeeId: string | null;
+    joiningDate: string | null;
+    employmentType: string;
+    status: string;
+    employeeNumber: string | null;
+  }>,
+) {
+  return apiRequest<Employee>(`/hrms/employees/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body,
+  });
+}
+
+export function getDepartments() {
+  return apiRequest<Department[]>("/hrms/departments");
+}
+
+export function createDepartment(body: { name: string; description?: string; parentDepartmentId?: string; headEmployeeId?: string }) {
+  return apiRequest<Department>("/hrms/departments", { method: "POST", body });
+}
+
+export function updateDepartment(id: string, body: { name?: string; description?: string | null; parentDepartmentId?: string | null; headEmployeeId?: string | null }) {
+  return apiRequest<Department>(`/hrms/departments/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function deleteDepartment(id: string) {
+  return apiRequest<void>(`/hrms/departments/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function getDesignations() {
+  return apiRequest<Designation[]>("/hrms/designations");
+}
+
+export function createDesignation(body: { title: string; level?: string; departmentId?: string }) {
+  return apiRequest<Designation>("/hrms/designations", { method: "POST", body });
+}
+
+export function getOrgChart() {
+  return apiRequest<OrgChartNode[]>("/hrms/org-chart");
+}
+
+export function attendanceCheckin() {
+  return apiRequest<AttendanceRecord>("/hrms/attendance/checkin", { method: "POST" });
+}
+
+export function attendanceCheckout() {
+  return apiRequest<AttendanceRecord>("/hrms/attendance/checkout", { method: "POST" });
+}
+
+export function getAttendance(params?: { employeeId?: string; from?: string; to?: string }) {
+  const query = new URLSearchParams();
+  if (params?.employeeId) query.set("employeeId", params.employeeId);
+  if (params?.from) query.set("from", params.from);
+  if (params?.to) query.set("to", params.to);
+  const qs = query.toString();
+  return apiRequest<AttendanceRecord[]>(`/hrms/attendance${qs ? `?${qs}` : ""}`);
+}
+
+export function requestAttendanceCorrection(body: {
+  attendanceId: string;
+  requestedCheckInAt?: string;
+  requestedCheckOutAt?: string;
+  reason?: string;
+}) {
+  return apiRequest<AttendanceCorrection>("/hrms/attendance/corrections", { method: "POST", body });
+}
+
+export function getAttendanceCorrections(params?: { status?: string }) {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  const qs = query.toString();
+  return apiRequest<AttendanceCorrection[]>(`/hrms/attendance/corrections${qs ? `?${qs}` : ""}`);
+}
+
+export function reviewAttendanceCorrection(id: string, action: "approve" | "reject", note?: string) {
+  return apiRequest<AttendanceCorrection>(
+    `/hrms/attendance/corrections/${encodeURIComponent(id)}/${action}`,
+    { method: "POST", body: note ? { note } : {} },
+  );
+}
+
+export function getLeaveTypes() {
+  return apiRequest<LeaveType[]>("/hrms/leave/types");
+}
+
+export function getLeaveBalances(employeeId?: string) {
+  const qs = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : "";
+  return apiRequest<LeaveBalance[]>(`/hrms/leave/balances${qs}`);
+}
+
+export function getLeaveRequests(params?: { status?: string; employeeId?: string; mine?: boolean }) {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.employeeId) query.set("employeeId", params.employeeId);
+  if (params?.mine) query.set("mine", "true");
+  const qs = query.toString();
+  return apiRequest<LeaveRequest[]>(`/hrms/leave/requests${qs ? `?${qs}` : ""}`);
+}
+
+export function applyLeave(body: { leaveTypeId: string; startDate: string; endDate: string; reason?: string }) {
+  return apiRequest<LeaveRequest>("/hrms/leave/requests", { method: "POST", body });
+}
+
+export function reviewLeaveRequest(id: string, action: "approve" | "reject" | "cancel", note?: string) {
+  return apiRequest<LeaveRequest>(
+    `/hrms/leave/requests/${encodeURIComponent(id)}/${action}`,
+    { method: "POST", body: note ? { note } : {} },
+  );
+}
+
+export function getHolidays() {
+  return apiRequest<Holiday[]>("/hrms/holidays");
+}
+
+export function getPayrollPeriods() {
+  return apiRequest<PayrollPeriod[]>("/hrms/payroll/periods");
+}
+
+export function getPayslips(params?: { employeeId?: string; payrollPeriodId?: string }) {
+  const query = new URLSearchParams();
+  if (params?.employeeId) query.set("employeeId", params.employeeId);
+  if (params?.payrollPeriodId) query.set("payrollPeriodId", params.payrollPeriodId);
+  const qs = query.toString();
+  return apiRequest<Payslip[]>(`/hrms/payroll/payslips${qs ? `?${qs}` : ""}`);
+}
+
+export function getPayslip(id: string) {
+  return apiRequest<Payslip>(`/hrms/payroll/payslips/${encodeURIComponent(id)}`);
+}
+
+export function getEmployeeDocuments(employeeId?: string) {
+  const qs = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : "";
+  return apiRequest<EmployeeDocument[]>(`/hrms/documents${qs}`);
+}
+
+export function uploadEmployeeDocument(body: { employeeId?: string; fileId: string; category?: string; name?: string }) {
+  return apiRequest<EmployeeDocument>("/hrms/documents", { method: "POST", body });
+}
+
+export function deleteEmployeeDocument(id: string) {
+  return apiRequest<void>(`/hrms/documents/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

@@ -16,6 +16,8 @@ import { Composer } from "../components/chat/composer";
 import { ThreadPanel } from "../components/chat/thread-panel";
 import { getActiveOrganisation } from "../lib/api";
 import { useRealtime } from "../hooks/useRealtime";
+import { usePermissionContext } from "@teamspace-one/authorization/react";
+import { hasPermission } from "@teamspace-one/authorization";
 import { cn } from "../lib/utils";
 import type { Message, UserDto } from "../lib/api";
 
@@ -63,6 +65,9 @@ export function DirectMessageScreen() {
   const [presenceMap, setPresenceMap] = useState<Record<string, { status: string; at: number }>>({});
   const [readMap, setReadMap] = useState<Record<string, { messageId: string; readAt: string }>>({});
   const { onRealtimeEvent, sendPresence, sendReadReceipt, sendCallRing } = useRealtime();
+  const { user: authzUser } = usePermissionContext();
+  const canSendMessage = authzUser ? hasPermission(authzUser, "collaboration.message.send") : false;
+  const canUploadFile = authzUser ? hasPermission(authzUser, "collaboration.file.upload") : false;
 
   const otherMembers = useMemo(() => contact?.members.filter((m) => m.userId !== user?.id) ?? [], [contact, user]);
   const contactName = useMemo(() => {
@@ -278,9 +283,9 @@ export function DirectMessageScreen() {
               channelId={contact?.id}
               members={(members ?? []).map((m) => ({ id: m.userId, name: getDisplayName(m, userMap.get(m.userId)) }))}
               sending={sending}
-              disabled={!contact}
+              disabled={!contact || !canSendMessage}
               onSend={send}
-              onAttach={attach}
+              onAttach={canUploadFile ? attach : undefined}
             />
           </div>
         </div>

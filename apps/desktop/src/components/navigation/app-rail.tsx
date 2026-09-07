@@ -1,5 +1,7 @@
 import {
+  Briefcase,
   Calendar,
+  ClipboardCheck,
   Folder,
   HelpCircle,
   Home,
@@ -9,9 +11,12 @@ import {
   PanelLeft,
   Search,
   Settings,
+  ShieldCheck,
   Sparkles,
   Users,
 } from "lucide-react";
+import { usePermissionContext } from "@teamspace-one/authorization/react";
+import { hasAnyPermission } from "@teamspace-one/authorization";
 import { useUIStore, type View } from "../../stores/ui";
 import { useShallow } from "zustand/shallow";
 import { useMe, useOrganisations, useUnreadCount } from "../../hooks/api";
@@ -54,26 +59,50 @@ export function AppRail() {
     window.location.reload();
   }
 
+  const { user: authzUser } = usePermissionContext();
+  const canAny = (permissions?: string[]) =>
+    !permissions || permissions.length === 0
+      ? true
+      : authzUser
+        ? hasAnyPermission(authzUser, permissions)
+        : false;
+
   const topItems: Array<{
-    id: View | "search" | "help" | "settings" | "workspace";
+    id: string;
     icon: React.ElementType;
     label: string;
     onClick?: () => void;
     badge?: number;
+    permissions?: string[];
   }> = [
-    { id: "home", icon: Home, label: "Home" },
+    { id: "home", icon: Home, label: "Home", permissions: ["dashboard.view"] },
     { id: "inbox", icon: Inbox, label: "Inbox", badge: unread?.count ?? 0 },
-    { id: "dm", icon: MessageSquare, label: "Messages" },
-    { id: "project", icon: Folder, label: "Projects" },
-    { id: "meeting", icon: Calendar, label: "Meetings" },
+    { id: "dm", icon: MessageSquare, label: "Messages", permissions: ["collaboration.access"] },
+    { id: "project", icon: Folder, label: "Projects", permissions: ["collaboration.project.view"] },
+    { id: "meeting", icon: Calendar, label: "Meetings", permissions: ["collaboration.meeting.view"] },
+    { id: "hrms", icon: Briefcase, label: "HRMS", permissions: ["hrms.access"] },
+    { id: "interview", icon: ClipboardCheck, label: "Interview", permissions: ["interview.access"] },
     { id: "ai", icon: Sparkles, label: "AI Assistant" },
     { id: "search", icon: Search, label: "Search", onClick: () => setSearchOpen(true) },
-  ];
+  ].filter((item) => canAny(item.permissions));
 
-  const bottomItems = [
+  const bottomItems: Array<{
+    id: string;
+    icon: React.ElementType;
+    label: string;
+    onClick: () => void;
+    permissions?: string[];
+  }> = [
+    {
+      id: "admin",
+      icon: ShieldCheck,
+      label: "Administration",
+      onClick: () => navigate("admin"),
+      permissions: ["admin.user.manage", "admin.role.manage", "admin.organization.settings"],
+    },
     { id: "settings", icon: Settings, label: "Settings", onClick: () => navigate("settings") },
     { id: "help", icon: HelpCircle, label: "Help", onClick: () => navigate("home") },
-  ];
+  ].filter((item) => canAny(item.permissions));
 
   const displayName = user?.firstName
     ? `${user.firstName} ${user.lastName ?? ""}`.trim()

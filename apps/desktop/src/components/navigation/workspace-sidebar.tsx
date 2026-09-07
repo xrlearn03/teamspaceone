@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  BriefcaseBusiness,
   ChevronDown,
   ChevronRight,
   FileText,
@@ -19,6 +20,8 @@ import {
   Video,
 } from "lucide-react";
 import * as CollapsiblePrimitive from "@radix-ui/react-collapsible";
+import { usePermissionContext } from "@teamspace-one/authorization/react";
+import { hasAnyPermission } from "@teamspace-one/authorization";
 import { useUIStore, type View } from "../../stores/ui";
 import { useShallow } from "zustand/shallow";
 import {
@@ -250,6 +253,13 @@ export function WorkspaceSidebar() {
   const { data: users } = useUsers(memberUserIds);
   const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
   const { data: me } = useMe();
+  const { user: authzUser } = usePermissionContext();
+  const canAny = (permissions: string[]) =>
+    authzUser ? hasAnyPermission(authzUser, permissions) : false;
+  const canCollaborate = canAny(["collaboration.access"]);
+  const canHrms =
+    canAny(["hrms.access"]) ||
+    Boolean(authzUser?.permissions.some((p) => p.startsWith("hrms.")));
   const createChannel = useCreateChannel();
   const createDirectChannel = useCreateDirectChannel();
   const createProject = useCreateProject();
@@ -444,6 +454,12 @@ export function WorkspaceSidebar() {
           </DropdownMenuContent>
         </DropdownMenu>
 
+        {canAny([
+          "collaboration.message.send",
+          "collaboration.channel.create",
+          "collaboration.project.create",
+          "collaboration.meeting.create",
+        ]) ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="secondary" size="icon" aria-label="Quick action">
@@ -451,20 +467,29 @@ export function WorkspaceSidebar() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setCreateMode("direct")}>
-              New message
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setCreateMode("channel")}>
-              Create channel
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setCreateMode("project")}>
-              Create project
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setCreateMode("meeting")}>
-              Schedule meeting
-            </DropdownMenuItem>
+            {canAny(["collaboration.message.send"]) ? (
+              <DropdownMenuItem onClick={() => setCreateMode("direct")}>
+                New message
+              </DropdownMenuItem>
+            ) : null}
+            {canAny(["collaboration.channel.create"]) ? (
+              <DropdownMenuItem onClick={() => setCreateMode("channel")}>
+                Create channel
+              </DropdownMenuItem>
+            ) : null}
+            {canAny(["collaboration.project.create"]) ? (
+              <DropdownMenuItem onClick={() => setCreateMode("project")}>
+                Create project
+              </DropdownMenuItem>
+            ) : null}
+            {canAny(["collaboration.meeting.create"]) ? (
+              <DropdownMenuItem onClick={() => setCreateMode("meeting")}>
+                Schedule meeting
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
+        ) : null}
       </div>
 
       <div className="border-b px-3 py-2">
@@ -480,12 +505,14 @@ export function WorkspaceSidebar() {
 
       <div className="flex-1 overflow-y-auto py-2">
         <SidebarSection title="Overview" defaultOpen>
-          <SidebarItem
-            icon={Home}
-            label="Home"
-            active={activeView === "home"}
-            onClick={() => navigate("home")}
-          />
+          {canAny(["dashboard.view"]) ? (
+            <SidebarItem
+              icon={Home}
+              label="Home"
+              active={activeView === "home"}
+              onClick={() => navigate("home")}
+            />
+          ) : null}
           <SidebarItem
             icon={Inbox}
             label="Inbox"
@@ -493,12 +520,14 @@ export function WorkspaceSidebar() {
             active={activeView === "inbox"}
             onClick={() => navigate("inbox")}
           />
-          <SidebarItem
-            icon={Users}
-            label="Members"
-            active={activeView === "members"}
-            onClick={() => navigate("members")}
-          />
+          {canCollaborate ? (
+            <SidebarItem
+              icon={Users}
+              label="Members"
+              active={activeView === "members"}
+              onClick={() => navigate("members")}
+            />
+          ) : null}
           <SidebarItem
             icon={Menu}
             label="Drafts"
@@ -511,8 +540,17 @@ export function WorkspaceSidebar() {
             active={activeView === "saved"}
             onClick={() => navigate("saved")}
           />
+          {canHrms ? (
+            <SidebarItem
+              icon={BriefcaseBusiness}
+              label="HRMS"
+              active={activeView === "hrms"}
+              onClick={() => navigate("hrms")}
+            />
+          ) : null}
         </SidebarSection>
 
+        {canCollaborate ? (
         <SidebarSection title="Channels">
           {publicChannels.length > 0 ? (
             publicChannels.map((ch) => (
@@ -529,7 +567,9 @@ export function WorkspaceSidebar() {
             <div className="px-2 py-1 text-xs text-text-muted">No channels yet</div>
           )}
         </SidebarSection>
+        ) : null}
 
+        {canCollaborate ? (
         <SidebarSection title="Direct messages">
           {directMessages.length > 0 ? (
             directMessages.map((dm) => {
@@ -555,7 +595,9 @@ export function WorkspaceSidebar() {
             <div className="px-2 py-1 text-xs text-text-muted">No direct messages yet</div>
           )}
         </SidebarSection>
+        ) : null}
 
+        {canAny(["collaboration.project.view"]) ? (
         <SidebarSection title="Projects">
           {visibleProjects.length > 0 ? (
             visibleProjects.map((p) => (
@@ -573,7 +615,9 @@ export function WorkspaceSidebar() {
             <div className="px-2 py-1 text-xs text-text-muted">No projects yet</div>
           )}
         </SidebarSection>
+        ) : null}
 
+        {canAny(["collaboration.meeting.view"]) ? (
         <SidebarSection title="Meetings">
           {visibleMeetings.length > 0 ? (
             visibleMeetings.map((m) => (
@@ -604,14 +648,17 @@ export function WorkspaceSidebar() {
             </button>
           )}
         </SidebarSection>
+        ) : null}
 
         <SidebarSection title="Files & apps">
-          <SidebarItem
-            icon={FileText}
-            label="Files"
-            active={activeView === "files"}
-            onClick={() => navigate("files")}
-          />
+          {canAny(["collaboration.file.view"]) ? (
+            <SidebarItem
+              icon={FileText}
+              label="Files"
+              active={activeView === "files"}
+              onClick={() => navigate("files")}
+            />
+          ) : null}
           <SidebarItem
             icon={Settings}
             label="Settings"

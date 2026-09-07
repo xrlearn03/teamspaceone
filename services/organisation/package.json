@@ -18,6 +18,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
+    "db:seed:permissions": "nest build && node dist/seed/seed-permissions.js",
+    "db:seed:rbac": "nest build && node dist/seed/seed-rbac.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

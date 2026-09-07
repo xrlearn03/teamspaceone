@@ -3,12 +3,13 @@ import { Prisma, type PrismaClient, type Role, type OrganisationMembership } fro
 import {
   ALL_PERMISSIONS,
   permissionMatches,
+  permissionKey,
   type AuthorizableUser,
   type DataScope,
   type ScopeType,
 } from '@teamspace-one/authorization';
 
-interface RoleTemplate {
+export interface RoleTemplate {
   name: string;
   label: string;
   isSystem: boolean;
@@ -18,7 +19,7 @@ interface RoleTemplate {
   scopes: Array<{ module: string; scope: ScopeType; scopeValue?: string | null }>;
 }
 
-const DEFAULT_ROLES: RoleTemplate[] = [
+export const DEFAULT_ROLES: RoleTemplate[] = [
   {
     name: 'owner',
     label: 'Owner',
@@ -87,6 +88,7 @@ const DEFAULT_ROLES: RoleTemplate[] = [
     isSystem: true,
     allow: [
       'collaboration.*',
+      'hrms.access',
       'hrms.employee.view',
       'hrms.attendance.view',
       'hrms.attendance.approve',
@@ -111,6 +113,7 @@ const DEFAULT_ROLES: RoleTemplate[] = [
       'collaboration.project.view',
       'collaboration.task.*',
       'collaboration.meeting.view',
+      'hrms.access',
       'hrms.employee.view',
       'hrms.attendance.view',
       'hrms.attendance.checkin',
@@ -191,7 +194,7 @@ export class AuthorizationService {
   ): Promise<Role[]> {
     const allPermissions = await tx.permission.findMany();
     const permissionMap = new Map(
-      allPermissions.map((p) => [`${p.module}.${p.resource}.${p.action}`, p.id]),
+      allPermissions.map((p) => [permissionKey(p.module, p.resource, p.action), p.id]),
     );
 
     const createdRoles: Role[] = [];
@@ -315,7 +318,7 @@ export class AuthorizationService {
 
     const collectFromRole = (role: Role & { rolePermissions: Array<{ permission: { module: string; resource: string; action: string } }>; roleScopes: Array<{ module: string; scope: string; scopeValue: string | null }> }) => {
       for (const rp of role.rolePermissions) {
-        permissionSet.add(`${rp.permission.module}.${rp.permission.resource}.${rp.permission.action}`);
+        permissionSet.add(permissionKey(rp.permission.module, rp.permission.resource, rp.permission.action));
       }
       for (const rs of role.roleScopes) {
         dataScopeSet.add({
@@ -358,7 +361,7 @@ export class AuthorizationService {
 
     const collectFromRole = (role: { rolePermissions?: Array<{ permission: { module: string; resource: string; action: string } }>; roleScopes?: Array<{ module: string; scope: string; scopeValue: string | null }> }) => {
       for (const rp of role.rolePermissions ?? []) {
-        permissionSet.add(`${rp.permission.module}.${rp.permission.resource}.${rp.permission.action}`);
+        permissionSet.add(permissionKey(rp.permission.module, rp.permission.resource, rp.permission.action));
       }
       for (const rs of role.roleScopes ?? []) {
         dataScopeSet.add({

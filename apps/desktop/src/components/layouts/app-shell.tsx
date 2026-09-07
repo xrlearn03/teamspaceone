@@ -1,4 +1,6 @@
 import { useEffect, useMemo } from "react";
+import { usePermissionContext } from "@teamspace-one/authorization/react";
+import { canAccessView } from "../../lib/view-permissions";
 import { useUIStore, type View } from "../../stores/ui";
 import { useTheme } from "../../hooks/useTheme";
 import { useShallow } from "zustand/shallow";
@@ -24,6 +26,10 @@ import { MemberDirectoryScreen } from "../../screens/members";
 import { SavedItemsScreen } from "../../screens/saved";
 import { DraftsScreen } from "../../screens/drafts";
 import { SettingsScreen } from "../../screens/settings";
+import { AccessDeniedScreen } from "../../screens/access-denied";
+import { HrmsScreen } from "../../screens/hrms";
+import { InterviewScreen } from "../../screens/interview";
+import { AdminScreen } from "../../screens/admin";
 
 const screens: Record<View, React.ComponentType> = {
   home: HomeScreen,
@@ -38,6 +44,9 @@ const screens: Record<View, React.ComponentType> = {
   members: MemberDirectoryScreen,
   saved: SavedItemsScreen,
   drafts: DraftsScreen,
+  hrms: HrmsScreen,
+  interview: InterviewScreen,
+  admin: AdminScreen,
   settings: SettingsScreen,
 };
 
@@ -88,7 +97,12 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [setSearchOpen, setActiveView]);
 
-  const Screen = useMemo(() => screens[activeView] ?? HomeScreen, [activeView]);
+  const { user } = usePermissionContext();
+  const viewAllowed = canAccessView(user, activeView);
+  const Screen = useMemo(
+    () => (viewAllowed ? screens[activeView] ?? HomeScreen : AccessDeniedScreen),
+    [activeView, viewAllowed],
+  );
 
   return (
     <TooltipProvider delayDuration={300}>

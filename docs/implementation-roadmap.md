@@ -106,7 +106,18 @@
 - Widgets respect permissions.
 - Dashboard is responsive and has loading/empty/error states.
 
+### Phase 2 implementation notes (as built)
+
+- `PermissionBoundary` in `App.tsx` fetches `GET /organisations/:id/me/context` and feeds `PermissionProvider` (`@teamspace-one/authorization/react`). Loading shows a spinner; failure shows a retry state (no silent de-permissioning).
+- View-level guard: `src/lib/view-permissions.ts` maps each `View` to required permissions; `AppShell` renders `screens/access-denied.tsx` when the active view is not permitted.
+- Navigation: `app-rail.tsx` and `workspace-sidebar.tsx` filter items by permission (`hasAnyPermission`). App rail gained gated HRMS / Interview / Administration entries; sidebar sections (Channels, DMs, Projects, Meetings, Files) and the quick-action menu are permission-filtered.
+- Dashboard: `src/features/dashboard/registry.ts` defines `DashboardWidget { id, title, permissions, gridClass, component }` plus `filterDashboardWidgets(user)`. `screens/home.tsx` renders only permitted widgets; widget components live in `src/features/dashboard/widgets.tsx`, and quick-action buttons are individually wrapped in `<PermissionGate>`.
+- New views added to the `View` union: `hrms`, `interview`, `admin`. `admin.tsx` shows members/roles (existing APIs); `hrms/` and `interview` module screens are permission-aware shells filled by later phases.
+- RBAC backfill: `services/organisation/src/seed/seed-rbac.ts` seeds the permission registry, ensures system roles per organisation (with `role_permissions`/`role_scopes`), and copies role scopes onto memberships missing `data_scopes`. Run via `pnpm --filter @teamspace-one/organisation-service db:seed:rbac`.
+
 ## Phase 3 — Collaboration Foundation
+
+**Status: implemented.** Permission gates (`RemotePermissionGuard` + `RequirePermissions` from `@teamspace-one/authorization/nest`) now protect every messaging and projects route; channel/project/task/file actions are gated in the desktop UI; message attachments use the file-storage presign flow; message/mention/task/approval notifications are live; `GET /meetings/calendar/events` provides the calendar foundation. Details in `docs/collaboration.md`.
 
 **Goal:** Secure and complete the existing collaboration features.
 
@@ -143,9 +154,11 @@
 - File access is secure.
 - Notifications work end-to-end.
 
-## Phase 4 — HRMS Core
+## Phase 4 — HRMS Core (IMPLEMENTED)
 
 **Goal:** Build the core people-management module.
+
+> Status: `services/hrms` (`@teamspace-one/hrms-service`, port 3013, db `hrms_db`) created with full schema (departments, designations, employees, history, documents, attendance + corrections, leave types/balances/requests, holidays, payroll periods, payslips), permission guard resolving user context via the organisation service, data-scope enforcement (own/team/department/organisation), and outbox events. Gateway proxies `/hrms`. Desktop has `src/screens/hrms/` (overview, employees, departments/designations, org chart, attendance, leave, payroll, documents) gated by `hrms.*` permissions. Also fixed `permissionMatches` so 2-part grants like `hrms.*` work, and encoded 2-part permissions (`hrms.access`) into the registry via `permissionParts`/`permissionKey` (resource='*').
 
 ### 4.1 New service
 
