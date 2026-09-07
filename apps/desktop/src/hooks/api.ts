@@ -1326,6 +1326,7 @@ export function useRunApplicationScreening() {
     onSuccess: (_, args) => {
       client.invalidateQueries({ queryKey: ["interview", "applications", args.applicationId, "screening"] });
       client.invalidateQueries({ queryKey: ["interview", "candidates"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
     },
   });
 }
@@ -1341,9 +1342,14 @@ export function useReviewApplicationScreening() {
 }
 
 export function useStartAiInterview() {
+  const client = useQueryClient();
   return useMutation({
     mutationFn: (args: { sessionId: string; templateId?: string; config?: Record<string, unknown> }) =>
       api.startAiInterview(args.sessionId, { templateId: args.templateId, config: args.config }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "sessions"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
   });
 }
 
@@ -1370,6 +1376,8 @@ export function useEvaluateAiInterview() {
     onSuccess: (_, sessionId) => {
       client.invalidateQueries({ queryKey: ["interview", "sessions", sessionId, "ai", "transcript"] });
       client.invalidateQueries({ queryKey: ["interview", "sessions", sessionId, "evaluations"] });
+      client.invalidateQueries({ queryKey: ["interview", "evaluations"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
     },
   });
 }
@@ -1388,10 +1396,10 @@ export function useReviewEvaluation() {
   return useMutation({
     mutationFn: (args: { evaluationId: string; body: Parameters<typeof api.reviewEvaluation>[1] }) =>
       api.reviewEvaluation(args.evaluationId, args.body),
-    onSuccess: (_, args) => {
+    onSuccess: () => {
       client.invalidateQueries({ queryKey: ["interview", "evaluations"] });
       client.invalidateQueries({ queryKey: ["interview", "sessions"] });
-      client.invalidateQueries({ queryKey: ["interview", "sessions", args.evaluationId, "evaluations"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
     },
   });
 }

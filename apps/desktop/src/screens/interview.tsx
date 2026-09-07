@@ -40,10 +40,17 @@ interface Tab {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   permission?: string;
+  /** Visible when the user holds ANY of these permissions. */
+  anyOf?: string[];
 }
 
 const TABS: Tab[] = [
-  { id: "overview", label: "Overview", icon: BarChart3 },
+  {
+    id: "overview",
+    label: "Overview",
+    icon: BarChart3,
+    anyOf: ["interview.job.view", "interview.candidate.view", "interview.interview.view"],
+  },
   { id: "jobs", label: "Job openings", icon: Briefcase, permission: "interview.job.view" },
   { id: "candidates", label: "Candidates", icon: Users, permission: "interview.candidate.view" },
   { id: "sessions", label: "Sessions", icon: CalendarClock, permission: "interview.interview.view" },
@@ -207,7 +214,9 @@ function CandidatesSection() {
                           <p className="text-xs text-text-muted">{a.stage}</p>
                         </div>
                         <div className="flex items-center gap-1">
-                          {canRunScreening && <RunScreeningButton applicationId={a.id} />}
+                          {canRunScreening && (
+                            <RunScreeningButton applicationId={a.id} hasResume={Boolean(c.resumeFileId)} />
+                          )}
                           {canMakeDecision && (
                             <HiringDecisionButton applicationId={a.id} candidateName={c.name} />
                           )}
@@ -283,6 +292,7 @@ function EvaluationsSection() {
   const { data: pending, isLoading } = usePendingEvaluations();
   const items = (pending ?? []) as Array<{
     id: string;
+    status?: string;
     session?: { candidate?: { name?: string }; jobOpening?: { title?: string } };
     createdAt?: string;
   }>;
@@ -303,7 +313,9 @@ function EvaluationsSection() {
                   <p className="truncate text-sm text-text">{e.session?.candidate?.name ?? "Interview"}</p>
                   <p className="truncate text-xs text-text-muted">{e.session?.jobOpening?.title ?? ""}</p>
                 </div>
-                <Badge variant="warning">pending</Badge>
+                <Badge variant="warning">
+                  {e.status === "ai_generated" ? "AI generated" : (e.status ?? "pending")}
+                </Badge>
               </div>
             ))}
           </div>
@@ -353,7 +365,9 @@ export function InterviewScreen() {
     );
   }
 
-  const visibleTabs = TABS.filter((t) => !t.permission || can(t.permission));
+  const visibleTabs = TABS.filter(
+    (t) => (!t.permission || can(t.permission)) && (!t.anyOf || t.anyOf.some((p) => can(p))),
+  );
   const activeTab = visibleTabs.some((t) => t.id === tab) ? tab : visibleTabs[0]?.id ?? "overview";
 
   return (

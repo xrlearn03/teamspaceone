@@ -1953,7 +1953,7 @@ export interface AiAnswerResponse {
 
 export interface InterviewAnswer {
   question: string;
-  answer: string;
+  answer: string | null;
   sortOrder: number;
 }
 

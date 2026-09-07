@@ -297,7 +297,7 @@ export class InterviewService {
         this.prisma.interviewEvaluation.count({
           where: {
             organisationId,
-            status: 'pending',
+            status: { in: ['submitted', 'ai_generated'] },
             ...(scoped ? {} : { OR: [{ evaluatorId: user.id }, { session: { is: sessionWhere } }] }),
           },
         }),
@@ -547,7 +547,11 @@ export class InterviewService {
           })),
         },
       },
-      include: { participants: true },
+      include: {
+        candidate: { select: { id: true, name: true, email: true } },
+        jobOpening: { select: { id: true, title: true } },
+        participants: true,
+      },
     });
   }
 
@@ -558,7 +562,7 @@ export class InterviewService {
     return this.prisma.interviewEvaluation.findMany({
       where: {
         organisationId,
-        status: 'pending',
+        status: { in: ['submitted', 'ai_generated'] },
         ...(this.hasOrganisationScope(user)
           ? {}
           : { OR: [{ evaluatorId: user.id }, { session: { is: sessionWhere } }] }),
@@ -694,6 +698,11 @@ export class InterviewService {
     if (resumeText === undefined && candidate.resumeFileId) {
       resumeText = await this.ai.fetchResumeText(ctx, candidate.resumeFileId);
     }
+    if (!resumeText?.trim()) {
+      throw new BadRequestException(
+        'Resume text is required for AI screening — attach a resume file to the candidate or provide resume text',
+      );
+    }
 
     const result = await this.ai.screen(ctx, {
       ...(resumeText ? { resumeText } : {}),
@@ -767,7 +776,7 @@ export class InterviewService {
   ) {
     const inScope = await this.applicationInScope(ctx.organisationId, user, applicationId);
     if (!inScope) throw new NotFoundException('Application not found');
-    const status = dto.status === 'reviewed' ? 'reviewed' : 'reviewed';
+    const status = 'reviewed';
     const screening = await this.prisma.screeningResult.findFirst({
       where: { applicationId },
     });
@@ -968,7 +977,12 @@ export class InterviewService {
     const updated = await this.prisma.interviewSession.update({
       where: { id: sessionId },
       data: { status: 'in_progress', interviewType: 'ai_text' },
-      include: { answers: { orderBy: { sortOrder: 'asc' } } },
+      include: {
+        candidate: { select: { id: true, name: true, email: true } },
+        jobOpening: { select: { id: true, title: true } },
+        participants: true,
+        answers: { orderBy: { sortOrder: 'asc' } },
+      },
     });
 
     return { session: updated, questions: updated.answers };
@@ -1116,6 +1130,14 @@ export class InterviewService {
         decision: dto.decision,
         rationale: dto.rationale ?? null,
         decidedBy: ctx.actorId as string,
+      },
+      include: {
+        application: {
+          include: {
+            candidate: { select: { id: true, name: true, email: true } },
+            jobOpening: { select: { id: true, title: true } },
+          },
+        },
       },
     });
 

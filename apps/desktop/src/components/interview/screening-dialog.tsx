@@ -26,7 +26,13 @@ function ScoreBar({ value, color = "bg-primary" }: { value: number; color?: stri
   );
 }
 
-export function RunScreeningButton({ applicationId }: { applicationId: string }) {
+export function RunScreeningButton({
+  applicationId,
+  hasResume,
+}: {
+  applicationId: string;
+  hasResume?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const { can } = usePermissions();
   const { data: result, isPending, error, mutate: run, reset } = useRunApplicationScreening();
@@ -52,7 +58,8 @@ export function RunScreeningButton({ applicationId }: { applicationId: string })
         variant="ghost"
         size="sm"
         onClick={handleOpen}
-        disabled={isPending}
+        disabled={isPending || hasResume === false}
+        title={hasResume === false ? "Upload a resume for this candidate first" : undefined}
         className="h-7 gap-1 text-xs"
       >
         {isPending && open ? (
