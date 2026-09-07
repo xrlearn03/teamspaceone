@@ -152,7 +152,16 @@ export class OnboardingTemplatesController {
       name: dto.name,
       description: dto.description,
       isActive: dto.isActive,
-      tasks: [],
+      tasks: dto.tasks
+        ? dto.tasks.map((t) => ({
+            title: t.title,
+            description: t.description,
+            category: t.category,
+            assigneeRole: t.assigneeRole,
+            dueDaysOffset: t.dueDaysOffset,
+            sortOrder: t.sortOrder,
+          }))
+        : undefined,
     });
   }
 

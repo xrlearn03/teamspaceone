@@ -181,13 +181,17 @@ export class PerformanceService {
 
   async acknowledgeReview(
     ctx: RequestContextInput,
-    _user: AuthorizableUser,
+    user: AuthorizableUser,
     id: string,
   ) {
     const review = await this.prisma.performanceReview.findFirst({
       where: { id, organisationId: ctx.organisationId },
+      include: { employee: { select: { userId: true } } },
     });
     if (!review) throw new NotFoundException('Review not found');
+    if (review.employee?.userId !== user.id) {
+      throw new ForbiddenException('Only the reviewee can acknowledge this review');
+    }
     return this.prisma.performanceReview.update({
       where: { id },
       data: { acknowledgedAt: new Date(), status: 'acknowledged' },
@@ -262,7 +266,7 @@ export class PerformanceService {
     });
     if (!goal) throw new NotFoundException('Goal not found');
 
-    const canManage = can(user, 'hrms.goals.manage');
+    const canManage = can(user, 'hrms.performance.manage');
     const isOwn = goal.employee?.userId === user.id;
     if (!canManage && !isOwn) {
       throw new ForbiddenException('You cannot edit this goal');

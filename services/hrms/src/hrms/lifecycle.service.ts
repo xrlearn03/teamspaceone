@@ -146,15 +146,35 @@ export class LifecycleService {
     });
     if (!template) throw new NotFoundException('Onboarding template not found');
 
-    const data: Prisma.OnboardingTemplateUpdateInput = {};
-    if (input.name !== undefined) data.name = input.name;
-    if (input.description !== undefined) data.description = input.description;
-    if (input.isActive !== undefined) data.isActive = input.isActive;
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const data: Prisma.OnboardingTemplateUpdateInput = {};
+      if (input.name !== undefined) data.name = input.name;
+      if (input.description !== undefined) data.description = input.description;
+      if (input.isActive !== undefined) data.isActive = input.isActive;
 
-    return this.prisma.onboardingTemplate.update({
-      where: { id },
-      data,
-      include: { tasks: { orderBy: { sortOrder: 'asc' } } },
+      await tx.onboardingTemplate.update({ where: { id }, data });
+
+      if (input.tasks !== undefined) {
+        await tx.onboardingTemplateTask.deleteMany({ where: { templateId: id } });
+        const tasks = input.tasks.length ? input.tasks : DEFAULT_ONBOARDING_TASKS;
+        await tx.onboardingTemplateTask.createMany({
+          data: tasks.map((t) => ({
+            organisationId,
+            templateId: id,
+            title: t.title,
+            description: t.description,
+            category: t.category,
+            assigneeRole: t.assigneeRole,
+            dueDaysOffset: t.dueDaysOffset ?? 0,
+            sortOrder: t.sortOrder ?? 0,
+          })),
+        });
+      }
+
+      return tx.onboardingTemplate.findFirst({
+        where: { id },
+        include: { tasks: { orderBy: { sortOrder: 'asc' } } },
+      });
     });
   }
 

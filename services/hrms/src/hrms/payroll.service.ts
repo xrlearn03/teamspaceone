@@ -103,7 +103,7 @@ export class PayrollService {
       const updated = await tx.payrollPeriod.update({
         where: { id },
         data: {
-          status: 'approved',
+          status: 'processed',
           processedBy: ctx.actorId,
           processedAt: new Date(),
         },
