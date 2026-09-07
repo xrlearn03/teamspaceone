@@ -13,7 +13,6 @@ import {
   Mic,
   Plus,
   Search,
-  Settings,
   Star,
   Trash2,
   Users,
@@ -355,10 +354,6 @@ export function WorkspaceSidebar() {
     }
   }
 
-  if (sidebarCollapsed) {
-    return null;
-  }
-
   const workspaceName = currentWorkspace?.name ?? currentOrganisation?.name ?? "Workspace";
 
   const inWorkspace = (workspaceId?: string | null) =>
@@ -372,6 +367,12 @@ export function WorkspaceSidebar() {
   }, [channels]);
   const visibleProjects = projects?.filter((p) => inWorkspace(p.workspaceId)) ?? [];
   const visibleMeetings = meetings?.filter((m) => inWorkspace((m as { workspaceId?: string }).workspaceId)) ?? [];
+
+  // Early return must come after every hook call above (e.g. the
+  // directMessages useMemo) or React throws a hook-order error on collapse.
+  if (sidebarCollapsed) {
+    return null;
+  }
 
   return (
     <>
@@ -418,15 +419,17 @@ export function WorkspaceSidebar() {
               </DropdownMenuItem>
             ))}
             {(!organisations || organisations.length === 0) && (
-              <DropdownMenuItem disabled>No organisations</DropdownMenuItem>
+              <>
+                <DropdownMenuItem disabled>No organisations</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setOrgDialog("create")}>
+                  Create organisation
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setOrgDialog("join")}>
+                  Join organisation
+                </DropdownMenuItem>
+              </>
             )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setOrgDialog("create")}>
-              Create organisation
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setOrgDialog("join")}>
-              Join organisation
-            </DropdownMenuItem>
             {workspaces && workspaces.length > 0 ? (
               <>
                 <DropdownMenuSeparator />
@@ -650,22 +653,16 @@ export function WorkspaceSidebar() {
         </SidebarSection>
         ) : null}
 
-        <SidebarSection title="Files & apps">
-          {canAny(["collaboration.file.view"]) ? (
+        {canAny(["collaboration.file.view"]) ? (
+          <SidebarSection title="Files & apps">
             <SidebarItem
               icon={FileText}
               label="Files"
               active={activeView === "files"}
               onClick={() => navigate("files")}
             />
-          ) : null}
-          <SidebarItem
-            icon={Settings}
-            label="Settings"
-            active={activeView === "settings"}
-            onClick={() => navigate("settings")}
-          />
-        </SidebarSection>
+          </SidebarSection>
+        ) : null}
       </div>
 
       <button
