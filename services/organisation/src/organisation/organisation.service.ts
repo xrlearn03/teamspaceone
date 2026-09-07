@@ -133,6 +133,59 @@ export class OrganisationService {
     return membership;
   }
 
+  /**
+   * Auto-provisioning (HRMS → collaboration): when the HRMS service emits
+   * `hrms.employee.created` for a user without a membership, create one with
+   * the organisation's default (employee) role so they immediately get
+   * collaboration access. Runs inside the caller's transaction; emits the
+   * standard member-added event so downstream consumers see no difference.
+   */
+  async provisionMembershipFromEmployee(
+    tx: Prisma.TransactionClient,
+    organisationId: string,
+    userId: string,
+  ) {
+    const existing = await tx.organisationMembership.findUnique({
+      where: { userId_organisationId: { userId, organisationId } },
+    });
+    if (existing) return existing;
+
+    const role = await tx.role.findFirst({
+      where: {
+        organisationId,
+        OR: [{ isDefault: true }, { name: 'employee' }],
+      },
+      orderBy: [{ isDefault: 'desc' }],
+    });
+    if (!role) {
+      // Organisation predates RBAC seeding; skip rather than fail the event.
+      return null;
+    }
+
+    const membership = await tx.organisationMembership.create({
+      data: {
+        id: randomUUID(),
+        userId,
+        organisationId,
+        roleId: role.id,
+      },
+    });
+
+    await this.authorization.applyRoleScopesToMembership(tx, membership.id, role.id, organisationId);
+
+    const envelope = createEventEnvelope({
+      eventType: Subjects.ORGANISATION_MEMBER_ADDED,
+      organisationId,
+      actorId: 'system',
+      resourceType: 'organisation-membership',
+      resourceId: membership.id,
+      payload: { organisationId, userId, roleId: role.id, source: 'hrms.employee.created' },
+    });
+    await this.outbox.createEvent(tx, envelope, Subjects.ORGANISATION_MEMBER_ADDED);
+
+    return membership;
+  }
+
   async createWorkspace(
     organisationId: string,
     dto: CreateWorkspaceDto,

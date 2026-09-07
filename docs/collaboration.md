@@ -52,7 +52,27 @@ Two layers are enforced:
 | `DELETE /projects/:id` | `collaboration.project.delete` |
 | tasks/comments/dependencies/approvals | `collaboration.task.*` |
 | project/task attachments | `collaboration.file.view` / `.upload` / `.delete` |
+| `GET /files*` (list/get/download/preview/shares) | `collaboration.file.view` |
+| `POST /files/presign-upload`, `POST /files/:id/complete`, `POST /files/upload`, `POST /files/:id/shares` | `collaboration.file.upload` |
+| `DELETE /files/:id`, `DELETE /files/shares/:shareId` | `collaboration.file.delete` |
 | `GET /meetings/calendar/events` | meeting participants only (service-level) |
+
+### Resource-scoped file access
+
+`FileRecord.resourceType`/`resourceId` link a file to its owning resource. For
+`channel`, `project`, `task`, and `meeting` bindings, file-storage verifies the
+actor's access by calling the owning service's `/…/:id/access` endpoint over
+authenticated service-to-service HTTP before returning metadata, download URLs,
+streams, previews, or shares. Uploaders always retain access to their own
+files; unlinked files (e.g. avatars, file-browser uploads) keep
+organisation-level access. `GET /files` only lists unlinked files plus the
+actor's own uploads — private-channel attachments are reachable through the
+channel, not the global listing.
+
+Uploads pass the binding at presign time (`resourceType` + `resourceId`), and
+the declared binding is verified before the upload URL is issued. The desktop
+client binds channel attachments to their channel and project/task attachments
+to their project.
 
 Service-to-service callers must propagate `x-actor-id`; automation (e.g. the
 AI service creating tasks) inherits the caller's permissions — there is no
@@ -80,21 +100,30 @@ privilege bypass.
 - Offline message queue (SQLite outbox in Tauri, localStorage in dev)
 - Projects with board/list/timeline views, task dependencies, comments,
   approvals, attachments, activity feed
-- Notifications: message/mention, task created/updated/completed, approvals,
-  meeting start; `notification.created` realtime event refreshes the inbox
+- Notifications: message/mention, channel invite (`CHANNEL_CREATED` and added
+  members on `CHANNEL_MEMBERS_UPDATED`), task created/updated/completed,
+  approvals, meeting start; `notification.created` realtime event refreshes
+  the inbox
 - Calendar foundation: `GET /meetings/calendar/events?from&to` returns
   scheduled meetings as generic calendar events (`useCalendarEvents` hook)
 
 ## Configuration
 
-- `ORGANISATION_SERVICE_URL` is now required by `messaging-service` and
-  `projects-service` (set in `docker-compose.yml`; use
-  `http://localhost:3003` for local dev).
+- `ORGANISATION_SERVICE_URL` is now required by `messaging-service`,
+  `projects-service`, and `file-storage-service` (set in `docker-compose.yml`;
+  use `http://localhost:3003` for local dev). `file-storage-service` also needs
+  `MESSAGING_SERVICE_URL`, `PROJECTS_SERVICE_URL`, and `MEETING_SERVICE_URL`
+  for resource-scoped file access checks.
+- `RemotePermissionGuard` is covered by `services/messaging/test/remote-permission.guard.spec.ts`.
 
 ## Known limitations / next steps
 
 - Channel "manage" currently requires org permission + channel-owner role;
   a channel-level moderator role is not implemented.
+- Files bound to resource types outside `channel`/`project`/`task`/`meeting`
+  (e.g. `avatar`, `ai-document`) keep organisation-level access.
+- Removing a member from a channel does not revoke access to files they
+  previously downloaded (signed URLs are short-lived, which bounds this).
 - Calendar events only cover meetings; HRMS leave/holidays land in Phase 4+.
 - `RemotePermissionGuard` caches contexts for 30s — permission changes take
-  up to 30s to propagate to messaging/projects.
+  up to 30s to propagate to messaging/projects/file-storage.

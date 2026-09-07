@@ -330,7 +330,7 @@ export function FileBrowserScreen() {
   function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    uploadFile.mutate(file, {
+    uploadFile.mutate({ file }, {
       onSuccess: (record) => {
         if (isImage(record) || isVideo(record)) {
           setPreviewFile(record);

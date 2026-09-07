@@ -454,6 +454,14 @@ export class ProjectsService {
     return project ? { organisationId: project.organisationId, workspaceId: project.workspaceId } : null;
   }
 
+  async resolveTaskAccess(taskId: string, actorId: string) {
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, project: { members: { some: { userId: actorId } } } },
+      include: { project: { select: { workspaceId: true } } },
+    });
+    return task ? { organisationId: task.organisationId, workspaceId: task.project.workspaceId } : null;
+  }
+
   private actor(ctx: OrganisationContextValue) {
     if (!ctx.actorId) throw new ForbiddenException('Missing actor');
     return ctx.actorId;

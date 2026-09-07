@@ -1,140 +1,341 @@
+import { useState } from "react";
 import {
   BarChart3,
   Briefcase,
   CalendarClock,
   ClipboardCheck,
-  FileSearch,
-  LayoutTemplate,
-  Lock,
-  UserCheck,
+  ShieldAlert,
   Users,
 } from "lucide-react";
-import { PermissionGate, usePermissionContext } from "@teamspace-one/authorization/react";
+import { usePermissions } from "../hooks/usePermissions";
+import { cn } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { EmptyState } from "../components/ui/empty-state";
+import { Skeleton } from "../components/ui/skeleton";
+import {
+  useCandidates,
+  useInterviewOverview,
+  useInterviewSessions,
+  useJobOpenings,
+  usePendingEvaluations,
+} from "../hooks/api";
 
-interface Section {
-  title: string;
-  description: string;
+type TabId = "overview" | "jobs" | "candidates" | "sessions" | "evaluations";
+
+interface Tab {
+  id: TabId;
+  label: string;
   icon: React.ComponentType<{ className?: string }>;
-  permission: string;
-  phase: string;
+  permission?: string;
 }
 
-const SECTIONS: Section[] = [
-  {
-    title: "Job openings",
-    description: "Open roles, descriptions and hiring teams",
-    icon: Briefcase,
-    permission: "interview.job.view",
-    phase: "Phase 5",
-  },
-  {
-    title: "Candidates",
-    description: "Pipeline, resumes and applications",
-    icon: Users,
-    permission: "interview.candidate.view",
-    phase: "Phase 5",
-  },
-  {
-    title: "AI screening",
-    description: "Resume matching and screening summaries",
-    icon: FileSearch,
-    permission: "interview.screening.view",
-    phase: "Phase 6",
-  },
-  {
-    title: "Interview templates",
-    description: "Questions, criteria and thresholds",
-    icon: LayoutTemplate,
-    permission: "interview.template.view",
-    phase: "Phase 5",
-  },
-  {
-    title: "Interview sessions",
-    description: "Scheduled and completed interviews",
-    icon: CalendarClock,
-    permission: "interview.interview.view",
-    phase: "Phase 5",
-  },
-  {
-    title: "Evaluations",
-    description: "Scores, feedback and AI-assisted review",
-    icon: ClipboardCheck,
-    permission: "interview.interview.evaluate",
-    phase: "Phase 5 / 6",
-  },
-  {
-    title: "Hiring decisions",
-    description: "Offers, approvals and audit trail",
-    icon: UserCheck,
-    permission: "interview.decision.view",
-    phase: "Phase 5",
-  },
-  {
-    title: "Recruitment analytics",
-    description: "Pipeline conversion and time-to-hire",
-    icon: BarChart3,
-    permission: "interview.analytics.view",
-    phase: "Phase 6",
-  },
+const TABS: Tab[] = [
+  { id: "overview", label: "Overview", icon: BarChart3 },
+  { id: "jobs", label: "Job openings", icon: Briefcase, permission: "interview.job.view" },
+  { id: "candidates", label: "Candidates", icon: Users, permission: "interview.candidate.view" },
+  { id: "sessions", label: "Sessions", icon: CalendarClock, permission: "interview.interview.view" },
+  { id: "evaluations", label: "Evaluations", icon: ClipboardCheck, permission: "interview.interview.evaluate" },
 ];
 
+const STAGE_LABELS: Record<string, string> = {
+  applied: "Applied",
+  screening: "Screening",
+  shortlisted: "Shortlisted",
+  interview: "Interview",
+  evaluation: "Evaluation",
+  offer: "Offer",
+  hired: "Hired",
+  rejected: "Rejected",
+};
+
+function SectionShell({ children }: { children: React.ReactNode }) {
+  return <div className="grid auto-rows-min grid-cols-1 gap-4 xl:grid-cols-2">{children}</div>;
+}
+
+function OverviewSection() {
+  const { data: overview, isLoading, isError, refetch } = useInterviewOverview();
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full" />
+        ))}
+      </div>
+    );
+  }
+  if (isError || !overview) {
+    return (
+      <EmptyState
+        icon={ShieldAlert}
+        title="Couldn't load interview overview"
+        action={<Button variant="secondary" size="sm" onClick={() => refetch()}>Retry</Button>}
+      />
+    );
+  }
+  const stats = [
+    { label: "Open positions", value: overview.openJobs },
+    { label: "Candidates", value: overview.totalCandidates },
+    { label: "Interviews today", value: overview.interviewsToday },
+    { label: "Pending evaluations", value: overview.pendingEvaluations },
+  ];
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        {stats.map((s) => (
+          <Card key={s.label}>
+            <CardContent className="p-4">
+              <p className="text-2xl font-semibold text-text">{s.value}</p>
+              <p className="text-xs text-text-muted">{s.label}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Pipeline</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {Object.keys(overview.candidatesByStage).length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(overview.candidatesByStage).map(([stage, count]) => (
+                <Badge key={stage} variant="secondary">
+                  {STAGE_LABELS[stage] ?? stage}: {count}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-text-secondary">No candidates in the pipeline yet.</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function JobsSection() {
+  const { data: jobs, isLoading } = useJobOpenings();
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Job openings</CardTitle>
+        <Badge variant="secondary">{jobs?.length ?? 0}</Badge>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <SectionSkeletonRows />
+        ) : jobs && jobs.length > 0 ? (
+          <div className="divide-y">
+            {jobs.map((j) => (
+              <div key={j.id} className="flex items-center justify-between py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-text">{j.title}</p>
+                  <p className="truncate text-xs text-text-muted">{j.departmentName ?? "—"}</p>
+                </div>
+                <Badge variant={j.status === "open" ? "success" : "secondary"}>{j.status}</Badge>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={Briefcase} title="No job openings" />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CandidatesSection() {
+  const { data: candidates, isLoading } = useCandidates();
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Candidates</CardTitle>
+        <Badge variant="secondary">{candidates?.length ?? 0}</Badge>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <SectionSkeletonRows />
+        ) : candidates && candidates.length > 0 ? (
+          <div className="divide-y">
+            {candidates.map((c) => (
+              <div key={c.id} className="flex items-center justify-between py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-text">{c.name}</p>
+                  <p className="truncate text-xs text-text-muted">{c.email}</p>
+                </div>
+                <Badge variant="secondary">{c.status}</Badge>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={Users} title="No candidates" />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SessionsSection() {
+  const { data: sessions, isLoading } = useInterviewSessions();
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Interview sessions</CardTitle>
+        <Badge variant="secondary">{sessions?.length ?? 0}</Badge>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <SectionSkeletonRows />
+        ) : sessions && sessions.length > 0 ? (
+          <div className="divide-y">
+            {sessions.map((s) => (
+              <div key={s.id} className="flex items-center justify-between py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-text">{s.candidate?.name ?? "Interview"}</p>
+                  <p className="truncate text-xs text-text-muted">
+                    {s.jobOpening?.title ?? s.interviewType}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <Badge variant={s.status === "scheduled" ? "default" : "secondary"}>{s.status}</Badge>
+                  <p className="mt-0.5 text-xs text-text-muted">
+                    {s.scheduledAt ? new Date(s.scheduledAt).toLocaleString() : "Unscheduled"}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={CalendarClock} title="No interview sessions" />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function EvaluationsSection() {
+  const { data: pending, isLoading } = usePendingEvaluations();
+  const items = (pending ?? []) as Array<{
+    id: string;
+    session?: { candidate?: { name?: string }; jobOpening?: { title?: string } };
+    createdAt?: string;
+  }>;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Pending evaluations</CardTitle>
+        <Badge variant="secondary">{items.length}</Badge>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <SectionSkeletonRows />
+        ) : items.length > 0 ? (
+          <div className="divide-y">
+            {items.map((e) => (
+              <div key={e.id} className="flex items-center justify-between py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-text">{e.session?.candidate?.name ?? "Interview"}</p>
+                  <p className="truncate text-xs text-text-muted">{e.session?.jobOpening?.title ?? ""}</p>
+                </div>
+                <Badge variant="warning">pending</Badge>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={ClipboardCheck} title="No pending evaluations" />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SectionSkeletonRows() {
+  return (
+    <div className="space-y-2">
+      <Skeleton className="h-8 w-full" />
+      <Skeleton className="h-8 w-full" />
+      <Skeleton className="h-8 w-full" />
+    </div>
+  );
+}
+
 export function InterviewScreen() {
-  const { user } = usePermissionContext();
+  const { can, hasPermissionPrefix } = usePermissions();
+  const [tab, setTab] = useState<TabId>("overview");
+  const { user } = usePermissions();
   const isCandidate = user?.dataScopes.some(
     (s) => (s.module === "interview" || s.module === "*") && s.scope === "own",
   );
 
+  const hasAnyInterview =
+    hasPermissionPrefix("interview.") || can("interview.access");
+
+  if (!hasAnyInterview) {
+    return (
+      <div className="flex h-full flex-col">
+        <header className="border-b px-6 py-4">
+          <h1 className="text-xl font-semibold text-text">Interview</h1>
+        </header>
+        <div className="flex flex-1 items-center justify-center">
+          <EmptyState
+            icon={ShieldAlert}
+            title="You don't have access to the interview module"
+            description="Ask an administrator to grant you an interview permission."
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const visibleTabs = TABS.filter((t) => !t.permission || can(t.permission));
+  const activeTab = visibleTabs.some((t) => t.id === tab) ? tab : visibleTabs[0]?.id ?? "overview";
+
   return (
-    <div className="flex h-full flex-col overflow-y-auto">
-      <header className="sticky top-0 z-10 border-b bg-background/95 px-6 py-4 backdrop-blur">
+    <div className="flex h-full flex-col overflow-hidden">
+      <header className="border-b px-6 pb-0 pt-4">
         <h1 className="text-xl font-semibold text-text">Interview</h1>
         <p className="text-sm text-text-secondary">
           {isCandidate
             ? "Your applications and interview schedule."
-            : "AI-assisted recruiting and interview management."}
+            : "Recruiting and interview management."}
         </p>
+        <div className="mt-3 flex gap-1 overflow-x-auto">
+          {visibleTabs.map((t) => {
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
+                  activeTab === t.id
+                    ? "border-primary font-medium text-text"
+                    : "border-transparent text-text-muted hover:text-text",
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
       </header>
-
-      <div className="grid auto-rows-min grid-cols-1 gap-4 p-6 md:grid-cols-2 xl:grid-cols-3">
-        {SECTIONS.map((section) => {
-          const Icon = section.icon;
-          return (
-            <PermissionGate
-              key={section.title}
-              permission={section.permission}
-              fallback={
-                <Card className="opacity-60">
-                  <CardHeader className="flex-row items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Lock className="h-4 w-4 text-text-muted" />
-                      <CardTitle className="text-sm">{section.title}</CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-xs text-text-muted">
-                      You don&apos;t have access to this section.
-                    </p>
-                  </CardContent>
-                </Card>
-              }
-            >
-              <Card>
-                <CardHeader className="flex-row items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Icon className="h-4 w-4 text-text-muted" />
-                    <CardTitle className="text-sm">{section.title}</CardTitle>
-                  </div>
-                  <Badge variant="secondary">{section.phase}</Badge>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-xs text-text-secondary">{section.description}</p>
-                </CardContent>
-              </Card>
-            </PermissionGate>
-          );
-        })}
+      <div className="flex-1 overflow-y-auto p-6">
+        {activeTab === "overview" && <OverviewSection />}
+        {activeTab === "jobs" && (
+          <SectionShell><JobsSection /></SectionShell>
+        )}
+        {activeTab === "candidates" && (
+          <SectionShell><CandidatesSection /></SectionShell>
+        )}
+        {activeTab === "sessions" && (
+          <SectionShell><SessionsSection /></SectionShell>
+        )}
+        {activeTab === "evaluations" && (
+          <SectionShell><EvaluationsSection /></SectionShell>
+        )}
       </div>
     </div>
   );

@@ -22,6 +22,7 @@ import { AttendanceService } from './attendance.service.js';
 import { LeaveService } from './leave.service.js';
 import { PayrollService } from './payroll.service.js';
 import { DocumentsService } from './documents.service.js';
+import { CalendarService } from './calendar.service.js';
 
 function toCtx(org: OrganisationContextValue) {
   return {
@@ -68,6 +69,15 @@ export class DocumentDto {
   fileId!: string;
   category!: string;
   name?: string;
+}
+
+export class CalendarEventDto {
+  title!: string;
+  description?: string;
+  startAt!: string;
+  endAt!: string;
+  allDay?: boolean;
+  visibility?: string;
 }
 
 @Controller('hrms/attendance')
@@ -295,6 +305,43 @@ export class PayrollController {
     @Param('id') id: string,
   ) {
     return this.payroll.getPayslip(toCtx(org), user, id);
+  }
+}
+
+@Controller('hrms/calendar')
+@UseGuards(HrmsPermissionGuard)
+export class CalendarController {
+  constructor(private readonly calendar: CalendarService) {}
+
+  @Get()
+  @RequirePermissions('hrms.access')
+  list(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.calendar.list(toCtx(org), user, {
+      from: from ? new Date(from) : undefined,
+      to: to ? new Date(to) : undefined,
+    });
+  }
+
+  @Post('events')
+  @RequirePermissions('hrms.access')
+  create(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Body() dto: CalendarEventDto,
+  ) {
+    return this.calendar.create(toCtx(org), user, {
+      title: dto.title,
+      description: dto.description,
+      startAt: new Date(dto.startAt),
+      endAt: new Date(dto.endAt),
+      allDay: dto.allDay,
+      visibility: dto.visibility,
+    });
   }
 }
 

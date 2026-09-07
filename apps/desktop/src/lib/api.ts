@@ -1519,6 +1519,31 @@ export function getHrmsOverview() {
   return apiRequest<HrmsOverview>("/hrms/overview");
 }
 
+export interface HrmsCalendarEvent {
+  id: string;
+  title: string;
+  description?: string | null;
+  type: string; // leave | holiday | custom
+  startAt: string;
+  endAt: string;
+  allDay: boolean;
+  visibility: string;
+  employeeId?: string | null;
+}
+
+export interface HrmsCalendar {
+  events: HrmsCalendarEvent[];
+  holidays: HrmsCalendarEvent[];
+}
+
+export function getHrmsCalendar(range?: { from?: string; to?: string }) {
+  const params = new URLSearchParams();
+  if (range?.from) params.set("from", range.from);
+  if (range?.to) params.set("to", range.to);
+  const qs = params.toString();
+  return apiRequest<HrmsCalendar>(`/hrms/calendar${qs ? `?${qs}` : ""}`);
+}
+
 export interface EmployeeListParams {
   departmentId?: string;
   status?: string;
@@ -1708,4 +1733,156 @@ export function uploadEmployeeDocument(body: { employeeId?: string; fileId: stri
 
 export function deleteEmployeeDocument(id: string) {
   return apiRequest<void>(`/hrms/documents/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// Interview / recruitment
+export interface JobOpening {
+  id: string;
+  organisationId: string;
+  title: string;
+  departmentId?: string | null;
+  departmentName?: string | null;
+  hiringManagerId?: string | null;
+  recruiterId?: string | null;
+  description?: string | null;
+  requirements?: string | null;
+  status: string;
+  createdAt: string;
+}
+
+export interface CandidateApplication {
+  id: string;
+  candidateId: string;
+  jobOpeningId: string;
+  stage: string;
+  jobOpening?: { id: string; title: string } | null;
+  createdAt: string;
+}
+
+export interface Candidate {
+  id: string;
+  organisationId: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  location?: string | null;
+  source?: string | null;
+  status: string;
+  applications?: CandidateApplication[];
+  createdAt: string;
+}
+
+export interface InterviewSession {
+  id: string;
+  organisationId: string;
+  candidateId: string;
+  jobOpeningId?: string | null;
+  interviewType: string;
+  scheduledAt?: string | null;
+  durationMin: number;
+  status: string;
+  candidate?: { id: string; name: string; email?: string } | null;
+  jobOpening?: { id: string; title: string } | null;
+  participants?: { id: string; userId: string; role: string }[];
+  createdAt: string;
+}
+
+export interface InterviewOverview {
+  openJobs: number;
+  totalCandidates: number;
+  candidatesByStage: Record<string, number>;
+  interviewsToday: number;
+  upcomingInterviews: number;
+  pendingEvaluations: number;
+}
+
+export function getInterviewOverview() {
+  return apiRequest<InterviewOverview>("/interview/overview");
+}
+
+export function getJobOpenings(status?: string) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiRequest<JobOpening[]>(`/interview/jobs${qs}`);
+}
+
+export function createJobOpening(body: {
+  title: string;
+  departmentId?: string;
+  departmentName?: string;
+  hiringManagerId?: string;
+  recruiterId?: string;
+  description?: string;
+  requirements?: string;
+}) {
+  return apiRequest<JobOpening>("/interview/jobs", { method: "POST", body });
+}
+
+export function updateJobOpening(id: string, body: Partial<{
+  title: string;
+  departmentId: string | null;
+  hiringManagerId: string | null;
+  recruiterId: string | null;
+  description: string | null;
+  requirements: string | null;
+  status: string;
+}>) {
+  return apiRequest<JobOpening>(`/interview/jobs/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function getCandidates(status?: string) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiRequest<Candidate[]>(`/interview/candidates${qs}`);
+}
+
+export function createCandidate(body: {
+  name: string;
+  email: string;
+  phone?: string;
+  location?: string;
+  source?: string;
+  jobOpeningId?: string;
+}) {
+  return apiRequest<Candidate>("/interview/candidates", { method: "POST", body });
+}
+
+export function updateApplicationStage(applicationId: string, stage: string) {
+  return apiRequest<CandidateApplication>(`/interview/applications/${encodeURIComponent(applicationId)}/stage`, {
+    method: "PATCH",
+    body: { stage },
+  });
+}
+
+export function getInterviewSessions(upcoming?: boolean) {
+  const qs = upcoming ? "?upcoming=true" : "";
+  return apiRequest<InterviewSession[]>(`/interview/sessions${qs}`);
+}
+
+export function createInterviewSession(body: {
+  candidateId: string;
+  jobOpeningId?: string;
+  interviewType?: string;
+  scheduledAt?: string;
+  durationMin?: number;
+  participantIds?: string[];
+}) {
+  return apiRequest<InterviewSession>("/interview/sessions", { method: "POST", body });
+}
+
+export function getPendingEvaluations() {
+  return apiRequest<unknown[]>("/interview/evaluations/pending");
+}
+
+export function submitInterviewEvaluation(sessionId: string, body: {
+  technicalScore?: number;
+  communicationScore?: number;
+  problemSolvingScore?: number;
+  cultureFitScore?: number;
+  overallScore?: number;
+  recommendation?: string;
+  comments?: string;
+}) {
+  return apiRequest<unknown>(`/interview/sessions/${encodeURIComponent(sessionId)}/evaluations`, {
+    method: "POST",
+    body,
+  });
 }

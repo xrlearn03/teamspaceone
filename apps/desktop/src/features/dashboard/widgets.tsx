@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DailyDigestResult, Meeting, Message, UserDto } from "../../lib/api";
 import {
+  Briefcase,
   Calendar,
+  CalendarCheck,
+  CalendarClock,
   CheckSquare,
+  ClipboardCheck,
   FileText,
   Folder,
+  LogIn,
+  LogOut,
   MessageSquare,
   Sparkles,
   Trash2,
@@ -32,6 +38,17 @@ import {
   useTasks,
   useUsers,
   useWorkspaces,
+  useAttendance,
+  useAttendanceCheckin,
+  useAttendanceCheckout,
+  useHrmsOverview,
+  useLeaveBalances,
+  useLeaveRequests,
+  useMyEmployee,
+  useInterviewOverview,
+  useInterviewSessions,
+  useJobOpenings,
+  usePendingEvaluations,
 } from "../../hooks/api";
 import { getActiveOrganisation } from "../../lib/api";
 import { PermissionGate } from "@teamspace-one/authorization/react";
@@ -623,6 +640,203 @@ export function NotificationsWidget() {
   );
 }
 
+export function MyLeaveWidget() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const { data: balances, isLoading } = useLeaveBalances();
+  const { data: pending } = useLeaveRequests({ mine: true, status: "pending" });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>My leave</CardTitle>
+        {pending && pending.length > 0 ? (
+          <Badge variant="warning">{pending.length} pending</Badge>
+        ) : null}
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-text-secondary">Loading balances…</p>
+        ) : balances && balances.length > 0 ? (
+          <div className="space-y-2">
+            {balances.slice(0, 5).map((b) => (
+              <div key={b.id} className="flex items-center justify-between">
+                <span className="text-sm text-text">{b.leaveTypeName ?? "Leave"}</span>
+                <span className="text-xs text-text-muted">
+                  {b.remaining} / {b.entitled} left
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={CalendarClock} title="No leave balances" description="Leave balances will appear once configured." />
+        )}
+        <PermissionGate permission="hrms.leave.apply">
+          <div className="mt-3">
+            <Button variant="secondary" size="sm" onClick={() => setActiveView("hrms")}>
+              Apply for leave
+            </Button>
+          </div>
+        </PermissionGate>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function MyAttendanceWidget() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const { data: me } = useMyEmployee();
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: records, isLoading } = useAttendance({ employeeId: me?.id, from: today, to: today });
+  const checkin = useAttendanceCheckin();
+  const checkout = useAttendanceCheckout();
+  const record = records?.[0];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>My attendance</CardTitle>
+        {record ? <Badge variant={record.status === "present" ? "success" : "secondary"}>{record.status}</Badge> : null}
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-text-secondary">Loading…</p>
+        ) : (
+          <div className="space-y-1 text-sm text-text-secondary">
+            <p>
+              Checked in:{" "}
+              <span className="text-text">{record?.checkInAt ? formatTime(record.checkInAt) : "—"}</span>
+            </p>
+            <p>
+              Checked out:{" "}
+              <span className="text-text">{record?.checkOutAt ? formatTime(record.checkOutAt) : "—"}</span>
+            </p>
+          </div>
+        )}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <PermissionGate permission="hrms.attendance.checkin">
+            {!record?.checkInAt ? (
+              <Button size="sm" disabled={checkin.isPending} onClick={() => checkin.mutate()}>
+                <LogIn className="mr-1.5 h-4 w-4" />
+                Check in
+              </Button>
+            ) : null}
+          </PermissionGate>
+          <PermissionGate permission="hrms.attendance.checkout">
+            {record?.checkInAt && !record?.checkOutAt ? (
+              <Button variant="secondary" size="sm" disabled={checkout.isPending} onClick={() => checkout.mutate()}>
+                <LogOut className="mr-1.5 h-4 w-4" />
+                Check out
+              </Button>
+            ) : null}
+          </PermissionGate>
+          <Button variant="ghost" size="sm" onClick={() => setActiveView("hrms")}>
+            History
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function HrmsOverviewWidget() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const { data: overview, isLoading, isError, refetch } = useHrmsOverview();
+
+  const stats = overview
+    ? [
+        { label: "Employees", value: overview.totalEmployees },
+        { label: "Present today", value: overview.presentToday },
+        { label: "Pending leave", value: overview.pendingLeaveRequests },
+        { label: "Pending corrections", value: overview.pendingCorrections },
+      ]
+    : [];
+
+  return (
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle>People overview</CardTitle>
+        <Button variant="ghost" size="sm" onClick={() => setActiveView("hrms")}>
+          Open HRMS
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-text-secondary">Loading…</p>
+        ) : isError ? (
+          <EmptyState
+            icon={Users}
+            title="Couldn't load HR overview"
+            action={<Button variant="secondary" size="sm" onClick={() => refetch()}>Retry</Button>}
+          />
+        ) : overview ? (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              {stats.map((s) => (
+                <div key={s.label} className="rounded-md border bg-surface p-3">
+                  <p className="text-lg font-semibold text-text">{s.value}</p>
+                  <p className="text-xs text-text-muted">{s.label}</p>
+                </div>
+              ))}
+            </div>
+            {overview.byDepartment.length > 0 ? (
+              <div className="mt-3 space-y-1.5">
+                {overview.byDepartment.slice(0, 5).map((d) => (
+                  <div key={d.name} className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary">{d.name}</span>
+                    <span className="text-xs text-text-muted">{d.count}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function PendingHrApprovalsWidget() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const { data: overview, isLoading } = useHrmsOverview();
+  const pending = (overview?.pendingLeaveRequests ?? 0) + (overview?.pendingCorrections ?? 0);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Pending approvals</CardTitle>
+        {pending > 0 ? <Badge variant="warning">{pending}</Badge> : null}
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-text-secondary">Loading…</p>
+        ) : pending > 0 ? (
+          <div className="space-y-2 text-sm text-text-secondary">
+            {(overview?.pendingLeaveRequests ?? 0) > 0 ? (
+              <div className="flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-warning" />
+                <span>{overview?.pendingLeaveRequests} leave request{overview?.pendingLeaveRequests === 1 ? "" : "s"}</span>
+              </div>
+            ) : null}
+            {(overview?.pendingCorrections ?? 0) > 0 ? (
+              <div className="flex items-center gap-2">
+                <CalendarCheck className="h-4 w-4 text-warning" />
+                <span>{overview?.pendingCorrections} attendance correction{overview?.pendingCorrections === 1 ? "" : "s"}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <EmptyState icon={ClipboardCheck} title="Nothing to review" description="Pending approvals will appear here." />
+        )}
+        <div className="mt-3">
+          <Button variant="secondary" size="sm" onClick={() => setActiveView("hrms")}>
+            Review in HRMS
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function NewMessageDialog({
   open,
   onOpenChange,
@@ -845,5 +1059,161 @@ function CreateProjectDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+const STAGE_LABELS: Record<string, string> = {
+  applied: "Applied",
+  screening: "Screening",
+  shortlisted: "Shortlisted",
+  interview: "Interview",
+  evaluation: "Evaluation",
+  offer: "Offer",
+  hired: "Hired",
+  rejected: "Rejected",
+};
+
+export function OpenPositionsWidget() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const { data: overview, isLoading } = useInterviewOverview();
+  const { data: jobs } = useJobOpenings("open");
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Open positions</CardTitle>
+        <Badge variant="secondary">{overview?.openJobs ?? jobs?.length ?? 0}</Badge>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-text-secondary">Loading…</p>
+        ) : jobs && jobs.length > 0 ? (
+          <div className="space-y-2">
+            {jobs.slice(0, 5).map((j) => (
+              <div key={j.id} className="flex items-center justify-between">
+                <span className="truncate text-sm text-text">{j.title}</span>
+                <span className="text-xs text-text-muted">{j.departmentName ?? ""}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={Briefcase} title="No open positions" description="Open a job to start recruiting." />
+        )}
+        <div className="mt-3">
+          <Button variant="secondary" size="sm" onClick={() => setActiveView("interview")}>
+            View jobs
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function CandidatePipelineWidget() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const { data: overview, isLoading } = useInterviewOverview();
+  const stages = Object.entries(overview?.candidatesByStage ?? {});
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Candidate pipeline</CardTitle>
+        <Badge variant="secondary">{overview?.totalCandidates ?? 0}</Badge>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-text-secondary">Loading…</p>
+        ) : stages.length > 0 ? (
+          <div className="space-y-1.5">
+            {stages.map(([stage, count]) => (
+              <div key={stage} className="flex items-center justify-between">
+                <span className="text-sm text-text-secondary">{STAGE_LABELS[stage] ?? stage}</span>
+                <span className="text-xs font-medium text-text">{count}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={Users} title="No candidates" description="Candidates will appear once added." />
+        )}
+        <div className="mt-3">
+          <Button variant="secondary" size="sm" onClick={() => setActiveView("interview")}>
+            View pipeline
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function InterviewsTodayWidget() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const { data: overview } = useInterviewOverview();
+  const { data: sessions, isLoading } = useInterviewSessions(true);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Interviews</CardTitle>
+        <Badge variant="secondary">{overview?.interviewsToday ?? 0} today</Badge>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-text-secondary">Loading…</p>
+        ) : sessions && sessions.length > 0 ? (
+          <div className="space-y-2">
+            {sessions.slice(0, 5).map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setActiveView("interview")}
+                className="flex w-full items-center justify-between rounded-md p-1.5 text-left hover:bg-surface-elevated"
+              >
+                <span className="truncate text-sm text-text">
+                  {s.candidate?.name ?? "Interview"}
+                </span>
+                <span className="text-xs text-text-muted">
+                  {s.scheduledAt ? formatTime(s.scheduledAt) : "Unscheduled"}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={Calendar} title="No upcoming interviews" description="Scheduled interviews will appear here." />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function PendingEvaluationsWidget() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const { data: overview } = useInterviewOverview();
+  const { data: pending, isLoading } = usePendingEvaluations();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Pending evaluations</CardTitle>
+        {(overview?.pendingEvaluations ?? 0) > 0 ? (
+          <Badge variant="warning">{overview?.pendingEvaluations}</Badge>
+        ) : null}
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-text-secondary">Loading…</p>
+        ) : pending && pending.length > 0 ? (
+          <p className="text-sm text-text-secondary">
+            {pending.length} interview evaluation{pending.length === 1 ? "" : "s"} awaiting review.
+          </p>
+        ) : (
+          <EmptyState icon={ClipboardCheck} title="Nothing to evaluate" description="Completed interviews awaiting feedback will appear here." />
+        )}
+        <div className="mt-3">
+          <Button variant="secondary" size="sm" onClick={() => setActiveView("interview")}>
+            Review
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

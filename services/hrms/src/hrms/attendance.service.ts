@@ -145,6 +145,13 @@ export class AttendanceService {
         },
       });
 
+      const manager = employee.managerEmployeeId
+        ? await tx.employee.findFirst({
+            where: { id: employee.managerEmployeeId, organisationId: ctx.organisationId },
+            select: { userId: true },
+          })
+        : null;
+
       const envelope = createEventEnvelope({
         eventType: 'teamspace-one.hrms.attendance.correction.requested',
         organisationId: ctx.organisationId,
@@ -152,7 +159,15 @@ export class AttendanceService {
         correlationId: ctx.correlationId,
         resourceType: 'attendance-correction',
         resourceId: correction.id,
-        payload: { attendanceId: record.id, employeeId: employee.id },
+        payload: {
+          attendanceId: record.id,
+          employeeId: employee.id,
+          userId: employee.userId,
+          managerUserId: manager?.userId ?? null,
+          employeeName: `${employee.firstName} ${employee.lastName}`,
+          date: record.date.toISOString(),
+          reason: input.reason,
+        },
       });
       await this.outbox.createEvent(tx, envelope, envelope.eventType);
 
@@ -225,6 +240,11 @@ export class AttendanceService {
         });
       }
 
+      const employee = await tx.employee.findFirst({
+        where: { id: correction.employeeId, organisationId: ctx.organisationId },
+        select: { userId: true },
+      });
+
       const envelope = createEventEnvelope({
         eventType: 'teamspace-one.hrms.attendance.correction.resolved',
         organisationId: ctx.organisationId,
@@ -232,7 +252,12 @@ export class AttendanceService {
         correlationId: ctx.correlationId,
         resourceType: 'attendance-correction',
         resourceId: id,
-        payload: { status: action, employeeId: correction.employeeId },
+        payload: {
+          status: action,
+          employeeId: correction.employeeId,
+          userId: employee?.userId ?? null,
+          reviewNote: reviewNote ?? null,
+        },
       });
       await this.outbox.createEvent(tx, envelope, envelope.eventType);
 

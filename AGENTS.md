@@ -29,6 +29,7 @@
 - Apply pending Prisma migration for a service (local Postgres): `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/<db>?schema=public pnpm --filter @teamspace-one/<service> db:migrate`
 - Seed/backfill RBAC (permissions registry, system role permissions + scopes, membership data scopes): `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/<org-db>?schema=public pnpm --filter @teamspace-one/organisation-service db:seed:rbac`
 - Service containers auto-apply pending Prisma migrations on start (`migrate deploy` runs in each Dockerfile's `CMD` before `node dist/main`). To apply manually on the server (Docker): `docker exec -w /app/services/<service> teamspace-one-<service>-service npx prisma migrate deploy` — containers already carry the correct `DATABASE_URL` (Postgres hostname is `postgres`, not `localhost`)
+- The organisation-service container also runs `node dist/seed/seed-rbac.js` after `migrate deploy` — it seeds the permission registry and backfills system role permissions/scopes and membership data scopes (idempotent). Manual run: `docker exec teamspace-one-organisation-service node services/organisation/dist/seed/seed-rbac.js`
 - HRMS service: `pnpm dev:hrms` / `pnpm build:hrms` (port 3013, db `hrms_db`, gateway prefix `/hrms`). See `docs/hrms.md`.
 
 ## Authorization notes

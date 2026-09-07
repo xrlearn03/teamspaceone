@@ -291,3 +291,26 @@ model Payslip {
   @@index([organisationId])
   @@map("payslips")
 }
+
+model CalendarEvent {
+  id             String   @id @default(cuid())
+  organisationId String
+  title          String
+  description    String?
+  type           String   @default("custom")
+  startAt        DateTime
+  endAt          DateTime
+  allDay         Boolean  @default(true)
+  visibility     String   @default("organisation")
+  employeeId     String?
+  sourceType     String?
+  sourceId       String?
+  createdBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([sourceType, sourceId])
+  @@index([organisationId])
+  @@index([organisationId, startAt])
+  @@map("calendar_events")
+}

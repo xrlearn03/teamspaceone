@@ -165,6 +165,21 @@ export class PayrollService {
       }
     }
 
+    // Payroll access is sensitive: record an audit event for every payslip
+    // view. The audit service consumes the HRMS stream automatically.
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const envelope = createEventEnvelope({
+        eventType: 'teamspace-one.hrms.payroll.payslip.viewed',
+        organisationId: ctx.organisationId,
+        actorId: ctx.actorId,
+        correlationId: ctx.correlationId,
+        resourceType: 'payslip',
+        resourceId: payslip.id,
+        payload: { employeeId: payslip.employeeId },
+      });
+      await this.outbox.createEvent(tx, envelope, envelope.eventType);
+    });
+
     return payslip;
   }
 }

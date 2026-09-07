@@ -10,6 +10,7 @@ import { AttendanceService } from './attendance.service.js';
 import { LeaveService } from './leave.service.js';
 import { PayrollService } from './payroll.service.js';
 import { DocumentsService } from './documents.service.js';
+import { CalendarService } from './calendar.service.js';
 import {
   DepartmentsController,
   DesignationsController,
@@ -18,6 +19,7 @@ import {
 } from './employees.controller.js';
 import {
   AttendanceController,
+  CalendarController,
   DocumentsController,
   LeaveController,
   PayrollController,
@@ -34,6 +36,7 @@ import {
     LeaveController,
     PayrollController,
     DocumentsController,
+    CalendarController,
   ],
   providers: [
     AuthorizationClientService,
@@ -45,6 +48,7 @@ import {
     LeaveService,
     PayrollService,
     DocumentsService,
+    CalendarService,
   ],
 })
 export class HrmsModule {}

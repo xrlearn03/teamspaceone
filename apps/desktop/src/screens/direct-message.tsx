@@ -143,9 +143,12 @@ export function DirectMessageScreen() {
 
   function attach(file?: File) {
     if (!file || !contact) return;
-    uploadFile.mutate(file, {
-      onSuccess: (uploaded) => void sendOrQueue({ channelId: contact.id, content: "", attachmentIds: [uploaded.id], senderId: user?.id }),
-    });
+    uploadFile.mutate(
+      { file, resource: { resourceType: "channel", resourceId: contact.id } },
+      {
+        onSuccess: (uploaded) => void sendOrQueue({ channelId: contact.id, content: "", attachmentIds: [uploaded.id], senderId: user?.id }),
+      },
+    );
   }
 
   function startCall(video: boolean) {

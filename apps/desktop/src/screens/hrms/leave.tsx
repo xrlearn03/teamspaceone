@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CalendarClock, Check, Plus, X } from "lucide-react";
 import {
   useApplyLeave,
-  useHolidays,
+  useHrmsCalendar,
   useLeaveBalances,
   useLeaveRequests,
   useLeaveTypes,
@@ -98,7 +98,13 @@ export function LeaveSection() {
   const balances = useLeaveBalances(me.data?.id);
   const myRequests = useLeaveRequests({ mine: true });
   const approvalQueue = useLeaveRequests(canApprove ? { status: "pending" } : undefined);
-  const holidays = useHolidays();
+  const today = new Date();
+  const rangeEnd = new Date(today);
+  rangeEnd.setMonth(rangeEnd.getMonth() + 3);
+  const calendar = useHrmsCalendar({
+    from: today.toISOString().slice(0, 10),
+    to: rangeEnd.toISOString().slice(0, 10),
+  });
   const review = useReviewLeaveRequest();
   const [applyOpen, setApplyOpen] = useState(false);
 
@@ -244,21 +250,39 @@ export function LeaveSection() {
         </Card>
       ) : null}
 
-      {(holidays.data ?? []).length > 0 ? (
-        <Card>
-          <CardHeader><CardTitle>Upcoming holidays</CardTitle></CardHeader>
-          <CardContent>
-            <ul className="flex flex-col gap-1.5">
-              {(holidays.data ?? []).slice(0, 8).map((h) => (
-                <li key={h.id} className="flex items-center justify-between text-sm">
-                  <span className="text-text">{h.name}</span>
-                  <span className="text-xs text-text-muted">{formatDate(h.date)}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      ) : null}
+      <Card>
+        <CardHeader><CardTitle>Team calendar</CardTitle></CardHeader>
+        <CardContent>
+          {calendar.isLoading ? (
+            <p className="text-xs text-text-muted">Loading…</p>
+          ) : (
+            (() => {
+              const items = [
+                ...(calendar.data?.holidays ?? []).map((e) => ({ ...e, kind: "holiday" as const })),
+                ...(calendar.data?.events ?? []).map((e) => ({ ...e, kind: e.type })),
+              ].sort((a, b) => a.startAt.localeCompare(b.startAt));
+              return items.length === 0 ? (
+                <p className="text-xs text-text-muted">No upcoming leave or holidays.</p>
+              ) : (
+                <ul className="flex flex-col gap-1.5">
+                  {items.slice(0, 12).map((e) => (
+                    <li key={e.id} className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2 text-text">
+                        <StatusBadge status={e.kind} />
+                        {e.title}
+                      </span>
+                      <span className="text-xs text-text-muted">
+                        {formatDate(e.startAt)}
+                        {e.endAt.slice(0, 10) !== e.startAt.slice(0, 10) ? ` – ${formatDate(e.endAt)}` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              );
+            })()
+          )}
+        </CardContent>
+      </Card>
 
       <ApplyLeaveDialog open={applyOpen} onOpenChange={setApplyOpen} />
     </div>

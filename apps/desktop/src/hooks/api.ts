@@ -1114,6 +1114,15 @@ export function useHolidays() {
   });
 }
 
+export function useHrmsCalendar(range?: { from?: string; to?: string }) {
+  return useQuery({
+    queryKey: ["hrms", "calendar", orgId(), range?.from ?? null, range?.to ?? null],
+    queryFn: () => api.getHrmsCalendar(range),
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
 export function usePayrollPeriods() {
   return useQuery({
     queryKey: ["hrms", "payroll-periods", orgId()],
@@ -1154,5 +1163,111 @@ export function useDeleteEmployeeDocument() {
   return useMutation({
     mutationFn: api.deleteEmployeeDocument,
     onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "documents"] }),
+  });
+}
+
+// Interview / recruitment
+const interviewEnabled = () => getActiveOrganisation() !== null;
+
+export function useInterviewOverview() {
+  return useQuery({
+    queryKey: ["interview", "overview", orgId()],
+    queryFn: api.getInterviewOverview,
+    enabled: interviewEnabled(),
+    staleTime: 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function useJobOpenings(status?: string) {
+  return useQuery({
+    queryKey: ["interview", "jobs", orgId(), status ?? "all"],
+    queryFn: () => api.getJobOpenings(status),
+    enabled: interviewEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateJobOpening() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createJobOpening,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "jobs"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useUpdateJobOpening() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateJobOpening>[1] }) =>
+      api.updateJobOpening(args.id, args.body),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "jobs"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useCandidates(status?: string) {
+  return useQuery({
+    queryKey: ["interview", "candidates", orgId(), status ?? "all"],
+    queryFn: () => api.getCandidates(status),
+    enabled: interviewEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateCandidate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createCandidate,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "candidates"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useUpdateApplicationStage() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { applicationId: string; stage: string }) =>
+      api.updateApplicationStage(args.applicationId, args.stage),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "candidates"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useInterviewSessions(upcoming?: boolean) {
+  return useQuery({
+    queryKey: ["interview", "sessions", orgId(), upcoming ? "upcoming" : "all"],
+    queryFn: () => api.getInterviewSessions(upcoming),
+    enabled: interviewEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateInterviewSession() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createInterviewSession,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "sessions"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function usePendingEvaluations() {
+  return useQuery({
+    queryKey: ["interview", "evaluations", "pending", orgId()],
+    queryFn: api.getPendingEvaluations,
+    enabled: interviewEnabled(),
+    staleTime: 30 * 1000,
   });
 }

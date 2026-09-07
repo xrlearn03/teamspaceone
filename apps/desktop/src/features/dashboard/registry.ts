@@ -1,10 +1,18 @@
-import type { AuthorizableUser } from "@teamspace-one/authorization";
+import type { AuthorizableUser, ScopeType } from "@teamspace-one/authorization";
 import { hasAnyPermission } from "@teamspace-one/authorization";
 import type { ComponentType } from "react";
 import {
+  CandidatePipelineWidget,
   DailyBriefWidget,
+  HrmsOverviewWidget,
+  InterviewsTodayWidget,
+  OpenPositionsWidget,
+  PendingEvaluationsWidget,
+  MyAttendanceWidget,
+  MyLeaveWidget,
   MyTasksWidget,
   NotificationsWidget,
+  PendingHrApprovalsWidget,
   PeopleWidget,
   QuickActionsWidget,
   RecentConversationsWidget,
@@ -24,6 +32,12 @@ export interface DashboardWidget {
   gridClass?: string;
   /** Permissions (any-of) required to render the widget. */
   permissions: string[];
+  /**
+   * Hide the widget when every scope the user holds for the widget's module
+   * is in this list. E.g. `excludeScopeTypes: ["own"]` hides recruiter views
+   * from candidate accounts that only have interview `own` scope.
+   */
+  excludeScopeTypes?: ScopeType[];
   component: ComponentType;
 }
 
@@ -42,6 +56,18 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
     component: MyTasksWidget,
   },
   {
+    id: "my-attendance",
+    title: "My attendance",
+    permissions: ["hrms.attendance.view"],
+    component: MyAttendanceWidget,
+  },
+  {
+    id: "my-leave",
+    title: "My leave",
+    permissions: ["hrms.leave.view"],
+    component: MyLeaveWidget,
+  },
+  {
     id: "upcoming-meetings",
     title: "Upcoming meetings",
     permissions: ["collaboration.meeting.view"],
@@ -58,6 +84,44 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
     title: "Recent projects",
     permissions: ["collaboration.project.view"],
     component: RecentProjectsWidget,
+  },
+  {
+    id: "hrms-overview",
+    title: "People overview",
+    permissions: ["hrms.analytics.view"],
+    component: HrmsOverviewWidget,
+  },
+  {
+    id: "pending-hr-approvals",
+    title: "Pending approvals",
+    permissions: ["hrms.leave.approve", "hrms.attendance.approve"],
+    component: PendingHrApprovalsWidget,
+  },
+  {
+    id: "open-positions",
+    title: "Open positions",
+    permissions: ["interview.job.view"],
+    excludeScopeTypes: ["own"],
+    component: OpenPositionsWidget,
+  },
+  {
+    id: "candidate-pipeline",
+    title: "Candidate pipeline",
+    permissions: ["interview.candidate.view"],
+    excludeScopeTypes: ["own"],
+    component: CandidatePipelineWidget,
+  },
+  {
+    id: "interviews-today",
+    title: "Interviews",
+    permissions: ["interview.interview.view"],
+    component: InterviewsTodayWidget,
+  },
+  {
+    id: "pending-evaluations",
+    title: "Pending evaluations",
+    permissions: ["interview.interview.evaluate", "interview.decision.view"],
+    component: PendingEvaluationsWidget,
   },
   {
     id: "people",
@@ -86,5 +150,19 @@ export function filterDashboardWidgets(
   widgets: DashboardWidget[] = DASHBOARD_WIDGETS,
 ): DashboardWidget[] {
   if (!user) return [];
-  return widgets.filter((w) => hasAnyPermission(user, w.permissions));
+  return widgets.filter((w) => {
+    if (!hasAnyPermission(user, w.permissions)) return false;
+    if (w.excludeScopeTypes?.length) {
+      const module = w.permissions[0]?.split(".")[0] ?? "*";
+      const scopeTypes = new Set(
+        (user.dataScopes ?? [])
+          .filter((s) => s.module === module || s.module === "*")
+          .map((s) => s.scope),
+      );
+      if (scopeTypes.size > 0 && [...scopeTypes].every((s) => w.excludeScopeTypes!.includes(s))) {
+        return false;
+      }
+    }
+    return true;
+  });
 }

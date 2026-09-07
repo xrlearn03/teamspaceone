@@ -41,17 +41,26 @@
 | `GET/POST /hrms/payroll/periods`, `POST .../periods/:id/process`, `GET /hrms/payroll/payslips[/:id]` | `hrms.payroll.*` |
 | `GET/POST/DELETE /hrms/documents[/:id]` | `hrms.document.*` (own-record/uploader rules in service) |
 | `GET/POST /hrms/holidays` | view / `hrms.leave.manage` |
+| `GET /hrms/calendar`, `POST /hrms/calendar/events` | `hrms.access` |
 
 ## Workflows
 
 - **Leave**: apply → `pending` → manager approve (`hrms.leave.approve`) → `manager_approved`; reviewer with `hrms.leave.manage` → `approved`, which increments `LeaveBalance.used` inside a transaction (balance sufficiency checked at apply time). Reject/cancel paths provided.
 - **Attendance**: own check-in/check-out upserts the day's record; corrections go `pending` → approved/rejected by `hrms.attendance.approve` (manager of the employee or org scope).
-- **Payroll**: `POST /hrms/payroll/periods/:id/process` (`hrms.payroll.process`) moves draft → approved and generates draft payslips for active employees with a `salary` payload. Payroll is the restricted foundation; advanced processing lands in Phase 7.
+- **Payroll**: `POST /hrms/payroll/periods/:id/process` (`hrms.payroll.process`) moves draft → approved and generates draft payslips for active employees with a `salary` payload. Payroll is the restricted foundation; advanced processing lands in Phase 7. Every single-payslip read emits `teamspace-one.hrms.payroll.payslip.viewed`, which the audit service stores automatically via the `HRMS` stream.
+- **Calendar**: `GET /hrms/calendar?from=&to=` returns `{ events, holidays }` — approved leave auto-creates an org-visible `CalendarEvent` (`sourceType=leave-request`), holidays are merged in, and `POST /hrms/calendar/events` creates custom events (`private` unless the caller has `hrms.leave.manage`). Meeting calendar events remain on `GET /meetings/calendar/events`; a unified aggregation layer can merge the two later.
+- **Auto-provisioning**: the organisation service consumes `teamspace-one.hrms.employee.created` (`organisation-hrms-provisioning` durable, inbox-deduplicated) and creates a membership with the default `employee` role + role scopes when the user isn't a member yet — employees get collaboration access automatically.
 - **Employee lifecycle**: create/update writes `EmployeeHistory` rows; delete is a soft terminate (`status = 'terminated'`).
 
 ## Events
 
-Outbox events (subject = event type): `teamspace-one.hrms.employee.created|updated|terminated`, `leave.requested|approved|rejected`, `attendance.correction.requested|resolved`, `payroll.period.processed`, `document.uploaded`. NATS consumer subscribes `teamspace-one.hrms.>` (durable `hrms-consumer`).
+Outbox events (subject = event type): `teamspace-one.hrms.employee.created|updated|terminated`, `leave.requested|approved|rejected`, `attendance.correction.requested|resolved`, `payroll.period.processed`, `document.uploaded`. They publish to the `HRMS` JetStream stream (`packages/event-contracts/src/streams.ts`); the service's own consumer subscribes `teamspace-one.hrms.>` (durable `hrms-consumer`).
+
+**Notifications**: `notification-service` consumes `teamspace-one.hrms.>` (durable `notification-hrms-consumer`) and creates in-app notifications — leave request → manager, leave approved/rejected → employee, attendance correction requested → manager, resolved → employee, employee created → welcome. Payloads carry `userId`/`managerUserId` so the notification service can target recipients without an HRMS DB lookup.
+
+## Seed data
+
+`SEED_ORGANISATION_ID=<org-id> pnpm --filter @teamspace-one/hrms-service db:seed` seeds leave types, departments, designations, and holidays (idempotent). Optionally `SEED_EMPLOYEES='[{userId, firstName, lastName, department, designation, managerUserId}]'` creates employee records — `userId` must be a real user, so employees are normally created via the API/onboarding instead.
 
 ## Frontend
 

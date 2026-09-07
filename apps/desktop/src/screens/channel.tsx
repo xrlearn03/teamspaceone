@@ -110,9 +110,12 @@ export function ChannelScreen() {
 
   function attach(file?: File) {
     if (!file || !channel) return;
-    uploadFile.mutate(file, {
-      onSuccess: (uploaded) => void sendOrQueue({ channelId: channel.id, content: "", attachmentIds: [uploaded.id], senderId: user?.id }),
-    });
+    uploadFile.mutate(
+      { file, resource: { resourceType: "channel", resourceId: channel.id, workspaceId: channel.workspaceId ?? undefined } },
+      {
+        onSuccess: (uploaded) => void sendOrQueue({ channelId: channel.id, content: "", attachmentIds: [uploaded.id], senderId: user?.id }),
+      },
+    );
   }
 
   function ringChannelMembers(meetingId: string, kind: "audio" | "video", title: string) {

@@ -139,6 +139,7 @@ describe('LeaveService.approve', () => {
       leaveTypeId: 'lt-1',
       days: 3,
       startDate: new Date('2024-09-01'),
+      endDate: new Date('2024-09-04'),
       status: 'pending',
     };
     const balance = { id: 'lb-1', entitled: 10, used: 2 };
@@ -152,6 +153,10 @@ describe('LeaveService.approve', () => {
         findUnique: jest.fn().mockResolvedValue(balance),
         update: balanceUpdate,
       },
+      employee: {
+        findFirst: jest.fn().mockResolvedValue({ userId: 'user-9', firstName: 'A', lastName: 'B' }),
+      },
+      calendarEvent: { upsert: jest.fn().mockResolvedValue({}) },
     };
     const prisma = {
       leaveRequest: { findFirst: jest.fn().mockResolvedValue(request) },
@@ -184,12 +189,17 @@ describe('LeaveService.approve', () => {
       leaveTypeId: 'lt-1',
       days: 1,
       startDate: new Date('2024-09-01'),
+      endDate: new Date('2024-09-02'),
       status: 'pending',
     };
     const balanceUpdate = jest.fn();
     const tx = {
       leaveRequest: { update: jest.fn().mockResolvedValue({ ...request, status: 'manager_approved' }) },
       leaveBalance: { findUnique: jest.fn(), update: balanceUpdate },
+      employee: {
+        findFirst: jest.fn().mockResolvedValue({ userId: 'user-9', firstName: 'A', lastName: 'B' }),
+      },
+      calendarEvent: { upsert: jest.fn().mockResolvedValue({}) },
     };
     const prisma = {
       leaveRequest: { findFirst: jest.fn().mockResolvedValue(request) },
@@ -249,8 +259,9 @@ describe('PayrollService', () => {
     const prisma = {
       payslip: { findFirst: jest.fn().mockResolvedValue(payslip) },
       employee: { findFirst: jest.fn() },
+      $transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn({})),
     };
-    const module = await buildModule(prisma, {});
+    const module = await buildModule(prisma, { createEvent: jest.fn().mockResolvedValue(undefined) });
     const service = module.get(PayrollService);
 
     await expect(service.getPayslip(ctx, adminUser, 'p-1')).resolves.toEqual(payslip);

@@ -26,6 +26,12 @@ export class ProjectsController {
     return this.projects.resolveAccess(projectId, actorId);
   }
 
+  @Get('tasks/:id/access')
+  resolveTaskAccess(@Param('id') taskId: string, @Headers('x-actor-id') actorId?: string) {
+    if (!actorId) return null;
+    return this.projects.resolveTaskAccess(taskId, actorId);
+  }
+
   @Post('projects')
   @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_CREATE)
   createProject(@CurrentOrganisation() ctx: OrganisationContextValue, @Body() dto: CreateProjectDto) {

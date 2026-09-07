@@ -10,6 +10,7 @@ export const Streams = {
   AUDIT: 'AUDIT',
   DLQ: 'DLQ',
   TEMPLATES: 'TEMPLATES',
+  HRMS: 'HRMS',
 } as const;
 
 export type StreamName = (typeof Streams)[keyof typeof Streams];
@@ -87,6 +88,11 @@ export const streamConfigs: StreamConfig[] = [
   {
     name: Streams.TEMPLATES,
     subjects: ['teamspace-one.template.>'],
+    retention: 'limits',
+  },
+  {
+    name: Streams.HRMS,
+    subjects: ['teamspace-one.hrms.>'],
     retention: 'limits',
   },
 ];

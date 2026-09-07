@@ -474,7 +474,10 @@ function TaskAttachments({ task }: { task: Task }) {
 
   function uploadAndAttach(file?: File) {
     if (!file) return;
-    upload.mutate(file, { onSuccess: (record) => attach(record.id) });
+    upload.mutate(
+      { file, resource: { resourceType: "project", resourceId: task.projectId } },
+      { onSuccess: (record) => attach(record.id) },
+    );
   }
 
   return (
@@ -779,7 +782,7 @@ function ProjectFiles({ projectId }: { projectId: string }) {
   const upload = useUploadFile();
   const add = useAddProjectAttachment();
   const remove = useRemoveProjectAttachment();
-  function uploadFile(file?: File) { if (!file) return; upload.mutate(file, { onSuccess: (record) => add.mutate({ projectId, fileId: record.id }) }); }
+  function uploadFile(file?: File) { if (!file) return; upload.mutate({ file, resource: { resourceType: "project", resourceId: projectId } }, { onSuccess: (record) => add.mutate({ projectId, fileId: record.id }) }); }
   return <div className="flex-1 overflow-y-auto p-6"><div className="mb-4 flex justify-end"><Button asChild><label className="cursor-pointer"><Plus className="mr-1 h-4 w-4" />Upload file<input type="file" className="hidden" onChange={(event) => { uploadFile(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label></Button></div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{attachments?.map((attachment) => <Card key={attachment.id}><MessageAttachment fileId={attachment.fileId} /><Button variant="ghost" size="sm" className="mt-2 text-error" onClick={() => remove.mutate({ projectId, fileId: attachment.fileId })}>Remove</Button></Card>)}{!attachments?.length ? <p className="col-span-full py-12 text-center text-sm text-text-muted">No project files.</p> : null}</div></div>;
 }
 

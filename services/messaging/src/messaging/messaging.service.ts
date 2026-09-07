@@ -143,6 +143,9 @@ export class MessagingService {
     if (channel.type === 'direct') throw new BadRequestException('Direct conversation membership is immutable');
     const actorId = this.actor(ctx);
     const memberIds = this.uniqueIds([actorId, ...(requestedIds ?? [])]);
+    const previousMemberIds = channel.members.map((m) => m.userId);
+    const addedMemberIds = memberIds.filter((id) => !previousMemberIds.includes(id));
+    const removedMemberIds = previousMemberIds.filter((id) => !memberIds.includes(id));
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.channelMember.deleteMany({ where: { channelId, userId: { notIn: memberIds } } });
@@ -154,7 +157,13 @@ export class MessagingService {
         });
       }
       const updated = await tx.channel.findUniqueOrThrow({ where: { id: channelId }, include: channelInclude });
-      await this.event(tx, ctx, Subjects.CHANNEL_MEMBERS_UPDATED, 'channel', channelId, { id: channelId, memberIds });
+      await this.event(tx, ctx, Subjects.CHANNEL_MEMBERS_UPDATED, 'channel', channelId, {
+        id: channelId,
+        name: channel.name,
+        memberIds,
+        addedMemberIds,
+        removedMemberIds,
+      });
       return updated;
     });
   }

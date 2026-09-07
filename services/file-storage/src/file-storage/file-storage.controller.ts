@@ -9,12 +9,15 @@ import {
   Query,
   Res,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { pipeline } from 'node:stream/promises';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
+import { RemotePermissionGuard, RequirePermissions } from '@teamspace-one/authorization/nest';
+import { COLLABORATION_PERMISSIONS } from '@teamspace-one/authorization';
 import { FileStorageService } from './file-storage.service.js';
 import { PresignUploadDto } from './dto/presign-upload.dto.js';
 import { CompleteUploadDto } from './dto/complete-upload.dto.js';
@@ -38,16 +41,19 @@ function contentDisposition(filename: string, type: 'inline' | 'attachment' = 'i
   return `${type}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
+@UseGuards(RemotePermissionGuard)
 @Controller('files')
 export class FileStorageController {
   constructor(private readonly fileStorage: FileStorageService) {}
 
   @Get()
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_VIEW)
   async list(@CurrentOrganisation() ctx: OrganisationContextValue) {
     return this.fileStorage.list(ctx);
   }
 
   @Get(':id')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_VIEW)
   async get(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -56,6 +62,7 @@ export class FileStorageController {
   }
 
   @Get(':id/download')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_VIEW)
   async download(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -80,6 +87,7 @@ export class FileStorageController {
   }
 
   @Get(':id/preview')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_VIEW)
   async preview(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -96,6 +104,7 @@ export class FileStorageController {
   }
 
   @Post('presign-upload')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_UPLOAD)
   async presignUpload(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: PresignUploadDto,
@@ -104,6 +113,7 @@ export class FileStorageController {
   }
 
   @Post(':id/complete')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_UPLOAD)
   async completeUpload(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -113,6 +123,7 @@ export class FileStorageController {
   }
 
   @Post('upload')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_UPLOAD)
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: MAX_UPLOAD_BYTES },
@@ -141,21 +152,25 @@ export class FileStorageController {
   }
 
   @Get(':id/shares')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_VIEW)
   listShares(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') id: string) {
     return this.fileStorage.listExternalShares(ctx, id);
   }
 
   @Post(':id/shares')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_UPLOAD)
   createShare(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') id: string, @Body() dto: CreateExternalShareDto) {
     return this.fileStorage.createExternalShare(ctx, id, dto);
   }
 
   @Delete('shares/:shareId')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_DELETE)
   async revokeShare(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('shareId') shareId: string) {
     await this.fileStorage.revokeExternalShare(ctx, shareId);
   }
 
   @Delete(':id')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_DELETE)
   async delete(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,

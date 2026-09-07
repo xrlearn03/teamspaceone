@@ -129,6 +129,13 @@ export class LeaveService {
         },
       });
 
+      const manager = employee.managerEmployeeId
+        ? await tx.employee.findFirst({
+            where: { id: employee.managerEmployeeId, organisationId: ctx.organisationId },
+            select: { userId: true },
+          })
+        : null;
+
       const envelope = createEventEnvelope({
         eventType: 'teamspace-one.hrms.leave.requested',
         organisationId: ctx.organisationId,
@@ -138,8 +145,14 @@ export class LeaveService {
         resourceId: request.id,
         payload: {
           employeeId: employee.id,
+          userId: employee.userId,
+          managerUserId: manager?.userId ?? null,
+          employeeName: `${employee.firstName} ${employee.lastName}`,
           leaveTypeId: leaveType.id,
+          leaveTypeName: leaveType.name,
           days: input.days,
+          startDate: input.startDate.toISOString(),
+          endDate: input.endDate.toISOString(),
         },
       });
       await this.outbox.createEvent(tx, envelope, envelope.eventType);
@@ -230,6 +243,41 @@ export class LeaveService {
         }
       }
 
+      const employee = await tx.employee.findFirst({
+        where: { id: request.employeeId, organisationId: ctx.organisationId },
+        select: { userId: true, firstName: true, lastName: true },
+      });
+
+      if (finalStatus === 'approved') {
+        const endOfDay = new Date(request.endDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        await tx.calendarEvent.upsert({
+          where: {
+            sourceType_sourceId: {
+              sourceType: 'leave-request',
+              sourceId: request.id,
+            },
+          },
+          update: {
+            startAt: request.startDate,
+            endAt: endOfDay,
+          },
+          create: {
+            organisationId: ctx.organisationId,
+            title: `Leave — ${employee ? `${employee.firstName} ${employee.lastName}` : 'Employee'}`,
+            type: 'leave',
+            startAt: request.startDate,
+            endAt: endOfDay,
+            allDay: true,
+            visibility: 'organisation',
+            employeeId: request.employeeId,
+            sourceType: 'leave-request',
+            sourceId: request.id,
+            createdBy: ctx.actorId,
+          },
+        });
+      }
+
       const envelope = createEventEnvelope({
         eventType: 'teamspace-one.hrms.leave.approved',
         organisationId: ctx.organisationId,
@@ -237,7 +285,14 @@ export class LeaveService {
         correlationId: ctx.correlationId,
         resourceType: 'leave-request',
         resourceId: id,
-        payload: { status: finalStatus, employeeId: request.employeeId },
+        payload: {
+          status: finalStatus,
+          employeeId: request.employeeId,
+          userId: employee?.userId ?? null,
+          days: request.days,
+          startDate: request.startDate.toISOString(),
+          endDate: request.endDate.toISOString(),
+        },
       });
       await this.outbox.createEvent(tx, envelope, envelope.eventType);
 
@@ -270,6 +325,11 @@ export class LeaveService {
         },
       });
 
+      const employee = await tx.employee.findFirst({
+        where: { id: request.employeeId, organisationId: ctx.organisationId },
+        select: { userId: true },
+      });
+
       const envelope = createEventEnvelope({
         eventType: 'teamspace-one.hrms.leave.rejected',
         organisationId: ctx.organisationId,
@@ -277,7 +337,14 @@ export class LeaveService {
         correlationId: ctx.correlationId,
         resourceType: 'leave-request',
         resourceId: id,
-        payload: { employeeId: request.employeeId },
+        payload: {
+          employeeId: request.employeeId,
+          userId: employee?.userId ?? null,
+          days: request.days,
+          startDate: request.startDate.toISOString(),
+          endDate: request.endDate.toISOString(),
+          reviewNote: reviewNote ?? null,
+        },
       });
       await this.outbox.createEvent(tx, envelope, envelope.eventType);
 
