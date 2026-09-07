@@ -4,6 +4,7 @@ import {
   Briefcase,
   CalendarClock,
   ClipboardCheck,
+  FileText,
   ShieldAlert,
   Users,
 } from "lucide-react";
@@ -21,8 +22,18 @@ import {
   useJobOpenings,
   usePendingEvaluations,
 } from "../hooks/api";
+import {
+  CreateCandidateDialog,
+  CreateJobDialog,
+  CreateSessionDialog,
+} from "../components/interview/create-dialogs";
+import { ResumeUploadButton } from "../components/interview/resume-upload";
+import { RunScreeningButton } from "../components/interview/screening-dialog";
+import { AiInterviewButton } from "../components/interview/ai-interview-dialog";
+import { HiringDecisionButton } from "../components/interview/hiring-decision-dialog";
+import { TemplatesSection } from "../components/interview/templates-panel";
 
-type TabId = "overview" | "jobs" | "candidates" | "sessions" | "evaluations";
+type TabId = "overview" | "jobs" | "candidates" | "sessions" | "evaluations" | "templates";
 
 interface Tab {
   id: TabId;
@@ -37,6 +48,7 @@ const TABS: Tab[] = [
   { id: "candidates", label: "Candidates", icon: Users, permission: "interview.candidate.view" },
   { id: "sessions", label: "Sessions", icon: CalendarClock, permission: "interview.interview.view" },
   { id: "evaluations", label: "Evaluations", icon: ClipboardCheck, permission: "interview.interview.evaluate" },
+  { id: "templates", label: "Templates", icon: FileText, permission: "interview.template.view" },
 ];
 
 const STAGE_LABELS: Record<string, string> = {
@@ -116,11 +128,15 @@ function OverviewSection() {
 
 function JobsSection() {
   const { data: jobs, isLoading } = useJobOpenings();
+  const { can } = usePermissions();
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm">Job openings</CardTitle>
-        <Badge variant="secondary">{jobs?.length ?? 0}</Badge>
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-sm">Job openings</CardTitle>
+          <Badge variant="secondary">{jobs?.length ?? 0}</Badge>
+        </div>
+        {can("interview.job.create") ? <CreateJobDialog /> : null}
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -147,11 +163,18 @@ function JobsSection() {
 
 function CandidatesSection() {
   const { data: candidates, isLoading } = useCandidates();
+  const { data: jobs } = useJobOpenings();
+  const { can } = usePermissions();
+  const canRunScreening = can("interview.screening.run");
+  const canMakeDecision = can("interview.decision.make");
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm">Candidates</CardTitle>
-        <Badge variant="secondary">{candidates?.length ?? 0}</Badge>
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-sm">Candidates</CardTitle>
+          <Badge variant="secondary">{candidates?.length ?? 0}</Badge>
+        </div>
+        {can("interview.candidate.create") ? <CreateCandidateDialog jobs={jobs ?? []} /> : null}
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -159,12 +182,40 @@ function CandidatesSection() {
         ) : candidates && candidates.length > 0 ? (
           <div className="divide-y">
             {candidates.map((c) => (
-              <div key={c.id} className="flex items-center justify-between py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-text">{c.name}</p>
-                  <p className="truncate text-xs text-text-muted">{c.email}</p>
+              <div key={c.id} className="py-2">
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-text">{c.name}</p>
+                    <p className="truncate text-xs text-text-muted">{c.email}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <ResumeUploadButton candidateId={c.id} hasResume={Boolean(c.resumeFileId)} />
+                    <Badge variant="secondary">{c.status}</Badge>
+                  </div>
                 </div>
-                <Badge variant="secondary">{c.status}</Badge>
+                {c.applications && c.applications.length > 0 && (
+                  <div className="mt-1.5 space-y-1">
+                    {c.applications.map((a) => (
+                      <div
+                        key={a.id}
+                        className="flex items-center justify-between rounded-md border px-2 py-1.5"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-xs text-text">
+                            {a.jobOpening?.title ?? a.jobOpeningId}
+                          </p>
+                          <p className="text-xs text-text-muted">{a.stage}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {canRunScreening && <RunScreeningButton applicationId={a.id} />}
+                          {canMakeDecision && (
+                            <HiringDecisionButton applicationId={a.id} candidateName={c.name} />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -178,11 +229,20 @@ function CandidatesSection() {
 
 function SessionsSection() {
   const { data: sessions, isLoading } = useInterviewSessions();
+  const { data: candidates } = useCandidates();
+  const { data: jobs } = useJobOpenings();
+  const { can } = usePermissions();
+  const canConduct = can("interview.interview.conduct");
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm">Interview sessions</CardTitle>
-        <Badge variant="secondary">{sessions?.length ?? 0}</Badge>
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-sm">Interview sessions</CardTitle>
+          <Badge variant="secondary">{sessions?.length ?? 0}</Badge>
+        </div>
+        {can("interview.interview.schedule") ? (
+          <CreateSessionDialog candidates={candidates ?? []} jobs={jobs ?? []} />
+        ) : null}
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -197,11 +257,16 @@ function SessionsSection() {
                     {s.jobOpening?.title ?? s.interviewType}
                   </p>
                 </div>
-                <div className="text-right">
-                  <Badge variant={s.status === "scheduled" ? "default" : "secondary"}>{s.status}</Badge>
-                  <p className="mt-0.5 text-xs text-text-muted">
-                    {s.scheduledAt ? new Date(s.scheduledAt).toLocaleString() : "Unscheduled"}
-                  </p>
+                <div className="flex items-center gap-2 text-right">
+                  <div>
+                    <Badge variant={s.status === "scheduled" ? "default" : "secondary"}>{s.status}</Badge>
+                    <p className="mt-0.5 text-xs text-text-muted">
+                      {s.scheduledAt ? new Date(s.scheduledAt).toLocaleString() : "Unscheduled"}
+                    </p>
+                  </div>
+                  {canConduct && (
+                    <AiInterviewButton sessionId={s.id} candidateName={s.candidate?.name} />
+                  )}
                 </div>
               </div>
             ))}
@@ -335,6 +400,9 @@ export function InterviewScreen() {
         )}
         {activeTab === "evaluations" && (
           <SectionShell><EvaluationsSection /></SectionShell>
+        )}
+        {activeTab === "templates" && (
+          <SectionShell><TemplatesSection /></SectionShell>
         )}
       </div>
     </div>

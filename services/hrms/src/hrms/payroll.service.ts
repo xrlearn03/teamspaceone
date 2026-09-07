@@ -182,4 +182,152 @@ export class PayrollService {
 
     return payslip;
   }
+
+  async approvePeriod(ctx: RequestContextInput, id: string) {
+    const period = await this.prisma.payrollPeriod.findFirst({
+      where: { id, organisationId: ctx.organisationId },
+    });
+    if (!period) throw new NotFoundException('Payroll period not found');
+    if (period.status !== 'processed') {
+      throw new BadRequestException('Period must be in processed status to be approved');
+    }
+
+    return this.prisma.payrollPeriod.update({
+      where: { id },
+      data: {
+        status: 'approved',
+        approvedBy: ctx.actorId,
+        approvedAt: new Date(),
+      },
+    });
+  }
+
+  async markPaid(ctx: RequestContextInput, id: string) {
+    const period = await this.prisma.payrollPeriod.findFirst({
+      where: { id, organisationId: ctx.organisationId },
+    });
+    if (!period) throw new NotFoundException('Payroll period not found');
+    if (period.status !== 'approved') {
+      throw new BadRequestException('Period must be approved before it can be marked as paid');
+    }
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.payrollPeriod.update({
+        where: { id },
+        data: {
+          status: 'paid',
+          paidBy: ctx.actorId,
+          paidAt: new Date(),
+        },
+      });
+
+      await tx.payslip.updateMany({
+        where: { payrollPeriodId: id, organisationId: ctx.organisationId },
+        data: { status: 'paid' },
+      });
+
+      const envelope = createEventEnvelope({
+        eventType: 'teamspace-one.hrms.payroll.period.paid',
+        organisationId: ctx.organisationId,
+        actorId: ctx.actorId,
+        correlationId: ctx.correlationId,
+        resourceType: 'payroll-period',
+        resourceId: id,
+        payload: { periodId: id },
+      });
+      await this.outbox.createEvent(tx, envelope, envelope.eventType);
+
+      return updated;
+    });
+  }
+
+  async exportCsv(
+    ctx: RequestContextInput,
+    user: AuthorizableUser,
+    id: string,
+  ): Promise<string> {
+    const resolved = await this.scope.resolve(user, ctx.organisationId);
+    const scopeWhere = this.scope.payslipWhere(user, resolved);
+
+    const payslips = await this.prisma.payslip.findMany({
+      where: {
+        payrollPeriodId: id,
+        organisationId: ctx.organisationId,
+        AND: [scopeWhere],
+      },
+      include: {
+        employee: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const rows = payslips.map((p) => {
+      const name = `${p.employee.firstName ?? ''} ${p.employee.lastName ?? ''}`.trim();
+      return [
+        p.employeeId,
+        `"${name}"`,
+        p.grossPay,
+        p.netPay,
+        p.currency,
+        p.status,
+        JSON.stringify(p.earnings ?? {}),
+        JSON.stringify(p.deductions ?? {}),
+      ];
+    });
+
+    const header = [
+      'employeeId',
+      'employeeName',
+      'grossPay',
+      'netPay',
+      'currency',
+      'status',
+      'earnings',
+      'deductions',
+    ];
+    const csv = [header.join(','), ...rows.map((r) => r.join(','))].join('\n');
+
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const envelope = createEventEnvelope({
+        eventType: 'teamspace-one.hrms.payroll.exported',
+        organisationId: ctx.organisationId,
+        actorId: ctx.actorId,
+        correlationId: ctx.correlationId,
+        resourceType: 'payroll-period',
+        resourceId: id,
+        payload: { periodId: id, actorId: ctx.actorId },
+      });
+      await this.outbox.createEvent(tx, envelope, envelope.eventType);
+    });
+
+    return csv;
+  }
+
+  async summary(ctx: RequestContextInput, user: AuthorizableUser) {
+    const resolved = await this.scope.resolve(user, ctx.organisationId);
+    const scopeWhere = this.scope.payslipWhere(user, resolved);
+
+    const periods = await this.prisma.payrollPeriod.findMany({
+      where: { organisationId: ctx.organisationId },
+      orderBy: { endDate: 'desc' },
+      include: {
+        payslips: {
+          where: {
+            organisationId: ctx.organisationId,
+            AND: [scopeWhere],
+          },
+          select: { grossPay: true, netPay: true },
+        },
+      },
+    });
+
+    return periods.map((period) => ({
+      periodId: period.id,
+      name: period.name,
+      status: period.status,
+      headcount: period.payslips.length,
+      grossTotal: period.payslips.reduce((sum, p) => sum + (p.grossPay ?? 0), 0),
+      netTotal: period.payslips.reduce((sum, p) => sum + p.netPay, 0),
+    }));
+  }
 }

@@ -112,6 +112,26 @@ model AiActionConfirmation {
   @@map("ai_action_confirmations")
 }
 
+model AiAuditLog {
+  id               String   @id @default(cuid())
+  organisationId   String
+  actorId          String?
+  action           String
+  resourceType     String?
+  resourceId       String?
+  model            String
+  promptVersion    String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  status           String   @default("ok")
+  metadata         Json?
+  createdAt        DateTime @default(now())
+
+  @@index([organisationId])
+  @@index([organisationId, action])
+  @@map("ai_audit_logs")
+}
+
 model InboxEvent {
   id             String   @id @default(cuid())
   eventId        String   @unique

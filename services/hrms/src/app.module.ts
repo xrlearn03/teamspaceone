@@ -7,6 +7,7 @@ import { HrmsModule } from './hrms/hrms.module.js';
 import { OutboxModule } from './outbox/outbox.module.js';
 import { InboxModule } from './inbox/inbox.module.js';
 import { EventsModule } from './events/events.module.js';
+import { InterviewHiredConsumer } from './events/interview-hired.consumer.js';
 
 function parseRedisUrl(url?: string) {
   if (!url) return { host: 'localhost', port: 6379 };
@@ -36,5 +37,9 @@ function parseRedisUrl(url?: string) {
     OutboxModule,
     HrmsModule,
   ],
+  // Registered here (not EventsModule) to avoid the HrmsModule → OutboxModule
+  // → EventsModule → HrmsModule module cycle — AppModule already imports every
+  // module this consumer needs providers from.
+  providers: [InterviewHiredConsumer],
 })
 export class AppModule {}

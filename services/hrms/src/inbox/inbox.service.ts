@@ -3,13 +3,22 @@ import { type EventEnvelope, isEventEnvelope } from '@teamspace-one/event-contra
 import { type PrismaClient, Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 
+export type InboxEventHandler = (
+  tx: Prisma.TransactionClient,
+  envelope: EventEnvelope,
+) => Promise<unknown>;
+
 @Injectable()
 export class InboxService {
   private readonly logger = new Logger(InboxService.name);
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async handle(envelope: EventEnvelope, subject = envelope.eventType): Promise<void> {
+  async handle(
+    envelope: EventEnvelope,
+    subject = envelope.eventType,
+    handler?: InboxEventHandler,
+  ): Promise<void> {
     if (!envelope.organisationId) {
       throw new Error('Event missing organisationId');
     }
@@ -25,6 +34,9 @@ export class InboxService {
       }
 
       await this.processEvent(envelope, tx);
+      if (handler) {
+        await handler(tx, envelope);
+      }
 
       await tx.inboxEvent.create({
         data: {

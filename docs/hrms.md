@@ -72,6 +72,46 @@ Outbox events (subject = event type): `teamspace-one.hrms.employee.created|updat
 
 Two-part permissions (`hrms.access`, `dashboard.view`, `collaboration.access`, `interview.access`) are stored in the `permissions` table as `resource='*'`; `permissionParts`/`permissionKey` in `@teamspace-one/authorization` handle the mapping consistently. `permissionMatches` supports trailing-wildcard grants (`hrms.*` covers every `hrms.*` permission, including `hrms.access`).
 
+## Phase 7 — Advanced HRMS
+
+Adds the employee lifecycle (onboarding / offboarding), performance management, payroll workflow completion + CSV export, and a permission-aware HR analytics endpoint.
+
+### Schema additions
+
+`OnboardingTemplate` (+ `OnboardingTemplateTask`), `OnboardingInstance` (+ `OnboardingTask`, `sourceType` `manual`/`interview`, `status` `pending`/`in_progress`/`completed`/`cancelled`), `OffboardingCase` (+ `OffboardingTask`, `type`, `status`, `exitInterviewNotes`, `settlementNotes`), `ReviewCycle`, `PerformanceReview` (`overallRating`, `ratings Json`, `status` `pending`/`submitted`/`acknowledged`), `Goal` (`progress`, `status` `on_track`/`at_risk`/`completed`/`cancelled`).
+
+### Endpoints (Phase 7)
+
+| Route | Permission |
+| --- | --- |
+| `GET/POST /hrms/onboarding/templates`, `PATCH/DELETE .../templates/:id` | `hrms.onboarding.view` / `hrms.onboarding.manage` |
+| `GET/POST /hrms/onboarding`, `GET /hrms/onboarding/:id`, `POST .../:id/cancel` | `hrms.onboarding.view` / `hrms.onboarding.manage` |
+| `POST /hrms/onboarding/:id/tasks/:taskId/complete|reopen` | `hrms.onboarding.manage` (assignee rules in service) |
+| `POST /hrms/onboarding/:id/convert` | `hrms.onboarding.manage` — creates an `Employee` from a `pending`, `sourceType=interview` instance |
+| `GET/POST /hrms/offboarding`, `GET/PATCH /hrms/offboarding/:id`, `POST .../:id/complete|cancel`, `POST .../:id/tasks/:taskId/complete|reopen` | `hrms.offboarding.view` / `hrms.offboarding.manage` |
+| `GET/POST /hrms/performance/cycles`, `PATCH .../cycles/:id` | `hrms.performance.view` / `hrms.performance.manage` |
+| `GET/POST /hrms/performance/reviews`, `PATCH .../reviews/:id`, `POST .../reviews/:id/acknowledge` | `hrms.performance.view` / `hrms.performance.manage`; PATCH restricted to the reviewer, acknowledge to the reviewee |
+| `GET/POST /hrms/goals`, `PATCH /hrms/goals/:id` | `hrms.performance.view` (own/team scope) / `hrms.performance.manage` |
+| `GET /hrms/analytics` | `hrms.analytics.view` |
+| `POST /hrms/payroll/periods/:id/approve`, `POST .../mark-paid` | `hrms.payroll.manage` |
+| `GET /hrms/payroll/periods/:id/export` | `hrms.payroll.export` — CSV download |
+| `GET /hrms/payroll/summary` | `hrms.payroll.view` |
+
+### Lifecycle automation
+
+- `employee.created` → an onboarding instance is auto-created from the default active template (when configured).
+- Interview `application.hired` → a `pending` onboarding instance with `sourceType=interview` is created; the desktop app offers **Convert to employee** on those instances, which calls `POST /hrms/onboarding/:id/convert` with the create-employee payload (`userId`, names, department, designation, joining date, …).
+- Offboarding `complete` → employee status becomes `terminated` and an event triggers organisation-membership deactivation / access revocation.
+- Payroll workflow: `draft` → `process` (`hrms.payroll.process`) → `processed` → `approve` (`hrms.payroll.manage`) → `approved` → `mark-paid` → `paid`. `GET /hrms/payroll/periods/:id/export` streams a CSV and emits the audit event `teamspace-one.hrms.payroll.exported`.
+
+### Analytics payload
+
+`GET /hrms/analytics` returns `{headcount, byDepartment[], byStatus{}, recentHires, terminations, attendance:{presentToday, avgWorkMinutes30d, pendingCorrections}, leave:{pendingRequests, approvedThisMonth, usageByType[]}, payroll?{lastPeriodStatus, totalNetLastPeriod}, lifecycle:{activeOnboarding, pendingOnboarding, activeOffboarding, upcomingReviews}, goals:{onTrack, atRisk}}`. The `payroll` key is only present when the caller holds `hrms.payroll.view`.
+
+### Frontend
+
+New tabs in `apps/desktop/src/screens/hrms/` after Documents: **Onboarding** (`onboarding.tsx` — instances table with progress bars, task checklist, start/convert dialogs, template management gated `hrms.onboarding.manage`), **Offboarding** (`offboarding.tsx` — case table, category-grouped checklist, notes, complete/cancel), **Performance** (`performance.tsx` — review cycles, review submission/acknowledgement, goals with progress), **Analytics** (`analytics.tsx` — stat cards + CSS bar lists; payroll card only when the `payroll` key is present). Payroll (`payroll.tsx`) gained the period action chain (Process → Approve → Mark paid → Export CSV) and a gross/net summary strip.
+
 ## Tests
 
 `services/hrms/test/hrms.service.spec.ts` — 12 tests: scope filtering, leave approval + balance, payslip restriction, salary stripping.

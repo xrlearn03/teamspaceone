@@ -5,9 +5,11 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { AckPolicy, DeliverPolicy, type JsMsg, type JetStreamSubscription } from 'nats';
+import { ModuleRef } from '@nestjs/core';
 import { isEventEnvelope, type EventEnvelope } from '@teamspace-one/event-contracts';
 import { NatsClientService } from './nats-client.service.js';
 import { InboxService } from '../inbox/inbox.service.js';
+import { LifecycleService } from '../hrms/lifecycle.service.js';
 
 const MAX_DELIVER = 5;
 const ACK_WAIT_NANOS = 30_000_000_000;
@@ -28,6 +30,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly natsClient: NatsClientService,
     private readonly inbox: InboxService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async onModuleInit() {
@@ -86,7 +89,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
           continue;
         }
 
-        await this.inbox.handle(data, jsMsg.subject);
+        await this.inbox.handle(data, jsMsg.subject, this.handlerFor(data));
         jsMsg.ack();
       } catch (err) {
         this.logger.error(
@@ -96,6 +99,27 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
         jsMsg.nak();
       }
     }
+  }
+
+  /**
+   * Lifecycle automation: `employee.created` auto-starts onboarding from the
+   * organisation's default template. LifecycleService is resolved lazily via
+   * ModuleRef to avoid an EventsModule ↔ HrmsModule provider cycle.
+   */
+  private handlerFor(envelope: EventEnvelope) {
+    if (envelope.eventType !== 'teamspace-one.hrms.employee.created') {
+      return undefined;
+    }
+    const employeeId = envelope.resourceId;
+    if (typeof employeeId !== 'string' || !employeeId) return undefined;
+    return async () => {
+      const lifecycle = this.moduleRef.get(LifecycleService, { strict: false });
+      await lifecycle.autoStartForEmployee(
+        envelope.organisationId,
+        employeeId,
+        envelope.actorId ?? undefined,
+      );
+    };
   }
 
   private async sendToDeadLetter(jsMsg: JsMsg, envelope: EventEnvelope, reason: string) {

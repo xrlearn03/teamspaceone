@@ -1,12 +1,16 @@
 import { useState } from "react";
 import {
+  BarChart3,
   CalendarCheck,
   CalendarClock,
   FileText,
   LayoutDashboard,
   Network,
   ShieldAlert,
+  Target,
   TrendingUp,
+  UserMinus,
+  UserPlus,
   Users,
   Wallet,
 } from "lucide-react";
@@ -21,6 +25,10 @@ import { AttendanceSection } from "./attendance";
 import { LeaveSection } from "./leave";
 import { PayrollSection } from "./payroll";
 import { DocumentsSection } from "./documents";
+import { OnboardingSection } from "./onboarding";
+import { OffboardingSection } from "./offboarding";
+import { PerformanceSection } from "./performance";
+import { AnalyticsSection } from "./analytics";
 
 type TabId =
   | "overview"
@@ -30,7 +38,11 @@ type TabId =
   | "attendance"
   | "leave"
   | "payroll"
-  | "documents";
+  | "documents"
+  | "onboarding"
+  | "offboarding"
+  | "performance"
+  | "analytics";
 
 interface Tab {
   id: TabId;
@@ -48,6 +60,10 @@ const TABS: Tab[] = [
   { id: "leave", label: "Leave", icon: CalendarClock, permission: "hrms.leave.view" },
   { id: "payroll", label: "Payroll", icon: Wallet, permission: "hrms.payroll.view" },
   { id: "documents", label: "Documents", icon: FileText, permission: "hrms.document.view" },
+  { id: "onboarding", label: "Onboarding", icon: UserPlus, permission: "hrms.onboarding.view" },
+  { id: "offboarding", label: "Offboarding", icon: UserMinus, permission: "hrms.offboarding.view" },
+  { id: "performance", label: "Performance", icon: Target, permission: "hrms.performance.view" },
+  { id: "analytics", label: "Analytics", icon: BarChart3, permission: "hrms.analytics.view" },
 ];
 
 export function HrmsScreen() {
@@ -115,6 +131,10 @@ export function HrmsScreen() {
         {activeTab === "leave" && <LeaveSection />}
         {activeTab === "payroll" && <PayrollSection />}
         {activeTab === "documents" && <DocumentsSection />}
+        {activeTab === "onboarding" && <OnboardingSection />}
+        {activeTab === "offboarding" && <OffboardingSection />}
+        {activeTab === "performance" && <PerformanceSection />}
+        {activeTab === "analytics" && <AnalyticsSection />}
       </div>
     </div>
   );

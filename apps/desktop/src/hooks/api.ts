@@ -1231,6 +1231,29 @@ export function useCreateCandidate() {
   });
 }
 
+export function useUploadCandidateResume() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: { candidateId: string; file: File }) => {
+      const fileRecord = await api.uploadFile(args.file);
+      return api.updateCandidate(args.candidateId, { resumeFileId: fileRecord.id });
+    },
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "candidates"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useHiringDecisions() {
+  return useQuery({
+    queryKey: ["interview", "decisions", orgId()],
+    queryFn: () => api.getHiringDecisions(),
+    enabled: Boolean(getActiveOrganisation()),
+    staleTime: 30 * 1000,
+  });
+}
+
 export function useUpdateApplicationStage() {
   const client = useQueryClient();
   return useMutation({
@@ -1269,5 +1292,448 @@ export function usePendingEvaluations() {
     queryFn: api.getPendingEvaluations,
     enabled: interviewEnabled(),
     staleTime: 30 * 1000,
+  });
+}
+
+// ─── Phase 6 — AI screening + AI interview ──────────────────────────────────
+
+export function useApplicationScreening(applicationId?: string) {
+  return useQuery({
+    queryKey: ["interview", "applications", applicationId ?? "none", "screening"],
+    queryFn: () => (applicationId ? api.getApplicationScreening(applicationId) : null),
+    enabled: Boolean(interviewEnabled() && applicationId),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useRunApplicationScreening() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { applicationId: string; resumeText?: string }) =>
+      api.runApplicationScreening(args.applicationId, args.resumeText ? { resumeText: args.resumeText } : {}),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["interview", "applications", args.applicationId, "screening"] });
+      client.invalidateQueries({ queryKey: ["interview", "candidates"] });
+    },
+  });
+}
+
+export function useReviewApplicationScreening() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.reviewApplicationScreening,
+    onSuccess: (_, applicationId) => {
+      client.invalidateQueries({ queryKey: ["interview", "applications", applicationId, "screening"] });
+    },
+  });
+}
+
+export function useStartAiInterview() {
+  return useMutation({
+    mutationFn: (args: { sessionId: string; templateId?: string; config?: Record<string, unknown> }) =>
+      api.startAiInterview(args.sessionId, { templateId: args.templateId, config: args.config }),
+  });
+}
+
+export function useSubmitAiAnswer() {
+  return useMutation({
+    mutationFn: (args: { sessionId: string; questionIndex: number; answer: string }) =>
+      api.submitAiAnswer(args.sessionId, { questionIndex: args.questionIndex, answer: args.answer }),
+  });
+}
+
+export function useAiTranscript(sessionId?: string) {
+  return useQuery({
+    queryKey: ["interview", "sessions", sessionId ?? "none", "ai", "transcript"],
+    queryFn: () => (sessionId ? api.getAiTranscript(sessionId) : []),
+    enabled: Boolean(interviewEnabled() && sessionId),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useEvaluateAiInterview() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.evaluateAiInterview,
+    onSuccess: (_, sessionId) => {
+      client.invalidateQueries({ queryKey: ["interview", "sessions", sessionId, "ai", "transcript"] });
+      client.invalidateQueries({ queryKey: ["interview", "sessions", sessionId, "evaluations"] });
+    },
+  });
+}
+
+export function useSessionEvaluations(sessionId?: string) {
+  return useQuery({
+    queryKey: ["interview", "sessions", sessionId ?? "none", "evaluations"],
+    queryFn: () => (sessionId ? api.getSessionEvaluations(sessionId) : []),
+    enabled: Boolean(interviewEnabled() && sessionId),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useReviewEvaluation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { evaluationId: string; body: Parameters<typeof api.reviewEvaluation>[1] }) =>
+      api.reviewEvaluation(args.evaluationId, args.body),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["interview", "evaluations"] });
+      client.invalidateQueries({ queryKey: ["interview", "sessions"] });
+      client.invalidateQueries({ queryKey: ["interview", "sessions", args.evaluationId, "evaluations"] });
+    },
+  });
+}
+
+export function useMakeHiringDecision() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { applicationId: string; decision: "offer" | "hire" | "reject" | "hold"; rationale?: string }) =>
+      api.makeHiringDecision(args.applicationId, { decision: args.decision, rationale: args.rationale }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "candidates"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useInterviewTemplates() {
+  return useQuery({
+    queryKey: ["interview", "templates", orgId()],
+    queryFn: api.getInterviewTemplates,
+    enabled: interviewEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateInterviewTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createInterviewTemplate,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["interview", "templates"] }),
+  });
+}
+
+export function useUpdateInterviewTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateInterviewTemplate>[1] }) =>
+      api.updateInterviewTemplate(args.id, args.body),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["interview", "templates"] }),
+  });
+}
+
+// ─── Phase 7 — Advanced HRMS ────────────────────────────────────────────────
+
+export function useOnboardingTemplates() {
+  return useQuery({
+    queryKey: ["hrms", "onboarding-templates", orgId()],
+    queryFn: api.getOnboardingTemplates,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateOnboardingTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createOnboardingTemplate,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "onboarding-templates"] }),
+  });
+}
+
+export function useUpdateOnboardingTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateOnboardingTemplate>[1] }) =>
+      api.updateOnboardingTemplate(args.id, args.body),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "onboarding-templates"] }),
+  });
+}
+
+export function useDeleteOnboardingTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteOnboardingTemplate,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "onboarding-templates"] }),
+  });
+}
+
+export function useOnboardingInstances(status?: string) {
+  return useQuery({
+    queryKey: ["hrms", "onboarding", orgId(), status ?? "all"],
+    queryFn: () => api.getOnboardingInstances(status),
+    enabled: hrmsEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useOnboardingInstance(id?: string) {
+  return useQuery({
+    queryKey: ["hrms", "onboarding", "detail", orgId(), id],
+    queryFn: () => api.getOnboardingInstance(id as string),
+    enabled: hrmsEnabled() && Boolean(id),
+    staleTime: 30 * 1000,
+  });
+}
+
+function invalidateOnboarding(client: ReturnType<typeof useQueryClient>) {
+  client.invalidateQueries({ queryKey: ["hrms", "onboarding"] });
+  client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+  client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+}
+
+export function useCreateOnboardingInstance() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createOnboardingInstance,
+    onSuccess: () => invalidateOnboarding(client),
+  });
+}
+
+export function useConvertOnboardingInstance() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.convertOnboardingInstance>[1] }) =>
+      api.convertOnboardingInstance(args.id, args.body),
+    onSuccess: () => {
+      invalidateOnboarding(client);
+      client.invalidateQueries({ queryKey: ["hrms", "employees"] });
+    },
+  });
+}
+
+export function useSetOnboardingTaskStatus() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; taskId: string; action: "complete" | "reopen" }) =>
+      api.setOnboardingTaskStatus(args.id, args.taskId, args.action),
+    onSuccess: () => invalidateOnboarding(client),
+  });
+}
+
+export function useCancelOnboardingInstance() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.cancelOnboardingInstance,
+    onSuccess: () => invalidateOnboarding(client),
+  });
+}
+
+// Offboarding
+
+export function useOffboardingCases() {
+  return useQuery({
+    queryKey: ["hrms", "offboarding", orgId()],
+    queryFn: api.getOffboardingCases,
+    enabled: hrmsEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useOffboardingCase(id?: string) {
+  return useQuery({
+    queryKey: ["hrms", "offboarding", "detail", orgId(), id],
+    queryFn: () => api.getOffboardingCase(id as string),
+    enabled: hrmsEnabled() && Boolean(id),
+    staleTime: 30 * 1000,
+  });
+}
+
+function invalidateOffboarding(client: ReturnType<typeof useQueryClient>) {
+  client.invalidateQueries({ queryKey: ["hrms", "offboarding"] });
+  client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+  client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+}
+
+export function useCreateOffboardingCase() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createOffboardingCase,
+    onSuccess: () => invalidateOffboarding(client),
+  });
+}
+
+export function useUpdateOffboardingCase() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateOffboardingCase>[1] }) =>
+      api.updateOffboardingCase(args.id, args.body),
+    onSuccess: () => invalidateOffboarding(client),
+  });
+}
+
+export function useSetOffboardingTaskStatus() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; taskId: string; action: "complete" | "reopen" }) =>
+      api.setOffboardingTaskStatus(args.id, args.taskId, args.action),
+    onSuccess: () => invalidateOffboarding(client),
+  });
+}
+
+export function useTransitionOffboardingCase() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; action: "complete" | "cancel" }) =>
+      api.transitionOffboardingCase(args.id, args.action),
+    onSuccess: () => {
+      invalidateOffboarding(client);
+      client.invalidateQueries({ queryKey: ["hrms", "employees"] });
+    },
+  });
+}
+
+// Performance
+
+export function useReviewCycles() {
+  return useQuery({
+    queryKey: ["hrms", "performance-cycles", orgId()],
+    queryFn: api.getReviewCycles,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateReviewCycle() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createReviewCycle,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "performance-cycles"] }),
+  });
+}
+
+export function useUpdateReviewCycle() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateReviewCycle>[1] }) =>
+      api.updateReviewCycle(args.id, args.body),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "performance-cycles"] });
+      client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+    },
+  });
+}
+
+export function usePerformanceReviews(params?: { cycleId?: string; employeeId?: string }) {
+  return useQuery({
+    queryKey: ["hrms", "performance-reviews", orgId(), params ?? {}],
+    queryFn: () => api.getPerformanceReviews(params),
+    enabled: hrmsEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreatePerformanceReview() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createPerformanceReview,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "performance-reviews"] }),
+  });
+}
+
+export function useUpdatePerformanceReview() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updatePerformanceReview>[1] }) =>
+      api.updatePerformanceReview(args.id, args.body),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "performance-reviews"] });
+      client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+    },
+  });
+}
+
+export function useAcknowledgePerformanceReview() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.acknowledgePerformanceReview,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "performance-reviews"] }),
+  });
+}
+
+export function useGoals(employeeId?: string) {
+  return useQuery({
+    queryKey: ["hrms", "goals", orgId(), employeeId ?? "all"],
+    queryFn: () => api.getGoals(employeeId),
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateGoal() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createGoal,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "goals"] });
+      client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+    },
+  });
+}
+
+export function useUpdateGoal() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateGoal>[1] }) =>
+      api.updateGoal(args.id, args.body),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "goals"] });
+      client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+    },
+  });
+}
+
+// Analytics
+
+export function useHrmsAnalytics() {
+  return useQuery({
+    queryKey: ["hrms", "analytics", orgId()],
+    queryFn: api.getHrmsAnalytics,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+    retry: 1,
+  });
+}
+
+// Payroll additions
+
+export function usePayrollSummary() {
+  return useQuery({
+    queryKey: ["hrms", "payroll-summary", orgId()],
+    queryFn: api.getPayrollSummary,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+function invalidatePayroll(client: ReturnType<typeof useQueryClient>) {
+  client.invalidateQueries({ queryKey: ["hrms", "payroll-periods"] });
+  client.invalidateQueries({ queryKey: ["hrms", "payroll-summary"] });
+  client.invalidateQueries({ queryKey: ["hrms", "payslips"] });
+  client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+  client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+}
+
+export function useProcessPayrollPeriod() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.processPayrollPeriod,
+    onSuccess: () => invalidatePayroll(client),
+  });
+}
+
+export function useApprovePayrollPeriod() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.approvePayrollPeriod,
+    onSuccess: () => invalidatePayroll(client),
+  });
+}
+
+export function useMarkPayrollPeriodPaid() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.markPayrollPeriodPaid,
+    onSuccess: () => invalidatePayroll(client),
   });
 }

@@ -1768,6 +1768,7 @@ export interface Candidate {
   location?: string | null;
   source?: string | null;
   status: string;
+  resumeFileId?: string | null;
   applications?: CandidateApplication[];
   createdAt: string;
 }
@@ -1845,6 +1846,14 @@ export function createCandidate(body: {
   return apiRequest<Candidate>("/interview/candidates", { method: "POST", body });
 }
 
+export function updateCandidate(id: string, body: { resumeFileId?: string | null }) {
+  return apiRequest<Candidate>(`/interview/candidates/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function getHiringDecisions() {
+  return apiRequest<HiringDecision[]>("/interview/decisions");
+}
+
 export function updateApplicationStage(applicationId: string, stage: string) {
   return apiRequest<CandidateApplication>(`/interview/applications/${encodeURIComponent(applicationId)}/stage`, {
     method: "PATCH",
@@ -1885,4 +1894,547 @@ export function submitInterviewEvaluation(sessionId: string, body: {
     method: "POST",
     body,
   });
+}
+
+// ─── Phase 6 — AI screening + AI interview ──────────────────────────────────
+
+export interface ScreeningResult {
+  id: string;
+  applicationId: string;
+  matchScore?: number | null;
+  skillsFound: string[];
+  missingRequirements: string[];
+  summary: string;
+  confidence: "low" | "medium" | "high" | (string & {});
+  status: "ai_generated" | "reviewed";
+  model: string;
+  promptVersion: string;
+}
+
+export interface AiQuestion {
+  category?: string | null;
+  question: string;
+  sortOrder: number;
+}
+
+export interface AiStartResult {
+  session: InterviewSession;
+  questions: AiQuestion[];
+}
+
+export interface AiAnswerResponse {
+  done: boolean;
+  next?: { question: string; sortOrder: number } | null;
+}
+
+export interface InterviewAnswer {
+  question: string;
+  answer: string;
+  sortOrder: number;
+}
+
+export interface InterviewEvaluation {
+  id: string;
+  sessionId: string;
+  technicalScore?: number;
+  communicationScore?: number;
+  problemSolvingScore?: number;
+  cultureFitScore?: number;
+  overallScore?: number;
+  recommendation?: string;
+  comments?: string;
+  source?: string;
+  status?: string;
+  aiMetadata?: { suggestedFollowUps: string[]; model: string; promptVersion: string } | null;
+  createdAt: string;
+}
+
+export interface HiringDecision {
+  id: string;
+  organisationId?: string;
+  applicationId: string;
+  decision: "offer" | "hire" | "reject" | "hold" | (string & {});
+  rationale?: string | null;
+  decidedBy?: string;
+  createdAt: string;
+  application?: {
+    candidate?: { id: string; name: string } | null;
+    jobOpening?: { id: string; title: string } | null;
+  } | null;
+}
+
+export interface InterviewTemplateQuestion {
+  id?: string;
+  question: string;
+  category?: string;
+  sortOrder?: number;
+}
+
+export interface InterviewTemplate {
+  id: string;
+  organisationId: string;
+  name: string;
+  description?: string | null;
+  config: {
+    difficulty?: string;
+    duration?: number;
+    categories?: string[];
+    [key: string]: unknown;
+  };
+  questions: InterviewTemplateQuestion[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function runApplicationScreening(applicationId: string, body: { resumeText?: string } = {}) {
+  return apiRequest<ScreeningResult>(`/interview/applications/${encodeURIComponent(applicationId)}/screen`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function getApplicationScreening(applicationId: string): Promise<ScreeningResult | null> {
+  try {
+    return await apiRequest<ScreeningResult>(`/interview/applications/${encodeURIComponent(applicationId)}/screening`);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+export function reviewApplicationScreening(applicationId: string) {
+  return apiRequest<ScreeningResult>(`/interview/applications/${encodeURIComponent(applicationId)}/screening/review`, {
+    method: "POST",
+    body: {},
+  });
+}
+
+export function startAiInterview(sessionId: string, body: { templateId?: string; config?: Record<string, unknown> } = {}) {
+  return apiRequest<AiStartResult>(`/interview/sessions/${encodeURIComponent(sessionId)}/ai/start`, {
+    method: "POST",
+    body,
+  });
+}
+
+export function submitAiAnswer(sessionId: string, body: { questionIndex: number; answer: string }) {
+  return apiRequest<AiAnswerResponse>(`/interview/sessions/${encodeURIComponent(sessionId)}/ai/answer`, {
+    method: "POST",
+    body,
+  });
+}
+
+export function getAiTranscript(sessionId: string) {
+  return apiRequest<InterviewAnswer[]>(`/interview/sessions/${encodeURIComponent(sessionId)}/ai/transcript`);
+}
+
+export function evaluateAiInterview(sessionId: string) {
+  return apiRequest<InterviewEvaluation>(`/interview/sessions/${encodeURIComponent(sessionId)}/ai/evaluate`, {
+    method: "POST",
+    body: {},
+  });
+}
+
+export function getSessionEvaluations(sessionId: string) {
+  return apiRequest<InterviewEvaluation[]>(`/interview/sessions/${encodeURIComponent(sessionId)}/evaluations`);
+}
+
+export function reviewEvaluation(evaluationId: string, body: {
+  technicalScore?: number;
+  communicationScore?: number;
+  problemSolvingScore?: number;
+  cultureFitScore?: number;
+  overallScore?: number;
+  recommendation?: string;
+  comments?: string;
+}) {
+  return apiRequest<InterviewEvaluation>(`/interview/evaluations/${encodeURIComponent(evaluationId)}/review`, {
+    method: "POST",
+    body,
+  });
+}
+
+export function makeHiringDecision(applicationId: string, body: { decision: "offer" | "hire" | "reject" | "hold"; rationale?: string }) {
+  return apiRequest<HiringDecision>(`/interview/applications/${encodeURIComponent(applicationId)}/decision`, {
+    method: "POST",
+    body,
+  });
+}
+
+export function getInterviewTemplates() {
+  return apiRequest<InterviewTemplate[]>("/interview/templates");
+}
+
+export function createInterviewTemplate(body: Partial<InterviewTemplate>) {
+  return apiRequest<InterviewTemplate>("/interview/templates", { method: "POST", body });
+}
+
+export function updateInterviewTemplate(id: string, body: Partial<InterviewTemplate>) {
+  return apiRequest<InterviewTemplate>(`/interview/templates/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+// ─── Phase 7 — Advanced HRMS ────────────────────────────────────────────────
+
+export interface OnboardingTemplateTask {
+  id: string;
+  title: string;
+  description?: string | null;
+  category?: string | null;
+  assigneeRole?: string | null;
+  dueDaysOffset?: number | null;
+  sortOrder?: number | null;
+}
+
+export interface OnboardingTemplate {
+  id: string;
+  name: string;
+  description?: string | null;
+  isActive: boolean;
+  tasks: OnboardingTemplateTask[];
+}
+
+export interface OnboardingTask {
+  id: string;
+  title: string;
+  category?: string | null;
+  status: string;
+  dueDate?: string | null;
+  assigneeUserId?: string | null;
+  completedAt?: string | null;
+}
+
+export interface OnboardingInstance {
+  id: string;
+  status: string;
+  sourceType?: string | null;
+  candidateName?: string | null;
+  candidateEmail?: string | null;
+  startDate?: string | null;
+  completedAt?: string | null;
+  employeeId?: string | null;
+  employee?: { id: string; firstName: string; lastName: string } | null;
+  template?: { id: string; name: string } | null;
+  tasks: OnboardingTask[];
+}
+
+export function getOnboardingTemplates() {
+  return apiRequest<OnboardingTemplate[]>("/hrms/onboarding/templates");
+}
+
+export function createOnboardingTemplate(body: {
+  name: string;
+  description?: string;
+  tasks: { title: string; description?: string; category?: string; dueDaysOffset?: number; sortOrder?: number }[];
+}) {
+  return apiRequest<OnboardingTemplate>("/hrms/onboarding/templates", { method: "POST", body });
+}
+
+export function updateOnboardingTemplate(
+  id: string,
+  body: Partial<{
+    name: string;
+    description: string | null;
+    isActive: boolean;
+    tasks: { title: string; description?: string; category?: string; dueDaysOffset?: number; sortOrder?: number }[];
+  }>,
+) {
+  return apiRequest<OnboardingTemplate>(`/hrms/onboarding/templates/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function deleteOnboardingTemplate(id: string) {
+  return apiRequest<void>(`/hrms/onboarding/templates/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function getOnboardingInstances(status?: string) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiRequest<OnboardingInstance[]>(`/hrms/onboarding${qs}`);
+}
+
+export function getOnboardingInstance(id: string) {
+  return apiRequest<OnboardingInstance>(`/hrms/onboarding/${encodeURIComponent(id)}`);
+}
+
+export function createOnboardingInstance(body: {
+  employeeId?: string;
+  candidateName?: string;
+  candidateEmail?: string;
+  templateId?: string;
+  startDate?: string;
+}) {
+  return apiRequest<OnboardingInstance>("/hrms/onboarding", { method: "POST", body });
+}
+
+export function convertOnboardingInstance(
+  id: string,
+  body: {
+    userId: string;
+    firstName: string;
+    lastName: string;
+    workEmail?: string;
+    phone?: string;
+    departmentId?: string;
+    designationId?: string;
+    managerEmployeeId?: string;
+    joiningDate?: string;
+    employmentType?: string;
+    employeeNumber?: string;
+  },
+) {
+  return apiRequest<OnboardingInstance>(`/hrms/onboarding/${encodeURIComponent(id)}/convert`, { method: "POST", body });
+}
+
+export function setOnboardingTaskStatus(id: string, taskId: string, action: "complete" | "reopen") {
+  return apiRequest<OnboardingInstance>(
+    `/hrms/onboarding/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/${action}`,
+    { method: "POST" },
+  );
+}
+
+export function cancelOnboardingInstance(id: string) {
+  return apiRequest<OnboardingInstance>(`/hrms/onboarding/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+}
+
+// Offboarding
+
+export interface OffboardingTask {
+  id: string;
+  title: string;
+  category?: string | null;
+  status: string;
+  completedAt?: string | null;
+}
+
+export interface OffboardingCase {
+  id: string;
+  type: string;
+  reason?: string | null;
+  lastWorkingDate?: string | null;
+  status: string;
+  exitInterviewNotes?: string | null;
+  settlementNotes?: string | null;
+  initiatedBy?: string | null;
+  completedAt?: string | null;
+  employee: { id: string; firstName: string; lastName: string };
+  tasks: OffboardingTask[];
+}
+
+export function getOffboardingCases() {
+  return apiRequest<OffboardingCase[]>("/hrms/offboarding");
+}
+
+export function getOffboardingCase(id: string) {
+  return apiRequest<OffboardingCase>(`/hrms/offboarding/${encodeURIComponent(id)}`);
+}
+
+export function createOffboardingCase(body: {
+  employeeId: string;
+  type?: string;
+  reason?: string;
+  lastWorkingDate?: string;
+}) {
+  return apiRequest<OffboardingCase>("/hrms/offboarding", { method: "POST", body });
+}
+
+export function updateOffboardingCase(
+  id: string,
+  body: Partial<{
+    reason: string | null;
+    lastWorkingDate: string | null;
+    exitInterviewNotes: string | null;
+    settlementNotes: string | null;
+    status: string;
+  }>,
+) {
+  return apiRequest<OffboardingCase>(`/hrms/offboarding/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function setOffboardingTaskStatus(id: string, taskId: string, action: "complete" | "reopen") {
+  return apiRequest<OffboardingCase>(
+    `/hrms/offboarding/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/${action}`,
+    { method: "POST" },
+  );
+}
+
+export function transitionOffboardingCase(id: string, action: "complete" | "cancel") {
+  return apiRequest<OffboardingCase>(`/hrms/offboarding/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+}
+
+// Performance
+
+export interface ReviewCycle {
+  id: string;
+  name: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  status: string;
+}
+
+export function getReviewCycles() {
+  return apiRequest<ReviewCycle[]>("/hrms/performance/cycles");
+}
+
+export function createReviewCycle(body: { name: string; startDate?: string; endDate?: string }) {
+  return apiRequest<ReviewCycle>("/hrms/performance/cycles", { method: "POST", body });
+}
+
+export function updateReviewCycle(
+  id: string,
+  body: Partial<{ name: string; startDate: string | null; endDate: string | null; status: string }>,
+) {
+  return apiRequest<ReviewCycle>(`/hrms/performance/cycles/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export interface PerformanceReview {
+  id: string;
+  status: string;
+  overallRating?: number | null;
+  ratings?: Record<string, number> | null;
+  strengths?: string | null;
+  improvements?: string | null;
+  comments?: string | null;
+  submittedAt?: string | null;
+  employee: { id: string; firstName: string; lastName: string };
+  reviewerId?: string | null;
+  cycle?: { id: string; name: string } | null;
+}
+
+export function getPerformanceReviews(params?: { cycleId?: string; employeeId?: string }) {
+  const query = new URLSearchParams();
+  if (params?.cycleId) query.set("cycleId", params.cycleId);
+  if (params?.employeeId) query.set("employeeId", params.employeeId);
+  const qs = query.toString();
+  return apiRequest<PerformanceReview[]>(`/hrms/performance/reviews${qs ? `?${qs}` : ""}`);
+}
+
+export function createPerformanceReview(body: { cycleId: string; employeeId: string; reviewerId?: string }) {
+  return apiRequest<PerformanceReview>("/hrms/performance/reviews", { method: "POST", body });
+}
+
+export function updatePerformanceReview(
+  id: string,
+  body: Partial<{
+    overallRating: number | null;
+    ratings: Record<string, number> | null;
+    strengths: string | null;
+    improvements: string | null;
+    comments: string | null;
+  }>,
+) {
+  return apiRequest<PerformanceReview>(`/hrms/performance/reviews/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function acknowledgePerformanceReview(id: string) {
+  return apiRequest<PerformanceReview>(`/hrms/performance/reviews/${encodeURIComponent(id)}/acknowledge`, { method: "POST" });
+}
+
+export interface Goal {
+  id: string;
+  title: string;
+  description?: string | null;
+  targetDate?: string | null;
+  status: string;
+  progress: number;
+  employee: { id: string; firstName: string; lastName: string };
+}
+
+export function getGoals(employeeId?: string) {
+  const qs = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : "";
+  return apiRequest<Goal[]>(`/hrms/goals${qs}`);
+}
+
+export function createGoal(body: {
+  employeeId?: string;
+  cycleId?: string;
+  title: string;
+  description?: string;
+  targetDate?: string;
+}) {
+  return apiRequest<Goal>("/hrms/goals", { method: "POST", body });
+}
+
+export function updateGoal(
+  id: string,
+  body: Partial<{ title: string; status: string; progress: number; targetDate: string | null }>,
+) {
+  return apiRequest<Goal>(`/hrms/goals/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+// Analytics
+
+export interface HrmsAnalytics {
+  headcount: number;
+  byDepartment: { id: string; name: string; count: number }[];
+  byStatus: Record<string, number>;
+  recentHires: number;
+  terminations: number;
+  attendance: {
+    presentToday: number;
+    avgWorkMinutes30d?: number | null;
+    pendingCorrections: number;
+  };
+  leave: {
+    pendingRequests: number;
+    approvedThisMonth: number;
+    usageByType: { name: string; used: number; entitled: number }[];
+  };
+  payroll?: {
+    lastPeriodStatus?: string | null;
+    totalNetLastPeriod?: number | null;
+  } | null;
+  lifecycle: {
+    activeOnboarding: number;
+    pendingOnboarding: number;
+    activeOffboarding: number;
+    upcomingReviews: number;
+  };
+  goals: {
+    onTrack: number;
+    atRisk: number;
+  };
+}
+
+export function getHrmsAnalytics() {
+  return apiRequest<HrmsAnalytics>("/hrms/analytics");
+}
+
+// Payroll additions
+
+export function processPayrollPeriod(id: string) {
+  return apiRequest<PayrollPeriod>(`/hrms/payroll/periods/${encodeURIComponent(id)}/process`, { method: "POST" });
+}
+
+export function approvePayrollPeriod(id: string) {
+  return apiRequest<PayrollPeriod>(`/hrms/payroll/periods/${encodeURIComponent(id)}/approve`, { method: "POST" });
+}
+
+export function markPayrollPeriodPaid(id: string) {
+  return apiRequest<PayrollPeriod>(`/hrms/payroll/periods/${encodeURIComponent(id)}/mark-paid`, { method: "POST" });
+}
+
+export interface PayrollSummaryRow {
+  periodId: string;
+  name?: string | null;
+  status: string;
+  headcount: number;
+  grossTotal?: number | null;
+  netTotal?: number | null;
+}
+
+export function getPayrollSummary() {
+  return apiRequest<PayrollSummaryRow[]>("/hrms/payroll/summary");
+}
+
+/**
+ * Downloads the payroll period CSV. `apiRequest` is JSON-only, so this uses
+ * the same fetch/auth-header pattern as `downloadFile`.
+ */
+export async function exportPayrollPeriodCsv(periodId: string): Promise<Blob> {
+  const response = await fetch(`${GATEWAY_URL}/hrms/payroll/periods/${encodeURIComponent(periodId)}/export`, {
+    method: "GET",
+    headers: { ...(await authHeaders()), Accept: "text/csv" },
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Export error ${response.status}: ${text}`);
+  }
+  return response.blob();
 }

@@ -164,6 +164,39 @@ async function main() {
     }
   }
   console.log(`Employees: ${seedEmployees.length} ensured`);
+
+  const existingTemplate = await prisma.onboardingTemplate.findFirst({
+    where: { organisationId, name: 'Standard onboarding' },
+  });
+  if (!existingTemplate) {
+    const template = await prisma.onboardingTemplate.create({
+      data: {
+        organisationId,
+        name: 'Standard onboarding',
+        description: 'Default onboarding checklist for new hires',
+      },
+    });
+    const defaultTasks = [
+      { title: 'Set up accounts', category: 'accounts', dueDaysOffset: 0, sortOrder: 0 },
+      { title: 'Collect documents', category: 'documents', dueDaysOffset: 1, sortOrder: 1 },
+      { title: 'Provision workspace access', category: 'access', dueDaysOffset: 0, sortOrder: 2 },
+      { title: 'Intro meeting with manager', category: 'meetings', dueDaysOffset: 1, sortOrder: 3 },
+      { title: 'Issue equipment', category: 'equipment', dueDaysOffset: 2, sortOrder: 4 },
+      { title: '30-day check-in', category: 'review', dueDaysOffset: 30, sortOrder: 5 },
+    ];
+    for (const t of defaultTasks) {
+      await prisma.onboardingTemplateTask.create({
+        data: {
+          organisationId,
+          templateId: template.id,
+          ...t,
+        },
+      });
+    }
+    console.log('Onboarding template: Standard onboarding created');
+  } else {
+    console.log('Onboarding template: Standard onboarding already exists');
+  }
 }
 
 main()

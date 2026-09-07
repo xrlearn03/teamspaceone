@@ -25,6 +25,10 @@
 | Leave | A | A | A | - | T | T | O | - | - |
 | Payroll | A | A | A | - | - | - | O* | - | - |
 | Recruitment | A | A | A | A | Limited | - | - | - | O |
+| Onboarding | A | A | A/M | Limited | Limited | T | O | - | - |
+| Offboarding | A | A | A/M | - | - | T | O | - | - |
+| Performance | A | A | A/M | - | T | T | O | - | - |
+| HR Analytics | A | A | V | - | Limited | T | - | - | - |
 | AI Interview | A | A | M | M | M | - | - | M | O |
 | Candidate Management | A | A | M | M | Assigned | - | - | Assigned | O |
 | Interview Scheduling | A | A | M | M | M | - | - | Assigned | O |

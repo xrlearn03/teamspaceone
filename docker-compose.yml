@@ -485,6 +485,8 @@ services:
       REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
       ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
+      AI_SERVICE_URL: 'http://ai-service:3012'
+      FILE_STORAGE_SERVICE_URL: 'http://file-storage-service:3010'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       OTEL_SERVICE_NAME: 'teamspace-one-interview-service'
     ports:
@@ -494,6 +496,8 @@ services:
       - nats
       - redis
       - organisation-service
+      - ai-service
+      - file-storage-service
       - otel-collector
 
   api-gateway:

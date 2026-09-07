@@ -186,6 +186,28 @@ export class OrganisationService {
     return membership;
   }
 
+  /**
+   * HRMS → collaboration offboarding: when the HRMS service emits
+   * `hrms.employee.terminated`, remove the user's organisation membership so
+   * they lose collaboration access. Memberships carry no status flag —
+   * deleting the row cascades its UserRole and DataScope records. Runs inside
+   * the caller's transaction. No-op when no membership exists (e.g. the
+   * employee was never provisioned into the organisation).
+   */
+  async deactivateMembershipFromEmployee(
+    tx: Prisma.TransactionClient,
+    organisationId: string,
+    userId: string,
+  ) {
+    const membership = await tx.organisationMembership.findUnique({
+      where: { userId_organisationId: { userId, organisationId } },
+    });
+    if (!membership) return null;
+
+    await tx.organisationMembership.delete({ where: { id: membership.id } });
+    return membership;
+  }
+
   async createWorkspace(
     organisationId: string,
     dto: CreateWorkspaceDto,

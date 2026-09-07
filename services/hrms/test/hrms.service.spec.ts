@@ -7,6 +7,9 @@ import { HrmsScopeService } from '../src/hrms/scope.service.js';
 import { EmployeesService, sanitizeEmployee } from '../src/hrms/employees.service.js';
 import { LeaveService } from '../src/hrms/leave.service.js';
 import { PayrollService } from '../src/hrms/payroll.service.js';
+import { LifecycleService } from '../src/hrms/lifecycle.service.js';
+import { PerformanceService } from '../src/hrms/performance.service.js';
+import { AnalyticsService } from '../src/hrms/analytics.service.js';
 
 const ctx = { organisationId: 'org-1', actorId: 'user-1', correlationId: 'corr-1' };
 
@@ -45,6 +48,9 @@ function buildModule(mockPrisma: Record<string, unknown>, mockOutbox: Record<str
       EmployeesService,
       LeaveService,
       PayrollService,
+      LifecycleService,
+      PerformanceService,
+      AnalyticsService,
       { provide: PrismaService, useValue: mockPrisma },
       { provide: OutboxService, useValue: mockOutbox },
     ],
@@ -265,5 +271,154 @@ describe('PayrollService', () => {
     const service = module.get(PayrollService);
 
     await expect(service.getPayslip(ctx, adminUser, 'p-1')).resolves.toEqual(payslip);
+  });
+});
+
+describe('LifecycleService', () => {
+  const mockOutbox = { createEvent: jest.fn().mockResolvedValue(undefined) };
+
+  it('completing the last pending onboarding task finalises the instance', async () => {
+    const instance = {
+      id: 'onb-1',
+      organisationId: 'org-1',
+      employeeId: 'emp-1',
+      status: 'in_progress',
+      tasks: [{ id: 'ot-1', assigneeUserId: null, status: 'pending' }],
+    };
+    const tx = {
+      onboardingTask: {
+        update: jest.fn().mockResolvedValue({ id: 'ot-1', status: 'completed' }),
+        count: jest.fn().mockResolvedValue(0),
+      },
+      onboardingInstance: {
+        update: jest.fn().mockResolvedValue({ ...instance, status: 'completed' }),
+      },
+    };
+    const prisma = {
+      onboardingInstance: { findFirst: jest.fn().mockResolvedValue(instance) },
+      $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
+    };
+    const module = await buildModule(prisma, mockOutbox);
+    const service = module.get(LifecycleService);
+    const user: AuthorizableUser = {
+      id: 'user-1',
+      organisationId: 'org-1',
+      permissions: ['hrms.onboarding.manage'],
+      dataScopes: [{ module: 'hrms', scope: 'organisation' }],
+    };
+
+    const result = await service.completeTask(ctx, user, 'onb-1', 'ot-1');
+    expect(result.status).toBe('completed');
+    expect(tx.onboardingInstance.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'completed' }),
+      }),
+    );
+    expect(mockOutbox.createEvent).toHaveBeenCalled();
+  });
+
+  it('completing an offboarding case terminates the employee', async () => {
+    const case_ = {
+      id: 'off-1',
+      organisationId: 'org-1',
+      employeeId: 'emp-9',
+      status: 'in_progress',
+      type: 'resignation',
+      tasks: [],
+    };
+    const employee = { id: 'emp-9', organisationId: 'org-1', status: 'active', userId: 'user-9' };
+    const tx = {
+      employee: { update: jest.fn().mockResolvedValue({ ...employee, status: 'terminated' }) },
+      employeeHistory: { create: jest.fn().mockResolvedValue({}) },
+      offboardingCase: { update: jest.fn().mockResolvedValue({ ...case_, status: 'completed' }) },
+    };
+    const prisma = {
+      offboardingCase: { findFirst: jest.fn().mockResolvedValue(case_) },
+      employee: { findFirst: jest.fn().mockResolvedValue(employee) },
+      $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
+    };
+    const module = await buildModule(prisma, mockOutbox);
+    const service = module.get(LifecycleService);
+    const user: AuthorizableUser = orgScopedUser;
+
+    const result = await service.completeCase(ctx, user, 'off-1');
+    expect(result.status).toBe('completed');
+    expect(tx.employee.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'terminated' }),
+      }),
+    );
+    expect(mockOutbox.createEvent).toHaveBeenCalled();
+  });
+});
+
+describe('PerformanceService', () => {
+  it('limits reviews to the actors own employee record', async () => {
+    const actor = { id: 'emp-2', userId: 'user-2' };
+    const reviews = [
+      { id: 'pr-1', employeeId: 'emp-2', cycleId: null },
+      { id: 'pr-2', employeeId: 'emp-9', cycleId: null },
+    ];
+    const findMany = jest.fn().mockResolvedValue(reviews.filter((r) => r.employeeId === actor.id));
+    const prisma = {
+      employee: {
+        findFirst: jest.fn().mockResolvedValue(actor),
+        findMany: jest.fn().mockResolvedValue([actor]),
+      },
+      performanceReview: { findMany },
+    };
+    const module = await buildModule(prisma, {});
+    const service = module.get(PerformanceService);
+
+    const result = await service.listReviews(ctx, ownScopedUser, {});
+    expect(result.length).toBe(1);
+    expect(result[0].employeeId).toBe('emp-2');
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ employeeId: { in: ['emp-2'] } }),
+      }),
+    );
+  });
+});
+
+describe('AnalyticsService', () => {
+  it('returns the expected shape and gates payroll totals when payroll.view is missing', async () => {
+    const prisma = {
+      employee: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'emp-2', userId: 'user-2' }),
+        findMany: jest.fn().mockResolvedValue([{ id: 'emp-2', departmentId: null, status: 'active', joiningDate: new Date(), updatedAt: new Date() }]),
+      },
+      department: { findMany: jest.fn().mockResolvedValue([]) },
+      attendanceRecord: {
+        count: jest.fn().mockResolvedValue(1),
+        aggregate: jest.fn().mockResolvedValue({ _avg: { workMinutes: 120 } }),
+      },
+      attendanceCorrection: { count: jest.fn().mockResolvedValue(0) },
+      leaveRequest: { count: jest.fn().mockResolvedValue(0) },
+      leaveType: { findMany: jest.fn().mockResolvedValue([]) },
+      leaveBalance: { findMany: jest.fn().mockResolvedValue([]) },
+      payrollPeriod: { findFirst: jest.fn().mockResolvedValue({ id: 'pp-1', status: 'approved' }) },
+      payslip: { aggregate: jest.fn() },
+      onboardingInstance: { count: jest.fn().mockResolvedValue(0) },
+      offboardingCase: { count: jest.fn().mockResolvedValue(0) },
+      performanceReview: { count: jest.fn().mockResolvedValue(0) },
+      goal: { groupBy: jest.fn().mockResolvedValue([]) },
+    };
+    const module = await buildModule(prisma, {});
+    const service = module.get(AnalyticsService);
+    const user: AuthorizableUser = {
+      id: 'user-2',
+      organisationId: 'org-1',
+      permissions: ['hrms.analytics.view'],
+      dataScopes: [{ module: 'hrms', scope: 'own' }],
+    };
+
+    const result = await service.getAnalytics(ctx, user);
+    expect(result).toHaveProperty('headcount');
+    expect(result).toHaveProperty('byDepartment');
+    expect(result).toHaveProperty('payroll');
+    expect(result.payroll.lastPeriodStatus).toBe('approved');
+    expect(result.payroll.totalNetLastPeriod).toBe(0);
+    expect(prisma.payslip.aggregate).not.toHaveBeenCalled();
   });
 });

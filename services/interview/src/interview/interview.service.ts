@@ -5,8 +5,14 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '#prisma';
+import { createEventEnvelope } from '@teamspace-one/event-contracts';
 import type { AuthorizableUser } from '@teamspace-one/authorization';
+import type { OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { OutboxService } from '../outbox/outbox.service.js';
+import { AiClient } from './ai.client.js';
+
+const APPLICATION_HIRED_SUBJECT = 'teamspace-one.interview.application.hired';
 
 const APPLICATION_STAGES = [
   'applied',
@@ -57,9 +63,63 @@ export interface CreateEvaluationInput {
   comments?: string;
 }
 
+export interface ScreenInput {
+  resumeText?: string;
+}
+
+export interface ReviewScreeningInput {
+  status?: string;
+}
+
+export interface CreateTemplateInput {
+  name: string;
+  jobOpeningId?: string;
+  description?: string;
+  config?: Record<string, unknown>;
+  questions?: Array<{ category?: string; question: string }>;
+}
+
+export interface UpdateTemplateInput {
+  name?: string;
+  jobOpeningId?: string | null;
+  description?: string;
+  config?: Record<string, unknown>;
+  status?: string;
+  questions?: Array<{ category?: string; question: string }>;
+}
+
+export interface AiStartInput {
+  templateId?: string;
+  config?: Record<string, unknown>;
+}
+
+export interface AiAnswerInput {
+  questionIndex: number;
+  answer: string;
+}
+
+export interface ReviewEvaluationInput {
+  technicalScore?: number;
+  communicationScore?: number;
+  problemSolvingScore?: number;
+  cultureFitScore?: number;
+  overallScore?: number;
+  recommendation?: string;
+  comments?: string;
+}
+
+export interface MakeDecisionInput {
+  decision: 'offer' | 'hire' | 'reject' | 'hold';
+  rationale?: string;
+}
+
 @Injectable()
 export class InterviewService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly outbox: OutboxService,
+    private readonly ai: AiClient,
+  ) {}
 
   /** True when the user may see all interview data for the organisation. */
   private hasOrganisationScope(user: AuthorizableUser): boolean {
@@ -85,7 +145,6 @@ export class InterviewService {
     const base: Prisma.JobOpeningWhereInput = { organisationId };
     if (this.hasOrganisationScope(user)) return base;
     if (this.isOwnScope(user)) {
-      // Candidates never see job administration rows.
       return { ...base, id: '__none__' };
     }
     return {
@@ -101,7 +160,6 @@ export class InterviewService {
     const base: Prisma.CandidateWhereInput = { organisationId };
     if (this.hasOrganisationScope(user)) return base;
     if (this.isOwnScope(user)) {
-      // Candidate portal accounts are not linked yet; nothing to show.
       return { ...base, id: '__none__' };
     }
     const [jobIds, sessionIds] = await Promise.all([
@@ -160,6 +218,39 @@ export class InterviewService {
         ...(jobIds.length ? [{ jobOpeningId: { in: jobIds } }] : []),
       ],
     };
+  }
+
+  private async userJobIds(
+    organisationId: string,
+    user: AuthorizableUser,
+  ): Promise<string[]> {
+    if (this.hasOrganisationScope(user) || this.isOwnScope(user)) return [];
+    const jobs = await this.prisma.jobOpening.findMany({
+      where: {
+        organisationId,
+        OR: [{ recruiterId: user.id }, { hiringManagerId: user.id }, { createdBy: user.id }],
+      },
+      select: { id: true },
+    });
+    return jobs.map((j) => j.id);
+  }
+
+  private async applicationInScope(
+    organisationId: string,
+    user: AuthorizableUser,
+    applicationId: string,
+  ): Promise<{ application: { id: string; candidateId: string; jobOpeningId: string; stage: string } & Record<string, unknown>; job: { id: string; recruiterId: string | null; hiringManagerId: string | null; createdBy: string | null } } | null> {
+    const application = await this.prisma.candidateApplication.findFirst({
+      where: { id: applicationId, organisationId },
+      include: { jobOpening: true },
+    });
+    if (!application) return null;
+    const jobWhere = await this.jobWhereForUser(organisationId, user);
+    const job = await this.prisma.jobOpening.findFirst({
+      where: { ...jobWhere, id: application.jobOpeningId },
+    });
+    if (!job) return null;
+    return { application: application as unknown as { id: string; candidateId: string; jobOpeningId: string; stage: string } & Record<string, unknown>, job: job as unknown as { id: string; recruiterId: string | null; hiringManagerId: string | null; createdBy: string | null } };
   }
 
   // ---- Dashboard overview ----
@@ -346,17 +437,64 @@ export class InterviewService {
     ) {
       throw new NotFoundException('Application not found');
     }
-    const updated = await this.prisma.candidateApplication.update({
-      where: { id: applicationId },
-      data: { stage },
-    });
-    if (stage === 'hired' || stage === 'rejected') {
-      await this.prisma.candidate.update({
-        where: { id: application.candidateId },
-        data: { status: stage },
+    const candidate =
+      stage === 'hired'
+        ? await this.prisma.candidate.findUnique({ where: { id: application.candidateId } })
+        : null;
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.candidateApplication.update({
+        where: { id: applicationId },
+        data: { stage },
       });
-    }
-    return updated;
+      if (stage === 'hired' || stage === 'rejected') {
+        await tx.candidate.update({
+          where: { id: application.candidateId },
+          data: { status: stage },
+        });
+      }
+      if (stage === 'hired' && candidate) {
+        // Cross-service wiring: HRMS consumes this event to open a pending
+        // employee lifecycle record for the hired candidate.
+        const envelope = createEventEnvelope({
+          eventType: APPLICATION_HIRED_SUBJECT,
+          organisationId,
+          actorId: user.id,
+          resourceType: 'candidate-application',
+          resourceId: applicationId,
+          payload: {
+            applicationId,
+            candidateId: candidate.id,
+            candidateName: candidate.name,
+            candidateEmail: candidate.email,
+            jobOpeningId: application.jobOpeningId,
+            jobTitle: application.jobOpening?.title ?? null,
+            decidedBy: user.id,
+          },
+        });
+        await this.outbox.createEvent(tx, envelope, APPLICATION_HIRED_SUBJECT);
+      }
+      return updated;
+    });
+  }
+
+  async updateCandidate(
+    organisationId: string,
+    user: AuthorizableUser,
+    id: string,
+    dto: { resumeFileId?: string | null },
+  ) {
+    const where = await this.candidateWhereForUser(organisationId, user);
+    const existing = await this.prisma.candidate.findFirst({
+      where: { ...where, id },
+    });
+    if (!existing) throw new NotFoundException('Candidate not found');
+    const data: Prisma.CandidateUpdateInput = {};
+    if (dto.resumeFileId !== undefined) data.resumeFileId = dto.resumeFileId;
+    return this.prisma.candidate.update({
+      where: { id },
+      data,
+    });
   }
 
   // ---- Sessions ----
@@ -477,6 +615,539 @@ export class InterviewService {
         comments: dto.comments ?? null,
         status: 'submitted',
       },
+    });
+  }
+
+  async listSessionEvaluations(
+    ctx: OrganisationContextValue,
+    user: AuthorizableUser,
+    sessionId: string,
+  ) {
+    const sessionWhere = await this.sessionWhereForUser(ctx.organisationId, user);
+    const session = await this.prisma.interviewSession.findFirst({
+      where: { ...sessionWhere, id: sessionId },
+    });
+    if (!session) throw new NotFoundException('Interview session not found');
+    return this.prisma.interviewEvaluation.findMany({
+      where: { sessionId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async reviewEvaluation(
+    ctx: OrganisationContextValue,
+    user: AuthorizableUser,
+    evaluationId: string,
+    dto: ReviewEvaluationInput,
+  ) {
+    const sessionWhere = await this.sessionWhereForUser(ctx.organisationId, user);
+    const evaluation = await this.prisma.interviewEvaluation.findFirst({
+      where: { id: evaluationId, source: 'ai' },
+      include: { session: true },
+    });
+    if (!evaluation || !evaluation.session) throw new NotFoundException('Evaluation not found');
+    if (!this.hasOrganisationScope(user) && !await this.prisma.interviewSession.findFirst({ where: { ...sessionWhere, id: evaluation.session.id } })) {
+      throw new NotFoundException('Evaluation not found');
+    }
+
+    const data: Prisma.InterviewEvaluationUpdateInput = {
+      status: 'reviewed',
+      reviewedBy: ctx.actorId,
+      reviewedAt: new Date(),
+      ...(dto.technicalScore !== undefined ? { technicalScore: dto.technicalScore } : {}),
+      ...(dto.communicationScore !== undefined ? { communicationScore: dto.communicationScore } : {}),
+      ...(dto.problemSolvingScore !== undefined ? { problemSolvingScore: dto.problemSolvingScore } : {}),
+      ...(dto.cultureFitScore !== undefined ? { cultureFitScore: dto.cultureFitScore } : {}),
+      ...(dto.overallScore !== undefined ? { overallScore: dto.overallScore } : {}),
+      ...(dto.recommendation !== undefined ? { recommendation: dto.recommendation } : {}),
+      ...(dto.comments !== undefined ? { comments: dto.comments } : {}),
+    };
+    return this.prisma.interviewEvaluation.update({
+      where: { id: evaluationId },
+      data,
+    });
+  }
+
+  // ---- Screening ----
+
+  async screenApplication(
+    ctx: OrganisationContextValue,
+    user: AuthorizableUser,
+    applicationId: string,
+    dto: ScreenInput,
+  ) {
+    const inScope = await this.applicationInScope(ctx.organisationId, user, applicationId);
+    if (!inScope) throw new NotFoundException('Application not found');
+    const { application } = inScope;
+
+    const candidate = await this.prisma.candidate.findFirst({
+      where: { id: application.candidateId, organisationId: ctx.organisationId },
+    });
+    if (!candidate) throw new NotFoundException('Candidate not found');
+
+    const job = await this.prisma.jobOpening.findFirst({
+      where: { id: application.jobOpeningId, organisationId: ctx.organisationId },
+    });
+    if (!job) throw new NotFoundException('Job opening not found');
+
+    let resumeText: string | undefined = dto.resumeText;
+    if (resumeText === undefined && candidate.resumeFileId) {
+      resumeText = await this.ai.fetchResumeText(ctx, candidate.resumeFileId);
+    }
+
+    const result = await this.ai.screen(ctx, {
+      ...(resumeText ? { resumeText } : {}),
+      candidate: { name: candidate.name, email: candidate.email },
+      job: {
+        title: job.title,
+        description: job.description ?? undefined,
+        requirements: job.requirements ?? undefined,
+      },
+    });
+
+    const screening = await this.prisma.screeningResult.upsert({
+      where: { applicationId },
+      update: {
+        matchScore: result.matchScore,
+        skillsFound: result.skillsFound,
+        missingRequirements: result.missingRequirements,
+        summary: result.summary,
+        confidence: result.confidence,
+        model: result.model,
+        promptVersion: result.promptVersion,
+        status: 'ai_generated',
+        reviewedBy: null,
+        reviewedAt: null,
+      },
+      create: {
+        id: randomUUID(),
+        organisationId: ctx.organisationId,
+        applicationId,
+        matchScore: result.matchScore,
+        skillsFound: result.skillsFound,
+        missingRequirements: result.missingRequirements,
+        summary: result.summary,
+        confidence: result.confidence,
+        model: result.model,
+        promptVersion: result.promptVersion,
+        status: 'ai_generated',
+        createdBy: ctx.actorId,
+      },
+    });
+
+    if (application.stage === 'applied') {
+      await this.prisma.candidateApplication.update({
+        where: { id: applicationId },
+        data: { stage: 'screening' },
+      });
+    }
+
+    return screening;
+  }
+
+  async getScreening(
+    ctx: OrganisationContextValue,
+    user: AuthorizableUser,
+    applicationId: string,
+  ) {
+    const inScope = await this.applicationInScope(ctx.organisationId, user, applicationId);
+    if (!inScope) throw new NotFoundException('Application not found');
+    const application = await this.prisma.candidateApplication.findFirst({
+      where: { id: applicationId, organisationId: ctx.organisationId },
+      include: { screeningResult: true },
+    });
+    return application?.screeningResult ?? null;
+  }
+
+  async reviewScreening(
+    ctx: OrganisationContextValue,
+    user: AuthorizableUser,
+    applicationId: string,
+    dto: ReviewScreeningInput,
+  ) {
+    const inScope = await this.applicationInScope(ctx.organisationId, user, applicationId);
+    if (!inScope) throw new NotFoundException('Application not found');
+    const status = dto.status === 'reviewed' ? 'reviewed' : 'reviewed';
+    const screening = await this.prisma.screeningResult.findFirst({
+      where: { applicationId },
+    });
+    if (!screening) throw new NotFoundException('Screening result not found');
+    return this.prisma.screeningResult.update({
+      where: { id: screening.id },
+      data: { status, reviewedBy: ctx.actorId, reviewedAt: new Date() },
+    });
+  }
+
+  // ---- Templates ----
+
+  private async templateScopeWhere(
+    organisationId: string,
+    user: AuthorizableUser,
+  ): Promise<Prisma.InterviewTemplateWhereInput> {
+    const base: Prisma.InterviewTemplateWhereInput = { organisationId };
+    if (this.hasOrganisationScope(user) || this.isOwnScope(user)) return base;
+    const jobIds = await this.userJobIds(organisationId, user);
+    return {
+      ...base,
+      OR: [
+        { createdBy: user.id },
+        ...(jobIds.length ? [{ jobOpeningId: { in: jobIds } }] : []),
+      ],
+    };
+  }
+
+  async listTemplates(ctx: OrganisationContextValue, user: AuthorizableUser) {
+    const where = await this.templateScopeWhere(ctx.organisationId, user);
+    return this.prisma.interviewTemplate.findMany({
+      where,
+      include: { questions: { orderBy: { sortOrder: 'asc' } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createTemplate(ctx: OrganisationContextValue, dto: CreateTemplateInput) {
+    if (!dto.name?.trim()) throw new BadRequestException('Template name is required');
+    if (dto.jobOpeningId) {
+      const job = await this.prisma.jobOpening.findFirst({
+        where: { id: dto.jobOpeningId, organisationId: ctx.organisationId },
+      });
+      if (!job) throw new BadRequestException('Job opening not found');
+    }
+    const questions = dto.questions ?? [];
+    return this.prisma.interviewTemplate.create({
+      data: {
+        id: randomUUID(),
+        organisationId: ctx.organisationId,
+        name: dto.name.trim(),
+        jobOpeningId: dto.jobOpeningId ?? null,
+        description: dto.description ?? null,
+        config: (dto.config ?? {}) as unknown as Prisma.InputJsonValue,
+        createdBy: ctx.actorId,
+        questions: {
+          create: questions.map((q, index) => ({
+            id: randomUUID(),
+            organisationId: ctx.organisationId,
+            category: q.category ?? null,
+            question: q.question,
+            sortOrder: index,
+          })),
+        },
+      },
+      include: { questions: { orderBy: { sortOrder: 'asc' } } },
+    });
+  }
+
+  async updateTemplate(
+    ctx: OrganisationContextValue,
+    user: AuthorizableUser,
+    id: string,
+    dto: UpdateTemplateInput,
+  ) {
+    const where = await this.templateScopeWhere(ctx.organisationId, user);
+    const existing = await this.prisma.interviewTemplate.findFirst({
+      where: { ...where, id },
+      include: { questions: true },
+    });
+    if (!existing) throw new NotFoundException('Template not found');
+
+    const data: Prisma.InterviewTemplateUpdateInput = {
+      ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+      ...(dto.description !== undefined ? { description: dto.description } : {}),
+      ...(dto.config !== undefined ? { config: dto.config as unknown as Prisma.InputJsonValue } : {}),
+      ...(dto.status !== undefined ? { status: dto.status } : {}),
+    };
+    if (dto.jobOpeningId !== undefined) {
+      if (dto.jobOpeningId) {
+        const job = await this.prisma.jobOpening.findFirst({
+          where: { id: dto.jobOpeningId, organisationId: ctx.organisationId },
+        });
+        if (!job) throw new BadRequestException('Job opening not found');
+        data.jobOpening = { connect: { id: dto.jobOpeningId } };
+      } else {
+        data.jobOpening = { disconnect: true };
+      }
+    }
+
+    if (dto.questions !== undefined) {
+      await this.prisma.interviewQuestion.deleteMany({ where: { templateId: id } });
+      data.questions = {
+        create: dto.questions.map((q, index) => ({
+          id: randomUUID(),
+          organisationId: ctx.organisationId,
+          category: q.category ?? null,
+          question: q.question,
+          sortOrder: index,
+        })),
+      };
+    }
+
+    return this.prisma.interviewTemplate.update({
+      where: { id },
+      data,
+      include: { questions: { orderBy: { sortOrder: 'asc' } } },
+    });
+  }
+
+  async deleteTemplate(ctx: OrganisationContextValue, user: AuthorizableUser, id: string) {
+    const where = await this.templateScopeWhere(ctx.organisationId, user);
+    const existing = await this.prisma.interviewTemplate.findFirst({
+      where: { ...where, id },
+    });
+    if (!existing) throw new NotFoundException('Template not found');
+    return this.prisma.interviewTemplate.delete({ where: { id } });
+  }
+
+  // ---- AI interview ----
+
+  private async sessionInScope(
+    ctx: OrganisationContextValue,
+    user: AuthorizableUser,
+    sessionId: string,
+  ): Promise<Prisma.InterviewSessionGetPayload<{ include: { candidate: true; jobOpening: true; answers: true } }> | null> {
+    const where = await this.sessionWhereForUser(ctx.organisationId, user);
+    return this.prisma.interviewSession.findFirst({
+      where: { ...where, id: sessionId },
+      include: {
+        candidate: true,
+        jobOpening: true,
+        answers: { orderBy: { sortOrder: 'asc' } },
+      },
+    });
+  }
+
+  async startAiInterview(
+    ctx: OrganisationContextValue,
+    user: AuthorizableUser,
+    sessionId: string,
+    dto: AiStartInput,
+  ) {
+    const session = await this.sessionInScope(ctx, user, sessionId);
+    if (!session) throw new NotFoundException('Interview session not found');
+
+    const job = {
+      title: session.jobOpening?.title ?? 'Unknown job',
+      description: session.jobOpening?.description ?? undefined,
+      requirements: session.jobOpening?.requirements ?? undefined,
+    };
+
+    let questions: Array<{ category: string; question: string }> = [];
+
+    if (dto.templateId) {
+      const template = await this.prisma.interviewTemplate.findFirst({
+        where: { id: dto.templateId, organisationId: ctx.organisationId },
+        include: { questions: { orderBy: { sortOrder: 'asc' } } },
+      });
+      if (!template) throw new NotFoundException('Template not found');
+      questions = template.questions.map((q) => ({
+        category: q.category ?? 'general',
+        question: q.question,
+      }));
+      if (questions.length === 0) {
+        const config = { ...(template.config as Record<string, unknown> ?? {}), ...(dto.config ?? {}) } as { count?: number; difficulty?: string; categories?: string[] };
+        const generated = await this.ai.questions(ctx, { job, config });
+        questions = generated.questions;
+      }
+    } else {
+      const config = (dto.config ?? {}) as { count?: number; difficulty?: string; categories?: string[] };
+      const generated = await this.ai.questions(ctx, { job, config });
+      questions = generated.questions;
+    }
+
+    await this.prisma.interviewAnswer.deleteMany({ where: { sessionId } });
+    await this.prisma.interviewAnswer.createMany({
+      data: questions.map((q, index) => ({
+        id: randomUUID(),
+        organisationId: ctx.organisationId,
+        sessionId,
+        question: q.question,
+        answer: null,
+        sortOrder: index,
+      })),
+    });
+
+    const updated = await this.prisma.interviewSession.update({
+      where: { id: sessionId },
+      data: { status: 'in_progress', interviewType: 'ai_text' },
+      include: { answers: { orderBy: { sortOrder: 'asc' } } },
+    });
+
+    return { session: updated, questions: updated.answers };
+  }
+
+  async answerAiQuestion(
+    ctx: OrganisationContextValue,
+    user: AuthorizableUser,
+    sessionId: string,
+    dto: AiAnswerInput,
+  ) {
+    const session = await this.sessionInScope(ctx, user, sessionId);
+    if (!session) throw new NotFoundException('Interview session not found');
+    const answers = session.answers;
+    const { questionIndex } = dto;
+    if (
+      typeof questionIndex !== 'number' ||
+      !Number.isInteger(questionIndex) ||
+      questionIndex < 0 ||
+      questionIndex >= answers.length
+    ) {
+      throw new BadRequestException('Invalid question index');
+    }
+
+    await this.prisma.interviewAnswer.update({
+      where: { id: answers[questionIndex].id },
+      data: { answer: dto.answer },
+    });
+
+    const allAnswered = answers.every((a, i) =>
+      i === questionIndex ? dto.answer.length > 0 : a.answer !== null && a.answer.length > 0,
+    );
+    if (allAnswered) {
+      return { done: true };
+    }
+    const next = answers.find((a, i) => i !== questionIndex && a.answer === null);
+    return { done: false, next: next ? { question: next.question, sortOrder: next.sortOrder } : null };
+  }
+
+  async getTranscript(ctx: OrganisationContextValue, user: AuthorizableUser, sessionId: string) {
+    const session = await this.sessionInScope(ctx, user, sessionId);
+    if (!session) throw new NotFoundException('Interview session not found');
+    return session.answers;
+  }
+
+  async evaluateAiInterview(ctx: OrganisationContextValue, user: AuthorizableUser, sessionId: string) {
+    const session = await this.sessionInScope(ctx, user, sessionId);
+    if (!session) throw new NotFoundException('Interview session not found');
+
+    const transcript = session.answers
+      .filter((a) => a.answer !== null)
+      .map((a) => ({ question: a.question, answer: a.answer as string }));
+
+    if (transcript.length === 0) throw new BadRequestException('No answers to evaluate');
+
+    const job = {
+      title: session.jobOpening?.title ?? 'Unknown job',
+      description: session.jobOpening?.description ?? undefined,
+      requirements: session.jobOpening?.requirements ?? undefined,
+    };
+
+    const result = await this.ai.evaluate(ctx, { job, transcript });
+
+    const evaluation = await this.prisma.interviewEvaluation.upsert({
+      where: { sessionId_evaluatorId: { sessionId, evaluatorId: 'ai' } },
+      update: {
+        technicalScore: result.technicalScore,
+        communicationScore: result.communicationScore,
+        problemSolvingScore: result.problemSolvingScore,
+        cultureFitScore: result.cultureFitScore,
+        overallScore: result.overallScore,
+        recommendation: result.recommendation,
+        comments: result.summary,
+        source: 'ai',
+        status: 'ai_generated',
+        reviewedBy: null,
+        reviewedAt: null,
+        aiMetadata: {
+          model: result.model,
+          promptVersion: result.promptVersion,
+          suggestedFollowUps: result.suggestedFollowUps,
+          generatedFor: ctx.actorId,
+        },
+      },
+      create: {
+        id: randomUUID(),
+        organisationId: ctx.organisationId,
+        sessionId,
+        evaluatorId: 'ai',
+        technicalScore: result.technicalScore,
+        communicationScore: result.communicationScore,
+        problemSolvingScore: result.problemSolvingScore,
+        cultureFitScore: result.cultureFitScore,
+        overallScore: result.overallScore,
+        recommendation: result.recommendation,
+        comments: result.summary,
+        source: 'ai',
+        status: 'ai_generated',
+        aiMetadata: {
+          model: result.model,
+          promptVersion: result.promptVersion,
+          suggestedFollowUps: result.suggestedFollowUps,
+          generatedFor: ctx.actorId,
+        },
+      },
+    });
+
+    return evaluation;
+  }
+
+  // ---- Hiring decisions ----
+
+  async makeHiringDecision(
+    ctx: OrganisationContextValue,
+    user: AuthorizableUser,
+    applicationId: string,
+    dto: MakeDecisionInput,
+  ) {
+    const inScope = await this.applicationInScope(ctx.organisationId, user, applicationId);
+    if (!inScope) throw new NotFoundException('Application not found');
+
+    const validDecisions = ['offer', 'hire', 'reject', 'hold'] as const;
+    if (!validDecisions.includes(dto.decision)) {
+      throw new BadRequestException(`Invalid decision. Allowed: ${validDecisions.join(', ')}`);
+    }
+
+    const stageMap: Record<string, string> = {
+      offer: 'offer',
+      hire: 'hired',
+      reject: 'rejected',
+    };
+    const stage = stageMap[dto.decision];
+
+    const decision = await this.prisma.hiringDecision.upsert({
+      where: { applicationId },
+      update: {
+        decision: dto.decision,
+        rationale: dto.rationale ?? null,
+        decidedBy: ctx.actorId as string,
+      },
+      create: {
+        id: randomUUID(),
+        organisationId: ctx.organisationId,
+        applicationId,
+        decision: dto.decision,
+        rationale: dto.rationale ?? null,
+        decidedBy: ctx.actorId as string,
+      },
+    });
+
+    if (stage) {
+      await this.updateApplicationStage(ctx.organisationId, user, applicationId, stage);
+    }
+
+    return decision;
+  }
+
+  async listHiringDecisions(ctx: OrganisationContextValue, user: AuthorizableUser) {
+    const scoped = this.hasOrganisationScope(user);
+    const base: Prisma.HiringDecisionWhereInput = { organisationId: ctx.organisationId };
+    if (!scoped) {
+      const jobIds = await this.userJobIds(ctx.organisationId, user);
+      if (jobIds.length) {
+        base.application = { is: { jobOpeningId: { in: jobIds } } };
+      } else {
+        return [];
+      }
+    }
+    return this.prisma.hiringDecision.findMany({
+      where: base,
+      include: {
+        application: {
+          include: {
+            candidate: { select: { id: true, name: true } },
+            jobOpening: { select: { id: true, title: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
     });
   }
 }

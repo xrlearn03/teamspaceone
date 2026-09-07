@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -24,6 +25,14 @@ import {
   type CreateEvaluationInput,
   type CreateJobInput,
   type CreateSessionInput,
+  type CreateTemplateInput,
+  type UpdateTemplateInput,
+  type ScreenInput,
+  type ReviewScreeningInput,
+  type AiStartInput,
+  type AiAnswerInput,
+  type ReviewEvaluationInput,
+  type MakeDecisionInput,
 } from './interview.service.js';
 
 @UseGuards(InterviewPermissionGuard)
@@ -79,6 +88,17 @@ export class InterviewController {
     return this.interview.createCandidate(ctx.organisationId, dto);
   }
 
+  @Patch('candidates/:id')
+  @RequirePermissions('interview.candidate.edit')
+  updateCandidate(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+    @Body() dto: { resumeFileId?: string | null },
+  ) {
+    return this.interview.updateCandidate(ctx.organisationId, user, id, dto);
+  }
+
   @Patch('applications/:id/stage')
   @RequirePermissions('interview.candidate.edit')
   updateApplicationStage(
@@ -88,6 +108,77 @@ export class InterviewController {
     @Body() dto: { stage: string },
   ) {
     return this.interview.updateApplicationStage(ctx.organisationId, user, id, dto.stage);
+  }
+
+  @Post('applications/:id/screen')
+  @RequirePermissions('interview.screening.run')
+  screenApplication(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+    @Body() dto: ScreenInput,
+  ) {
+    return this.interview.screenApplication(ctx, user, id, dto);
+  }
+
+  @Get('applications/:id/screening')
+  @RequirePermissions('interview.screening.view')
+  getScreening(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+  ) {
+    return this.interview.getScreening(ctx, user, id);
+  }
+
+  @Post('applications/:id/screening/review')
+  @RequirePermissions('interview.interview.approve')
+  reviewScreening(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+    @Body() dto: ReviewScreeningInput,
+  ) {
+    return this.interview.reviewScreening(ctx, user, id, dto);
+  }
+
+  @Get('templates')
+  @RequirePermissions('interview.template.view')
+  listTemplates(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+  ) {
+    return this.interview.listTemplates(ctx, user);
+  }
+
+  @Post('templates')
+  @RequirePermissions('interview.template.create')
+  createTemplate(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: CreateTemplateInput,
+  ) {
+    return this.interview.createTemplate(ctx, dto);
+  }
+
+  @Patch('templates/:id')
+  @RequirePermissions('interview.template.edit')
+  updateTemplate(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateTemplateInput,
+  ) {
+    return this.interview.updateTemplate(ctx, user, id, dto);
+  }
+
+  @Delete('templates/:id')
+  @RequirePermissions('interview.template.delete')
+  deleteTemplate(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+  ) {
+    return this.interview.deleteTemplate(ctx, user, id);
   }
 
   @Get('sessions')
@@ -106,6 +197,48 @@ export class InterviewController {
     return this.interview.createSession(ctx.organisationId, ctx.actorId as string, dto);
   }
 
+  @Post('sessions/:id/ai/start')
+  @RequirePermissions('interview.interview.conduct')
+  startAiInterview(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+    @Body() dto: AiStartInput,
+  ) {
+    return this.interview.startAiInterview(ctx, user, id, dto);
+  }
+
+  @Post('sessions/:id/ai/answer')
+  @RequirePermissions('interview.interview.conduct')
+  answerAiQuestion(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+    @Body() dto: AiAnswerInput,
+  ) {
+    return this.interview.answerAiQuestion(ctx, user, id, dto);
+  }
+
+  @Get('sessions/:id/ai/transcript')
+  @RequirePermissions('interview.interview.view')
+  getTranscript(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+  ) {
+    return this.interview.getTranscript(ctx, user, id);
+  }
+
+  @Post('sessions/:id/ai/evaluate')
+  @RequirePermissions('interview.interview.evaluate')
+  evaluateAiInterview(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+  ) {
+    return this.interview.evaluateAiInterview(ctx, user, id);
+  }
+
   @Get('evaluations/pending')
   @RequirePermissions(['interview.interview.evaluate', 'interview.decision.view'], false)
   listPendingEvaluations(@CurrentOrganisation() ctx: OrganisationContextValue, @CurrentUser() user: AuthorizableUser) {
@@ -120,5 +253,46 @@ export class InterviewController {
     @Body() dto: CreateEvaluationInput,
   ) {
     return this.interview.submitEvaluation(ctx.organisationId, id, ctx.actorId as string, dto);
+  }
+
+  @Get('sessions/:id/evaluations')
+  @RequirePermissions('interview.interview.view')
+  listSessionEvaluations(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+  ) {
+    return this.interview.listSessionEvaluations(ctx, user, id);
+  }
+
+  @Post('evaluations/:id/review')
+  @RequirePermissions('interview.interview.edit-evaluation')
+  reviewEvaluation(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+    @Body() dto: ReviewEvaluationInput,
+  ) {
+    return this.interview.reviewEvaluation(ctx, user, id, dto);
+  }
+
+  @Post('applications/:id/decision')
+  @RequirePermissions('interview.decision.make')
+  makeHiringDecision(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+    @Body() dto: MakeDecisionInput,
+  ) {
+    return this.interview.makeHiringDecision(ctx, user, id, dto);
+  }
+
+  @Get('decisions')
+  @RequirePermissions('interview.decision.view')
+  listHiringDecisions(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+  ) {
+    return this.interview.listHiringDecisions(ctx, user);
   }
 }

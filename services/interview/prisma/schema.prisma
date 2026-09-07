@@ -52,6 +52,7 @@ model JobOpening {
 
   applications    CandidateApplication[]
   sessions        InterviewSession[]
+  templates       InterviewTemplate[]
 
   @@index([organisationId])
   @@index([organisationId, status])
@@ -89,8 +90,10 @@ model CandidateApplication {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  candidate      Candidate   @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  jobOpening     JobOpening  @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
+  candidate      Candidate       @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  jobOpening     JobOpening      @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
+  screeningResult ScreeningResult?
+  hiringDecision  HiringDecision?
 
   @@unique([candidateId, jobOpeningId])
   @@index([organisationId])
@@ -110,10 +113,11 @@ model InterviewSession {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  candidate      Candidate   @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  jobOpening     JobOpening? @relation(fields: [jobOpeningId], references: [id], onDelete: SetNull)
+  candidate      Candidate            @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  jobOpening     JobOpening?          @relation(fields: [jobOpeningId], references: [id], onDelete: SetNull)
   participants   InterviewParticipant[]
   evaluations    InterviewEvaluation[]
+  answers        InterviewAnswer[]
 
   @@index([organisationId])
   @@index([organisationId, scheduledAt])
@@ -147,6 +151,10 @@ model InterviewEvaluation {
   overallScore          Int?
   recommendation        String?
   comments              String?
+  source                String   @default("human")
+  aiMetadata            Json?
+  reviewedBy            String?
+  reviewedAt            DateTime?
   status                String   @default("pending")
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -156,4 +164,99 @@ model InterviewEvaluation {
   @@unique([sessionId, evaluatorId])
   @@index([organisationId])
   @@index([organisationId, evaluatorId, status])
+}
+
+model InterviewTemplate {
+  id              String   @id @default(cuid())
+  organisationId  String
+  name            String
+  jobOpeningId    String?
+  description     String?
+  config          Json?
+  status          String   @default("active")
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  questions       InterviewQuestion[]
+  jobOpening      JobOpening? @relation(fields: [jobOpeningId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId])
+  @@index([jobOpeningId])
+  @@map("interview_templates")
+}
+
+model InterviewQuestion {
+  id              String   @id @default(cuid())
+  organisationId  String
+  templateId      String
+  category        String?
+  question        String
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  template        InterviewTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([templateId])
+  @@index([templateId, sortOrder])
+  @@map("interview_questions")
+}
+
+model ScreeningResult {
+  id                  String   @id @default(cuid())
+  organisationId      String
+  applicationId       String   @unique
+  matchScore          Int?
+  skillsFound         Json?
+  missingRequirements Json?
+  summary             String?
+  confidence          String?
+  status              String   @default("ai_generated")
+  reviewedBy          String?
+  reviewedAt          DateTime?
+  model               String?
+  promptVersion       String?
+  createdBy           String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  application         CandidateApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([organisationId, applicationId])
+  @@map("screening_results")
+}
+
+model InterviewAnswer {
+  id              String   @id @default(cuid())
+  organisationId  String
+  sessionId       String
+  question        String
+  answer          String?
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  session         InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([sessionId])
+  @@index([sessionId, sortOrder])
+  @@map("interview_answers")
+}
+
+model HiringDecision {
+  id              String   @id @default(cuid())
+  organisationId  String
+  applicationId   String   @unique
+  decision        String
+  rationale       String?
+  decidedBy       String
+  createdAt       DateTime @default(now())
+
+  application     CandidateApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([applicationId])
+  @@map("hiring_decisions")
 }

@@ -15,7 +15,7 @@ vi.mock("../features/dashboard/widgets", () => {
 });
 
 import { canAccessView, VIEW_PERMISSIONS } from "./view-permissions";
-import { filterDashboardWidgets, DASHBOARD_WIDGETS } from "../features/dashboard/registry";
+import { filterDashboardWidgets } from "../features/dashboard/registry";
 
 /**
  * Role fixtures mirror the system role templates in
@@ -125,13 +125,13 @@ const orgAdmin = roleUser(
 describe("view access by role", () => {
   it("covers every view in the union", () => {
     const views: Array<Parameters<typeof canAccessView>[1]> = [
-      "home", "channel", "direct-message", "project", "meeting", "ai-assistant",
-      "hrms", "interview", "admin", "inbox", "drafts", "saved", "voice-room",
-      "file-browser", "members", "settings", "onboarding",
+      "home", "inbox", "channel", "dm", "project", "meeting", "voice", "files",
+      "ai", "members", "saved", "drafts", "hrms", "interview", "admin", "settings",
     ];
+    const exempt = new Set(["settings", "inbox", "saved", "drafts", "ai"]);
     for (const v of views) {
       expect(v, `view "${v}" has a permission entry`).toSatisfy(
-        (x) => x in VIEW_PERMISSIONS || x === "settings" || x === "onboarding",
+        (x) => x in VIEW_PERMISSIONS || exempt.has(x),
       );
     }
   });

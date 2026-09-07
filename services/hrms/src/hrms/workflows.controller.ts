@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -305,6 +306,48 @@ export class PayrollController {
     @Param('id') id: string,
   ) {
     return this.payroll.getPayslip(toCtx(org), user, id);
+  }
+
+  @Post('periods/:id/approve')
+  @RequirePermissions('hrms.payroll.manage')
+  approve(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @Param('id') id: string,
+  ) {
+    return this.payroll.approvePeriod(toCtx(org), id);
+  }
+
+  @Post('periods/:id/mark-paid')
+  @RequirePermissions('hrms.payroll.manage')
+  markPaid(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @Param('id') id: string,
+  ) {
+    return this.payroll.markPaid(toCtx(org), id);
+  }
+
+  @Get('periods/:id/export')
+  @RequirePermissions('hrms.payroll.export')
+  async export(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+    @Res() res: any,
+  ) {
+    const csv = await this.payroll.exportCsv(toCtx(org), user, id);
+    res
+      .set('Content-Type', 'text/csv')
+      .set('Content-Disposition', `attachment; filename="payroll-${id}.csv"`)
+      .send(csv);
+  }
+
+  @Get('summary')
+  @RequirePermissions('hrms.payroll.view')
+  summary(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+  ) {
+    return this.payroll.summary(toCtx(org), user);
   }
 }
 

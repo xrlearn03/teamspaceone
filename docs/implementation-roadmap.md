@@ -296,9 +296,11 @@
 - AI provider secrets remain server-side.
 - AI audit logs are queryable.
 
-## Phase 7 — Advanced HRMS
+## Phase 7 — Advanced HRMS (IN PROGRESS — frontend implemented, backend in progress)
 
 **Goal:** Complete the employee lifecycle and analytics.
+
+> Status: desktop UI (Onboarding / Offboarding / Performance / Analytics tabs, payroll workflow actions + CSV export, `useOnboarding*`/`useOffboarding*`/`usePerformance*`/`useGoals`/`useHrmsAnalytics`/`usePayrollSummary` hooks) and documentation are done. Backend endpoints under `/hrms/*` are being implemented concurrently; see `docs/hrms.md` → "Phase 7 — Advanced HRMS" for the contract.
 
 ### 7.1 Onboarding
 
