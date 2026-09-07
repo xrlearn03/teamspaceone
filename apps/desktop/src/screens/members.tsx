@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { UserPlus, Users } from "lucide-react";
-import { useMembers, useRoles, useCreateInvitation, useInvitations, useOrganisations, useUsers } from "../hooks/api";
+import { useMembers, useRoles, useInviteMember, useInvitations, useOrganisations, useUsers } from "../hooks/api";
 import { useUIStore } from "../stores/ui";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Badge } from "../components/ui/badge";
@@ -36,9 +36,10 @@ export function MemberDirectoryScreen() {
   const { data: members, isLoading: membersLoading, error: membersError } = useMembers(organisationId);
   const { data: roles, isLoading: rolesLoading, error: rolesError } = useRoles(organisationId);
   const { data: invitations } = useInvitations(organisationId);
-  const createInvitation = useCreateInvitation();
+  const inviteMember = useInviteMember();
   const [query, setQuery] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteExternal, setInviteExternal] = useState(false);
   const [email, setEmail] = useState("");
   const [roleId, setRoleId] = useState("");
 
@@ -55,6 +56,8 @@ export function MemberDirectoryScreen() {
     const haystack = [getDisplayName(m, user), user?.email ?? ""].join(" ").toLowerCase();
     return haystack.includes(q) || m.role.name.toLowerCase().includes(q);
   });
+  const externalRoles = (roles ?? []).filter((r) => r.roleCategory === "external" || r.roleCategory === "guest");
+  const defaultExternalRoleId = externalRoles.find((r) => r.name === "client")?.id ?? externalRoles[0]?.id ?? "";
   const external = filtered.filter((m) => /client|external/i.test(m.role.name));
   const internal = filtered.filter((m) => !/client|external/i.test(m.role.name));
   const pendingInvitations = (invitations ?? []).filter((inv) => {
@@ -63,9 +66,16 @@ export function MemberDirectoryScreen() {
     return inv.email.toLowerCase().includes(query.trim().toLowerCase());
   });
 
+  function openInvite(external: boolean) {
+    setInviteExternal(external);
+    setEmail("");
+    setRoleId(external ? defaultExternalRoleId : "");
+    setInviteOpen(true);
+  }
+
   function invite() {
     if (!organisationId || !email.trim() || !roleId) return;
-    createInvitation.mutate(
+    inviteMember.mutate(
       { organisationId, email: email.trim(), roleId },
       { onSuccess: () => { setInviteOpen(false); setEmail(""); setRoleId(""); } },
     );
@@ -81,7 +91,7 @@ export function MemberDirectoryScreen() {
             <p className="text-xs text-text-muted">{organisation?.name ?? "Organisation"}</p>
           </div>
         </div>
-        <Button size="sm" onClick={() => setInviteOpen(true)}>
+        <Button size="sm" onClick={() => openInvite(false)}>
           <UserPlus className="mr-1.5 h-4 w-4" />
           Invite member
         </Button>
@@ -117,7 +127,13 @@ export function MemberDirectoryScreen() {
               </div>
             </div>
             <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">External collaborators ({external.length})</p>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">External collaborators ({external.length})</p>
+                <Button size="sm" variant="ghost" onClick={() => openInvite(true)} disabled={!defaultExternalRoleId}>
+                  <UserPlus className="mr-1.5 h-4 w-4" />
+                  Invite external
+                </Button>
+              </div>
               <div className="overflow-hidden rounded-lg border border-warning/40">
                 {external.map((member) => {
                   const user = userMap.get(member.userId);
@@ -158,23 +174,27 @@ export function MemberDirectoryScreen() {
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent className="max-w-md p-0">
           <DialogHeader>
-            <DialogTitle>Invite member</DialogTitle>
-            <DialogDescription>Send an invitation to join {organisation?.name ?? "this organisation"}.</DialogDescription>
+            <DialogTitle>{inviteExternal ? "Invite external collaborator" : "Invite member"}</DialogTitle>
+            <DialogDescription>
+              {inviteExternal
+                ? `Invite a client or guest to ${organisation?.name ?? "this organisation"} with limited external access.`
+                : `Send an invitation to join ${organisation?.name ?? "this organisation"}.`}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 px-4 pb-4">
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email address" autoFocus />
             <select className={selectClass} value={roleId} onChange={(e) => setRoleId(e.target.value)} disabled={rolesLoading}>
               <option value="">{rolesLoading ? "Loading roles…" : "Select a role"}</option>
-              {roles?.map((role) => (
+              {(inviteExternal ? externalRoles : roles)?.map((role) => (
                 <option key={role.id} value={role.id}>{role.name}</option>
               ))}
             </select>
             {rolesError ? <p className="text-sm text-error">Failed to load roles: {rolesError.message}</p> : null}
-            {createInvitation.error ? <p className="text-sm text-error">{createInvitation.error.message}</p> : null}
+            {inviteMember.error ? <p className="text-sm text-error">{inviteMember.error.message}</p> : null}
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setInviteOpen(false)}>Cancel</Button>
-              <Button onClick={invite} disabled={!email.trim() || !roleId || createInvitation.isPending}>
-                {createInvitation.isPending ? "Sending…" : "Send invitation"}
+              <Button onClick={invite} disabled={!email.trim() || !roleId || inviteMember.isPending}>
+                {inviteMember.isPending ? "Sending…" : "Send invitation"}
               </Button>
             </div>
           </div>

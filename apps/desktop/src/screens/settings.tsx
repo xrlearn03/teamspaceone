@@ -27,11 +27,11 @@ import {
   useChangePassword,
   useClients,
   useCreateClient,
-  useCreateInvitation,
   useCreateOrganisation,
   useCreateWorkspace,
   useDeleteClient,
   useInvitations,
+  useInviteMember,
   useMe,
   useNotificationPreference,
   useOrganisations,
@@ -304,7 +304,7 @@ function DeveloperSettings() {
 function OrganisationSettings({ organisationId, organisationName, workspaces, roles }: { organisationId: string | null; organisationName?: string; workspaces: { id: string; name: string }[]; roles: { id: string; name: string; isDefault: boolean }[] }) {
   const createWorkspace = useCreateWorkspace();
   const createOrganisation = useCreateOrganisation();
-  const invite = useCreateInvitation();
+  const invite = useInviteMember();
   const [newOrganisationName, setNewOrganisationName] = useState("");
   const { data: invitations } = useInvitations(organisationId ?? undefined);
   const revokeInvitation = useRevokeInvitation();

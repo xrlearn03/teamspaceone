@@ -154,14 +154,6 @@ export function useInvitations(organisationId?: string) {
   return useQuery({ queryKey: ["invitations", organisationId], queryFn: () => api.getInvitations(organisationId as string), enabled: Boolean(organisationId) });
 }
 
-export function useCreateInvitation() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (args: { organisationId: string; email: string; roleId: string }) => api.createInvitation(args.organisationId, args.email, args.roleId),
-    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["invitations", args.organisationId] }),
-  });
-}
-
 export function useRevokeInvitation() {
   const client = useQueryClient();
   return useMutation({
