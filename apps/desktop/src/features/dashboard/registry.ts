@@ -30,6 +30,8 @@ export interface DashboardWidget {
   title: string;
   /** Grid span classes applied to the widget wrapper. */
   gridClass?: string;
+  /** Render above the grid at natural height instead of inside a grid row. */
+  banner?: boolean;
   /** Permissions (any-of) required to render the widget. */
   permissions: string[];
   /**
@@ -45,7 +47,7 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   {
     id: "quick-actions",
     title: "Quick actions",
-    gridClass: "md:col-span-2 xl:col-span-3",
+    banner: true,
     permissions: ["dashboard.quick-action.execute"],
     component: QuickActionsWidget,
   },

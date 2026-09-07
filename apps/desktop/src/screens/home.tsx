@@ -16,6 +16,8 @@ export function HomeScreen() {
   const { data: user } = useMe();
   const { user: authzUser } = usePermissionContext();
   const widgets = filterDashboardWidgets(authzUser);
+  const bannerWidgets = widgets.filter((w) => w.banner);
+  const gridWidgets = widgets.filter((w) => !w.banner);
 
   const firstName =
     user?.firstName ?? user?.email?.split("@")[0] ?? "there";
@@ -32,15 +34,23 @@ export function HomeScreen() {
       </header>
 
       {widgets.length > 0 ? (
-        <div className="grid auto-rows-[minmax(14rem,1fr)] grid-cols-1 gap-4 p-6 sm:grid-cols-2 xl:grid-cols-3">
-          {widgets.map((widget) => {
+        <div className="flex flex-col gap-4 p-6">
+          {bannerWidgets.map((widget) => {
             const WidgetComponent = widget.component;
-            return (
-              <div key={widget.id} className={cn("h-full", widget.gridClass)}>
-                <WidgetComponent />
-              </div>
-            );
+            return <WidgetComponent key={widget.id} />;
           })}
+          {gridWidgets.length > 0 && (
+            <div className="grid auto-rows-[minmax(14rem,auto)] grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {gridWidgets.map((widget) => {
+                const WidgetComponent = widget.component;
+                return (
+                  <div key={widget.id} className={cn("h-full", widget.gridClass)}>
+                    <WidgetComponent />
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       ) : (
         <EmptyState
