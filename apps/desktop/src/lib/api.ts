@@ -710,6 +710,14 @@ export function changePassword(currentPassword: string, newPassword: string) {
   return apiRequest<void>("/auth/change-password", { method: "POST", body: { currentPassword, newPassword } });
 }
 
+export function requestPasswordReset(email: string) {
+  return apiRequest<{ requested: boolean }>("/auth/forgot-password", { method: "POST", body: { email } });
+}
+
+export function resetPassword(token: string, newPassword: string) {
+  return apiRequest<{ reset: boolean }>("/auth/reset-password", { method: "POST", body: { token, newPassword } });
+}
+
 export async function logout(): Promise<void> {
   const refreshToken = await getRefreshToken();
   if (refreshToken) {

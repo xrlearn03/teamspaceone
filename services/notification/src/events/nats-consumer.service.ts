@@ -5,6 +5,7 @@ import { InboxService } from '../inbox/inbox.service.js';
 import { NotificationService, type CreatedNotification } from '../notification/notification.service.js';
 import { GuestInvitationEmailService } from '../notification/guest-invitation-email.service.js';
 import { MemberInvitationEmailService } from '../notification/member-invitation-email.service.js';
+import { PasswordResetEmailService } from '../notification/password-reset-email.service.js';
 import { NatsClientService } from './nats-client.service.js';
 
 interface ConsumerDefinition {
@@ -25,6 +26,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
     private readonly notification: NotificationService,
     private readonly guestInvitation: GuestInvitationEmailService,
     private readonly memberInvitation: MemberInvitationEmailService,
+    private readonly passwordReset: PasswordResetEmailService,
   ) {}
 
   async onModuleInit() {
@@ -42,6 +44,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
       { stream: Streams.AI, subject: Subjects.AI_SUMMARY_CONFIRMED, durable: 'notification-ai-consumer' },
       { stream: Streams.ORGANISATION, subject: Subjects.GUEST_INVITED, durable: 'notification-guest-invited-consumer' },
       { stream: Streams.ORGANISATION, subject: Subjects.MEMBER_INVITED, durable: 'notification-member-invited-consumer' },
+      { stream: Streams.USERS, subject: Subjects.PASSWORD_RESET_REQUESTED, durable: 'notification-password-reset-consumer' },
       { stream: Streams.HRMS, subject: 'teamspace-one.hrms.>', durable: 'notification-hrms-consumer' },
     ];
 
@@ -118,6 +121,14 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
         if (data.eventType === Subjects.MEMBER_INVITED) {
           await this.inbox.handle(data, (_tx, envelope) =>
             this.memberInvitation.send(envelope),
+          );
+          jsMsg.ack();
+          continue;
+        }
+
+        if (data.eventType === Subjects.PASSWORD_RESET_REQUESTED) {
+          await this.inbox.handle(data, (_tx, envelope) =>
+            this.passwordReset.send(envelope),
           );
           jsMsg.ack();
           continue;

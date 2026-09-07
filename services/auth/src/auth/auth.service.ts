@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
-import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
+import { createEventEnvelope, Subjects, type PasswordResetRequestedPayload } from '@teamspace-one/event-contracts';
 import { OrganisationContext } from '@teamspace-one/organisation-context';
 import { Prisma, type User } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -29,6 +30,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
     private readonly tokens: TokenService,
+    private readonly jwt: JwtService,
     private readonly config: ConfigService,
   ) {}
 
@@ -205,6 +207,89 @@ export class AuthService {
       this.prisma.refreshToken.deleteMany({ where: { userId } }),
       this.prisma.user.delete({ where: { id: userId } }),
     ]);
+  }
+
+  async requestPasswordReset(email: string, correlationId?: string): Promise<{ requested: boolean }> {
+    const normalized = email.toLowerCase().trim();
+    const user = await this.prisma.user.findUnique({ where: { email: normalized } });
+    if (!user) {
+      return { requested: true };
+    }
+
+    const secret = this.config.get<string>('JWT_SECRET');
+    if (!secret) {
+      throw new Error('JWT_SECRET is required');
+    }
+
+    const token = await this.jwt.signAsync(
+      {
+        sub: user.id,
+        email: normalized,
+        type: 'reset',
+      },
+      {
+        secret,
+        expiresIn: '15m',
+        audience: 'password-reset',
+        algorithm: 'HS256',
+      },
+    );
+
+    const envelope = createEventEnvelope<PasswordResetRequestedPayload>({
+      eventType: Subjects.PASSWORD_RESET_REQUESTED,
+      organisationId: 'global',
+      actorId: user.id,
+      resourceType: 'user',
+      resourceId: user.id,
+      correlationId,
+      payload: { email: normalized, token },
+    });
+
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await this.outbox.createEvent(tx, envelope, Subjects.PASSWORD_RESET_REQUESTED);
+    });
+
+    return { requested: true };
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<{ reset: boolean }> {
+    this.assertPasswordPolicy(newPassword);
+
+    const secret = this.config.get<string>('JWT_SECRET');
+    if (!secret) {
+      throw new Error('JWT_SECRET is required');
+    }
+
+    let payload: { sub?: string; type?: string };
+    try {
+      payload = await this.jwt.verifyAsync(token, {
+        secret,
+        audience: 'password-reset',
+        algorithms: ['HS256'],
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    if (payload.type !== 'reset' || !payload.sub) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user || !user.active) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    const passwordHash = await hash(newPassword, 12);
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { passwordHash, mustChangePassword: false },
+      });
+      await tx.refreshToken.deleteMany({ where: { userId: user.id } });
+    });
+
+    return { reset: true };
   }
 
   async redeemInvitation(input: RedeemInvitationDto, correlationId?: string): Promise<{ user: UserDto; tokens: TokenPair }> {

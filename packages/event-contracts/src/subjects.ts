@@ -2,6 +2,7 @@ export const Subjects = {
   USER_CREATED: 'teamspace-one.user.created',
   USER_UPDATED: 'teamspace-one.user.updated',
   USER_SIGNED_IN: 'teamspace-one.user.signed_in',
+  PASSWORD_RESET_REQUESTED: 'teamspace-one.user.password_reset_requested',
   ORGANISATION_CREATED: 'teamspace-one.organisation.created',
   ORGANISATION_MEMBER_ADDED: 'teamspace-one.organisation.member_added',
   MEMBER_INVITED: 'teamspace-one.organisation.member_invited',

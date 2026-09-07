@@ -10,6 +10,8 @@ import { ProvisionUserDto } from './dto/provision-user.dto.js';
 import { RefreshDto } from './dto/refresh.dto.js';
 import { ChangePasswordDto } from './dto/change-password.dto.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
+import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
 import { OrganisationContext } from '@teamspace-one/organisation-context';
 
 @Controller('auth')
@@ -31,6 +33,20 @@ export class AuthController {
   @Post('login')
   async login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
+  }
+
+  @Post('forgot-password')
+  async forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+    @Headers('x-correlation-id') correlationId?: string,
+  ) {
+    const ctx = OrganisationContext.get();
+    return this.auth.requestPasswordReset(dto.email, ctx?.correlationId ?? correlationId);
+  }
+
+  @Post('reset-password')
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.auth.resetPassword(dto.token, dto.newPassword);
   }
 
   @Post('redeem')
