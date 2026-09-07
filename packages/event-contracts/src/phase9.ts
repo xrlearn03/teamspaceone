@@ -14,6 +14,19 @@ export interface GuestInvitedPayload {
   expiresAt: string;
 }
 
+export interface MemberInvitedPayload {
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  organisationId: string;
+  organisationName?: string;
+  roleName?: string;
+  invitedBy: string;
+  /** Present only when a brand-new account was provisioned. */
+  temporaryPassword?: string;
+  accountCreated: boolean;
+}
+
 export interface ClientCreatedPayload {
   clientId: string;
   organisationId: string;

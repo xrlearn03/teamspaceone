@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, ShieldCheck, Trash2, Users } from "lucide-react";
+import { Pencil, Plus, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
 import { PermissionGate } from "@teamspace-one/authorization/react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { EmptyState } from "../components/ui/empty-state";
 import { Input } from "../components/ui/input";
 import { Skeleton } from "../components/ui/skeleton";
-import { useMembers, usePermissionsList, useRoles, useUpdateMemberRole, useCreateRole, useUpdateRole, useDeleteRole, useUsers } from "../hooks/api";
+import { useMembers, usePermissionsList, useRoles, useUpdateMemberRole, useCreateRole, useUpdateRole, useDeleteRole, useUsers, useInviteMember } from "../hooks/api";
 import { getActiveOrganisation, ADMIN_MANAGED_ROLE_CATEGORIES, type OrganisationRole, type Permission, type RoleCategory, type UserDataScope } from "../lib/api";
 
 const SCOPES: UserDataScope["scope"][] = ["own", "assigned", "team", "department", "organisation"];
@@ -221,11 +221,122 @@ function RoleDialog({
   );
 }
 
+/** Role categories that can be granted through an admin invitation. */
+const INVITABLE_ROLE_CATEGORIES: RoleCategory[] = ["administrative", "managerial", "member", "external", "guest"];
+
+function InviteMemberDialog({
+  open,
+  onOpenChange,
+  roles,
+  organisationId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  roles: OrganisationRole[];
+  organisationId?: string;
+}) {
+  const invite = useInviteMember();
+  const [email, setEmail] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [roleId, setRoleId] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const invitableRoles = useMemo(
+    () => roles.filter((r) => INVITABLE_ROLE_CATEGORIES.includes(r.roleCategory)),
+    [roles],
+  );
+
+  useEffect(() => {
+    if (open) {
+      setEmail("");
+      setFirstName("");
+      setLastName("");
+      setRoleId("");
+      setError(null);
+    }
+  }, [open]);
+
+  function submit() {
+    if (!organisationId || !roleId) return;
+    invite.mutate(
+      {
+        organisationId,
+        email: email.trim(),
+        roleId,
+        firstName: firstName.trim() || undefined,
+        lastName: lastName.trim() || undefined,
+      },
+      {
+        onSuccess: () => onOpenChange(false),
+        onError: (err) => setError(err instanceof Error ? err.message : "Failed to invite member"),
+      },
+    );
+  }
+
+  const canSubmit = email.trim().length > 0 && roleId && !invite.isPending;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-full max-w-md">
+        <DialogHeader>
+          <DialogTitle>Invite member</DialogTitle>
+          <DialogDescription>
+            The member gets an account and is emailed their login and a temporary password. They must set a
+            new password on first sign-in.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-text-secondary">Email</span>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-text-secondary">First name</span>
+              <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Optional" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-text-secondary">Last name</span>
+              <Input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Optional" />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-text-secondary">Role</span>
+            <select
+              className="h-9 rounded-md border bg-background px-2 text-sm text-text"
+              value={roleId}
+              onChange={(e) => setRoleId(e.target.value)}
+            >
+              <option value="">Select a role…</option>
+              {invitableRoles.map((r) => (
+                <option key={r.id} value={r.id}>{r.name.replace(/_/g, " ")}</option>
+              ))}
+            </select>
+          </label>
+          <p className="rounded-md border bg-surface px-3 py-2 text-xs text-text-muted">
+            Employee and candidate access is granted through the HR onboarding and recruitment workflows, not
+            through member invitation.
+          </p>
+          {error ? <p className="text-sm text-error">{error}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button onClick={submit} disabled={!canSubmit}>
+              {invite.isPending ? "Sending…" : "Send invite"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function MembersPanel() {
   const organisationId = getActiveOrganisation() ?? undefined;
   const { data: members, isLoading } = useMembers(organisationId);
   const { data: roles } = useRoles(organisationId);
   const updateMemberRole = useUpdateMemberRole();
+  const [inviteOpen, setInviteOpen] = useState(false);
   const memberUserIds = useMemo(
     () => [...new Set((members ?? []).map((m) => m.userId))],
     [members],
@@ -243,7 +354,12 @@ function MembersPanel() {
           <Users className="h-4 w-4 text-text-muted" />
           <CardTitle className="text-sm">Members</CardTitle>
         </div>
-        <Badge variant="secondary">{members?.length ?? 0}</Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary">{members?.length ?? 0}</Badge>
+          <Button variant="secondary" size="sm" onClick={() => setInviteOpen(true)}>
+            <UserPlus className="mr-1 h-3.5 w-3.5" /> Invite
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -293,6 +409,12 @@ function MembersPanel() {
           <EmptyState icon={Users} title="No members" />
         )}
       </CardContent>
+      <InviteMemberDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        roles={roles ?? []}
+        organisationId={organisationId}
+      />
     </Card>
   );
 }

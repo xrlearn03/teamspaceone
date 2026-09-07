@@ -6,5 +6,6 @@ export interface UserDto {
   avatarFileId: string | null;
   active: boolean;
   emailVerified: boolean;
+  mustChangePassword: boolean;
   createdAt: string;
 }

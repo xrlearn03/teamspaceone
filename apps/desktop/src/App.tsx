@@ -8,7 +8,8 @@ import { SplashScreen } from "./components/splash/splash-screen";
 import { RealtimeProvider } from "./hooks/useRealtime";
 import { AuthScreen } from "./screens/auth";
 import { OnboardingScreen } from "./screens/onboarding";
-import { getAccessToken, getMyContext, getOrganisations, getActiveOrganisation, setActiveOrganisation, setOnSessionCleared } from "./lib/api";
+import { ForcePasswordChangeDialog } from "./components/auth/force-password-change-dialog";
+import { getAccessToken, getMe, getMyContext, getOrganisations, getActiveOrganisation, setActiveOrganisation, setOnSessionCleared } from "./lib/api";
 import { Button } from "./components/ui/button";
 import { useUIStore } from "./stores/ui";
 
@@ -77,6 +78,14 @@ function AuthGateInner({ onAuthenticated }: { onAuthenticated: () => void }) {
     staleTime: 60 * 1000,
     retry: false,
   });
+  const { data: me } = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    enabled: Boolean(token),
+    staleTime: 60 * 1000,
+    retry: false,
+  });
+  const forcePasswordChange = Boolean(token && me?.mustChangePassword);
 
   // Keep the active organisation in sync with what the backend reports:
   // pick the first org when none (or a stale one) is selected, and clear
@@ -132,7 +141,12 @@ function AuthGateInner({ onAuthenticated }: { onAuthenticated: () => void }) {
 
   // Welcome / workspace-selection step: no organisations yet.
   if (organisations && organisations.length === 0) {
-    return <OnboardingScreen />;
+    return (
+      <>
+        <OnboardingScreen />
+        {forcePasswordChange ? <ForcePasswordChangeDialog /> : null}
+      </>
+    );
   }
 
   // Keying on the organisation id remounts the whole authenticated subtree
@@ -141,6 +155,7 @@ function AuthGateInner({ onAuthenticated }: { onAuthenticated: () => void }) {
   return (
     <RealtimeProvider key={organisationId ?? "none"}>
       <PermissionBoundary organisationId={organisationId} />
+      {forcePasswordChange ? <ForcePasswordChangeDialog /> : null}
     </RealtimeProvider>
   );
 }

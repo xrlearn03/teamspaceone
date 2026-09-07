@@ -263,6 +263,7 @@ export interface UserDto {
   avatarFileId?: string | null;
   active: boolean;
   emailVerified: boolean;
+  mustChangePassword?: boolean;
   createdAt: string;
 }
 
@@ -793,6 +794,16 @@ export function deleteRole(organisationId: string, roleId: string) {
 
 export function updateMemberRole(organisationId: string, membershipId: string, roleId: string) {
   return apiRequest<void>(`/organisations/${organisationId}/members/${membershipId}/role`, { method: "PATCH", body: { roleId } });
+}
+
+export function inviteMember(
+  organisationId: string,
+  body: { email: string; roleId: string; firstName?: string; lastName?: string },
+) {
+  return apiRequest<{ membership: OrganisationMember; accountCreated: boolean }>(
+    `/organisations/${organisationId}/members/invite`,
+    { method: "POST", body },
+  );
 }
 
 export async function createWorkspace(organisationId: string | null, name: string): Promise<Workspace> {

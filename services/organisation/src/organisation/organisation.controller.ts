@@ -6,6 +6,7 @@ import { OrganisationService } from './organisation.service.js';
 import { OrganisationPermissionGuard, RequirePermissions } from './permission.guard.js';
 import { CreateOrganisationDto } from './dto/create-organisation.dto.js';
 import { CreateMemberDto } from './dto/create-member.dto.js';
+import { InviteMemberDto } from './dto/invite-member.dto.js';
 import { CreateInvitationDto } from './dto/create-invitation.dto.js';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto.js';
 import { CreateClientDto } from './dto/create-client.dto.js';
@@ -63,6 +64,17 @@ export class OrganisationController {
   ) {
     this.assertOrg(id, ctx);
     return this.organisation.addMember(ctx.organisationId, dto, ctx.actorId as string);
+  }
+
+  @Post(':id/members/invite')
+  @RequirePermissions('admin.user.manage')
+  async inviteMember(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: InviteMemberDto,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.inviteMember(ctx.organisationId, dto, ctx.actorId as string);
   }
 
   @Post(':id/workspaces')

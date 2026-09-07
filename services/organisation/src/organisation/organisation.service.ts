@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException, ConflictException, ForbiddenException, GoneException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable, NotFoundException, ConflictException, ForbiddenException, GoneException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { Prisma, type Organisation } from '#prisma';
@@ -7,6 +8,7 @@ import { OutboxService } from '../outbox/outbox.service.js';
 import { AuthorizationService, assertAdminManagedCategory, assertInvitableCategory } from './authorization.service.js';
 import { type CreateOrganisationDto } from './dto/create-organisation.dto.js';
 import { type CreateMemberDto } from './dto/create-member.dto.js';
+import { type InviteMemberDto } from './dto/invite-member.dto.js';
 import { type CreateInvitationDto } from './dto/create-invitation.dto.js';
 import { type CreateWorkspaceDto } from './dto/create-workspace.dto.js';
 import { type CreateClientDto } from './dto/create-client.dto.js';
@@ -22,7 +24,23 @@ export class OrganisationService {
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
     private readonly authorization: AuthorizationService,
+    private readonly config: ConfigService,
   ) {}
+
+  private s2sHeaders(actorId?: string, organisationId?: string): Record<string, string> {
+    const internalApiKey = this.config.get<string>('INTERNAL_API_KEY');
+    if (!internalApiKey) {
+      throw new Error('INTERNAL_API_KEY is not configured');
+    }
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      'x-internal-api-key': internalApiKey,
+      'x-internal-caller': 'organisation-service',
+    };
+    if (actorId) headers['x-actor-id'] = actorId;
+    if (organisationId) headers['x-organisation-id'] = organisationId;
+    return headers;
+  }
 
   async create(
     dto: CreateOrganisationDto,
@@ -134,6 +152,110 @@ export class OrganisationService {
     });
 
     return membership;
+  }
+
+  /**
+   * Admin-driven invite: provisions a login account in the auth service
+   * (temporary password for new accounts), creates the membership, and emits
+   * MEMBER_INVITED so the notification service emails the credentials.
+   * Employee/candidate roles are not allowed here — they onboard through the
+   * HR and recruitment workflows respectively.
+   */
+  async inviteMember(
+    organisationId: string,
+    dto: InviteMemberDto,
+    actorId: string,
+  ): Promise<unknown> {
+    await this.assertCanManageMembers(organisationId, actorId);
+
+    const [role, org] = await Promise.all([
+      this.prisma.role.findFirst({ where: { id: dto.roleId, organisationId } }),
+      this.prisma.organisation.findUnique({ where: { id: organisationId } }),
+    ]);
+    if (!role) {
+      throw new BadRequestException('Role does not belong to this organisation');
+    }
+    assertInvitableCategory(role.roleCategory);
+
+    const email = dto.email.toLowerCase().trim();
+
+    // Membership uniqueness is on (userId, organisationId); we don't know the
+    // userId until the auth service resolves the email, so the conflict check
+    // happens after provisioning below.
+    const authUrl = this.config.get<string>('AUTH_SERVICE_URL');
+    if (!authUrl) {
+      throw new BadGatewayException('Auth service integration is not configured');
+    }
+    const provisionRes = await fetch(`${authUrl}/auth/internal/provision`, {
+      method: 'POST',
+      headers: this.s2sHeaders(actorId, organisationId),
+      body: JSON.stringify({ email, firstName: dto.firstName, lastName: dto.lastName }),
+    });
+    if (!provisionRes.ok) {
+      const body = await provisionRes.text().catch(() => 'User provisioning failed');
+      throw new BadGatewayException(`User provisioning failed: ${body}`);
+    }
+    const provisioned = (await provisionRes.json()) as {
+      user: { id: string; email: string };
+      temporaryPassword: string | null;
+      accountCreated: boolean;
+    };
+
+    const membership = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const existingMembership = await tx.organisationMembership.findUnique({
+        where: { userId_organisationId: { userId: provisioned.user.id, organisationId } },
+      });
+      if (existingMembership) {
+        throw new ConflictException('User is already a member of this organisation');
+      }
+
+      const created = await tx.organisationMembership.create({
+        data: {
+          id: randomUUID(),
+          userId: provisioned.user.id,
+          organisationId,
+          roleId: dto.roleId,
+        },
+      });
+
+      await this.authorization.applyRoleScopesToMembership(tx, created.id, dto.roleId, organisationId);
+
+      const envelope = createEventEnvelope({
+        eventType: Subjects.MEMBER_INVITED,
+        organisationId,
+        actorId,
+        resourceType: 'organisation-membership',
+        resourceId: created.id,
+        payload: {
+          email,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          organisationId,
+          organisationName: org?.name,
+          roleName: role.name,
+          invitedBy: actorId,
+          temporaryPassword: provisioned.temporaryPassword ?? undefined,
+          accountCreated: provisioned.accountCreated,
+        },
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.MEMBER_INVITED);
+
+      await tx.auditLog.create({
+        data: {
+          id: randomUUID(),
+          organisationId,
+          userId: actorId,
+          action: 'member.invited',
+          resourceType: 'organisation-membership',
+          resourceId: created.id,
+          metadata: { email, roleId: dto.roleId, roleName: role.name, accountCreated: provisioned.accountCreated },
+        },
+      });
+
+      return created;
+    });
+
+    return { membership, accountCreated: provisioned.accountCreated };
   }
 
   /**

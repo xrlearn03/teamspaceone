@@ -4,6 +4,7 @@ import { isEventEnvelope, Subjects, type EventEnvelope, Streams } from '@teamspa
 import { InboxService } from '../inbox/inbox.service.js';
 import { NotificationService, type CreatedNotification } from '../notification/notification.service.js';
 import { GuestInvitationEmailService } from '../notification/guest-invitation-email.service.js';
+import { MemberInvitationEmailService } from '../notification/member-invitation-email.service.js';
 import { NatsClientService } from './nats-client.service.js';
 
 interface ConsumerDefinition {
@@ -23,6 +24,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
     private readonly inbox: InboxService,
     private readonly notification: NotificationService,
     private readonly guestInvitation: GuestInvitationEmailService,
+    private readonly memberInvitation: MemberInvitationEmailService,
   ) {}
 
   async onModuleInit() {
@@ -39,6 +41,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
       { stream: Streams.FILES, subject: 'teamspace-one.file.>', durable: 'notification-files-consumer' },
       { stream: Streams.AI, subject: Subjects.AI_SUMMARY_CONFIRMED, durable: 'notification-ai-consumer' },
       { stream: Streams.ORGANISATION, subject: Subjects.GUEST_INVITED, durable: 'notification-guest-invited-consumer' },
+      { stream: Streams.ORGANISATION, subject: Subjects.MEMBER_INVITED, durable: 'notification-member-invited-consumer' },
       { stream: Streams.HRMS, subject: 'teamspace-one.hrms.>', durable: 'notification-hrms-consumer' },
     ];
 
@@ -107,6 +110,14 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
         if (data.eventType === Subjects.GUEST_INVITED) {
           await this.inbox.handle(data, (_tx, envelope) =>
             this.guestInvitation.send(envelope),
+          );
+          jsMsg.ack();
+          continue;
+        }
+
+        if (data.eventType === Subjects.MEMBER_INVITED) {
+          await this.inbox.handle(data, (_tx, envelope) =>
+            this.memberInvitation.send(envelope),
           );
           jsMsg.ack();
           continue;

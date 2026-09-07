@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
 import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { OrganisationContext } from '@teamspace-one/organisation-context';
@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { TokenService, type TokenPair } from './token.service.js';
 import { type RegisterDto } from './dto/register.dto.js';
+import { type ProvisionUserDto } from './dto/provision-user.dto.js';
 import { type LoginDto } from './dto/login.dto.js';
 import { type RedeemInvitationDto } from './dto/redeem-invitation.dto.js';
 import { type UserDto } from './dto/user.dto.js';
@@ -105,6 +106,62 @@ export class AuthService {
 
     const tokens = await this.tokens.issuePair(user);
     return { user: this.toDto(user), tokens };
+  }
+
+  /**
+   * Service-to-service provisioning: an admin invite creates the user account
+   * up-front with a generated temporary password. The user must replace it on
+   * first login (mustChangePassword). Existing accounts are returned as-is —
+   * their password is never reset by this path.
+   */
+  async provisionUser(
+    input: ProvisionUserDto,
+    correlationId?: string,
+  ): Promise<{ user: UserDto; temporaryPassword: string | null; accountCreated: boolean }> {
+    if (!input?.email) {
+      throw new BadRequestException('Email is required');
+    }
+    const email = input.email.toLowerCase().trim();
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return { user: this.toDto(existing), temporaryPassword: null, accountCreated: false };
+    }
+
+    const temporaryPassword = randomBytes(12).toString('base64url');
+    const passwordHash = await hash(temporaryPassword, 12);
+    const id = randomUUID();
+
+    const envelope = createEventEnvelope({
+      eventType: Subjects.USER_CREATED,
+      organisationId: 'global',
+      actorId: id,
+      resourceType: 'user',
+      resourceId: id,
+      correlationId,
+      payload: {
+        id,
+        email,
+        firstName: input.firstName ?? null,
+        lastName: input.lastName ?? null,
+      },
+    });
+
+    const user = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const created = await tx.user.create({
+        data: {
+          id,
+          email,
+          passwordHash,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          mustChangePassword: true,
+        },
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.USER_CREATED);
+      return created;
+    });
+
+    return { user: this.toDto(user), temporaryPassword, accountCreated: true };
   }
 
   async redeemInvitation(input: RedeemInvitationDto, correlationId?: string): Promise<{ user: UserDto; tokens: TokenPair }> {
@@ -251,7 +308,7 @@ export class AuthService {
     }
     const passwordHash = await hash(newPassword, 12);
     await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+      this.prisma.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false } }),
       this.prisma.refreshToken.deleteMany({ where: { userId } }),
     ]);
   }
@@ -295,6 +352,7 @@ export class AuthService {
       avatarFileId: user.avatarFileId,
       active: user.active,
       emailVerified: user.emailVerified,
+      mustChangePassword: user.mustChangePassword,
       createdAt: user.createdAt.toISOString(),
     };
   }
