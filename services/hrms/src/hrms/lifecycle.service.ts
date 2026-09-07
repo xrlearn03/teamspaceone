@@ -242,7 +242,7 @@ export class LifecycleService {
 
     const startDate = input.startDate ?? new Date();
 
-    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const instanceId = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const instance = await tx.onboardingInstance.create({
         data: {
           organisationId: ctx.organisationId,
@@ -293,8 +293,10 @@ export class LifecycleService {
       });
       await this.outbox.createEvent(tx, envelope, envelope.eventType);
 
-      return this.getInstance(ctx, instance.id);
+      return instance.id;
     });
+
+    return this.getInstance(ctx, instanceId);
   }
 
   async createPendingFromHire(organisationId: string, input: HireInput) {
@@ -518,7 +520,7 @@ export class LifecycleService {
     });
     if (!employee) throw new NotFoundException('Employee not found');
 
-    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const caseId = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const case_ = await tx.offboardingCase.create({
         data: {
           organisationId: ctx.organisationId,
@@ -551,8 +553,10 @@ export class LifecycleService {
       });
       await this.outbox.createEvent(tx, envelope, envelope.eventType);
 
-      return this.getCase(ctx, case_.id);
+      return case_.id;
     });
+
+    return this.getCase(ctx, caseId);
   }
 
   async updateCase(

@@ -1437,6 +1437,7 @@ export interface AttendanceRecord {
   checkOutAt?: string | null;
   workedMinutes?: number | null;
   status: string;
+  presenceStatus?: string | null;
   createdAt?: string;
 }
 
@@ -1672,6 +1673,13 @@ export function attendanceCheckin() {
 
 export function attendanceCheckout() {
   return apiRequest<AttendanceRecord>("/hrms/attendance/checkout", { method: "POST" });
+}
+
+export function attendancePresence(status: "lunch" | "tea_break" | "out_of_office" | null) {
+  return apiRequest<AttendanceRecord>("/hrms/attendance/presence", {
+    method: "POST",
+    body: { status },
+  });
 }
 
 export function getAttendance(params?: { employeeId?: string; from?: string; to?: string }) {

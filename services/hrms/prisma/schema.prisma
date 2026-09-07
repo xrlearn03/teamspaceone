@@ -159,6 +159,7 @@ model AttendanceRecord {
   checkInAt      DateTime?
   checkOutAt     DateTime?
   status         String    @default("present")
+  presenceStatus String?
   workMinutes    Int?
   notes          String?
   createdAt      DateTime  @default(now())

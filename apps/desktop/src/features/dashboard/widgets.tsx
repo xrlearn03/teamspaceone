@@ -7,6 +7,8 @@ import {
   CalendarClock,
   CheckSquare,
   ClipboardCheck,
+  Coffee,
+  DoorOpen,
   FileText,
   Folder,
   LogIn,
@@ -16,6 +18,7 @@ import {
   Trash2,
   Upload,
   Users,
+  UtensilsCrossed,
   Video,
 } from "lucide-react";
 import { useUIStore } from "../../stores/ui";
@@ -41,6 +44,7 @@ import {
   useAttendance,
   useAttendanceCheckin,
   useAttendanceCheckout,
+  useAttendancePresence,
   useHrmsOverview,
   useLeaveBalances,
   useLeaveRequests,
@@ -682,8 +686,13 @@ export function MyLeaveWidget() {
   );
 }
 
+const PRESENCE_STATUSES = [
+  { key: "lunch", label: "Lunch", icon: UtensilsCrossed },
+  { key: "tea_break", label: "Tea break", icon: Coffee },
+  { key: "out_of_office", label: "Out of office", icon: DoorOpen },
+] as const;
+
 export function MyAttendanceWidget() {
-  const setActiveView = useUIStore((s) => s.setActiveView);
   const { data: me, isLoading: meLoading, isError: meError, error: meErrorDetail } = useMyEmployee();
   const today = new Date().toISOString().slice(0, 10);
   const {
@@ -693,13 +702,20 @@ export function MyAttendanceWidget() {
   } = useAttendance({ employeeId: me?.id, from: today, to: today });
   const checkin = useAttendanceCheckin();
   const checkout = useAttendanceCheckout();
+  const presence = useAttendancePresence();
   const record = me?.id ? records?.[0] : undefined;
+  const presenceStatus = record?.presenceStatus ?? null;
+  const presenceLabel = PRESENCE_STATUSES.find((s) => s.key === presenceStatus)?.label;
+  const canSetPresence = Boolean(me?.id && record?.checkInAt && !record?.checkOutAt);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>My attendance</CardTitle>
-        {record ? <Badge variant={record.status === "present" ? "success" : "secondary"}>{record.status}</Badge> : null}
+        <div className="flex items-center gap-1.5">
+          {presenceLabel ? <Badge variant="warning">{presenceLabel}</Badge> : null}
+          {record ? <Badge variant={record.status === "present" ? "success" : "secondary"}>{record.status}</Badge> : null}
+        </div>
       </CardHeader>
       <CardContent>
         {meLoading || attendanceLoading ? (
@@ -722,6 +738,7 @@ export function MyAttendanceWidget() {
         )}
         {checkin.error ? <p className="mt-2 text-xs text-error">{checkin.error.message}</p> : null}
         {checkout.error ? <p className="mt-2 text-xs text-error">{checkout.error.message}</p> : null}
+        {presence.error ? <p className="mt-2 text-xs text-error">{presence.error.message}</p> : null}
         <div className="mt-3 flex flex-wrap gap-2">
           <PermissionGate permission="hrms.attendance.checkin">
             {me?.id && !record?.checkInAt ? (
@@ -739,9 +756,23 @@ export function MyAttendanceWidget() {
               </Button>
             ) : null}
           </PermissionGate>
-          <Button variant="ghost" size="sm" onClick={() => setActiveView("hrms")}>
-            History
-          </Button>
+          {canSetPresence
+            ? PRESENCE_STATUSES.map(({ key, label, icon: Icon }) => {
+                const active = presenceStatus === key;
+                return (
+                  <Button
+                    key={key}
+                    variant={active ? "secondary" : "ghost"}
+                    size="sm"
+                    disabled={presence.isPending}
+                    onClick={() => presence.mutate(active ? null : key)}
+                  >
+                    <Icon className="mr-1.5 h-4 w-4" />
+                    {label}
+                  </Button>
+                );
+              })
+            : null}
         </div>
       </CardContent>
     </Card>

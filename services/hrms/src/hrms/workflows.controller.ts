@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -42,6 +43,10 @@ export class CorrectionDto {
 
 export class ReviewDto {
   reviewNote?: string;
+}
+
+export class PresenceStatusDto {
+  status?: 'lunch' | 'tea_break' | 'out_of_office' | null;
 }
 
 export class LeaveTypeDto {
@@ -102,6 +107,21 @@ export class AttendanceController {
     @CurrentUser() user: AuthorizableUser,
   ) {
     return this.attendance.checkOut(toCtx(org), user);
+  }
+
+  @Post('presence')
+  @RequirePermissions('hrms.attendance.checkin')
+  setPresence(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Body() dto: PresenceStatusDto,
+  ) {
+    const allowed = ['lunch', 'tea_break', 'out_of_office'];
+    const status = dto?.status ?? null;
+    if (status !== null && !allowed.includes(status)) {
+      throw new BadRequestException('Invalid presence status');
+    }
+    return this.attendance.setPresenceStatus(toCtx(org), user, status);
   }
 
   @Get()

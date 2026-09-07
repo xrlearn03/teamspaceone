@@ -175,6 +175,11 @@ function StartOnboardingDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           </label>
         </div>
+        {create.isError ? (
+          <p className="px-4 pb-2 text-sm text-error">
+            {create.error instanceof Error ? create.error.message : "Failed to start onboarding."}
+          </p>
+        ) : null}
         <div className="flex justify-end gap-2 p-4 pt-0">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={submit} disabled={create.isPending || !valid}>Start</Button>

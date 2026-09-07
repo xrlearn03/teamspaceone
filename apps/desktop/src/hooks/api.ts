@@ -942,7 +942,8 @@ export function useCreateEmployee() {
   return useMutation({
     mutationFn: api.createEmployee,
     onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["hrms", "employees"] });
+      client.invalidateQueries({ queryKey: ["hrms", "employees", orgId()] });
+      client.invalidateQueries({ queryKey: ["hrms", "employees", "me", orgId()] });
       client.invalidateQueries({ queryKey: ["hrms", "overview"] });
     },
   });
@@ -954,7 +955,8 @@ export function useUpdateEmployee() {
     mutationFn: (args: { id: string; body: Parameters<typeof api.updateEmployee>[1] }) =>
       api.updateEmployee(args.id, args.body),
     onSuccess: (_, args) => {
-      client.invalidateQueries({ queryKey: ["hrms", "employees"] });
+      client.invalidateQueries({ queryKey: ["hrms", "employees", orgId()] });
+      client.invalidateQueries({ queryKey: ["hrms", "employees", "me", orgId()] });
       client.invalidateQueries({ queryKey: ["hrms", "employees", orgId(), args.id] });
       client.invalidateQueries({ queryKey: ["hrms", "overview"] });
     },
@@ -1045,6 +1047,14 @@ export function useAttendanceCheckout() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.attendanceCheckout,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "attendance"] }),
+  });
+}
+
+export function useAttendancePresence() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.attendancePresence,
     onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "attendance"] }),
   });
 }

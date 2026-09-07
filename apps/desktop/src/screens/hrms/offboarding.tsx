@@ -87,6 +87,11 @@ function InitiateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
             <Input type="date" value={lastWorkingDate} onChange={(e) => setLastWorkingDate(e.target.value)} />
           </label>
         </div>
+        {create.isError ? (
+          <p className="px-4 pb-2 text-sm text-error">
+            {create.error instanceof Error ? create.error.message : "Failed to initiate offboarding."}
+          </p>
+        ) : null}
         <div className="flex justify-end gap-2 p-4 pt-0">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={submit} disabled={create.isPending || !employeeId}>Initiate</Button>

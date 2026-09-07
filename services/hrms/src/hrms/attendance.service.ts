@@ -71,7 +71,31 @@ export class AttendanceService {
 
     return this.prisma.attendanceRecord.update({
       where: { id: record.id },
-      data: { checkOutAt: now, workMinutes },
+      data: { checkOutAt: now, workMinutes, presenceStatus: null },
+    });
+  }
+
+  async setPresenceStatus(
+    ctx: RequestContextInput,
+    user: AuthorizableUser,
+    status: 'lunch' | 'tea_break' | 'out_of_office' | null,
+  ) {
+    const employee = await this.requireActorEmployee(ctx, user);
+    const today = startOfDay(new Date());
+
+    const record = await this.prisma.attendanceRecord.findUnique({
+      where: { employeeId_date: { employeeId: employee.id, date: today } },
+    });
+    if (!record || !record.checkInAt) {
+      throw new BadRequestException('Check in before setting a status');
+    }
+    if (record.checkOutAt) {
+      throw new BadRequestException('Already checked out for today');
+    }
+
+    return this.prisma.attendanceRecord.update({
+      where: { id: record.id },
+      data: { presenceStatus: status },
     });
   }
 
