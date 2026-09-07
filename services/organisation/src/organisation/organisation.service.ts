@@ -654,10 +654,11 @@ export class OrganisationService {
   }
 
   /**
-   * Resend an invitation: for account-based invites a fresh temporary password
-   * is generated in the auth service and the credentials email is re-sent via
-   * MEMBER_INVITED. Legacy token invites get a rotated token and a fresh
-   * GUEST_INVITED email.
+   * Resend an invitation: a fresh temporary password is generated in the auth
+   * service and the credentials email is re-sent via MEMBER_INVITED. Legacy
+   * token invites (no linked userId) are upgraded — the account is provisioned
+   * and the membership created, so resend always produces the login +
+   * temporary password email. Only client portal invites keep the token link.
    */
   async resendInvitation(organisationId: string, invitationId: string, actorId: string): Promise<void> {
     await this.assertCanManageMembers(organisationId, actorId);
@@ -670,13 +671,21 @@ export class OrganisationService {
       this.prisma.role.findUnique({ where: { id: invitation.roleId } }),
     ]);
 
-    if (invitation.userId) {
-      const authUrl = this.config.get<string>('AUTH_SERVICE_URL');
-      if (!authUrl) {
-        throw new BadGatewayException('Auth service integration is not configured');
-      }
+    const authUrl = this.config.get<string>('AUTH_SERVICE_URL');
+    if (!authUrl) {
+      throw new BadGatewayException('Auth service integration is not configured');
+    }
+
+    let email = invitation.email;
+    let firstName: string | undefined;
+    let lastName: string | undefined;
+    let temporaryPassword: string | undefined;
+    let accountCreated = false;
+    let userId = invitation.userId;
+
+    if (userId) {
       const resetRes = await fetch(
-        `${authUrl}/auth/internal/users/${encodeURIComponent(invitation.userId)}/reset-temporary-password`,
+        `${authUrl}/auth/internal/users/${encodeURIComponent(userId)}/reset-temporary-password`,
         { method: 'POST', headers: this.s2sHeaders(actorId, organisationId) },
       );
       if (!resetRes.ok) {
@@ -687,63 +696,108 @@ export class OrganisationService {
         user: { email: string; firstName: string | null; lastName: string | null };
         temporaryPassword: string;
       };
-
-      await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        await tx.invitation.update({ where: { id: invitation.id }, data: { expiresAt } });
-        const envelope = createEventEnvelope({
-          eventType: Subjects.MEMBER_INVITED,
-          organisationId,
-          actorId,
-          resourceType: 'invitation',
-          resourceId: invitation.id,
-          payload: {
-            email: invitation.email,
-            firstName: reset.user.firstName ?? undefined,
-            lastName: reset.user.lastName ?? undefined,
-            organisationId,
-            organisationName: org?.name,
-            roleName: role?.name,
-            invitedBy: actorId,
-            temporaryPassword: reset.temporaryPassword,
-            accountCreated: false,
-          },
-        });
-        await this.outbox.createEvent(tx, envelope, Subjects.MEMBER_INVITED);
-        await tx.auditLog.create({
-          data: {
-            id: randomUUID(),
-            organisationId,
-            userId: actorId,
-            action: 'member.invitation_resent',
-            resourceType: 'invitation',
-            resourceId: invitation.id,
-            metadata: { email: invitation.email },
-          },
-        });
+      email = reset.user.email;
+      firstName = reset.user.firstName ?? undefined;
+      lastName = reset.user.lastName ?? undefined;
+      temporaryPassword = reset.temporaryPassword;
+    } else {
+      // Legacy token invite: upgrade to an account-based invite by provisioning
+      // the user up-front, exactly like inviteMember does.
+      const provisionRes = await fetch(`${authUrl}/auth/internal/provision`, {
+        method: 'POST',
+        headers: this.s2sHeaders(actorId, organisationId),
+        body: JSON.stringify({ email: email.toLowerCase().trim() }),
       });
-      return;
+      if (!provisionRes.ok) {
+        const body = await provisionRes.text().catch(() => 'User provisioning failed');
+        throw new BadGatewayException(`User provisioning failed: ${body}`);
+      }
+      const provisioned = (await provisionRes.json()) as {
+        user: { id: string; email: string; firstName: string | null; lastName: string | null };
+        temporaryPassword: string | null;
+        accountCreated: boolean;
+      };
+      userId = provisioned.user.id;
+      email = provisioned.user.email;
+      firstName = provisioned.user.firstName ?? undefined;
+      lastName = provisioned.user.lastName ?? undefined;
+      temporaryPassword = provisioned.temporaryPassword ?? undefined;
+      accountCreated = provisioned.accountCreated;
+
+      if (!temporaryPassword) {
+        // Account exists but is still unactivated — rotate its temp password.
+        const resetRes = await fetch(
+          `${authUrl}/auth/internal/users/${encodeURIComponent(userId)}/reset-temporary-password`,
+          { method: 'POST', headers: this.s2sHeaders(actorId, organisationId) },
+        );
+        if (resetRes.ok) {
+          temporaryPassword = ((await resetRes.json()) as { temporaryPassword: string }).temporaryPassword;
+        } else if (resetRes.status === 404) {
+          throw new BadGatewayException('Invited account no longer exists');
+        }
+        // 409 → account already activated; the email falls back to the
+        // "sign in with your existing account" wording.
+      }
     }
 
-    // Legacy token invitation: rotate the token and re-send the invite email.
-    const token = randomUUID();
     await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await tx.invitation.update({ where: { id: invitation.id }, data: { token, expiresAt } });
+      if (!invitation.userId && userId) {
+        const existingMembership = await tx.organisationMembership.findUnique({
+          where: { userId_organisationId: { userId, organisationId } },
+        });
+        if (!existingMembership) {
+          const created = await tx.organisationMembership.create({
+            data: { id: randomUUID(), userId, organisationId, roleId: invitation.roleId },
+          });
+          await this.authorization.applyRoleScopesToMembership(tx, created.id, invitation.roleId, organisationId);
+          const fallbackFirst = email.split('@')[0] || 'Unknown';
+          await this.emitEmployeeCreate(
+            tx,
+            role?.roleCategory ?? 'member',
+            userId,
+            created.id,
+            organisationId,
+            actorId,
+            { firstName: firstName ?? fallbackFirst, lastName: lastName ?? '', workEmail: email },
+          );
+        }
+      }
+
+      await tx.invitation.update({
+        where: { id: invitation.id },
+        data: { userId, expiresAt },
+      });
+
       const envelope = createEventEnvelope({
-        eventType: Subjects.GUEST_INVITED,
+        eventType: Subjects.MEMBER_INVITED,
         organisationId,
         actorId,
         resourceType: 'invitation',
         resourceId: invitation.id,
         payload: {
-          email: invitation.email,
-          clientId: invitation.clientId ?? undefined,
+          email,
+          firstName,
+          lastName,
           organisationId,
+          organisationName: org?.name,
+          roleName: role?.name,
           invitedBy: actorId,
-          token,
-          expiresAt: expiresAt.toISOString(),
+          temporaryPassword,
+          accountCreated,
         },
       });
-      await this.outbox.createEvent(tx, envelope, Subjects.GUEST_INVITED);
+      await this.outbox.createEvent(tx, envelope, Subjects.MEMBER_INVITED);
+      await tx.auditLog.create({
+        data: {
+          id: randomUUID(),
+          organisationId,
+          userId: actorId,
+          action: 'member.invitation_resent',
+          resourceType: 'invitation',
+          resourceId: invitation.id,
+          metadata: { email },
+        },
+      });
     });
   }
 
