@@ -11,9 +11,9 @@ export class PasswordResetEmailService {
 
   async send(envelope: EventEnvelope): Promise<void> {
     const payload = (envelope.payload ?? {}) as PasswordResetRequestedPayload;
-    const { email, token } = payload;
-    if (!email || !token) {
-      this.logger.warn({ eventId: envelope.eventId }, 'Password reset event missing email or token');
+    const { email, code } = payload;
+    if (!email || !code) {
+      this.logger.warn({ eventId: envelope.eventId }, 'Password reset event missing email or code');
       return;
     }
 
@@ -22,8 +22,8 @@ export class PasswordResetEmailService {
     const body =
       'Hi,\n\n' +
       'A password reset was requested for your Teamspace One account.\n\n' +
-      `Paste this token in the app to set a new password:\n\n  ${token}\n\n` +
-      'This token expires in 15 minutes.\n\n' +
+      `Your 6-digit reset code is: ${code}\n\n` +
+      'This code expires in 10 minutes.\n\n' +
       'If you did not request this, you can ignore this email.\n';
 
     await sendEmail(this.config, { to: email, subject, body });

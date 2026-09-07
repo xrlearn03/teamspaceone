@@ -714,8 +714,8 @@ export function requestPasswordReset(email: string) {
   return apiRequest<{ requested: boolean }>("/auth/forgot-password", { method: "POST", body: { email } });
 }
 
-export function resetPassword(token: string, newPassword: string) {
-  return apiRequest<{ reset: boolean }>("/auth/reset-password", { method: "POST", body: { token, newPassword } });
+export function resetPassword(email: string, code: string, newPassword: string) {
+  return apiRequest<{ reset: boolean }>("/auth/reset-password", { method: "POST", body: { email, code, newPassword } });
 }
 
 export async function logout(): Promise<void> {

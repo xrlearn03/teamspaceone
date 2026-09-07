@@ -25,7 +25,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [resetToken, setResetToken] = useState("");
+  const [resetCode, setResetCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -58,19 +58,19 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const requestResetMutation = useMutation({
     mutationFn: () => requestPasswordReset(email),
     onSuccess: () => {
-      setResetToken("");
+      setResetCode("");
       setNewPassword("");
       setConfirmPassword("");
       setMode("reset-password");
-      setSuccess("If that account exists, a reset token has been sent to your email.");
+      setSuccess("If that account exists, a 6-digit code has been sent to your email.");
     },
     onError: (err: unknown) => setError(errorMessage(err)),
   });
 
   const resetMutation = useMutation({
-    mutationFn: () => resetPassword(resetToken, newPassword),
+    mutationFn: () => resetPassword(email, resetCode, newPassword),
     onSuccess: () => {
-      setResetToken("");
+      setResetCode("");
       setNewPassword("");
       setConfirmPassword("");
       setPassword("");
@@ -92,6 +92,10 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     } else if (mode === "forgot-password") {
       requestResetMutation.mutate();
     } else {
+      if (resetCode.length !== 6) {
+        setError("Enter the 6-digit code");
+        return;
+      }
       if (newPassword.length < 12) {
         setError("Password must be at least 12 characters");
         return;
@@ -126,8 +130,8 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       : mode === "register"
         ? "Get started with your workspace."
         : mode === "forgot-password"
-          ? "Enter your email and we'll send you a reset token."
-          : "Paste the token from your email and choose a new password.";
+          ? "Enter your email and we'll send you a 6-digit reset code."
+          : `A reset code was sent to ${email}. Enter it below to set a new password.`;
 
   const buttonLabel =
     mode === "login"
@@ -135,7 +139,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       : mode === "register"
         ? "Create account"
         : mode === "forgot-password"
-          ? "Send reset token"
+          ? "Send 6-digit code"
           : "Set new password";
 
   const isPending =
@@ -164,9 +168,13 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           <form onSubmit={submit} className="mt-6 space-y-4">
             {mode === "reset-password" && (
               <Input
-                placeholder="Reset token"
-                value={resetToken}
-                onChange={(e) => setResetToken(e.target.value)}
+                type="text"
+                inputMode="numeric"
+                pattern="\d{6}"
+                maxLength={6}
+                placeholder="6-digit code"
+                value={resetCode}
+                onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 required
               />
             )}
@@ -289,7 +297,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
                   type="button"
                   onClick={() => switchMode("login")}
                   className="font-medium text-primary hover:underline"
-                >
+              >
                   Back to sign in
                 </button>
               </>

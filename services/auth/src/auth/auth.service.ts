@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
-import { randomBytes, randomUUID } from 'node:crypto';
+import Redis from 'ioredis';
+import { randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
 import { createEventEnvelope, Subjects, type PasswordResetRequestedPayload } from '@teamspace-one/event-contracts';
 import { OrganisationContext } from '@teamspace-one/organisation-context';
@@ -26,13 +26,17 @@ export interface UserProfileDto {
 
 @Injectable()
 export class AuthService {
+  private readonly redis: Redis;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
     private readonly tokens: TokenService,
-    private readonly jwt: JwtService,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    const redisUrl = this.config.get<string>('REDIS_URL');
+    this.redis = redisUrl ? new Redis(redisUrl, { maxRetriesPerRequest: 3 }) : new Redis({ maxRetriesPerRequest: 3 });
+  }
 
   private assertPasswordPolicy(password: string): void {
     if (!password || password.length < 12) {
@@ -216,24 +220,8 @@ export class AuthService {
       return { requested: true };
     }
 
-    const secret = this.config.get<string>('JWT_SECRET');
-    if (!secret) {
-      throw new Error('JWT_SECRET is required');
-    }
-
-    const token = await this.jwt.signAsync(
-      {
-        sub: user.id,
-        email: normalized,
-        type: 'reset',
-      },
-      {
-        secret,
-        expiresIn: '15m',
-        audience: 'password-reset',
-        algorithm: 'HS256',
-      },
-    );
+    const code = randomInt(100000, 999999).toString();
+    await this.redis.setex(`password-reset:${user.id}`, 600, code);
 
     const envelope = createEventEnvelope<PasswordResetRequestedPayload>({
       eventType: Subjects.PASSWORD_RESET_REQUESTED,
@@ -242,7 +230,7 @@ export class AuthService {
       resourceType: 'user',
       resourceId: user.id,
       correlationId,
-      payload: { email: normalized, token },
+      payload: { email: normalized, code },
     });
 
     await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -252,32 +240,24 @@ export class AuthService {
     return { requested: true };
   }
 
-  async resetPassword(token: string, newPassword: string): Promise<{ reset: boolean }> {
+  async resetPassword(email: string, code: string, newPassword: string): Promise<{ reset: boolean }> {
     this.assertPasswordPolicy(newPassword);
 
-    const secret = this.config.get<string>('JWT_SECRET');
-    if (!secret) {
-      throw new Error('JWT_SECRET is required');
-    }
-
-    let payload: { sub?: string; type?: string };
-    try {
-      payload = await this.jwt.verifyAsync(token, {
-        secret,
-        audience: 'password-reset',
-        algorithms: ['HS256'],
-      });
-    } catch {
-      throw new UnauthorizedException('Invalid or expired reset token');
-    }
-
-    if (payload.type !== 'reset' || !payload.sub) {
-      throw new UnauthorizedException('Invalid or expired reset token');
-    }
-
-    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    const normalized = email.toLowerCase().trim();
+    const user = await this.prisma.user.findUnique({ where: { email: normalized } });
     if (!user || !user.active) {
-      throw new UnauthorizedException('Invalid or expired reset token');
+      throw new UnauthorizedException('Invalid or expired reset code');
+    }
+
+    const stored = await this.redis.get(`password-reset:${user.id}`);
+    if (!stored || stored.length !== code.length) {
+      throw new UnauthorizedException('Invalid or expired reset code');
+    }
+
+    const a = Buffer.from(stored);
+    const b = Buffer.from(code);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      throw new UnauthorizedException('Invalid or expired reset code');
     }
 
     const passwordHash = await hash(newPassword, 12);
@@ -289,6 +269,7 @@ export class AuthService {
       await tx.refreshToken.deleteMany({ where: { userId: user.id } });
     });
 
+    await this.redis.del(`password-reset:${user.id}`);
     return { reset: true };
   }
 
