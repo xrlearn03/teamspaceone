@@ -30,9 +30,11 @@ model Role {
   organisationId String
   name           String
   description    String?
-  permissions    Json         @default("[]")
+  roleCategory   String       @default("member")
   isSystem       Boolean      @default(false)
   isDefault      Boolean      @default(false)
+  createdBy      String?
+  permissions    Json         @default("[]")
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)

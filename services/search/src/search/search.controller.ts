@@ -1,5 +1,7 @@
-import { BadRequestException, Controller, Get, Param, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
+import { RemotePermissionGuard, RequirePermissions } from '@teamspace-one/authorization/nest';
+import { COLLABORATION_PERMISSIONS } from '@teamspace-one/authorization';
 import { SearchService } from './search.service.js';
 import { SearchQueryDto } from './dto/search-query.dto.js';
 
@@ -26,11 +28,13 @@ function parseDateParam(value: unknown, name: string): string | undefined {
   return d.toISOString();
 }
 
+@UseGuards(RemotePermissionGuard)
 @Controller('search')
 export class SearchController {
   constructor(private readonly searchService: SearchService) {}
 
   @Get()
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async search(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Query() query: SearchQueryDto,
@@ -59,6 +63,7 @@ export class SearchController {
   }
 
   @Get(':resourceType/:resourceId')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async getByResource(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('resourceType') resourceType: string,

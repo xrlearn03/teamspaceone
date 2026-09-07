@@ -430,6 +430,9 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
+      '@teamspace-one/authorization':
+        specifier: workspace:*
+        version: link:../../packages/authorization
       '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
@@ -603,6 +606,9 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
+      '@teamspace-one/authorization':
+        specifier: workspace:*
+        version: link:../../packages/authorization
       '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
@@ -1061,6 +1067,9 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
+      '@teamspace-one/authorization':
+        specifier: workspace:*
+        version: link:../../packages/authorization
       '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
@@ -1231,6 +1240,9 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
+      '@teamspace-one/authorization':
+        specifier: workspace:*
+        version: link:../../packages/authorization
       '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
@@ -1587,6 +1599,9 @@ importers:
       '@prisma/client':
         specifier: ^5.19.0
         version: 5.22.0(prisma@5.22.0)
+      '@teamspace-one/authorization':
+        specifier: workspace:*
+        version: link:../../packages/authorization
       '@teamspace-one/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts

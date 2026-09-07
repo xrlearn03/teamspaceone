@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma, type PrismaClient, type Role, type OrganisationMembership } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -11,9 +11,78 @@ import {
   type ScopeType,
 } from '@teamspace-one/authorization';
 
+export const ROLE_CATEGORIES = [
+  'administrative',
+  'managerial',
+  'employee',
+  'member',
+  'external',
+  'candidate',
+  'guest',
+] as const;
+export type RoleCategory = (typeof ROLE_CATEGORIES)[number];
+
+/**
+ * Categories the Organisation Super Admin may create/assign through the
+ * administrative role-management interface. Everything else is handled by a
+ * dedicated workflow (HR onboarding, member invitation, external access,
+ * recruitment/ATS, guest invitation).
+ */
+export const ADMIN_MANAGED_ROLE_CATEGORIES: readonly RoleCategory[] = [
+  'administrative',
+  'managerial',
+];
+
+/** Categories that may be attached to an invitation (invitation workflows). */
+export const INVITABLE_ROLE_CATEGORIES: readonly RoleCategory[] = [
+  'administrative',
+  'managerial',
+  'member',
+  'external',
+  'guest',
+];
+
+/** Platform-level permissions can never be granted to organisation roles. */
+const PLATFORM_PERMISSION_KEYS = new Set(['admin.system.settings']);
+
+const RESERVED_ROLE_NAMES = new Set([
+  'platform super admin',
+  'platform_super_admin',
+  'platform-super-admin',
+  'platform admin',
+  'platform_admin',
+]);
+
+export function isRoleCategory(value: string): value is RoleCategory {
+  return (ROLE_CATEGORIES as readonly string[]).includes(value);
+}
+
+export function assertAdminManagedCategory(category: string): void {
+  if (!ADMIN_MANAGED_ROLE_CATEGORIES.includes(category as RoleCategory)) {
+    throw new BadRequestException(
+      `Roles in the "${category}" category cannot be created or assigned through administrative role management. Employee and member access is managed through the appropriate onboarding workflow.`,
+    );
+  }
+}
+
+export function assertInvitableCategory(category: string): void {
+  if (!INVITABLE_ROLE_CATEGORIES.includes(category as RoleCategory)) {
+    throw new BadRequestException(
+      `Roles in the "${category}" category cannot be assigned through invitations. Employee access is managed through the HR onboarding workflow and candidate access through the recruitment workflow.`,
+    );
+  }
+}
+
+export function assertRoleNameAllowed(name: string): void {
+  if (RESERVED_ROLE_NAMES.has(name.trim().toLowerCase())) {
+    throw new BadRequestException('This role name is reserved for platform-level administration');
+  }
+}
+
 export interface RoleTemplate {
   name: string;
   label: string;
+  category: RoleCategory;
   isSystem: boolean;
   isDefault?: boolean;
   allow: string[];
@@ -24,7 +93,8 @@ export interface RoleTemplate {
 export const DEFAULT_ROLES: RoleTemplate[] = [
   {
     name: 'owner',
-    label: 'Owner',
+    label: 'Organisation Super Admin',
+    category: 'administrative',
     isSystem: true,
     allow: ['*'],
     scopes: [{ module: '*', scope: 'organisation' }],
@@ -32,6 +102,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
   {
     name: 'org_admin',
     label: 'Organisation Admin',
+    category: 'administrative',
     isSystem: true,
     allow: ['*'],
     deny: ['admin.system.settings'],
@@ -40,6 +111,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
   {
     name: 'hr_admin',
     label: 'HR Admin',
+    category: 'administrative',
     isSystem: true,
     allow: [
       'hrms.*',
@@ -53,6 +125,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
   {
     name: 'recruiter',
     label: 'Recruiter',
+    category: 'managerial',
     isSystem: true,
     allow: [
       'interview.candidate.*',
@@ -76,6 +149,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
   {
     name: 'hiring_manager',
     label: 'Hiring Manager',
+    category: 'managerial',
     isSystem: true,
     allow: [
       'interview.candidate.view',
@@ -99,6 +173,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
   {
     name: 'manager',
     label: 'Manager',
+    category: 'managerial',
     isSystem: true,
     allow: [
       'collaboration.*',
@@ -121,6 +196,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
   {
     name: 'employee',
     label: 'Employee',
+    category: 'employee',
     isSystem: true,
     isDefault: true,
     allow: [
@@ -149,6 +225,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
   {
     name: 'interviewer',
     label: 'Interviewer',
+    category: 'managerial',
     isSystem: true,
     allow: [
       'interview.interview.view',
@@ -165,6 +242,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
   {
     name: 'candidate',
     label: 'Candidate',
+    category: 'candidate',
     isSystem: true,
     allow: [
       'interview.access',
@@ -178,6 +256,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
   {
     name: 'client',
     label: 'Client / Guest',
+    category: 'guest',
     isSystem: true,
     allow: [
       'collaboration.access',
@@ -228,6 +307,7 @@ export class AuthorizationService {
           organisationId,
           name: template.name,
           description: template.label,
+          roleCategory: template.category,
           isSystem: template.isSystem,
           isDefault: template.isDefault ?? false,
           // Keep legacy JSON empty; permissions now live in rolePermissions.
@@ -421,19 +501,96 @@ export class AuthorizationService {
     });
   }
 
+  /**
+   * Hierarchical delegation check: an actor may only grant permissions they
+   * hold themselves. Organisation owners ('*') are still blocked from
+   * platform-level permissions such as `admin.system.settings`.
+   */
+  private async assertCanDelegatePermissions(
+    tx: Prisma.TransactionClient,
+    organisationId: string,
+    actorId: string,
+    permissionIds: string[],
+  ): Promise<void> {
+    if (permissionIds.length === 0) return;
+
+    const permissions = await tx.permission.findMany({
+      where: { id: { in: permissionIds } },
+    });
+    if (permissions.length !== new Set(permissionIds).size) {
+      throw new BadRequestException('Unknown permission id(s)');
+    }
+
+    const requestedKeys = permissions.map((p) =>
+      permissionKey(p.module, p.resource, p.action),
+    );
+    if (requestedKeys.some((key) => PLATFORM_PERMISSION_KEYS.has(key))) {
+      throw new ForbiddenException('Platform-level permissions cannot be granted to organisation roles');
+    }
+
+    const actor = await this.getUserContext(tx, organisationId, actorId);
+    if (!actor) {
+      throw new ForbiddenException('Not a member of this organisation');
+    }
+    if (actor.permissions.includes('*')) return;
+
+    const missing = requestedKeys.filter(
+      (key) => !actor.permissions.some((granted) => permissionMatches(granted, key)),
+    );
+    if (missing.length > 0) {
+      throw new ForbiddenException(
+        `Cannot grant permissions beyond your own authority: ${missing.join(', ')}`,
+      );
+    }
+  }
+
+  private async writeAuditLog(
+    tx: Prisma.TransactionClient,
+    entry: {
+      organisationId: string;
+      userId: string;
+      action: string;
+      resourceId: string;
+      metadata?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    await tx.auditLog.create({
+      data: {
+        id: randomUUID(),
+        organisationId: entry.organisationId,
+        userId: entry.userId,
+        action: entry.action,
+        resourceType: 'role',
+        resourceId: entry.resourceId,
+        metadata: (entry.metadata ?? {}) as Prisma.InputJsonValue,
+      },
+    });
+  }
+
   async createRole(
     organisationId: string,
     input: {
       name: string;
       description?: string;
+      roleCategory: string;
       permissionIds: string[];
       scopes?: Array<{ module: string; scope: string; scopeValue?: string | null }>;
     },
+    actorId: string,
   ): Promise<Role> {
-    const { name, description, permissionIds, scopes } = input;
+    const { name, description, roleCategory, permissionIds, scopes } = input;
+    if (!isRoleCategory(roleCategory)) {
+      throw new BadRequestException(
+        `Invalid role category "${roleCategory}". Allowed values: ${ROLE_CATEGORIES.join(', ')}`,
+      );
+    }
+    assertAdminManagedCategory(roleCategory);
+    assertRoleNameAllowed(name);
     return this.prisma.$transaction(async (tx) => {
+      await this.assertCanDelegatePermissions(tx, organisationId, actorId, permissionIds);
+
       const existing = await tx.role.findFirst({ where: { organisationId, name } });
-      if (existing) throw new Error('A role with this name already exists');
+      if (existing) throw new BadRequestException('A role with this name already exists');
 
       const role = await tx.role.create({
         data: {
@@ -441,8 +598,10 @@ export class AuthorizationService {
           organisationId,
           name,
           description: description ?? null,
+          roleCategory,
           isSystem: false,
           isDefault: false,
+          createdBy: actorId,
           permissions: [],
         },
       });
@@ -470,6 +629,14 @@ export class AuthorizationService {
         });
       }
 
+      await this.writeAuditLog(tx, {
+        organisationId,
+        userId: actorId,
+        action: 'role.created',
+        resourceId: role.id,
+        metadata: { name, roleCategory },
+      });
+
       return role;
     });
   }
@@ -480,23 +647,40 @@ export class AuthorizationService {
     input: {
       name?: string;
       description?: string;
+      roleCategory?: string;
       permissionIds?: string[];
       scopes?: Array<{ module: string; scope: string; scopeValue?: string | null }>;
     },
+    actorId: string,
   ): Promise<Role> {
     return this.prisma.$transaction(async (tx) => {
       const role = await tx.role.findFirst({
         where: { id: roleId, organisationId },
         include: { rolePermissions: true, roleScopes: true },
       });
-      if (!role) throw new Error('Role not found');
-      if (role.isSystem) throw new Error('System roles cannot be edited');
+      if (!role) throw new BadRequestException('Role not found');
+      if (role.isSystem) throw new ForbiddenException('System roles cannot be edited');
+      assertAdminManagedCategory(role.roleCategory);
+
+      if (input.roleCategory !== undefined && input.roleCategory !== role.roleCategory) {
+        if (!isRoleCategory(input.roleCategory)) {
+          throw new BadRequestException(
+            `Invalid role category "${input.roleCategory}". Allowed values: ${ROLE_CATEGORIES.join(', ')}`,
+          );
+        }
+        assertAdminManagedCategory(input.roleCategory);
+      }
 
       if (input.name) {
+        assertRoleNameAllowed(input.name);
         const existing = await tx.role.findFirst({
           where: { organisationId, name: input.name, id: { not: roleId } },
         });
-        if (existing) throw new Error('A role with this name already exists');
+        if (existing) throw new BadRequestException('A role with this name already exists');
+      }
+
+      if (input.permissionIds !== undefined) {
+        await this.assertCanDelegatePermissions(tx, organisationId, actorId, input.permissionIds);
       }
 
       const updated = await tx.role.update({
@@ -504,6 +688,7 @@ export class AuthorizationService {
         data: {
           name: input.name,
           description: input.description ?? role.description,
+          roleCategory: input.roleCategory ?? role.roleCategory,
         },
       });
 
@@ -536,22 +721,38 @@ export class AuthorizationService {
         }
       }
 
+      await this.writeAuditLog(tx, {
+        organisationId,
+        userId: actorId,
+        action: 'role.updated',
+        resourceId: roleId,
+        metadata: { name: updated.name, roleCategory: updated.roleCategory },
+      });
+
       return updated;
     });
   }
 
-  async deleteRole(roleId: string, organisationId: string): Promise<void> {
+  async deleteRole(roleId: string, organisationId: string, actorId: string): Promise<void> {
     return this.prisma.$transaction(async (tx) => {
       const role = await tx.role.findFirst({
         where: { id: roleId, organisationId },
         include: { _count: { select: { memberships: true } } },
       });
-      if (!role) throw new Error('Role not found');
-      if (role.isSystem) throw new Error('System roles cannot be deleted');
+      if (!role) throw new BadRequestException('Role not found');
+      if (role.isSystem) throw new ForbiddenException('System roles cannot be deleted');
+      assertAdminManagedCategory(role.roleCategory);
       if ((role._count as { memberships: number }).memberships > 0) {
-        throw new Error('Cannot delete a role that has members assigned to it');
+        throw new BadRequestException('Cannot delete a role that has members assigned to it');
       }
       await tx.role.delete({ where: { id: roleId } });
+      await this.writeAuditLog(tx, {
+        organisationId,
+        userId: actorId,
+        action: 'role.deleted',
+        resourceId: roleId,
+        metadata: { name: role.name, roleCategory: role.roleCategory },
+      });
     });
   }
 
@@ -559,14 +760,16 @@ export class AuthorizationService {
     organisationId: string,
     membershipId: string,
     roleId: string,
+    actorId: string,
   ): Promise<void> {
     return this.prisma.$transaction(async (tx) => {
       const [membership, role] = await Promise.all([
         tx.organisationMembership.findFirst({ where: { id: membershipId, organisationId } }),
         tx.role.findFirst({ where: { id: roleId, organisationId } }),
       ]);
-      if (!membership) throw new Error('Membership not found');
-      if (!role) throw new Error('Role not found');
+      if (!membership) throw new BadRequestException('Membership not found');
+      if (!role) throw new BadRequestException('Role not found');
+      assertAdminManagedCategory(role.roleCategory);
 
       await tx.organisationMembership.update({
         where: { id: membershipId },
@@ -575,6 +778,13 @@ export class AuthorizationService {
 
       await tx.dataScope.deleteMany({ where: { membershipId } });
       await this.applyRoleScopesToMembership(tx, membershipId, roleId, organisationId);
+      await this.writeAuditLog(tx, {
+        organisationId,
+        userId: actorId,
+        action: 'role.assigned',
+        resourceId: roleId,
+        metadata: { membershipId, memberUserId: membership.userId, roleName: role.name },
+      });
     });
   }
 }

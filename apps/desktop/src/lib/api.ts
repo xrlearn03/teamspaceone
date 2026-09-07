@@ -302,11 +302,24 @@ export interface RolePermission {
   permission: Permission;
 }
 
+export type RoleCategory =
+  | "administrative"
+  | "managerial"
+  | "employee"
+  | "member"
+  | "external"
+  | "candidate"
+  | "guest";
+
+/** Categories assignable through the administrative role-management UI. */
+export const ADMIN_MANAGED_ROLE_CATEGORIES: RoleCategory[] = ["administrative", "managerial"];
+
 export interface OrganisationRole {
   id: string;
   organisationId: string;
   name: string;
   description?: string | null;
+  roleCategory: RoleCategory;
   isSystem?: boolean;
   isDefault: boolean;
   rolePermissions: RolePermission[];
@@ -337,7 +350,7 @@ export interface OrganisationMember {
   id: string;
   userId: string;
   organisationId: string;
-  role: { id: string; name: string };
+  role: { id: string; name: string; roleCategory?: RoleCategory };
   createdAt: string;
 }
 
@@ -766,11 +779,11 @@ export function getPermissions(organisationId: string) {
   return apiRequest<Permission[]>(`/organisations/${organisationId}/permissions`);
 }
 
-export function createRole(organisationId: string, body: { name: string; description?: string; permissionIds: string[]; scopes?: UserDataScope[] }) {
+export function createRole(organisationId: string, body: { name: string; description?: string; roleCategory: RoleCategory; permissionIds: string[]; scopes?: UserDataScope[] }) {
   return apiRequest<OrganisationRole>(`/organisations/${organisationId}/roles`, { method: "POST", body });
 }
 
-export function updateRole(organisationId: string, roleId: string, body: { name?: string; description?: string; permissionIds?: string[]; scopes?: UserDataScope[] }) {
+export function updateRole(organisationId: string, roleId: string, body: { name?: string; description?: string; roleCategory?: RoleCategory; permissionIds?: string[]; scopes?: UserDataScope[] }) {
   return apiRequest<OrganisationRole>(`/organisations/${organisationId}/roles/${roleId}`, { method: "PATCH", body });
 }
 

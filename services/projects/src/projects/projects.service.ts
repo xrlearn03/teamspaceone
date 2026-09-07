@@ -449,14 +449,16 @@ export class ProjectsService {
     return false;
   }
 
-  async resolveAccess(projectId: string, actorId: string) {
-    const project = await this.prisma.project.findFirst({ where: { id: projectId, members: { some: { userId: actorId } } } });
+  async resolveAccess(projectId: string, actorId: string, organisationId: string) {
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, organisationId, members: { some: { userId: actorId } } },
+    });
     return project ? { organisationId: project.organisationId, workspaceId: project.workspaceId } : null;
   }
 
-  async resolveTaskAccess(taskId: string, actorId: string) {
+  async resolveTaskAccess(taskId: string, actorId: string, organisationId: string) {
     const task = await this.prisma.task.findFirst({
-      where: { id: taskId, project: { members: { some: { userId: actorId } } } },
+      where: { id: taskId, organisationId, project: { members: { some: { userId: actorId } } } },
       include: { project: { select: { workspaceId: true } } },
     });
     return task ? { organisationId: task.organisationId, workspaceId: task.project.workspaceId } : null;

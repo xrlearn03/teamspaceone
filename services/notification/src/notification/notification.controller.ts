@@ -8,8 +8,11 @@ import {
   Query,
   ForbiddenException,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
+import { RemotePermissionGuard, RequirePermissions } from '@teamspace-one/authorization/nest';
+import { COLLABORATION_PERMISSIONS } from '@teamspace-one/authorization';
 import { NotificationService, type NotificationPreferenceInput } from './notification.service.js';
 
 class UpdatePreferenceDto {
@@ -19,11 +22,13 @@ class UpdatePreferenceDto {
   push?: boolean;
 }
 
+@UseGuards(RemotePermissionGuard)
 @Controller('notifications')
 export class NotificationController {
   constructor(private readonly notification: NotificationService) {}
 
   @Get()
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async list(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Query('unread') unread?: string,
@@ -41,6 +46,7 @@ export class NotificationController {
   }
 
   @Get('count/unread')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async countUnread(@CurrentOrganisation() ctx: OrganisationContextValue) {
     if (!ctx.actorId) {
       throw new ForbiddenException('Missing actor');
@@ -49,6 +55,7 @@ export class NotificationController {
   }
 
   @Patch(':id/read')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async markRead(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -61,6 +68,7 @@ export class NotificationController {
   }
 
   @Patch('read-all')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async markAllRead(@CurrentOrganisation() ctx: OrganisationContextValue) {
     if (!ctx.actorId) {
       throw new ForbiddenException('Missing actor');
@@ -70,6 +78,7 @@ export class NotificationController {
   }
 
   @Get('preferences/:eventType')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async getPreference(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('eventType') eventType: string,
@@ -81,6 +90,7 @@ export class NotificationController {
   }
 
   @Post('preferences/:eventType')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async setPreference(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('eventType') eventType: string,

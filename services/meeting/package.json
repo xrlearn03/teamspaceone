@@ -32,6 +32,7 @@
     "@nestjs/microservices": "^10.4.0",
     "@nestjs/platform-express": "^10.4.0",
     "@prisma/client": "^5.19.0",
+    "@teamspace-one/authorization": "workspace:*",
     "@teamspace-one/event-contracts": "workspace:*",
     "@teamspace-one/logger": "workspace:*",
     "@teamspace-one/opentelemetry": "workspace:*",

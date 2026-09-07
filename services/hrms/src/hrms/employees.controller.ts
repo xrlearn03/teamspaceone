@@ -150,7 +150,7 @@ export class EmployeesController {
   }
 
   @Patch(':id')
-  @RequirePermissions(['hrms.employee.edit', 'hrms.employee.view'], false)
+  @RequirePermissions('hrms.employee.edit')
   update(
     @CurrentOrganisation() org: OrganisationContextValue,
     @CurrentUser() user: AuthorizableUser,

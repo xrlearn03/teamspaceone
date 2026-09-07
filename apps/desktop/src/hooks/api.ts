@@ -95,7 +95,7 @@ export function usePermissionsList(organisationId?: string) {
 export function useCreateRole() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { organisationId: string; name: string; description?: string; permissionIds: string[]; scopes?: api.UserDataScope[] }) =>
+    mutationFn: (args: { organisationId: string; name: string; description?: string; roleCategory: api.RoleCategory; permissionIds: string[]; scopes?: api.UserDataScope[] }) =>
       api.createRole(args.organisationId, args),
     onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["roles", args.organisationId] }),
   });
@@ -104,7 +104,7 @@ export function useCreateRole() {
 export function useUpdateRole() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { organisationId: string; roleId: string; name?: string; description?: string; permissionIds?: string[]; scopes?: api.UserDataScope[] }) =>
+    mutationFn: (args: { organisationId: string; roleId: string; name?: string; description?: string; roleCategory?: api.RoleCategory; permissionIds?: string[]; scopes?: api.UserDataScope[] }) =>
       api.updateRole(args.organisationId, args.roleId, args),
     onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["roles", args.organisationId] }),
   });

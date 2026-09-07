@@ -9,7 +9,7 @@ import { EmptyState } from "../components/ui/empty-state";
 import { Input } from "../components/ui/input";
 import { Skeleton } from "../components/ui/skeleton";
 import { useMembers, usePermissionsList, useRoles, useUpdateMemberRole, useCreateRole, useUpdateRole, useDeleteRole, useUsers } from "../hooks/api";
-import { getActiveOrganisation, type OrganisationRole, type Permission, type UserDataScope } from "../lib/api";
+import { getActiveOrganisation, ADMIN_MANAGED_ROLE_CATEGORIES, type OrganisationRole, type Permission, type RoleCategory, type UserDataScope } from "../lib/api";
 
 const SCOPES: UserDataScope["scope"][] = ["own", "assigned", "team", "department", "organisation"];
 
@@ -43,6 +43,7 @@ function RoleDialog({
   onSubmit: (values: {
     name: string;
     description: string;
+    roleCategory: RoleCategory;
     permissionIds: string[];
     scopes: UserDataScope[];
   }) => void;
@@ -50,6 +51,7 @@ function RoleDialog({
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [category, setCategory] = useState<RoleCategory>("administrative");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [scopes, setScopes] = useState<UserDataScope[]>([]);
 
@@ -58,11 +60,13 @@ function RoleDialog({
     if (role) {
       setName(role.name);
       setDescription(role.description ?? "");
+      setCategory(role.roleCategory);
       setSelected(new Set(role.rolePermissions.map((rp) => rp.permissionId)));
       setScopes(role.roleScopes ?? []);
     } else {
       setName("");
       setDescription("");
+      setCategory("administrative");
       setSelected(new Set());
       setScopes([]);
     }
@@ -95,6 +99,7 @@ function RoleDialog({
     onSubmit({
       name: name.trim(),
       description: description.trim(),
+      roleCategory: category,
       permissionIds: Array.from(selected),
       scopes: scopes.filter((s) => s.module.trim() !== "").map((s) => ({ ...s, module: s.module.trim() })),
     });
@@ -121,10 +126,27 @@ function RoleDialog({
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. content_editor" />
             </label>
             <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-text-secondary">Category</span>
+              <select
+                className="h-9 rounded-md border bg-background px-2 text-sm text-text"
+                value={category}
+                onChange={(e) => setCategory(e.target.value as RoleCategory)}
+              >
+                {ADMIN_MANAGED_ROLE_CATEGORIES.map((c) => (
+                  <option key={c} value={c} className="capitalize">{c}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 sm:col-span-2">
               <span className="text-xs font-medium text-text-secondary">Description</span>
               <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional" />
             </label>
           </div>
+
+          <p className="rounded-md border bg-surface px-3 py-2 text-xs text-text-muted">
+            Employee and member access is managed through the appropriate onboarding workflow, not through
+            administrative role creation.
+          </p>
 
           <div className="rounded-md border bg-surface p-3">
             <p className="mb-2 text-sm font-medium text-text">Permissions</p>
@@ -254,9 +276,14 @@ function MembersPanel() {
                       }
                     }}
                   >
-                    {(roles ?? []).map((r) => (
-                      <option key={r.id} value={r.id}>{r.name.replace(/_/g, " ")}</option>
-                    ))}
+                    {(roles ?? [])
+                      .filter(
+                        (r) =>
+                          ADMIN_MANAGED_ROLE_CATEGORIES.includes(r.roleCategory) || r.id === m.role?.id,
+                      )
+                      .map((r) => (
+                        <option key={r.id} value={r.id}>{r.name.replace(/_/g, " ")}</option>
+                      ))}
                   </select>
                 </div>
               );
@@ -293,6 +320,7 @@ function RolesPanel() {
   async function handleSubmit(values: {
     name: string;
     description: string;
+    roleCategory: RoleCategory;
     permissionIds: string[];
     scopes: UserDataScope[];
   }) {
@@ -337,36 +365,66 @@ function RolesPanel() {
               <Skeleton className="h-8 w-full" />
             </div>
           ) : roles && roles.length > 0 ? (
-            <div className="divide-y">
-              {roles.map((role) => (
-                <div key={role.id} className="flex items-center justify-between py-2">
-                  <div>
-                    <p className="text-sm capitalize text-text">
-                      {role.name.replace(/_/g, " ")}
-                    </p>
-                    <p className="text-xs text-text-muted">
-                      {role.rolePermissions?.length ?? 0} permissions
-                      {role.roleScopes && role.roleScopes.length > 0
-                        ? ` · ${role.roleScopes.length} scope${role.roleScopes.length === 1 ? "" : "s"}`
-                        : ""}
-                    </p>
+            <div className="space-y-4">
+              {(
+                [
+                  { key: "administrative", title: "Administrative Roles" },
+                  { key: "managerial", title: "Managerial Roles" },
+                  { key: "restricted", title: "Restricted Roles" },
+                ] as const
+              ).map((section) => {
+                const sectionRoles = roles.filter((r) =>
+                  section.key === "restricted"
+                    ? !ADMIN_MANAGED_ROLE_CATEGORIES.includes(r.roleCategory)
+                    : r.roleCategory === section.key,
+                );
+                if (sectionRoles.length === 0) return null;
+                return (
+                  <div key={section.key}>
+                    <p className="mb-1 text-xs font-semibold uppercase text-text-muted">{section.title}</p>
+                    {section.key === "restricted" ? (
+                      <p className="mb-2 text-xs text-text-muted">
+                        Employee and member access is managed through the appropriate onboarding workflow, not
+                        through administrative role creation.
+                      </p>
+                    ) : null}
+                    <div className="divide-y rounded-md border">
+                      {sectionRoles.map((role) => (
+                        <div key={role.id} className="flex items-center justify-between px-3 py-2">
+                          <div>
+                            <p className="text-sm capitalize text-text">
+                              {role.name.replace(/_/g, " ")}
+                            </p>
+                            <p className="text-xs text-text-muted">
+                              {role.rolePermissions?.length ?? 0} permissions
+                              {role.roleScopes && role.roleScopes.length > 0
+                                ? ` · ${role.roleScopes.length} scope${role.roleScopes.length === 1 ? "" : "s"}`
+                                : ""}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {role.isDefault ? <Badge variant="secondary">Default</Badge> : null}
+                            {role.isSystem ? <Badge variant="secondary">System</Badge> : null}
+                            {section.key === "restricted" ? (
+                              <Badge variant="secondary" className="capitalize">{role.roleCategory}</Badge>
+                            ) : null}
+                            {!role.isSystem && section.key !== "restricted" && (
+                              <>
+                                <Button variant="ghost" size="icon" onClick={() => openEdit(role)}>
+                                  <Pencil className="h-4 w-4 text-text-muted" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => handleDelete(role)}>
+                                  <Trash2 className="h-4 w-4 text-error" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    {role.isDefault ? <Badge variant="secondary">Default</Badge> : null}
-                    {role.isSystem ? <Badge variant="secondary">System</Badge> : null}
-                    {!role.isSystem && (
-                      <>
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(role)}>
-                          <Pencil className="h-4 w-4 text-text-muted" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(role)}>
-                          <Trash2 className="h-4 w-4 text-error" />
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <EmptyState icon={ShieldCheck} title="No roles" />

@@ -1,5 +1,7 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
+import { RemotePermissionGuard, RequirePermissions } from '@teamspace-one/authorization/nest';
+import { COLLABORATION_PERMISSIONS } from '@teamspace-one/authorization';
 import { AiService } from './ai.service.js';
 
 export class SummarizeDto {
@@ -32,11 +34,13 @@ export class ConfirmActionDto {
   edits?: Record<string, unknown>;
 }
 
+@UseGuards(RemotePermissionGuard)
 @Controller('ai')
 export class AiController {
   constructor(private readonly ai: AiService) {}
 
   @Post('summarize')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async summarize(
     @CurrentOrganisation() _ctx: OrganisationContextValue,
     @Body() dto: SummarizeDto,
@@ -45,6 +49,7 @@ export class AiController {
   }
 
   @Post('ask')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async ask(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: AskDto,
@@ -57,6 +62,7 @@ export class AiController {
   }
 
   @Post('extract/tasks')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async extractTasks(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: ExtractDto,
@@ -65,6 +71,7 @@ export class AiController {
   }
 
   @Post('extract/decisions')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async extractDecisions(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: ExtractDto,
@@ -73,6 +80,7 @@ export class AiController {
   }
 
   @Post('daily-digest')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async dailyDigest(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: DailyDigestDto,
@@ -81,6 +89,7 @@ export class AiController {
   }
 
   @Get('actions/pending')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async listPendingActions(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Query('workspaceId') workspaceId?: string,
@@ -95,6 +104,7 @@ export class AiController {
   }
 
   @Post('actions/:id/confirm')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async confirmAction(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -104,6 +114,7 @@ export class AiController {
   }
 
   @Post('actions/:id/decline')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async declineAction(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,

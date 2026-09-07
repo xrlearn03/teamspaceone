@@ -72,12 +72,6 @@ export class RemotePermissionGuard implements CanActivate {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requirement = this.reflector.getAllAndOverride<PermissionRequirement>(PERMISSION_METADATA_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (!requirement) return true;
-
     const request = context.switchToHttp().getRequest();
     const headers = request.headers ?? {};
     const organisationId = headers['x-organisation-id'] as string | undefined;
@@ -91,6 +85,14 @@ export class RemotePermissionGuard implements CanActivate {
       throw new ForbiddenException('Not a member of this organisation');
     }
 
+    request.user = user;
+
+    const requirement = this.reflector.getAllAndOverride<PermissionRequirement>(PERMISSION_METADATA_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!requirement) return true;
+
     const allowed = requirement.requireAll
       ? requirement.permissions.every((p) => can(user, p))
       : requirement.permissions.some((p) => can(user, p));
@@ -98,7 +100,6 @@ export class RemotePermissionGuard implements CanActivate {
       throw new ForbiddenException(`Missing required permission(s): ${requirement.permissions.join(', ')}`);
     }
 
-    request.user = user;
     return true;
   }
 

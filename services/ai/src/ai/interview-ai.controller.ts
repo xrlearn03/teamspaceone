@@ -1,5 +1,7 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
+import { RemotePermissionGuard, RequirePermissions } from '@teamspace-one/authorization/nest';
+import { INTERVIEW_PERMISSIONS } from '@teamspace-one/authorization';
 import { AiService } from './ai.service.js';
 
 export class CandidateDto {
@@ -42,21 +44,25 @@ export class EvaluateDto {
   criteria?: string[];
 }
 
+@UseGuards(RemotePermissionGuard)
 @Controller('ai')
 export class InterviewAiController {
   constructor(private readonly ai: AiService) {}
 
   @Post('interview/screen')
+  @RequirePermissions(INTERVIEW_PERMISSIONS.SCREENING_RUN)
   async screen(@CurrentOrganisation() ctx: OrganisationContextValue, @Body() dto: ScreenDto) {
     return this.ai.screenCandidate(ctx, dto);
   }
 
   @Post('interview/questions')
+  @RequirePermissions(INTERVIEW_PERMISSIONS.INTERVIEW_CONDUCT)
   async questions(@CurrentOrganisation() ctx: OrganisationContextValue, @Body() dto: QuestionsDto) {
     return this.ai.generateQuestions(ctx, { ...dto, config: dto.config ?? {} });
   }
 
   @Post('interview/evaluate')
+  @RequirePermissions(INTERVIEW_PERMISSIONS.INTERVIEW_EVALUATE)
   async evaluate(@CurrentOrganisation() ctx: OrganisationContextValue, @Body() dto: EvaluateDto) {
     return this.ai.evaluateInterview(ctx, dto);
   }

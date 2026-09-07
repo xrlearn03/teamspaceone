@@ -62,12 +62,18 @@ async function main() {
             organisationId: org.id,
             name: template.name,
             description: template.label,
+            roleCategory: template.category,
             isSystem: template.isSystem,
             isDefault: template.isDefault ?? false,
             permissions: [],
           },
         });
         rolesCreated += 1;
+      } else if (role.roleCategory !== template.category || role.description !== template.label) {
+        await prisma.role.update({
+          where: { id: role.id },
+          data: { roleCategory: template.category, description: template.label },
+        });
       }
 
       const existingRolePermissions = await prisma.rolePermission.count({

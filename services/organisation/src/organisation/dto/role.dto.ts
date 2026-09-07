@@ -1,4 +1,6 @@
-import { IsArray, IsBoolean, IsOptional, IsString, Length } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsOptional, IsString, Length } from 'class-validator';
+
+const ROLE_CATEGORIES = ['administrative', 'managerial', 'employee', 'member', 'external', 'candidate', 'guest'] as const;
 
 class RoleScopeDto {
   @IsString()
@@ -21,6 +23,9 @@ export class CreateRoleDto {
   @IsString()
   description?: string;
 
+  @IsIn(ROLE_CATEGORIES)
+  roleCategory!: string;
+
   @IsArray()
   @IsString({ each: true })
   permissionIds!: string[];
@@ -39,6 +44,10 @@ export class UpdateRoleDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsIn(ROLE_CATEGORIES)
+  roleCategory?: string;
 
   @IsOptional()
   @IsArray()

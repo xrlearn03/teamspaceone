@@ -16,9 +16,13 @@ export class MessagingController {
   constructor(private readonly messaging: MessagingService) {}
 
   @Get('channels/:id/access')
-  resolveAccess(@Param('id') channelId: string, @Headers('x-actor-id') actorId?: string) {
+  resolveAccess(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') channelId: string,
+    @Headers('x-actor-id') actorId?: string,
+  ) {
     if (!actorId) return null;
-    return this.messaging.resolveAccess(channelId, actorId);
+    return this.messaging.resolveAccess(channelId, actorId, ctx.organisationId);
   }
 
   @Get('channels')

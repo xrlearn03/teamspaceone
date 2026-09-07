@@ -21,15 +21,23 @@ export class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
 
   @Get('projects/:id/access')
-  resolveAccess(@Param('id') projectId: string, @Headers('x-actor-id') actorId?: string) {
+  resolveAccess(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') projectId: string,
+    @Headers('x-actor-id') actorId?: string,
+  ) {
     if (!actorId) return null;
-    return this.projects.resolveAccess(projectId, actorId);
+    return this.projects.resolveAccess(projectId, actorId, ctx.organisationId);
   }
 
   @Get('tasks/:id/access')
-  resolveTaskAccess(@Param('id') taskId: string, @Headers('x-actor-id') actorId?: string) {
+  resolveTaskAccess(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') taskId: string,
+    @Headers('x-actor-id') actorId?: string,
+  ) {
     if (!actorId) return null;
-    return this.projects.resolveTaskAccess(taskId, actorId);
+    return this.projects.resolveTaskAccess(taskId, actorId, ctx.organisationId);
   }
 
   @Post('projects')

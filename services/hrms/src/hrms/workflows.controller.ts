@@ -404,7 +404,7 @@ export class DocumentsController {
   }
 
   @Post()
-  @RequirePermissions(['hrms.document.upload', 'hrms.document.view'], false)
+  @RequirePermissions('hrms.document.upload')
   upload(
     @CurrentOrganisation() org: OrganisationContextValue,
     @CurrentUser() user: AuthorizableUser,
@@ -414,7 +414,7 @@ export class DocumentsController {
   }
 
   @Delete(':id')
-  @RequirePermissions(['hrms.document.delete', 'hrms.document.view'], false)
+  @RequirePermissions('hrms.document.delete')
   remove(
     @CurrentOrganisation() org: OrganisationContextValue,
     @CurrentUser() user: AuthorizableUser,

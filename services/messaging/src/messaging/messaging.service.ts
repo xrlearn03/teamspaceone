@@ -324,8 +324,11 @@ export class MessagingService {
     });
   }
 
-  async resolveAccess(channelId: string, actorId: string) {
-    const channel = await this.prisma.channel.findUnique({ where: { id: channelId }, include: { members: { where: { userId: actorId } } } });
+  async resolveAccess(channelId: string, actorId: string, organisationId: string) {
+    const channel = await this.prisma.channel.findFirst({
+      where: { id: channelId, organisationId },
+      include: { members: { where: { userId: actorId } } },
+    });
     if (!channel) return null;
     if (channel.type !== 'public' && channel.members.length === 0) return null;
     return { organisationId: channel.organisationId, workspaceId: channel.workspaceId };

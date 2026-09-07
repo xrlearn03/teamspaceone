@@ -4,7 +4,7 @@ import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { Prisma, type Organisation } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
-import { AuthorizationService } from './authorization.service.js';
+import { AuthorizationService, assertAdminManagedCategory, assertInvitableCategory } from './authorization.service.js';
 import { type CreateOrganisationDto } from './dto/create-organisation.dto.js';
 import { type CreateMemberDto } from './dto/create-member.dto.js';
 import { type CreateInvitationDto } from './dto/create-invitation.dto.js';
@@ -96,6 +96,9 @@ export class OrganisationService {
     if (!role) {
       throw new BadRequestException('Role does not belong to this organisation');
     }
+    // Employee/member/external/candidate/guest access is provisioned through
+    // dedicated onboarding workflows, not administrative member management.
+    assertAdminManagedCategory(role.roleCategory);
 
     const membership = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.organisationMembership.findUnique({
@@ -254,6 +257,9 @@ export class OrganisationService {
     if (!role) {
       throw new BadRequestException('Role does not belong to this organisation');
     }
+    // Invitations are the member/guest/external onboarding workflows, so those
+    // categories are allowed here; employee and candidate categories are not.
+    assertInvitableCategory(role.roleCategory);
 
     if (dto.clientId) {
       const client = await this.prisma.client.findFirst({
@@ -424,24 +430,24 @@ export class OrganisationService {
     return this.authorization.listPermissions();
   }
 
-  async createRole(organisationId: string, dto: { name: string; description?: string; permissionIds: string[]; scopes?: Array<{ module: string; scope: string; scopeValue?: string | null }> }, actorId: string): Promise<unknown> {
+  async createRole(organisationId: string, dto: { name: string; description?: string; roleCategory: string; permissionIds: string[]; scopes?: Array<{ module: string; scope: string; scopeValue?: string | null }> }, actorId: string): Promise<unknown> {
     await this.assertMemberOf(organisationId, actorId);
-    return this.authorization.createRole(organisationId, dto);
+    return this.authorization.createRole(organisationId, dto, actorId);
   }
 
-  async updateRole(organisationId: string, roleId: string, dto: { name?: string; description?: string; permissionIds?: string[]; scopes?: Array<{ module: string; scope: string; scopeValue?: string | null }> }, actorId: string): Promise<unknown> {
+  async updateRole(organisationId: string, roleId: string, dto: { name?: string; description?: string; roleCategory?: string; permissionIds?: string[]; scopes?: Array<{ module: string; scope: string; scopeValue?: string | null }> }, actorId: string): Promise<unknown> {
     await this.assertMemberOf(organisationId, actorId);
-    return this.authorization.updateRole(roleId, organisationId, dto);
+    return this.authorization.updateRole(roleId, organisationId, dto, actorId);
   }
 
   async deleteRole(organisationId: string, roleId: string, actorId: string): Promise<void> {
     await this.assertMemberOf(organisationId, actorId);
-    await this.authorization.deleteRole(roleId, organisationId);
+    await this.authorization.deleteRole(roleId, organisationId, actorId);
   }
 
   async updateMemberRole(organisationId: string, membershipId: string, roleId: string, actorId: string): Promise<void> {
     await this.assertCanManageMembers(organisationId, actorId);
-    await this.authorization.assignMembershipRole(organisationId, membershipId, roleId);
+    await this.authorization.assignMembershipRole(organisationId, membershipId, roleId, actorId);
   }
 
   async listForActor(actorId: string): Promise<unknown[]> {

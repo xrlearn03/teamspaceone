@@ -1,5 +1,7 @@
-import { Body, Controller, Delete, Get, Headers, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
+import { RemotePermissionGuard, RequirePermissions } from '@teamspace-one/authorization/nest';
+import { COLLABORATION_PERMISSIONS } from '@teamspace-one/authorization';
 import { MeetingService } from './meeting.service.js';
 import { type CreateMeetingDto } from './dto/create-meeting.dto.js';
 import { type CreateVoiceRoomDto } from './dto/create-voice-room.dto.js';
@@ -10,17 +12,23 @@ import { type CreateMeetingReactionDto } from './dto/create-meeting-reaction.dto
 import { type UpdateMeetingRaiseHandDto } from './dto/update-meeting-raise-hand.dto.js';
 import { type UpdateMeetingRecordingDto } from './dto/update-meeting-recording.dto.js';
 
+@UseGuards(RemotePermissionGuard)
 @Controller('meetings')
 export class MeetingController {
   constructor(private readonly meeting: MeetingService) {}
 
   @Get(':id/access')
-  resolveAccess(@Param('id') meetingId: string, @Headers('x-actor-id') actorId?: string) {
+  resolveAccess(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') meetingId: string,
+    @Headers('x-actor-id') actorId?: string,
+  ) {
     if (!actorId) return null;
-    return this.meeting.resolveAccess(meetingId, actorId);
+    return this.meeting.resolveAccess(meetingId, actorId, ctx.organisationId);
   }
 
   @Post()
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_CREATE)
   async create(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: CreateMeetingDto,
@@ -29,6 +37,7 @@ export class MeetingController {
   }
 
   @Post('voice-rooms')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_CREATE)
   async createVoiceRoom(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: CreateVoiceRoomDto,
@@ -37,11 +46,13 @@ export class MeetingController {
   }
 
   @Get()
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
   async list(@CurrentOrganisation() ctx: OrganisationContextValue) {
     return this.meeting.list(ctx);
   }
 
   @Get('calendar/events')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
   async listCalendarEvents(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Query('from') from?: string,
@@ -51,6 +62,7 @@ export class MeetingController {
   }
 
   @Get(':id')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
   async getById(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -59,6 +71,7 @@ export class MeetingController {
   }
 
   @Post(':id/start')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_CONDUCT)
   async start(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -67,6 +80,7 @@ export class MeetingController {
   }
 
   @Post(':id/end')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_CONDUCT)
   async end(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -75,6 +89,7 @@ export class MeetingController {
   }
 
   @Post(':id/join')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_CONDUCT)
   async join(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -84,6 +99,7 @@ export class MeetingController {
   }
 
   @Post(':id/leave')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_CONDUCT)
   async leave(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -92,6 +108,7 @@ export class MeetingController {
   }
 
   @Post(':id/screen-share')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_CONDUCT)
   async setScreenShare(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -101,6 +118,7 @@ export class MeetingController {
   }
 
   @Get(':id/token')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
   async getToken(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -110,6 +128,7 @@ export class MeetingController {
   }
 
   @Post(':id/sfu-token')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
   async getSfuToken(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -118,6 +137,7 @@ export class MeetingController {
   }
 
   @Post(':id/messages')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_CONDUCT)
   async createMessage(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -127,6 +147,7 @@ export class MeetingController {
   }
 
   @Get(':id/messages')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
   async listMessages(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -137,6 +158,7 @@ export class MeetingController {
   }
 
   @Post(':id/reactions')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_CONDUCT)
   async createReaction(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -146,6 +168,7 @@ export class MeetingController {
   }
 
   @Get(':id/reactions')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
   async listReactions(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -154,6 +177,7 @@ export class MeetingController {
   }
 
   @Post(':id/raise-hand')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_CONDUCT)
   async updateRaiseHand(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -163,6 +187,7 @@ export class MeetingController {
   }
 
   @Get(':id/raise-hands')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
   async listRaiseHands(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -171,6 +196,7 @@ export class MeetingController {
   }
 
   @Post(':id/recording')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_CONDUCT)
   async setRecording(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -180,6 +206,7 @@ export class MeetingController {
   }
 
   @Delete('ended')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_DELETE)
   async deleteEnded(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Query('workspaceId') workspaceId?: string,
