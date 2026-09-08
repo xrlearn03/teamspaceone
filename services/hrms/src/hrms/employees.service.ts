@@ -9,6 +9,7 @@ import type { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { HrmsScopeService } from './scope.service.js';
+import { AuthProfileClientService, type AuthProfileUpdate } from './auth-profile.client.js';
 
 export interface RequestContextInput {
   organisationId: string;
@@ -106,6 +107,7 @@ export class EmployeesService {
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
     private readonly scope: HrmsScopeService,
+    private readonly authProfiles: AuthProfileClientService,
   ) {}
 
   async list(
@@ -172,6 +174,21 @@ export class EmployeesService {
     return sanitizeEmployee(actorEmployee, user);
   }
 
+  async syncProfile(
+    employee: { userId: string; firstName: string; lastName: string; avatarFileId?: string | null },
+    correlationId?: string,
+  ) {
+    await this.authProfiles.updateUserProfile(
+      employee.userId,
+      {
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        avatarFileId: employee.avatarFileId ?? null,
+      },
+      correlationId,
+    );
+  }
+
   async create(input: CreateEmployeeInput, tx?: Prisma.TransactionClient) {
     const run = async (t: Prisma.TransactionClient) => {
       const existing = await t.employee.findUnique({
@@ -233,7 +250,9 @@ export class EmployeesService {
     };
 
     if (tx) return run(tx);
-    return this.prisma.$transaction(run);
+    const employee = await this.prisma.$transaction(run);
+    await this.syncProfile(employee, input.correlationId);
+    return employee;
   }
 
   async update(
@@ -285,6 +304,15 @@ export class EmployeesService {
     }
 
     if (Object.keys(data).length === 0) {
+      await this.authProfiles.updateUserProfile(
+        existing.userId,
+        {
+          firstName: existing.firstName,
+          lastName: existing.lastName,
+          avatarFileId: existing.avatarFileId,
+        },
+        ctx.correlationId,
+      );
       return sanitizeEmployee(existing, user);
     }
 
@@ -316,6 +344,14 @@ export class EmployeesService {
 
       return updated;
     });
+
+    const profile: AuthProfileUpdate = {};
+    if ('firstName' in data) profile.firstName = employee.firstName;
+    if ('lastName' in data) profile.lastName = employee.lastName;
+    if ('avatarFileId' in data) profile.avatarFileId = employee.avatarFileId;
+    if (Object.keys(profile).length > 0) {
+      await this.authProfiles.updateUserProfile(employee.userId, profile, ctx.correlationId);
+    }
 
     return sanitizeEmployee(employee, user);
   }

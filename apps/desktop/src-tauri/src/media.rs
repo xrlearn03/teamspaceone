@@ -1,3 +1,5 @@
+#[cfg(desktop)]
+mod desktop {
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use nokhwa::{
@@ -304,3 +306,107 @@ pub fn get_microphone_chunk(
     let bytes: Vec<u8> = chunk.iter().flat_map(|&f| f.to_le_bytes()).collect();
     Ok(BASE64.encode(&bytes))
 }
+}
+#[cfg(desktop)]
+pub use desktop::*;
+
+#[cfg(not(desktop))]
+mod mobile {
+    use serde::Serialize;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
+    use std::thread::JoinHandle;
+
+    #[derive(Serialize, Clone)]
+    pub struct MediaDevice {
+        pub id: String,
+        pub name: String,
+    }
+
+    #[derive(Serialize, Clone, Copy)]
+    pub struct MicFormat {
+        pub sample_rate: u32,
+        pub channels: u16,
+    }
+
+    pub struct CameraState {
+        latest: Arc<Mutex<Option<Vec<u8>>>>,
+        stop: Arc<AtomicBool>,
+        handle: Mutex<Option<JoinHandle<()>>>,
+    }
+
+    impl CameraState {
+        pub fn new() -> Self {
+            Self {
+                latest: Arc::new(Mutex::new(None)),
+                stop: Arc::new(AtomicBool::new(true)),
+                handle: Mutex::new(None),
+            }
+        }
+    }
+
+    pub struct MicrophoneState {
+        buffer: Arc<Mutex<Vec<f32>>>,
+        stop: Arc<AtomicBool>,
+        handle: Mutex<Option<JoinHandle<()>>>,
+    }
+
+    impl MicrophoneState {
+        pub fn new() -> Self {
+            Self {
+                buffer: Arc::new(Mutex::new(Vec::new())),
+                stop: Arc::new(AtomicBool::new(true)),
+                handle: Mutex::new(None),
+            }
+        }
+    }
+
+    #[tauri::command(rename = "list-cameras")]
+    pub fn list_cameras(_app: tauri::AppHandle) -> Result<Vec<MediaDevice>, String> {
+        Err("Camera access is not supported on this platform".into())
+    }
+
+    #[tauri::command(rename = "list-microphones")]
+    pub fn list_microphones() -> Result<Vec<MediaDevice>, String> {
+        Err("Microphone access is not supported on this platform".into())
+    }
+
+    #[tauri::command(rename = "start-camera")]
+    pub fn start_camera(_state: tauri::State<CameraState>, _index: u32) -> Result<(), String> {
+        Err("Camera capture is not supported on this platform".into())
+    }
+
+    #[tauri::command(rename = "stop-camera")]
+    pub fn stop_camera(_state: tauri::State<CameraState>) -> Result<(), String> {
+        Err("Camera capture is not supported on this platform".into())
+    }
+
+    #[tauri::command(rename = "get-camera-frame")]
+    pub fn get_camera_frame(_state: tauri::State<CameraState>) -> Result<String, String> {
+        Err("Camera capture is not supported on this platform".into())
+    }
+
+    #[tauri::command(rename = "start-microphone")]
+    pub fn start_microphone(
+        _state: tauri::State<MicrophoneState>,
+        _index: usize,
+    ) -> Result<MicFormat, String> {
+        Err("Microphone capture is not supported on this platform".into())
+    }
+
+    #[tauri::command(rename = "stop-microphone")]
+    pub fn stop_microphone(_state: tauri::State<MicrophoneState>) -> Result<(), String> {
+        Err("Microphone capture is not supported on this platform".into())
+    }
+
+    #[tauri::command(rename = "get-microphone-chunk")]
+    pub fn get_microphone_chunk(
+        _state: tauri::State<MicrophoneState>,
+        _chunk_size: Option<usize>,
+    ) -> Result<String, String> {
+        Err("Microphone capture is not supported on this platform".into())
+    }
+}
+
+#[cfg(not(desktop))]
+pub use mobile::*;

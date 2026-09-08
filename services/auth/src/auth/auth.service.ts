@@ -409,6 +409,10 @@ export class AuthService {
     return this.toDto(user);
   }
 
+  async updateProfileInternal(userId: string, input: UpdateProfileDto): Promise<UserDto> {
+    return this.updateProfile(userId, input);
+  }
+
   async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
     if (newPassword.length < 12) throw new BadRequestException('New password must contain at least 12 characters');
     const user = await this.prisma.user.findUnique({ where: { id: userId } });

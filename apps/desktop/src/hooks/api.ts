@@ -1027,6 +1027,7 @@ export function useCreateEmployee() {
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ["hrms", "employees", orgId()] });
       client.invalidateQueries({ queryKey: ["hrms", "employees", "me", orgId()] });
+      client.invalidateQueries({ queryKey: ["users"] });
       client.invalidateQueries({ queryKey: ["hrms", "overview"] });
     },
   });
@@ -1041,6 +1042,7 @@ export function useUpdateEmployee() {
       client.invalidateQueries({ queryKey: ["hrms", "employees", orgId()] });
       client.invalidateQueries({ queryKey: ["hrms", "employees", "me", orgId()] });
       client.invalidateQueries({ queryKey: ["hrms", "employees", orgId(), args.id] });
+      client.invalidateQueries({ queryKey: ["users"] });
       client.invalidateQueries({ queryKey: ["hrms", "overview"] });
     },
   });

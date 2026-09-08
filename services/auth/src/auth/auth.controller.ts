@@ -110,6 +110,17 @@ export class AuthController {
     return user;
   }
 
+  @Patch('internal/users/:id/profile')
+  async internalUpdateProfile(
+    @Param('id') id: string,
+    @Body() dto: UpdateProfileDto,
+    @Headers('x-internal-api-key') internalApiKey?: string,
+    @Headers('x-internal-caller') internalCaller?: string,
+  ) {
+    this.assertInternal(internalApiKey, internalCaller);
+    return this.auth.updateProfileInternal(id, dto);
+  }
+
   /**
    * Service-to-service only: regenerate a temporary password for an invited
    * account that has not activated yet (used when resending an invitation).

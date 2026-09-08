@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { OutboxModule } from '../outbox/outbox.module.js';
 import { AuthorizationClientService } from './authorization.client.js';
+import { AuthProfileClientService } from './auth-profile.client.js';
 import { HrmsPermissionGuard } from './permission.guard.js';
 import { HrmsScopeService } from './scope.service.js';
 import { EmployeesService } from './employees.service.js';
@@ -59,6 +60,7 @@ import {
   ],
   providers: [
     AuthorizationClientService,
+    AuthProfileClientService,
     HrmsPermissionGuard,
     HrmsScopeService,
     EmployeesService,

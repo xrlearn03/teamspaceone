@@ -338,13 +338,13 @@ export class LifecycleService {
       throw new BadRequestException('Instance is not in pending status');
     }
 
-    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const result = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const employee = await this.employees.create({
         ...input,
         organisationId: ctx.organisationId,
         actorId: ctx.actorId,
         correlationId: ctx.correlationId,
-      });
+      }, tx);
 
       await tx.onboardingInstance.update({
         where: { id },
@@ -368,6 +368,8 @@ export class LifecycleService {
 
       return { ...instance, employeeId: employee.id, status: 'in_progress', employee };
     });
+    await this.employees.syncProfile(result.employee, ctx.correlationId);
+    return result;
   }
 
   private async canModifyOnboardingTask(

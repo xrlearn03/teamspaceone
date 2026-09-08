@@ -11,7 +11,8 @@
   "app": {
     "windows": [],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ipc: http://localhost:* ws://localhost:* http://34.93.42.133:3000 http://34.93.42.133:3005 ws://34.93.42.133:3005 ws://34.93.42.133:7880 ws://34.93.42.133:8443 https:; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ipc: http://localhost:* ws://localhost:* http://34.93.42.133:3000 http://34.93.42.133:3005 ws://34.93.42.133:3005 ws://34.93.42.133:7880 ws://34.93.42.133:8443 https:; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+      "capabilities": ["default", "desktop"]
     }
   },
   "plugins": {

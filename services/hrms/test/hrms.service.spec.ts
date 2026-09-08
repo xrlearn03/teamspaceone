@@ -5,6 +5,7 @@ import { PrismaService } from '../src/prisma/prisma.service.js';
 import { OutboxService } from '../src/outbox/outbox.service.js';
 import { HrmsScopeService } from '../src/hrms/scope.service.js';
 import { EmployeesService, sanitizeEmployee } from '../src/hrms/employees.service.js';
+import { AuthProfileClientService } from '../src/hrms/auth-profile.client.js';
 import { LeaveService } from '../src/hrms/leave.service.js';
 import { PayrollService } from '../src/hrms/payroll.service.js';
 import { LifecycleService } from '../src/hrms/lifecycle.service.js';
@@ -48,6 +49,8 @@ const noScopeUser: AuthorizableUser = {
   dataScopes: [],
 };
 
+const mockAuthProfiles = { updateUserProfile: jest.fn().mockResolvedValue(undefined) };
+
 function buildModule(mockPrisma: Record<string, unknown>, mockOutbox: Record<string, unknown>) {
   return Test.createTestingModule({
     providers: [
@@ -60,6 +63,7 @@ function buildModule(mockPrisma: Record<string, unknown>, mockOutbox: Record<str
       AnalyticsService,
       { provide: PrismaService, useValue: mockPrisma },
       { provide: OutboxService, useValue: mockOutbox },
+      { provide: AuthProfileClientService, useValue: mockAuthProfiles },
     ],
   }).compile();
 }
@@ -112,6 +116,8 @@ describe('HrmsScopeService', () => {
 
 describe('EmployeesService', () => {
   const mockOutbox = { createEvent: jest.fn().mockResolvedValue(undefined) };
+
+  beforeEach(() => mockAuthProfiles.updateUserProfile.mockClear());
 
   it('strips salary when user lacks hrms.payroll.view', () => {
     const employee = { id: 'emp-1', salary: { base: 1000 }, firstName: 'A' };
@@ -166,6 +172,63 @@ describe('EmployeesService', () => {
       where: { id: 'emp-1' },
       data: { employeeNumber: 'EMP-001' },
     });
+    expect(mockAuthProfiles.updateUserProfile).not.toHaveBeenCalled();
+  });
+
+  it('syncs only changed profile fields after the employee transaction', async () => {
+    const existing = {
+      id: 'emp-1',
+      userId: 'user-1',
+      firstName: 'Old',
+      lastName: 'Name',
+      avatarFileId: null,
+      departmentId: null,
+      managerEmployeeId: null,
+    };
+    const transactionClient = {
+      employee: { update: jest.fn().mockResolvedValue({ ...existing, firstName: 'New' }) },
+      employeeHistory: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const prisma = {
+      employee: { findFirst: jest.fn().mockResolvedValue(existing) },
+      $transaction: jest.fn(async (fn: (tx: typeof transactionClient) => unknown) => fn(transactionClient)),
+    };
+    const module = await buildModule(prisma, mockOutbox);
+    const service = module.get(EmployeesService);
+
+    await service.update(ctx, employeeEditor, 'emp-1', { ...ctx, firstName: 'New' });
+
+    expect(mockAuthProfiles.updateUserProfile).toHaveBeenCalledWith(
+      'user-1',
+      { firstName: 'New' },
+      'corr-1',
+    );
+    expect(prisma.$transaction.mock.invocationCallOrder[0]).toBeLessThan(
+      mockAuthProfiles.updateUserProfile.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('idempotently syncs the complete profile on a no-op update', async () => {
+    const existing = {
+      id: 'emp-1',
+      userId: 'user-1',
+      firstName: 'Current',
+      lastName: 'Employee',
+      avatarFileId: null,
+      departmentId: null,
+      managerEmployeeId: null,
+    };
+    const prisma = { employee: { findFirst: jest.fn().mockResolvedValue(existing) } };
+    const module = await buildModule(prisma, mockOutbox);
+    const service = module.get(EmployeesService);
+
+    await service.update(ctx, employeeEditor, 'emp-1', { ...ctx });
+
+    expect(mockAuthProfiles.updateUserProfile).toHaveBeenCalledWith(
+      'user-1',
+      { firstName: 'Current', lastName: 'Employee', avatarFileId: null },
+      'corr-1',
+    );
   });
 });
 
