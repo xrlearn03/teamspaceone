@@ -69,9 +69,17 @@ export interface RealtimeEventPayloads {
 
 export type RealtimeEvent = keyof RealtimeEventPayloads;
 
+export interface OutgoingCall {
+  meetingId: string;
+  kind: "audio" | "video";
+  title?: string;
+  userIds: string[];
+}
+
 interface RealtimeContextValue {
   socket: Socket | null;
   connected: boolean;
+  outgoingCall: OutgoingCall | null;
   joinRealtimeChannel: (channelId: string) => void;
   leaveRealtimeChannel: (channelId: string) => void;
   joinRealtimeProject: (projectId: string) => void;
@@ -105,6 +113,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
+  const [outgoingCall, setOutgoingCall] = useState<OutgoingCall | null>(null);
   const handlersRef = useRef<Map<string, Set<(payload: unknown) => void>>>(new Map());
 
   useEffect(() => {
@@ -301,6 +310,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
                 clearTimeout(outgoing.timer);
                 outgoing.stopRingback();
                 outgoingCallsRef.current.delete(r.meetingId);
+                setOutgoingCall((call) => call?.meetingId === r.meetingId ? null : call);
               } else {
                 outgoing.declined.add(r.userId);
                 if (outgoing.declined.size >= outgoing.userIds.length) {
@@ -308,6 +318,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
                   clearTimeout(outgoing.timer);
                   outgoing.stopRingback();
                   outgoingCallsRef.current.delete(r.meetingId);
+                  setOutgoingCall((call) => call?.meetingId === r.meetingId ? null : call);
                   dropOutgoingCall(r.meetingId, outgoing.userIds);
                 }
               }
@@ -433,6 +444,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         const outgoing = outgoingCallsRef.current.get(ring.meetingId);
         if (outgoing && outgoingCallsRef.current.delete(ring.meetingId)) {
           outgoing.stopRingback();
+          setOutgoingCall((call) => call?.meetingId === ring.meetingId ? null : call);
           dropOutgoingCall(ring.meetingId, ring.userIds);
         }
       }, CALL_RING_TIMEOUT_MS);
@@ -442,6 +454,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         timer,
         stopRingback,
       });
+      setOutgoingCall({ meetingId: ring.meetingId, kind: ring.kind, title: ring.title, userIds: ring.userIds });
       socketRef.current?.emit("call.ring", ring);
     },
     [],
@@ -453,6 +466,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     clearTimeout(outgoing.timer);
     outgoing.stopRingback();
     outgoingCallsRef.current.delete(meetingId);
+    setOutgoingCall((call) => call?.meetingId === meetingId ? null : call);
     socketRef.current?.emit("call.cancel", { meetingId, userIds: outgoing.userIds });
   }, []);
 
@@ -481,7 +495,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
   return (
     <RealtimeContext.Provider
-      value={{ socket: socketRef.current, connected, joinRealtimeChannel, leaveRealtimeChannel, joinRealtimeProject, leaveRealtimeProject, joinRealtimeMeeting, leaveRealtimeMeeting, sendTyping, sendPresence, sendReadReceipt, sendCallRing, sendCallCancel, sendCallResponse, onRealtimeEvent }}
+      value={{ socket: socketRef.current, connected, outgoingCall, joinRealtimeChannel, leaveRealtimeChannel, joinRealtimeProject, leaveRealtimeProject, joinRealtimeMeeting, leaveRealtimeMeeting, sendTyping, sendPresence, sendReadReceipt, sendCallRing, sendCallCancel, sendCallResponse, onRealtimeEvent }}
     >
       {children}
     </RealtimeContext.Provider>

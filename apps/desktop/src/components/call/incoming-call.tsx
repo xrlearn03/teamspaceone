@@ -13,7 +13,7 @@ type IncomingCall = RealtimeEventPayloads["call.incoming"];
 const RING_TIMEOUT_MS = 30_000;
 
 export function IncomingCallOverlay() {
-  const { onRealtimeEvent, sendCallResponse } = useRealtime();
+  const { onRealtimeEvent, sendCallResponse, sendCallCancel, outgoingCall } = useRealtime();
   const setActiveView = useUIStore((s) => s.setActiveView);
   const { data: user } = useMe();
   const [call, setCall] = useState<IncomingCall | null>(null);
@@ -68,13 +68,23 @@ export function IncomingCallOverlay() {
     };
   }, [call]);
 
-  const callerUserIds = call ? [call.callerId] : [];
-  const { data: callerUsers } = useUsers(callerUserIds);
+  const userIds = call ? [call.callerId] : outgoingCall?.userIds ?? [];
+  const { data: callUsers } = useUsers(userIds);
 
-  if (!call) return null;
+  if (!call && !outgoingCall) return null;
 
-  const callerLabel = call.callerName ?? "Someone";
-  const callerUser = callerUsers?.[0];
+  const incoming = Boolean(call);
+  const kind = call?.kind ?? outgoingCall!.kind;
+  const callerLabel = call?.callerName ?? "Someone";
+  const visibleUsers = callUsers?.slice(0, 3) ?? [];
+  const outgoingNames = (callUsers ?? []).map((callUser) =>
+    `${callUser.firstName ?? ""} ${callUser.lastName ?? ""}`.trim() || callUser.email,
+  );
+  const outgoingLabel = outgoingNames.length === 0
+    ? outgoingCall?.title ?? "participants"
+    : outgoingNames.length === 1
+      ? outgoingNames[0]
+      : `${outgoingNames[0]} and ${outgoingNames.length - 1} ${outgoingNames.length === 2 ? "other" : "others"}`;
 
   function accept() {
     if (!call) return;
@@ -89,46 +99,81 @@ export function IncomingCallOverlay() {
     setCall(null);
   }
 
+  function cancel() {
+    if (!outgoingCall) return;
+    sendCallCancel(outgoingCall.meetingId);
+    setActiveView("home");
+  }
+
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center">
-      <div className="pointer-events-auto flex items-center gap-4 rounded-xl border border-border bg-surface-elevated px-5 py-4 shadow-2xl">
-        <div className="relative">
-          <UserAvatar
-            user={callerUser ?? { firstName: callerLabel, email: "" }}
-            className="h-11 w-11"
-            fallbackClassName="text-sm"
-          />
-          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary">
-            {call.kind === "video" ? (
-              <Video className="h-2.5 w-2.5 text-white" />
-            ) : (
-              <Phone className="h-2.5 w-2.5 text-white" />
-            )}
-          </span>
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-text">{callerLabel}</p>
-          <p className="animate-pulse truncate text-xs text-text-muted">
-            Incoming {call.kind === "video" ? "video" : "audio"} call
-            {call.title ? ` · ${call.title}` : ""}
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-surface-elevated">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,var(--primary-subtle),var(--surface-elevated)_68%)] opacity-80" />
+      <div className="relative flex w-full max-w-lg flex-col items-center px-8 py-12 text-center">
+        <div className="mb-6 min-h-14">
+          <p className="text-lg font-semibold text-text">
+            {incoming ? callerLabel : `Calling ${outgoingLabel}`}
           </p>
+          <p className="mt-1 animate-pulse text-sm text-text-secondary">
+            {incoming ? "is calling you" : "Ringing…"}
+          </p>
+          {(call?.title || (outgoingCall?.title && outgoingNames.length > 0)) && (
+            <p className="mt-2 text-xs text-text-muted">{call?.title ?? outgoingCall?.title}</p>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="mb-12 flex h-24 items-center justify-center -space-x-4">
+          {visibleUsers.length > 0 ? visibleUsers.map((callUser) => (
+            <UserAvatar
+              key={callUser.id}
+              user={callUser}
+              className="h-20 w-20 border-4 border-surface-elevated shadow-xl"
+              fallbackClassName="text-2xl"
+            />
+          )) : (
+            <UserAvatar
+              user={{ firstName: incoming ? callerLabel : outgoingLabel, email: "" }}
+              className="h-20 w-20 border-4 border-surface-elevated shadow-xl"
+              fallbackClassName="text-2xl"
+            />
+          )}
+          {!incoming && userIds.length > 3 && (
+            <div className="relative flex h-20 w-20 items-center justify-center rounded-full border-4 border-surface-elevated bg-primary-subtle text-sm font-semibold text-primary shadow-xl">
+              +{userIds.length - 3}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-center gap-6">
+          {incoming && (
+            <>
+              <Button
+                size="icon"
+                className="h-14 w-14 rounded-full bg-primary text-white shadow-lg hover:bg-primary-hover"
+                onClick={accept}
+                title={`Answer ${kind} call`}
+                aria-label={`Answer ${kind} call`}
+              >
+                <Video className="h-6 w-6" />
+              </Button>
+              <Button
+                size="icon"
+                className="h-14 w-14 rounded-full bg-primary text-white shadow-lg hover:bg-primary-hover"
+                onClick={accept}
+                title="Answer call"
+                aria-label="Answer call"
+              >
+                <Phone className="h-6 w-6" />
+              </Button>
+            </>
+          )}
           <Button
             size="icon"
-            className="h-9 w-9 rounded-full bg-error text-white hover:bg-error/90"
-            onClick={decline}
-            title="Decline"
+            className="h-14 w-14 rounded-full bg-error text-white shadow-lg hover:brightness-90"
+            onClick={incoming ? decline : cancel}
+            title={incoming ? "Decline call" : "Cancel call"}
+            aria-label={incoming ? "Decline call" : "Cancel call"}
           >
-            <PhoneOff className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            className="h-9 w-9 rounded-full bg-success text-white hover:bg-success/90"
-            onClick={accept}
-            title="Accept"
-          >
-            {call.kind === "video" ? <Video className="h-4 w-4" /> : <Phone className="h-4 w-4" />}
+            <PhoneOff className="h-6 w-6" />
           </Button>
         </div>
       </div>
