@@ -3,6 +3,7 @@ import {
   BriefcaseBusiness,
   ChevronDown,
   ChevronRight,
+  ClipboardCheck,
   FileText,
   Folder,
   Hash,
@@ -13,6 +14,7 @@ import {
   Mic,
   Plus,
   Search,
+  Sparkles,
   Star,
   Trash2,
   Users,
@@ -542,6 +544,25 @@ export function WorkspaceSidebar() {
               onClick={() => navigate("hrms")}
             />
           ) : null}
+          {canAny(["interview.access"]) ? (
+            <SidebarItem
+              icon={ClipboardCheck}
+              label="Interview"
+              active={activeView === "interview"}
+              onClick={() => navigate("interview")}
+            />
+          ) : null}
+          <SidebarItem
+            icon={Sparkles}
+            label="AI"
+            active={activeView === "ai"}
+            onClick={() => navigate("ai")}
+          />
+          <SidebarItem
+            icon={Search}
+            label="Search"
+            onClick={() => setSearchOpen(true)}
+          />
         </SidebarSection>
 
         {canCollaborate ? (

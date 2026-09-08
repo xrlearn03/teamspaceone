@@ -241,7 +241,6 @@
 				D61F75BBCC9EE730CFEEC8E3 /* Assets.xcassets in Resources */,
 				173540B4F83EB7FA3B38BC50 /* LaunchScreen.storyboard in Resources */,
 				CB0C2812A7D4319001319408 /* assets in Resources */,
-				9BE9E2C8AA4DE1098EE78A6A /* libapp.a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -268,7 +267,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "export DEVELOPER_DIR=/Applications/Xcode-26.6.0.app/Contents/Developer; export PATH=\"$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH\"; pnpm tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
+			shellScript = "export DEVELOPER_DIR=/Applications/Xcode-26.6.0.app/Contents/Developer; mkdir -p \"${SRCROOT}/Externals/arm64/${CONFIGURATION}\"; mkdir -p \"${SRCROOT}/Externals/x86_64/${CONFIGURATION}\"; cp \"${SRCROOT}/../../target/aarch64-apple-ios/${CONFIGURATION}/libtauri_app_lib.a\" \"${SRCROOT}/Externals/arm64/${CONFIGURATION}/libapp.a\"; cp \"${SRCROOT}/../../target/aarch64-apple-ios/${CONFIGURATION}/libtauri_app_lib.a\" \"${SRCROOT}/Externals/x86_64/${CONFIGURATION}/libapp.a\"";
 		};
 /* End PBXShellScriptBuildPhase section */
 

@@ -111,6 +111,11 @@ export function IncomingCallOverlay() {
         backgroundImage: "radial-gradient(ellipse 70% 85% at 100% 72%, rgba(75, 73, 255, 0.95) 0%, rgba(31, 42, 164, 0.62) 31%, transparent 70%), radial-gradient(ellipse 60% 55% at 0% 0%, rgba(0, 102, 255, 0.9) 0%, rgba(0, 52, 126, 0.58) 38%, transparent 72%), linear-gradient(135deg, #03142d 0%, #020817 48%, #07123d 100%)",
       }}
     >
+      <img
+        src="/calling-background-mobile.png"
+        alt=""
+        className="absolute inset-0 h-full w-full object-cover sm:hidden"
+      />
       <div className="absolute inset-0 bg-black/10" />
       <div className="relative flex w-full max-w-lg flex-col items-center px-8 py-12 text-center">
         <div className="mb-6 min-h-14">

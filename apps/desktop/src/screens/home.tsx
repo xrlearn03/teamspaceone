@@ -23,7 +23,7 @@ export function HomeScreen() {
 
   return (
     <div className="mx-auto flex h-full max-w-[1600px] flex-col overflow-y-auto">
-      <header className="sticky top-0 z-10 border-b bg-background/95 px-3 sm:px-6 py-4 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b bg-background/95 px-4 sm:px-6 py-5 backdrop-blur">
         <h1 className="text-xl font-semibold text-text">
           {getGreeting()}, {displayName}
         </h1>
@@ -33,13 +33,13 @@ export function HomeScreen() {
       </header>
 
       {widgets.length > 0 ? (
-        <div className="flex flex-col gap-4 p-3 sm:p-4 lg:p-6">
+        <div className="flex flex-col gap-5 p-4 sm:p-5 lg:p-6">
           {bannerWidgets.map((widget) => {
             const WidgetComponent = widget.component;
             return <WidgetComponent key={widget.id} />;
           })}
           {gridWidgets.length > 0 && (
-            <div className="grid auto-rows-[minmax(14rem,auto)] grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid auto-rows-auto grid-cols-1 gap-5 sm:auto-rows-[minmax(14rem,auto)] sm:grid-cols-2 xl:grid-cols-3">
               {gridWidgets.map((widget) => {
                 const WidgetComponent = widget.component;
                 return (

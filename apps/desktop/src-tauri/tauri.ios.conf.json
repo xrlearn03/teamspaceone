@@ -1,5 +1,12 @@
 {
   "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Teamspace One",
+        "url": "index.html"
+      }
+    ],
     "security": {
       "capabilities": [
         "default"

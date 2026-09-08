@@ -105,8 +105,8 @@
     {
       "filename": "AppIcon-512@2x.png",
       "idiom": "ios-marketing",
-      "scale": "2x",
-      "size": "512x512"
+      "scale": "1x",
+      "size": "1024x1024"
     }
   ],
   "info": {

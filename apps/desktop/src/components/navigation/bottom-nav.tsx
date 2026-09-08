@@ -49,9 +49,9 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Primary navigation"
-      className="flex min-h-16 shrink-0 items-center justify-around border-t bg-surface pb-[env(safe-area-inset-bottom)]"
+      className="flex min-h-16 shrink-0 items-center border-t bg-surface pb-[env(safe-area-inset-bottom)]"
     >
-      {items.map((item) => {
+      {items.slice(0, 5).map((item) => {
         const Icon = item.icon;
         const isActive = activeView === item.id;
         return (
@@ -60,7 +60,7 @@ export function BottomNav() {
             type="button"
             onClick={item.onClick ?? (() => setActiveView(item.id as View))}
             className={cn(
-              "flex h-14 w-14 flex-col items-center justify-center gap-0.5 rounded-md text-[10px] font-medium transition-colors",
+              "flex h-16 min-w-0 flex-1 flex-col items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors",
               isActive
                 ? "text-primary"
                 : "text-text-muted",
@@ -73,7 +73,7 @@ export function BottomNav() {
                 <span className="absolute -right-1 -top-1 flex h-2 w-2 rounded-full bg-mention" />
               ) : null}
             </div>
-            <span>{item.label}</span>
+            <span className="block w-full truncate text-center">{item.label}</span>
           </button>
         );
       })}

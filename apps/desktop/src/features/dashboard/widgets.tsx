@@ -177,28 +177,30 @@ export function QuickActionsWidget() {
           <CardTitle>Quick actions</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <PermissionGate permission="collaboration.message.send">
-              <Button onClick={() => setDialog("message")}>
-                <MessageSquare className="mr-1.5 h-4 w-4" />
-                New message
+              <Button size="sm" className="w-full" onClick={() => setDialog("message")}>
+                <MessageSquare className="mr-1 h-4 w-4 shrink-0" />
+                <span className="block min-w-0 truncate text-center">New message</span>
               </Button>
             </PermissionGate>
             <PermissionGate permission="collaboration.task.create">
-              <Button variant="secondary" onClick={() => setDialog("task")}>
-                <CheckSquare className="mr-1.5 h-4 w-4" />
-                Create task
+              <Button size="sm" variant="secondary" className="w-full" onClick={() => setDialog("task")}>
+                <CheckSquare className="mr-1 h-4 w-4 shrink-0" />
+                <span className="block min-w-0 truncate text-center">Create task</span>
               </Button>
             </PermissionGate>
             <PermissionGate permission="collaboration.project.create">
-              <Button variant="secondary" onClick={() => setDialog("project")}>
-                <Folder className="mr-1.5 h-4 w-4" />
-                Create project
+              <Button size="sm" variant="secondary" className="w-full" onClick={() => setDialog("project")}>
+                <Folder className="mr-1 h-4 w-4 shrink-0" />
+                <span className="block min-w-0 truncate text-center">Create project</span>
               </Button>
             </PermissionGate>
             <PermissionGate permission="collaboration.meeting.create">
               <Button
+                size="sm"
                 variant="secondary"
+                className="w-full"
                 disabled={createMeeting.isPending}
                 onClick={() =>
                   createMeeting.mutate(
@@ -210,19 +212,19 @@ export function QuickActionsWidget() {
                   )
                 }
               >
-                <Video className="mr-1.5 h-4 w-4" />
-                Start meeting
+                <Video className="mr-1 h-4 w-4 shrink-0" />
+                <span className="block min-w-0 truncate text-center">Start meeting</span>
               </Button>
             </PermissionGate>
             <PermissionGate permission="collaboration.file.upload">
-              <Button variant="secondary" onClick={() => setActiveView("files")}>
-                <Upload className="mr-1.5 h-4 w-4" />
-                Upload file
+              <Button size="sm" variant="secondary" className="w-full" onClick={() => setActiveView("files")}>
+                <Upload className="mr-1 h-4 w-4 shrink-0" />
+                <span className="block min-w-0 truncate text-center">Upload file</span>
               </Button>
             </PermissionGate>
-            <Button variant="secondary" onClick={() => setActiveView("ai")}>
-              <Sparkles className="mr-1.5 h-4 w-4" />
-              Ask AI
+            <Button size="sm" variant="secondary" className="w-full" onClick={() => setActiveView("ai")}>
+              <Sparkles className="mr-1 h-4 w-4 shrink-0" />
+              <span className="block min-w-0 truncate text-center">Ask AI</span>
             </Button>
           </div>
         </CardContent>

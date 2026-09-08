@@ -16,12 +16,16 @@ export function MobileShell() {
   useTheme();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const { connection, searchOpen, setSearchOpen, setConnection } = useUIStore(
+  const { connection, searchOpen, setSearchOpen, setConnection, activeView, activeChannelId, activeProjectId, activeMeetingId } = useUIStore(
     useShallow((s) => ({
       connection: s.connection,
       searchOpen: s.searchOpen,
       setSearchOpen: s.setSearchOpen,
       setConnection: s.setConnection,
+      activeView: s.activeView,
+      activeChannelId: s.activeChannelId,
+      activeProjectId: s.activeProjectId,
+      activeMeetingId: s.activeMeetingId,
     })),
   );
 
@@ -40,6 +44,8 @@ export function MobileShell() {
       window.removeEventListener("online", onOnline);
     };
   }, [setConnection]);
+
+  const isSubView = Boolean(activeChannelId || activeProjectId || activeMeetingId || activeView === "voice");
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -60,7 +66,7 @@ export function MobileShell() {
           <ScreenContent />
         </main>
         <StatusBar />
-        <BottomNav />
+        {!isSubView && <BottomNav />}
       </div>
       <CommandMenu open={searchOpen} onOpenChange={setSearchOpen} />
       <IncomingCallOverlay />
