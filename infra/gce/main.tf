@@ -70,7 +70,7 @@ resource "random_password" "jwt_secret" {
 }
 
 locals {
-  clone_url = var.github_token != "" ? "https://oauth2:${var.github_token}@${trimprefix(var.repo_url, "https://")}" : var.repo_url
+  git_auth_header = var.git_token != "" ? "Authorization: Basic ${base64encode("${var.git_username}:${var.git_token}")}" : ""
 
   env_content = templatefile("${path.module}/templates/env.tpl", {
     external_ip        = google_compute_address.static.address
@@ -155,8 +155,9 @@ resource "google_compute_instance" "vm" {
 
   metadata = {
     startup-script = templatefile("${path.module}/templates/startup.sh.tpl", {
-      clone_url               = local.clone_url
+      repo_url                = var.repo_url
       repo_ref                = var.repo_ref
+      git_auth_header         = local.git_auth_header
       external_ip             = google_compute_address.static.address
       env_content             = local.env_content
       compose_overlay_content = local.compose_overlay_content

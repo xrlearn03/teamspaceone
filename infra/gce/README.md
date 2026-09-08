@@ -1,6 +1,6 @@
 # Teamspace One — GCE Terraform deployment
 
-Deploys the full backend stack to a single Google Compute Engine VM with Docker Compose and a persistent data disk.
+Deploys the full backend stack to a single Google Compute Engine VM with Docker Compose and a persistent data disk. The source code is cloned from **Azure DevOps Git** on first boot.
 
 ## What is provisioned
 
@@ -8,20 +8,21 @@ Deploys the full backend stack to a single Google Compute Engine VM with Docker 
 - An `e2-standard-4` (default) Ubuntu 22.04 instance with a separate persistent SSD for data.
 - Firewall rules for the gateway, realtime, LiveKit, SFU, and MinIO.
 - A generated `.env` with random secrets and the new external IP wired in.
-- The repo is cloned on the VM and `docker-compose.yml` is run with a small GCE overlay that sets CORS for the public IP.
+- The repo is cloned on the VM from Azure DevOps and `docker-compose.yml` is run with a small GCE overlay that sets CORS for the public IP.
 
 ## Prerequisites
 
 - `gcloud` authenticated (`gcloud auth application-default login` or `GOOGLE_APPLICATION_CREDENTIALS` set).
 - Terraform >= 1.0.
 - (Optional) pnpm/Node if you want to rebuild the desktop client locally.
+- An Azure DevOps clone URL. If the repo is private, create a Personal Access Token (PAT) with **Code (Read)** scope.
 
 ## Deploy
 
 ```bash
 cd infra/gce
 cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars with your project_id and optional openai_api_key
+# edit terraform.tfvars: set repo_url, git_token if private, and openai_api_key
 terraform init
 terraform apply
 ```

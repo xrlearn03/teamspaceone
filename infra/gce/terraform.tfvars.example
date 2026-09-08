@@ -2,5 +2,11 @@ project_id = "teamspace-one"
 zone       = "us-central1-a"
 # region   = "us-central1"
 
+# Azure DevOps clone URL (replace the placeholders)
+repo_url = "https://dev.azure.com/xrlearn/Connect/_git/Connect"
+
+# Azure DevOps PAT for private repos; leave empty for public repos
+# git_token = "<PAT>"
+# git_username = ""  # optional, can be left empty for Azure PATs
+
 # openai_api_key = "sk-..."  # required for ai-service
-# github_token   = "ghp_..."  # only if repo_url is a private GitHub repo

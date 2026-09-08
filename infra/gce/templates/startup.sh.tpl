@@ -74,7 +74,11 @@ systemctl start docker
 # Clone the application repo
 mkdir -p "$REPO_DIR"
 if [ ! -d "$REPO_DIR/.git" ]; then
-  git clone --depth 1 --branch "${repo_ref}" "${clone_url}" "$REPO_DIR"
+  if [ -n "${git_auth_header}" ]; then
+    git -c http.extraheader="${git_auth_header}" clone --depth 1 --branch "${repo_ref}" "${repo_url}" "$REPO_DIR"
+  else
+    git clone --depth 1 --branch "${repo_ref}" "${repo_url}" "$REPO_DIR"
+  fi
 fi
 
 cd "$REPO_DIR"

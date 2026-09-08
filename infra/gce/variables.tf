@@ -40,9 +40,8 @@ variable "data_disk_size" {
 }
 
 variable "repo_url" {
-  description = "Git repository URL to clone on the VM"
+  description = "Git clone URL for the VM (e.g. https://dev.azure.com/<org>/<project>/_git/<repo>)"
   type        = string
-  default     = "https://github.com/abhijitpampi/teamspace-one.git"
 }
 
 variable "repo_ref" {
@@ -51,8 +50,14 @@ variable "repo_ref" {
   default     = "main"
 }
 
-variable "github_token" {
-  description = "GitHub token for cloning a private repo"
+variable "git_username" {
+  description = "Git username for basic auth (Azure DevOps PAT username; usually can be empty)"
+  type        = string
+  default     = ""
+}
+
+variable "git_token" {
+  description = "Git personal access token for cloning a private repo (Azure DevOps PAT)"
   type        = string
   default     = ""
   sensitive   = true
