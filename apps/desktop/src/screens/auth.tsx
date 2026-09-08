@@ -154,12 +154,22 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       <img
         src="/login-account-light-mobile-background.png"
         alt=""
-        className="absolute inset-0 h-full w-full object-cover dark:hidden"
+        className="absolute inset-0 h-full w-full object-cover dark:hidden landscape:hidden"
       />
       <img
         src="/login-account-dark-mobile-background.png"
         alt=""
-        className="absolute inset-0 hidden h-full w-full object-cover dark:block"
+        className="absolute inset-0 hidden h-full w-full object-cover dark:block landscape:dark:hidden"
+      />
+      <img
+        src="/teamspace-one-background-light.jpg"
+        alt=""
+        className="absolute inset-0 hidden h-full w-full object-cover landscape:block landscape:dark:hidden"
+      />
+      <img
+        src="/teamspace-one-background-dark.jpg"
+        alt=""
+        className="absolute inset-0 hidden h-full w-full object-cover landscape:dark:block"
       />
       <div className="relative z-10 flex h-full items-center justify-center p-3 sm:p-4 lg:p-6">
         <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-8 shadow-sm">

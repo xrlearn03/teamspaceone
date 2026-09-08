@@ -114,7 +114,12 @@ export function IncomingCallOverlay() {
       <img
         src="/calling-background-mobile.png"
         alt=""
-        className="absolute inset-0 h-full w-full object-cover sm:hidden"
+        className="absolute inset-0 h-full w-full object-cover landscape:hidden"
+      />
+      <img
+        src="/call-background.png"
+        alt=""
+        className="absolute inset-0 hidden h-full w-full object-cover landscape:block"
       />
       <div className="absolute inset-0 bg-black/10" />
       <div className="relative flex w-full max-w-lg flex-col items-center px-8 py-12 text-center">
