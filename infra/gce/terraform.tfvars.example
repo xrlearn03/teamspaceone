@@ -1,0 +1,6 @@
+project_id = "my-gcp-project"
+zone       = "us-central1-a"
+# region   = "us-central1"
+
+# openai_api_key = "sk-..."  # required for ai-service
+# github_token   = "ghp_..."  # only if repo_url is a private GitHub repo
