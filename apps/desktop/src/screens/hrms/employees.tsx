@@ -42,6 +42,7 @@ function employeeTitle(e: Employee) {
 }
 
 interface Draft {
+  isDraft: true;
   id: string;
   userId: string;
   membershipId: string;
@@ -328,6 +329,9 @@ function EmployeeFormDialog({
             </select>
           </label>
         </div>
+        {createEmployee.error || updateEmployee.error ? (
+          <p className="px-4 text-sm text-error">{(createEmployee.error ?? updateEmployee.error)?.message}</p>
+        ) : null}
         <div className="flex justify-end gap-2 p-4 pt-0">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
@@ -454,6 +458,7 @@ export function EmployeesSection() {
     search: search || undefined,
     departmentId: departmentId || undefined,
   });
+  const directoryEmployees = useEmployees();
   const members = useMembers(orgId ?? undefined);
   const memberUserIds = useMemo(
     () => [...new Set((members.data ?? []).map((m) => m.userId))],
@@ -468,8 +473,8 @@ export function EmployeesSection() {
   }, [users.data]);
 
   const employeeUserIds = useMemo(
-    () => new Set((employees.data ?? []).map((e) => e.userId)),
-    [employees.data],
+    () => new Set((directoryEmployees.data ?? []).map((e) => e.userId)),
+    [directoryEmployees.data],
   );
 
   const drafts = useMemo<Draft[]>(() => {
@@ -478,6 +483,7 @@ export function EmployeesSection() {
       .map((m) => {
         const u = userMap.get(m.userId);
         return {
+          isDraft: true,
           id: m.id,
           userId: m.userId,
           membershipId: m.id,
@@ -508,8 +514,8 @@ export function EmployeesSection() {
     return <EmployeeDetail employeeId={selectedId} onBack={() => setSelectedId(null)} />;
   }
 
-  const isLoading = employees.isLoading || members.isLoading || users.isLoading;
-  const isError = employees.isError || members.isError || users.isError;
+  const isLoading = employees.isLoading || directoryEmployees.isLoading || members.isLoading || users.isLoading;
+  const isError = employees.isError || directoryEmployees.isError || members.isError || users.isError;
 
   return (
     <div className="flex flex-col gap-4">
@@ -545,7 +551,7 @@ export function EmployeesSection() {
           {isLoading ? (
             <div className="p-4"><SectionSkeleton /></div>
           ) : isError ? (
-            <SectionError onRetry={() => { employees.refetch(); members.refetch(); users.refetch(); }} />
+            <SectionError onRetry={() => { employees.refetch(); directoryEmployees.refetch(); members.refetch(); users.refetch(); }} />
           ) : allRows.length === 0 ? (
             <EmptyState
               icon={Users}
@@ -565,7 +571,7 @@ export function EmployeesSection() {
               </thead>
               <tbody>
                 {allRows.map((row) => {
-                  const isDraft = "membershipId" in row;
+                  const isDraft = "isDraft" in row;
                   return (
                     <tr
                       key={row.id}

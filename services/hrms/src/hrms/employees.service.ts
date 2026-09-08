@@ -134,6 +134,11 @@ export class EmployeesService {
 
     const employees = await this.prisma.employee.findMany({
       where,
+      include: {
+        department: { select: { id: true, name: true } },
+        designation: { select: { id: true, title: true } },
+        manager: { select: { id: true, firstName: true, lastName: true } },
+      },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
     return employees.map((e) => sanitizeEmployee(e, user));
@@ -144,6 +149,11 @@ export class EmployeesService {
       this.scope.resolve(user, ctx.organisationId),
       this.prisma.employee.findFirst({
         where: { id, organisationId: ctx.organisationId },
+        include: {
+          department: { select: { id: true, name: true } },
+          designation: { select: { id: true, title: true } },
+          manager: { select: { id: true, firstName: true, lastName: true } },
+        },
       }),
     ]);
     if (!employee) throw new NotFoundException('Employee not found');
