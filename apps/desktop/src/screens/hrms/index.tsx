@@ -76,7 +76,7 @@ export function HrmsScreen() {
   if (!hasAnyHrms) {
     return (
       <div className="flex h-full flex-col">
-        <header className="border-b px-6 py-4">
+        <header className="border-b px-3 sm:px-6 py-4">
           <h1 className="text-xl font-semibold text-text">HRMS</h1>
         </header>
         <div className="flex flex-1 items-center justify-center">
@@ -95,7 +95,7 @@ export function HrmsScreen() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <header className="border-b px-6 pb-0 pt-4">
+      <header className="border-b px-3 sm:px-6 pb-0 pt-4">
         <h1 className="text-xl font-semibold text-text">HRMS</h1>
         <p className="text-sm text-text-secondary">
           People operations for your organisation.
@@ -122,7 +122,7 @@ export function HrmsScreen() {
           })}
         </div>
       </header>
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
         {activeTab === "overview" && <HrmsOverviewSection />}
         {activeTab === "employees" && <EmployeesSection />}
         {activeTab === "departments" && <DepartmentsSection />}

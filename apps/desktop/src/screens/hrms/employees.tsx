@@ -221,7 +221,7 @@ function EmployeeFormDialog({
                 : "Create a new employee record."}
           </DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-3 p-4 pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 pt-2">
           {selectingMember ? (
             <label className="col-span-2 flex flex-col gap-1">
               <span className={label}>Member *</span>
@@ -559,7 +559,7 @@ export function EmployeesSection() {
               description="Try a different search, or add the first employee."
             />
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-text-muted">
                   <th className="px-4 py-2 font-medium">Name</th>
@@ -593,7 +593,7 @@ export function EmployeesSection() {
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>

@@ -105,7 +105,7 @@ function RoleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] w-full max-w-2xl overflow-hidden">
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-hidden">
         <DialogHeader>
           <DialogTitle>{role ? "Edit role" : "Create role"}</DialogTitle>
           <DialogDescription>
@@ -180,7 +180,7 @@ function RoleDialog({
             ) : (
               <div className="space-y-2">
                 {scopes.map((s, i) => (
-                  <div key={i} className="grid grid-cols-12 items-center gap-2">
+                  <div key={i} className="grid grid-cols-1 items-center gap-2 sm:grid-cols-12">
                     <Input
                       className="col-span-5"
                       value={s.module}
@@ -274,7 +274,7 @@ function InviteMemberDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-full max-w-md">
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Invite member</DialogTitle>
           <DialogDescription>
@@ -287,7 +287,7 @@ function InviteMemberDialog({
             <span className="text-xs font-medium text-text-secondary">Email</span>
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" />
           </label>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-text-secondary">First name</span>
               <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Optional" />
@@ -576,14 +576,14 @@ function RolesPanel() {
 export function AdminScreen() {
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <header className="sticky top-0 z-10 border-b bg-background/95 px-6 py-4 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b bg-background/95 px-3 py-4 backdrop-blur sm:px-6">
         <h1 className="text-xl font-semibold text-text">Administration</h1>
         <p className="text-sm text-text-secondary">
           Members, roles and organisation settings.
         </p>
       </header>
 
-      <div className="grid auto-rows-min grid-cols-1 gap-4 p-6 xl:grid-cols-2">
+      <div className="grid auto-rows-min grid-cols-1 gap-4 p-3 sm:p-4 lg:p-6 xl:grid-cols-2">
         <PermissionGate permission="admin.user.manage">
           <MembersPanel />
         </PermissionGate>

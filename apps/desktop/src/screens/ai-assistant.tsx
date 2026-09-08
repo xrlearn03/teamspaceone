@@ -186,7 +186,7 @@ export function AIAssistantScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center justify-between gap-3 border-b px-6">
+      <header className="flex h-14 items-center justify-between gap-3 border-b px-3 sm:px-6">
         <div className="flex items-center gap-3">
           <Sparkles className="h-5 w-5 text-primary" />
           <h1 className="text-lg font-semibold text-text">AI Assistant</h1>
@@ -199,7 +199,7 @@ export function AIAssistantScreen() {
         )}
       </header>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
         <div className="mx-auto max-w-3xl space-y-6">
           {messages.length === 0 && !streaming && (
             <div className="text-center text-sm text-text-muted">

@@ -33,11 +33,11 @@ export function SavedItemsScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center gap-3 border-b px-6">
+      <header className="flex h-14 items-center gap-3 border-b px-3 sm:px-6">
         <Bookmark className="h-5 w-5 text-primary" />
         <h1 className="text-lg font-semibold text-text">Saved items</h1>
       </header>
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
         {items.length === 0 ? (
           <EmptyState icon={Bookmark} title="Nothing saved" description="Save messages from any channel or conversation using the bookmark action." />
         ) : (

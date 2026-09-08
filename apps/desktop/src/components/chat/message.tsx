@@ -114,7 +114,7 @@ export function MessageItem({
                   setEditing(false);
                 }
               }}
-              className="h-8"
+              className="h-9"
               autoFocus
             />
             <Button size="icon" variant="ghost" onClick={saveEdit} aria-label="Save message">
@@ -143,7 +143,7 @@ export function MessageItem({
               {message.attachments.map((attachment) => <MessageAttachment key={attachment.id} fileId={attachment.fileId} />)}
             </div>
             {!message.deletedAt && !message.pending && (isMe || onEdit || onDelete || onReply || onPin || user) ? (
-              <div className="relative flex opacity-0 transition-opacity group-hover:opacity-100">
+              <div className="relative flex opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                 {user ? (
                   <Button
                     size="icon"

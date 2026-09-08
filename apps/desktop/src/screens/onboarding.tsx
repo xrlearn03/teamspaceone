@@ -47,7 +47,7 @@ export function OnboardingScreen() {
       : error?.message;
 
   return (
-    <div className="flex h-full items-center justify-center bg-background p-6">
+    <div className="flex h-full items-center justify-center bg-background p-3 sm:p-4 lg:p-6">
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
           <Sparkles className="mx-auto mb-3 h-8 w-8 text-primary" />

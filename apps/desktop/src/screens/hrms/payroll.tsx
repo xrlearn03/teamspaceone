@@ -149,7 +149,7 @@ export function PayrollSection() {
         <Card>
           <CardHeader><CardTitle>Payroll summary</CardTitle></CardHeader>
           <CardContent className="p-0">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-text-muted">
                   <th className="px-4 py-2 font-medium">Period</th>
@@ -176,7 +176,7 @@ export function PayrollSection() {
                   <td />
                 </tr>
               </tbody>
-            </table>
+            </table></div>
           </CardContent>
         </Card>
       ) : null}
@@ -193,7 +193,7 @@ export function PayrollSection() {
               description="Payroll periods appear once payroll is configured."
             />
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-text-muted">
                   <th className="px-4 py-2 font-medium">Period</th>
@@ -210,7 +210,7 @@ export function PayrollSection() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>
@@ -221,7 +221,7 @@ export function PayrollSection() {
           {(payslips.data ?? []).length === 0 ? (
             <EmptyState icon={Wallet} title="No payslips" description="Payslips appear after a payroll run is processed." />
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-text-muted">
                   <th className="px-4 py-2 font-medium">Period</th>
@@ -246,7 +246,7 @@ export function PayrollSection() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>

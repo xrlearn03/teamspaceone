@@ -731,40 +731,45 @@ export function MyAttendanceWidget() {
         {checkin.error ? <p className="mt-2 text-xs text-error">{checkin.error.message}</p> : null}
         {checkout.error ? <p className="mt-2 text-xs text-error">{checkout.error.message}</p> : null}
         {presence.error ? <p className="mt-2 text-xs text-error">{presence.error.message}</p> : null}
-        <div className="mt-3 flex flex-wrap gap-2">
-          <PermissionGate permission="hrms.attendance.checkin">
-            {me?.id && !record?.checkInAt ? (
-              <Button size="sm" disabled={checkin.isPending} onClick={() => checkin.mutate()}>
-                <LogIn className="mr-1.5 h-4 w-4" />
-                Check in
-              </Button>
-            ) : null}
-          </PermissionGate>
-          <PermissionGate permission="hrms.attendance.checkout">
-            {me?.id && record?.checkInAt && !record?.checkOutAt ? (
-              <Button variant="secondary" size="sm" disabled={checkout.isPending} onClick={() => checkout.mutate()}>
-                <LogOut className="mr-1.5 h-4 w-4" />
-                Check out
-              </Button>
-            ) : null}
-          </PermissionGate>
-          {canSetPresence
-            ? PRESENCE_STATUSES.map(({ key, label, icon: Icon }) => {
+        <div className="mt-4 flex flex-col gap-3">
+          <div className="flex flex-wrap gap-2">
+            <PermissionGate permission="hrms.attendance.checkin">
+              {me?.id && !record?.checkInAt ? (
+                <Button size="sm" disabled={checkin.isPending} onClick={() => checkin.mutate()}>
+                  <LogIn className="mr-1.5 h-4 w-4" />
+                  Check in
+                </Button>
+              ) : null}
+            </PermissionGate>
+            <PermissionGate permission="hrms.attendance.checkout">
+              {me?.id && record?.checkInAt && !record?.checkOutAt ? (
+                <Button variant="secondary" size="sm" disabled={checkout.isPending} onClick={() => checkout.mutate()}>
+                  <LogOut className="mr-1.5 h-4 w-4" />
+                  Check out
+                </Button>
+              ) : null}
+            </PermissionGate>
+          </div>
+          {canSetPresence ? (
+            <div className="grid grid-cols-3 gap-2">
+              {PRESENCE_STATUSES.map(({ key, label, icon: Icon }) => {
                 const active = presenceStatus === key;
                 return (
                   <Button
                     key={key}
                     variant={active ? "secondary" : "ghost"}
                     size="sm"
+                    className="w-full justify-start"
                     disabled={presence.isPending}
                     onClick={() => presence.mutate(active ? null : key)}
                   >
-                    <Icon className="mr-1.5 h-4 w-4" />
-                    {label}
+                    <Icon className="mr-1.5 h-4 w-4 shrink-0" />
+                    <span className="truncate">{label}</span>
                   </Button>
                 );
-              })
-            : null}
+              })}
+            </div>
+          ) : null}
         </div>
       </CardContent>
     </Card>

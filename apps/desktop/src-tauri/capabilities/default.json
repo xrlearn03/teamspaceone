@@ -51,7 +51,6 @@
     "sql:allow-load",
     "sql:allow-execute",
     "sql:allow-select",
-    "updater:default",
     "core:window:allow-set-focus",
     "native-media",
     "screen-share"

@@ -1,161 +1,23 @@
-import { useEffect, useMemo } from "react";
-import { usePermissionContext } from "@teamspace-one/authorization/react";
-import { canAccessView } from "../../lib/view-permissions";
-import { useUIStore, type View } from "../../stores/ui";
-import { useTheme } from "../../hooks/useTheme";
-import { useShallow } from "zustand/shallow";
-import { ErrorBoundary } from "../ErrorBoundary";
-import { AppRail } from "../navigation/app-rail";
-import { WorkspaceSidebar } from "../navigation/workspace-sidebar";
-import { StatusBar } from "./status-bar";
-import { RightPanel } from "./right-panel";
-import { CommandMenu } from "../search/command-menu";
-import { IncomingCallOverlay } from "../call/incoming-call";
-import { NotificationToasts } from "../ui/notification-toasts";
-import { TooltipProvider } from "../ui/tooltip";
-import { HomeScreen } from "../../screens/home";
-import { InboxScreen } from "../../screens/inbox";
-import { ChannelScreen } from "../../screens/channel";
-import { DirectMessageScreen } from "../../screens/direct-message";
-import { ProjectScreen } from "../../screens/project";
-import { MeetingScreen } from "../../screens/meeting";
-import { VoiceRoomScreen } from "../../screens/voice-room";
-import { FileBrowserScreen } from "../../screens/file-browser";
-import { AIAssistantScreen } from "../../screens/ai-assistant";
-import { MemberDirectoryScreen } from "../../screens/members";
-import { SavedItemsScreen } from "../../screens/saved";
-import { DraftsScreen } from "../../screens/drafts";
-import { SettingsScreen } from "../../screens/settings";
-import { AccessDeniedScreen } from "../../screens/access-denied";
-import { HrmsScreen } from "../../screens/hrms";
-import { InterviewScreen } from "../../screens/interview";
-import { AdminScreen } from "../../screens/admin";
-
-const screens: Record<View, React.ComponentType> = {
-  home: HomeScreen,
-  inbox: InboxScreen,
-  channel: ChannelScreen,
-  dm: DirectMessageScreen,
-  project: ProjectScreen,
-  meeting: MeetingScreen,
-  voice: VoiceRoomScreen,
-  files: FileBrowserScreen,
-  ai: AIAssistantScreen,
-  members: MemberDirectoryScreen,
-  saved: SavedItemsScreen,
-  drafts: DraftsScreen,
-  hrms: HrmsScreen,
-  interview: InterviewScreen,
-  admin: AdminScreen,
-  settings: SettingsScreen,
-};
+import { useDevice } from "../../hooks/useDevice";
+import { AppShellDesktop } from "./app-shell.desktop";
+import { AppShellIOS } from "./app-shell.ios";
+import { AppShellAndroid } from "./app-shell.android";
 
 export function AppShell() {
-  useTheme();
+  const { platform } = useDevice();
 
-  const {
-    activeView,
-    rightPanelOpen,
-    searchOpen,
-    connection,
-    sidebarWidth,
-    rightPanelWidth,
-    setSearchOpen,
-    setActiveView,
-    setConnection,
-    setSidebarWidth,
-    setRightPanelWidth,
-  } = useUIStore(
-    useShallow((s) => ({
-      activeView: s.activeView,
-      rightPanelOpen: s.rightPanelOpen,
-      searchOpen: s.searchOpen,
-      connection: s.connection,
-      sidebarWidth: s.sidebarWidth,
-      rightPanelWidth: s.rightPanelWidth,
-      setSearchOpen: s.setSearchOpen,
-      setActiveView: s.setActiveView,
-      setConnection: s.setConnection,
-      setSidebarWidth: s.setSidebarWidth,
-      setRightPanelWidth: s.setRightPanelWidth,
-    })),
-  );
+  // Route to platform-specific shell files so iOS, Android, and desktop/laptop
+  // can each have their own layout without everything living in one file.
+  if (platform === "ios") {
+    return <AppShellIOS />;
+  }
 
-  useEffect(() => {
-    function onOffline() {
-      setConnection("offline");
-    }
-    function onOnline() {
-      setConnection("connecting");
-    }
-    window.addEventListener("offline", onOffline);
-    window.addEventListener("online", onOnline);
-    if (!navigator.onLine) setConnection("offline");
-    return () => {
-      window.removeEventListener("offline", onOffline);
-      window.removeEventListener("online", onOnline);
-    };
-  }, [setConnection]);
+  if (platform === "android") {
+    return <AppShellAndroid />;
+  }
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setSearchOpen(true);
-      }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "]") {
-        e.preventDefault();
-        setActiveView("inbox");
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [setSearchOpen, setActiveView]);
-
-  useEffect(() => {
-    function onResize() {
-      setSidebarWidth(sidebarWidth);
-      setRightPanelWidth(rightPanelWidth);
-    }
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [setSidebarWidth, setRightPanelWidth, sidebarWidth, rightPanelWidth]);
-
-  const { user } = usePermissionContext();
-  const viewAllowed = canAccessView(user, activeView);
-  const Screen = useMemo(
-    () => (viewAllowed ? screens[activeView] ?? HomeScreen : AccessDeniedScreen),
-    [activeView, viewAllowed],
-  );
-
-  return (
-    <TooltipProvider delayDuration={300}>
-      <div className="flex h-full flex-col">
-        {connection === "offline" ? (
-          <div className="flex items-center justify-center gap-2 bg-warning/10 px-4 py-1.5 text-xs text-warning">
-            You're offline — messages are queued locally and will send when you reconnect.
-          </div>
-        ) : null}
-        {connection === "syncing" ? (
-          <div className="flex items-center justify-center gap-2 bg-info/10 px-4 py-1.5 text-xs text-info">
-            Syncing pending changes…
-          </div>
-        ) : null}
-        <div className="flex flex-1 overflow-hidden">
-          <AppRail />
-          <WorkspaceSidebar />
-          <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
-            <ErrorBoundary>
-              <Screen />
-            </ErrorBoundary>
-          </main>
-          {rightPanelOpen && <RightPanel />}
-        </div>
-        <StatusBar />
-      </div>
-      <CommandMenu open={searchOpen} onOpenChange={setSearchOpen} />
-      <IncomingCallOverlay />
-      <NotificationToasts />
-    </TooltipProvider>
-  );
+  // Desktop, laptop, and unknown platforms use the desktop shell.
+  // The resolver also falls back to desktop for large windows even if the
+  // user agent is not recognised.
+  return <AppShellDesktop />;
 }

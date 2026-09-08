@@ -187,7 +187,7 @@ export function MeetingScreen() {
 
   if (!activeMeetingId) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-text-secondary">
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-3 sm:p-4 lg:p-6 text-text-secondary">
         <Video className="h-12 w-12 text-text-muted" />
         <p className="text-sm">Select a meeting from the sidebar to join.</p>
       </div>
@@ -205,7 +205,7 @@ export function MeetingScreen() {
 
   if (error) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-text-secondary">
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-3 sm:p-4 lg:p-6 text-text-secondary">
         <p className="text-sm text-error">{error}</p>
         <Button variant="secondary" onClick={() => setActiveView("home")}>
           Go back

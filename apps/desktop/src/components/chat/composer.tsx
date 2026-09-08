@@ -274,26 +274,26 @@ export function Composer({
       ) : null}
 
       <div className="rounded-lg border bg-surface">
-        <div className="flex items-center gap-0.5 border-b px-2 py-1">
+        <div className="flex items-center gap-0.5 overflow-x-auto border-b px-2 py-1">
           {toolbar.map((item) => (
             <Button
               key={item.label}
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              className="h-9 w-9 sm:h-8 sm:w-8"
               onClick={item.action}
               aria-label={item.label}
               title={item.label}
             >
-              <item.icon className="h-3.5 w-3.5" />
+              <item.icon className="h-4 w-4" />
             </Button>
           ))}
           <div className="ml-auto flex items-center gap-0.5">
-            <Button variant="ghost" size="icon" className="h-7 w-7" disabled title="Voice message (coming soon)" aria-label="Voice message (coming soon)">
-              <Mic className="h-3.5 w-3.5" />
+            <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-8 sm:w-8" disabled title="Voice message (coming soon)" aria-label="Voice message (coming soon)">
+              <Mic className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" disabled title="Schedule message (coming soon)" aria-label="Schedule message (coming soon)">
-              <Clock className="h-3.5 w-3.5" />
+            <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-8 sm:w-8" disabled title="Schedule message (coming soon)" aria-label="Schedule message (coming soon)">
+              <Clock className="h-4 w-4" />
             </Button>
           </div>
         </div>

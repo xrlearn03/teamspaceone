@@ -142,7 +142,7 @@ export function DepartmentsSection() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-3 sm:p-4 lg:p-6">
       <div>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-text">Departments</h2>
@@ -223,7 +223,7 @@ export function DepartmentsSection() {
             ) : (designations.data ?? []).length === 0 ? (
               <p className="p-4 text-xs text-text-muted">No designations defined.</p>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs text-text-muted">
                     <th className="px-4 py-2 font-medium">Title</th>
@@ -238,7 +238,7 @@ export function DepartmentsSection() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </CardContent>
         </Card>

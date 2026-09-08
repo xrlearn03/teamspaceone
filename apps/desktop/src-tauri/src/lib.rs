@@ -1,4 +1,6 @@
-use tauri::{Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Url, WebviewUrl};
+#[cfg(desktop)]
+use tauri::WebviewWindowBuilder;
 #[cfg(desktop)]
 use tauri::{AppHandle, Manager};
 #[cfg(desktop)]
@@ -138,6 +140,7 @@ pub fn run() {
                 })
                 .build(),
         );
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
     builder
@@ -149,7 +152,6 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .manage(media::CameraState::new())
         .manage(media::MicrophoneState::new())
@@ -185,31 +187,33 @@ pub fn run() {
                 setup_deep_link(app.app_handle())?;
             }
 
-            let url: WebviewUrl = if cfg!(dev) {
-                WebviewUrl::External("http://localhost:1420".parse::<Url>().unwrap())
-            } else {
-                #[cfg(desktop)]
-                {
-                    WebviewUrl::External(format!("http://localhost:{}", port).parse::<Url>().unwrap())
-                }
-                #[cfg(not(desktop))]
-                {
-                    WebviewUrl::App("index.html".into())
-                }
-            };
-
-            let _window = WebviewWindowBuilder::new(app, "main".to_string(), url)
-                .title("Teamspace One")
-                .inner_size(1200.0, 800.0)
-                .min_inner_size(800.0, 600.0)
-                .disable_drag_drop_handler()
-                .devtools(cfg!(debug_assertions))
-                .build()?;
-
-            // Open the web inspector so console errors are visible during testing.
-            #[cfg(all(desktop, debug_assertions))]
+            #[cfg(desktop)]
             {
-                let _ = _window.open_devtools();
+                #[cfg(dev)]
+                let url = WebviewUrl::External("http://localhost:1420".parse::<Url>().unwrap());
+                #[cfg(not(dev))]
+                let url = WebviewUrl::External(format!("http://localhost:{}", port).parse::<Url>().unwrap());
+
+                let _window = WebviewWindowBuilder::new(app, "main".to_string(), url)
+                    .title("Teamspace One")
+                    .inner_size(1200.0, 800.0)
+                    .min_inner_size(800.0, 600.0)
+                    .disable_drag_drop_handler()
+                    .devtools(cfg!(debug_assertions))
+                    .build()?;
+
+                // Open the web inspector so console errors are visible during testing.
+                #[cfg(debug_assertions)]
+                {
+                    let _ = _window.open_devtools();
+                }
+            }
+
+            // On iOS and Android Tauri creates the main webview automatically from
+            // tauri.conf.json / tauri.{ios,android}.conf.json, so we do not build one here.
+            #[cfg(not(desktop))]
+            {
+                let _ = ();
             }
 
             Ok(())

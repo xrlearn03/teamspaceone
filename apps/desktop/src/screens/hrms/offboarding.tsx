@@ -294,7 +294,7 @@ export function OffboardingSection() {
               description="Offboarding cases appear when an employee exit is initiated."
             />
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-text-muted">
                   <th className="px-4 py-2 font-medium" />
@@ -334,7 +334,7 @@ export function OffboardingSection() {
                   ];
                 })}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>

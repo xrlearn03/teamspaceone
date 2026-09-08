@@ -82,7 +82,7 @@ function RequestCorrectionDialog({
           <DialogDescription>Submit updated check-in/out times for {formatDate(record.date)}.</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3 p-4 pt-2">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-text-secondary">Requested check-in</span>
               <Input type="time" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} />
@@ -239,7 +239,7 @@ export function AttendanceSection() {
               description="Records appear once you start checking in."
             />
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-text-muted">
                   <th className="px-4 py-2 font-medium">Date</th>
@@ -275,7 +275,7 @@ export function AttendanceSection() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>
@@ -293,7 +293,7 @@ export function AttendanceSection() {
             ) : (corrections.data ?? []).length === 0 ? (
               <p className="p-4 text-xs text-text-muted">Nothing awaiting approval.</p>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs text-text-muted">
                     <th className="px-4 py-2 font-medium">Employee</th>
@@ -343,7 +343,7 @@ export function AttendanceSection() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </CardContent>
         </Card>

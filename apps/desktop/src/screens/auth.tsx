@@ -161,7 +161,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         alt=""
         className="absolute inset-0 hidden h-full w-full object-cover dark:block"
       />
-      <div className="relative z-10 flex h-full items-center justify-center p-6">
+      <div className="relative z-10 flex h-full items-center justify-center p-3 sm:p-4 lg:p-6">
         <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-8 shadow-sm">
           <h1 className="text-2xl font-semibold text-text">{title}</h1>
           <p className="mt-1 text-sm text-text-muted">{description}</p>

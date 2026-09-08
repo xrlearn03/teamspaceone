@@ -77,7 +77,7 @@ function OverviewSection() {
   const { data: overview, isLoading, isError, refetch } = useInterviewOverview();
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-24 w-full" />
         ))}
@@ -101,7 +101,7 @@ function OverviewSection() {
   ];
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((s) => (
           <Card key={s.label}>
             <CardContent className="p-4">
@@ -351,7 +351,7 @@ export function InterviewScreen() {
   if (!hasAnyInterview) {
     return (
       <div className="flex h-full flex-col">
-        <header className="border-b px-6 py-4">
+        <header className="border-b px-3 sm:px-6 py-4">
           <h1 className="text-xl font-semibold text-text">Interview</h1>
         </header>
         <div className="flex flex-1 items-center justify-center">
@@ -372,7 +372,7 @@ export function InterviewScreen() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <header className="border-b px-6 pb-0 pt-4">
+      <header className="border-b px-3 sm:px-6 pb-0 pt-4">
         <h1 className="text-xl font-semibold text-text">Interview</h1>
         <p className="text-sm text-text-secondary">
           {isCandidate
@@ -401,7 +401,7 @@ export function InterviewScreen() {
           })}
         </div>
       </header>
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
         {activeTab === "overview" && <OverviewSection />}
         {activeTab === "jobs" && (
           <SectionShell><JobsSection /></SectionShell>

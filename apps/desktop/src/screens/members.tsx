@@ -77,7 +77,7 @@ export function MemberDirectoryScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center justify-between border-b px-6">
+      <header className="flex h-14 items-center justify-between border-b px-3 sm:px-6">
         <div className="flex items-center gap-3">
           <Users className="h-5 w-5 text-primary" />
           <div>
@@ -85,15 +85,15 @@ export function MemberDirectoryScreen() {
             <p className="text-xs text-text-muted">{organisation?.name ?? "Organisation"}</p>
           </div>
         </div>
-        <Button size="sm" onClick={() => openInvite(false)}>
+        <Button size="sm" className="h-9 px-2 text-sm sm:px-3" onClick={() => openInvite(false)}>
           <UserPlus className="mr-1.5 h-4 w-4" />
-          Invite member
+          <span className="hidden sm:inline">Invite member</span>
         </Button>
       </header>
-      <div className="border-b px-6 py-3">
+      <div className="border-b px-3 py-3 sm:px-6">
         <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search members or roles" className="max-w-sm" />
       </div>
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
         {isLoading ? (
           <p className="text-sm text-text-muted">Loading members…</p>
         ) : membersError ? (
@@ -108,7 +108,7 @@ export function MemberDirectoryScreen() {
                 {internal.map((member) => {
                   const user = userMap.get(member.userId);
                   return (
-                    <div key={member.id} className="flex items-center gap-3 border-b px-4 py-2.5 last:border-0">
+                    <div key={member.id} className="flex min-h-11 items-center gap-3 border-b px-4 py-3 last:border-0">
                       <Avatar className="h-8 w-8">
                         <AvatarFallback>{getInitials(member, user)}</AvatarFallback>
                       </Avatar>
@@ -118,7 +118,7 @@ export function MemberDirectoryScreen() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-error"
+                          className="h-9 w-9 text-error"
                           disabled={removeMember.isPending}
                           onClick={() => organisationId && removeMember.mutate({ organisationId, membershipId: member.id })}
                         >
@@ -143,7 +143,7 @@ export function MemberDirectoryScreen() {
                 {external.map((member) => {
                   const user = userMap.get(member.userId);
                   return (
-                    <div key={member.id} className="flex items-center gap-3 border-b px-4 py-2.5 last:border-0">
+                    <div key={member.id} className="flex min-h-11 items-center gap-3 border-b px-4 py-3 last:border-0">
                       <Avatar className="h-8 w-8">
                         <AvatarFallback>{getInitials(member, user)}</AvatarFallback>
                       </Avatar>
@@ -153,7 +153,7 @@ export function MemberDirectoryScreen() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-error"
+                        className="h-9 w-9 text-error"
                         disabled={removeMember.isPending}
                         onClick={() => organisationId && removeMember.mutate({ organisationId, membershipId: member.id })}
                       >
@@ -170,7 +170,7 @@ export function MemberDirectoryScreen() {
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">Pending invitations ({pendingInvitations.length})</p>
                 <div className="overflow-hidden rounded-lg border border-dashed">
                   {pendingInvitations.map((inv) => (
-                    <div key={inv.id} className="flex items-center gap-3 border-b px-4 py-2.5 last:border-0">
+                    <div key={inv.id} className="flex min-h-11 items-center gap-3 border-b px-4 py-3 last:border-0">
                       <Avatar className="h-8 w-8">
                         <AvatarFallback>{inv.email.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
@@ -188,7 +188,7 @@ export function MemberDirectoryScreen() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-error"
+                        className="h-9 w-9 text-error"
                         disabled={resendInvitation.isPending || revokeInvitation.isPending}
                         onClick={() => organisationId && revokeInvitation.mutate({ organisationId, invitationId: inv.id })}
                       >

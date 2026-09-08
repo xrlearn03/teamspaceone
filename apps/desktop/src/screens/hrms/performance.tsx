@@ -74,7 +74,7 @@ function CycleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: 
             <span className={labelCls}>Name *</span>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. H1 2025" />
           </label>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1">
               <span className={labelCls}>Start date</span>
               <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -436,7 +436,7 @@ export function PerformanceSection() {
           ) : (cycles.data ?? []).length === 0 ? (
             <p className="p-4 text-xs text-text-muted">No review cycles yet.</p>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-text-muted">
                   <th className="px-4 py-2 font-medium">Name</th>
@@ -486,7 +486,7 @@ export function PerformanceSection() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>
@@ -508,7 +508,7 @@ export function PerformanceSection() {
               description="Reviews appear once a cycle is created and reviews are assigned."
             />
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-text-muted">
                   <th className="px-4 py-2 font-medium">Employee</th>
@@ -563,7 +563,7 @@ export function PerformanceSection() {
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>

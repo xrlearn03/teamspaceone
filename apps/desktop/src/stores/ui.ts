@@ -81,6 +81,7 @@ interface UIState {
   setActiveMeetingId: (meetingId: string | null) => void;
   setPendingActionFilter: (filter: string | null) => void;
   toggleSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   setSidebarWidth: (width: number) => void;
   toggleRightPanel: () => void;
   setRightPanelWidth: (width: number) => void;
@@ -139,6 +140,7 @@ export const useUIStore = create<UIState>((set) => ({
   setActiveMeetingId: (meetingId) => set({ activeMeetingId: meetingId }),
   setPendingActionFilter: (filter) => set({ pendingActionFilter: filter }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setSidebarWidth: (width) =>
     set({ sidebarWidth: clampSidebarWidth(width) }),
   toggleRightPanel: () =>

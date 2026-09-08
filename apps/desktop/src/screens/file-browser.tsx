@@ -343,7 +343,7 @@ export function FileBrowserScreen() {
   return (
     <>
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center justify-between border-b px-6">
+      <header className="flex h-14 items-center justify-between border-b px-3 sm:px-6">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold text-text">Files</h1>
           <Badge variant="secondary">{filtered.length}</Badge>
@@ -380,7 +380,7 @@ export function FileBrowserScreen() {
         </div>
       </header>
 
-      <div className="flex items-center gap-2 border-b px-6 py-2">
+      <div className="flex items-center gap-2 border-b px-3 sm:px-6 py-2">
         {filters.map((f) => (
           <button
             key={f}
@@ -405,7 +405,7 @@ export function FileBrowserScreen() {
           <EmptyState icon={FileText} title="No files" description="Upload a file to get started." />
         ) : viewMode === "list" ? (
           <div className="rounded-lg border">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
               <thead className="border-b bg-surface-elevated text-left text-xs uppercase text-text-muted">
                 <tr>
                   <th className="px-4 py-2 font-medium">Name</th>
@@ -439,10 +439,10 @@ export function FileBrowserScreen() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         ) : (
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             {filtered.map((f) => (
               <div
                 key={f.id}

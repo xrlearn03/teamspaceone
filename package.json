@@ -7,9 +7,12 @@
   "scripts": {
    "build:desktop": "pnpm --filter @teamspace-one/authorization build && pnpm --filter @teamspace-one/desktop tauri:build",
     "build:ipad": "pnpm --filter @teamspace-one/authorization build && pnpm --filter @teamspace-one/desktop tauri:ios:build",
+    "build:mobile:android": "pnpm --filter @teamspace-one/authorization build && pnpm --filter @teamspace-one/desktop tauri:android:build",
     "dev:web": "pnpm --filter @teamspace-one/web dev",
     "build:web": "pnpm --filter @teamspace-one/web build",
     "dev:desktop": "pnpm --filter @teamspace-one/desktop tauri dev",
+    "dev:mobile:ios": "pnpm --filter @teamspace-one/desktop tauri:ios:dev",
+    "dev:mobile:android": "pnpm --filter @teamspace-one/desktop tauri:android:dev",
     "build:gateway": "pnpm --filter @teamspace-one/api-gateway build",
     "build:auth": "pnpm --filter @teamspace-one/auth-service build",
     "build:organisation": "pnpm --filter @teamspace-one/organisation-service build",

@@ -46,7 +46,7 @@ export function HrmsOverviewSection() {
 
   const o = overview.data;
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-3 sm:p-4 lg:p-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={Users} label="Total employees" value={o.totalEmployees} />
         <StatCard icon={CalendarCheck} label="Present today" value={o.presentToday} />

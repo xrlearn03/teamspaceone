@@ -254,7 +254,7 @@ function ConvertToEmployeeDialog({
             Create an employee record for {instance.candidateName ?? "this candidate"}.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-3 p-4 pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 pt-2">
           <label className="col-span-2 flex flex-col gap-1">
             <span className={labelCls}>Organisation user *</span>
             <MemberUserSelect value={form.userId} onChange={(v) => field("userId", v)} />
@@ -408,7 +408,7 @@ function TemplateDialog({
             ) : (
               tasks.map((t, i) => (
                 <div key={i} className="flex items-start gap-2 rounded-md border p-2">
-                  <div className="grid flex-1 grid-cols-2 gap-2">
+                  <div className="grid flex-1 grid-cols-1 sm:grid-cols-2 gap-2">
                     <Input
                       placeholder="Task title *"
                       value={t.title}
@@ -594,7 +594,7 @@ export function OnboardingSection() {
               description="Start an onboarding to generate a checklist for a new joiner."
             />
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-text-muted">
                   <th className="px-4 py-2 font-medium" />
@@ -641,7 +641,7 @@ export function OnboardingSection() {
                   ];
                 })}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardContent>
       </Card>
@@ -660,7 +660,7 @@ export function OnboardingSection() {
             ) : (templates.data ?? []).length === 0 ? (
               <p className="p-4 text-xs text-text-muted">No templates yet.</p>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs text-text-muted">
                     <th className="px-4 py-2 font-medium">Name</th>
@@ -703,7 +703,7 @@ export function OnboardingSection() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </CardContent>
         </Card>
