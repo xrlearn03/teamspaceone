@@ -55,6 +55,10 @@
       "signingIdentity": "Developer ID Application: EDUTAPXR TECHNOLOGIES PRIVATE LIMITED (7K3F8KC3R8)",
       "entitlements": "entitlements.plist",
       "infoPlist": "Info.plist"
+    },
+    "iOS": {
+      "minimumSystemVersion": "15.0",
+      "developmentTeam": "7K3F8KC3R8"
     }
   }
 }
