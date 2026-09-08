@@ -23,17 +23,20 @@ export class MemberInvitationEmailService {
     const name = [payload.firstName, payload.lastName].filter(Boolean).join(' ').trim();
 
     const subject = `Your Teamspace One account for ${orgName}`;
+    const credentialBlock = payload.temporaryPassword
+      ? `Your login credentials:\n\n` +
+        `  Login: ${to}\n` +
+        `  Temporary password: ${payload.temporaryPassword}\n\n` +
+        `Sign in at ${appUrl} — you will be asked to set a new password on first login.\n`
+      : `You already have a Teamspace One account. Sign in at ${appUrl} with this email address.\n`;
+
     const body =
       `Hi${name ? ` ${name}` : ''},\n\n` +
       `You have been added to ${orgName} on Teamspace One as ${roleName}.\n\n` +
-      (payload.accountCreated && payload.temporaryPassword
-        ? `Your login credentials:\n\n` +
-          `  Login: ${to}\n` +
-          `  Temporary password: ${payload.temporaryPassword}\n\n` +
-          `Sign in at ${appUrl} — you will be asked to set a new password on first login.\n`
-        : `Sign in at ${appUrl} with your existing Teamspace One account.\n`) +
+      credentialBlock +
       `\nIf you were not expecting this, you can ignore this email.\n`;
 
+    this.logger.log({ eventId: envelope.eventId, to, accountCreated: payload.accountCreated, hasTemporaryPassword: !!payload.temporaryPassword }, 'Sending member invitation email');
     await sendEmail(this.config, { to, subject, body });
   }
 }
