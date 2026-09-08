@@ -356,6 +356,56 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           }
         });
       }
+
+      socket.on("sync", (payload: unknown) => {
+        const sync = payload as { tag?: string; resourceId?: string } | undefined;
+        const tag = sync?.tag ?? "";
+        const resourceId = sync?.resourceId;
+        const organisationId = getActiveOrganisation() ?? "none";
+        const domain = tag.split(".")[0] ?? tag;
+        const keys: unknown[][] = [];
+        switch (domain) {
+          case "hrms":
+            keys.push(["hrms"]);
+            break;
+          case "interview":
+            keys.push(["interview"]);
+            break;
+          case "file":
+            keys.push(["files", organisationId]);
+            if (resourceId) keys.push(["file", resourceId]);
+            break;
+          case "user":
+            keys.push(["me"], ["users"]);
+            break;
+          case "organisation":
+            keys.push(
+              ["organisations"],
+              ["members", organisationId],
+              ["invitations", organisationId],
+              ["roles", organisationId],
+              ["workspaces", organisationId],
+              ["permissions", organisationId],
+            );
+            break;
+          case "workspace":
+            keys.push(["workspaces", organisationId]);
+            break;
+          case "client":
+          case "guest":
+            keys.push(["clients", organisationId]);
+            break;
+          case "ai":
+            keys.push(["ai-pending-actions"]);
+            break;
+          default:
+            keys.push([domain]);
+        }
+        for (const key of keys) {
+          void queryClient.invalidateQueries({ queryKey: key, exact: false });
+        }
+      });
+
     }
 
     void connect();

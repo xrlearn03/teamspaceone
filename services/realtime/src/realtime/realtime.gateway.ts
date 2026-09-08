@@ -380,8 +380,17 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
         }
         break;
       }
-      default:
-        this.logger.debug({ eventType: envelope.eventType }, 'No realtime broadcast configured');
+      default: {
+        const organisationId = envelope.organisationId as string | undefined;
+        if (organisationId) {
+          const tag = envelope.eventType.replace(/^teamspace-one\./, '');
+          this.server
+            .to(`organisation:${organisationId}`)
+            .emit('sync', { tag, resourceId: envelope.resourceId });
+          this.logger.debug({ eventType: envelope.eventType, tag }, 'Broadcasted sync event');
+        }
+        break;
+      }
     }
   }
 }
