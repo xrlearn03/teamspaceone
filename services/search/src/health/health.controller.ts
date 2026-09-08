@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { NatsClientService } from '../events/nats-client.service.js';
 
@@ -24,7 +24,9 @@ export class HealthController {
       db = false;
     }
     const nats = this.nats.isConnected();
-    return { status: db && nats ? 'ok' : 'degraded', db, nats };
+    const result = { status: db && nats ? 'ok' : 'degraded', db, nats };
+    if (!db || !nats) throw new ServiceUnavailableException(result);
+    return result;
   }
 
   @Get('live')

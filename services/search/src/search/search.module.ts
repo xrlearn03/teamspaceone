@@ -25,6 +25,6 @@ import { SearchController } from './search.controller.js';
     RemotePermissionGuard,
     SearchService,
   ],
-  exports: [SearchService],
+  exports: [AUTHORIZATION_OPTIONS, RemotePermissionGuard, SearchService],
 })
 export class SearchModule {}

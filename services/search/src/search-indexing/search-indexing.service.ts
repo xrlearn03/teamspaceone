@@ -31,6 +31,8 @@ export class SearchIndexingService {
       jobId: `reindex-${job.organisationId}-${job.resourceType}-${job.resourceId}`,
       attempts: 5,
       backoff: { type: 'exponential', delay: 5000 },
+      removeOnComplete: true,
+      removeOnFail: { age: 7 * 24 * 60 * 60, count: 1000 },
     });
     this.logger.log({ jobId: bullJob.id, resourceType: job.resourceType, resourceId: job.resourceId }, 'Enqueued reindex job');
     return bullJob;

@@ -17,6 +17,7 @@ export interface NotificationPreferenceInput {
 export interface CreatedNotification {
   id: string;
   deliveryIds: string[];
+  enqueue?: boolean;
 }
 
 interface NotificationInput {
@@ -31,6 +32,7 @@ interface NotificationInput {
   title: string;
   body: string;
   link?: string;
+  delayMs?: number;
 }
 
 interface ChannelFlags {
@@ -68,6 +70,15 @@ export class NotificationService {
         Subjects.APPROVAL_REJECTED,
         Subjects.CHANNEL_CREATED,
         Subjects.CHANNEL_MEMBERS_UPDATED,
+        Subjects.HRMS_EMPLOYEE_CREATE,
+        Subjects.HRMS_LEAVE_REQUESTED,
+        Subjects.HRMS_LEAVE_APPROVED,
+        Subjects.HRMS_LEAVE_REJECTED,
+        Subjects.HRMS_ATTENDANCE_CORRECTION_REQUESTED,
+        Subjects.HRMS_ATTENDANCE_CORRECTION_RESOLVED,
+        Subjects.INTERVIEW_SESSION_SCHEDULED,
+        Subjects.INTERVIEW_SCREENING_COMPLETED,
+        Subjects.INTERVIEW_EVALUATION_READY,
       ] as string[]
     ).includes(eventType);
   }
@@ -144,10 +155,18 @@ export class NotificationService {
 
       await this.outbox.createEvent(tx, outbox, Subjects.NOTIFICATION_CREATED);
 
-      created.push({
-        id: notification.id,
-        deliveryIds: notification.deliveries.map((d) => d.id),
-      });
+      if (n.delayMs && n.delayMs > 0) {
+        for (const d of notification.deliveries) {
+          await this.notificationQueue.add(
+            'send',
+            { deliveryId: d.id },
+            { delay: n.delayMs, attempts: 3, backoff: { type: 'exponential', delay: 5000 } },
+          );
+        }
+        created.push({ id: notification.id, deliveryIds: notification.deliveries.map((d) => d.id), enqueue: false });
+      } else {
+        created.push({ id: notification.id, deliveryIds: notification.deliveries.map((d) => d.id) });
+      }
     }
 
     return created;
@@ -385,7 +404,7 @@ export class NotificationService {
             link: this.approvalLink(organisationId, payload.approvalId as string),
           }));
       }
-      case 'teamspace-one.hrms.employee.created': {
+      case Subjects.HRMS_EMPLOYEE_CREATE: {
         const userId = (payload.userId as string) || undefined;
         if (!userId) return [];
         return [
@@ -404,7 +423,7 @@ export class NotificationService {
           },
         ];
       }
-      case 'teamspace-one.hrms.leave.requested': {
+      case Subjects.HRMS_LEAVE_REQUESTED: {
         const managerUserId = (payload.managerUserId as string) || undefined;
         if (!managerUserId || managerUserId === actorId) return [];
         const name = (payload.employeeName as string) || 'An employee';
@@ -425,7 +444,7 @@ export class NotificationService {
           },
         ];
       }
-      case 'teamspace-one.hrms.leave.approved': {
+      case Subjects.HRMS_LEAVE_APPROVED: {
         const userId = (payload.userId as string) || undefined;
         if (!userId || userId === actorId) return [];
         const final = payload.status === 'approved';
@@ -447,7 +466,7 @@ export class NotificationService {
           },
         ];
       }
-      case 'teamspace-one.hrms.leave.rejected': {
+      case Subjects.HRMS_LEAVE_REJECTED: {
         const userId = (payload.userId as string) || undefined;
         if (!userId || userId === actorId) return [];
         return [
@@ -466,7 +485,7 @@ export class NotificationService {
           },
         ];
       }
-      case 'teamspace-one.hrms.attendance.correction.requested': {
+      case Subjects.HRMS_ATTENDANCE_CORRECTION_REQUESTED: {
         const managerUserId = (payload.managerUserId as string) || undefined;
         if (!managerUserId || managerUserId === actorId) return [];
         return [
@@ -485,7 +504,7 @@ export class NotificationService {
           },
         ];
       }
-      case 'teamspace-one.hrms.attendance.correction.resolved': {
+      case Subjects.HRMS_ATTENDANCE_CORRECTION_RESOLVED: {
         const userId = (payload.userId as string) || undefined;
         if (!userId || userId === actorId) return [];
         const status = (payload.status as string) || 'resolved';
@@ -504,6 +523,72 @@ export class NotificationService {
             link: this.hrmsLink(organisationId),
           },
         ];
+      }
+      case Subjects.INTERVIEW_SESSION_SCHEDULED: {
+        const scheduledAt = payload.scheduledAt ? new Date(payload.scheduledAt as string) : null;
+        if (!scheduledAt || Number.isNaN(scheduledAt.getTime())) return [];
+        const reminderOffsetMs = 15 * 60 * 1000;
+        const delayMs = scheduledAt.getTime() - Date.now() - reminderOffsetMs;
+        if (delayMs <= 0) return [];
+        const participantIds = Array.isArray(payload.participantIds) ? (payload.participantIds as string[]).filter(Boolean) : [];
+        const candidateName = String(payload.candidateName ?? 'A candidate');
+        const jobTitle = String(payload.jobTitle ?? 'a job');
+        return participantIds
+          .filter((userId) => userId !== actorId)
+          .map((userId) => ({
+            organisationId,
+            workspaceId,
+            userId,
+            actorId,
+            eventId: envelope.eventId,
+            eventType: Subjects.INTERVIEW_SESSION_REMINDER,
+            resourceType: 'interview-session',
+            resourceId: envelope.resourceId,
+            title: 'Upcoming interview',
+            body: `Your interview with ${candidateName} (${jobTitle}) is in 15 minutes.`,
+            link: this.interviewLink(organisationId),
+            delayMs,
+          }));
+      }
+      case Subjects.INTERVIEW_SCREENING_COMPLETED: {
+        const recipientIds = Array.isArray(payload.recipientIds) ? (payload.recipientIds as string[]).filter(Boolean) : [];
+        const candidateName = String(payload.candidateName ?? 'A candidate');
+        const jobTitle = String(payload.jobTitle ?? 'a job');
+        return recipientIds
+          .filter((userId) => userId !== actorId)
+          .map((userId) => ({
+            organisationId,
+            workspaceId,
+            userId,
+            actorId,
+            eventId: envelope.eventId,
+            eventType,
+            resourceType: 'candidate-application',
+            resourceId: envelope.resourceId,
+            title: 'AI screening completed',
+            body: `AI screening for ${candidateName} (${jobTitle}) is ready for review.`,
+            link: this.interviewLink(organisationId),
+          }));
+      }
+      case Subjects.INTERVIEW_EVALUATION_READY: {
+        const recipientIds = Array.isArray(payload.recipientIds) ? (payload.recipientIds as string[]).filter(Boolean) : [];
+        const candidateName = String(payload.candidateName ?? 'A candidate');
+        const jobTitle = String(payload.jobTitle ?? 'a job');
+        return recipientIds
+          .filter((userId) => userId !== actorId)
+          .map((userId) => ({
+            organisationId,
+            workspaceId,
+            userId,
+            actorId,
+            eventId: envelope.eventId,
+            eventType,
+            resourceType: 'interview-evaluation',
+            resourceId: envelope.resourceId,
+            title: 'AI evaluation ready',
+            body: `AI evaluation for ${candidateName} (${jobTitle}) is ready for review.`,
+            link: this.interviewLink(organisationId),
+          }));
       }
       default:
         return [];
@@ -550,6 +635,10 @@ export class NotificationService {
 
   private hrmsLink(organisationId: string) {
     return `/organisations/${organisationId}/hrms`;
+  }
+
+  private interviewLink(organisationId: string) {
+    return `/organisations/${organisationId}/interview`;
   }
 
   private buildDeliveryCreates(channels: ChannelFlags) {

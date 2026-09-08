@@ -429,6 +429,7 @@ export function useSfu() {
 
           case "participant_left":
             setParticipants((prev) => prev.filter((p) => p.id !== msg.participant_id));
+            setRemoteStreams((prev) => prev.filter((p) => p.participantId !== msg.participant_id));
             break;
 
           case "offer": {

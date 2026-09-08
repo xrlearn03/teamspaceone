@@ -10,7 +10,7 @@ Teamspace One is a **pnpm monorepo** containing a Tauri 2 desktop application, a
 - Multi-organisation support with workspaces
 - Channels, direct messages, threads, reactions, mentions
 - Projects, tasks, approvals, comments
-- Meetings and voice rooms backed by LiveKit and a Rust SFU
+- Meetings and voice rooms backed by a native Rust SFU
 - File uploads to an S3-compatible store (MinIO)
 - AI summaries, Q&A, task/decision extraction, and daily digests
 - Permission-aware full-text search and realtime notifications
@@ -40,7 +40,7 @@ What is **not** present are the HRMS and AI Interview modules, a granular role-b
 │   ├── organisation/     # Organisations, memberships, roles, invitations, workspaces
 │   ├── messaging/        # Channels and messages
 │   ├── projects/         # Projects, tasks, comments, approvals, activity
-│   ├── meeting/          # Meetings, voice rooms, LiveKit tokens
+│   ├── meeting/          # Meetings, voice rooms, SFU tokens
 │   ├── file-storage/     # Uploads, downloads, previews, S3/MinIO
 │   ├── notification/     # In-app/email notifications, preferences
 │   ├── search/           # Postgres full-text search + vector support

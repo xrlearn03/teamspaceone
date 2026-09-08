@@ -16,6 +16,8 @@ model Project {
   name           String
   description    String?
   ownerId        String
+  isTemplate     Boolean             @default(false)
+  templateId     String?
   status         String              @default("active")
   startDate      DateTime?
   targetDate     DateTime?
@@ -29,8 +31,10 @@ model Project {
   activities     ProjectActivity[]
 
   @@index([organisationId])
+  @@index([organisationId, isTemplate])
   @@index([workspaceId])
   @@index([clientId])
+  @@index([templateId])
   @@map("projects")
 }
 

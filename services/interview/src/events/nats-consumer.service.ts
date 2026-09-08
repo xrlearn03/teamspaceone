@@ -19,10 +19,21 @@ const BACKOFF_NANOS = [
   60_000_000_000,
 ];
 
+interface ConsumerConfig {
+  stream: string;
+  subject: string;
+  durable: string;
+}
+
+const CONSUMERS: ConsumerConfig[] = [
+  { stream: 'INTERVIEW', subject: 'teamspace-one.interview.>', durable: 'interview-consumer' },
+  { stream: 'MEETINGS', subject: 'teamspace-one.meeting.recording.transcript.ready', durable: 'interview-meeting-consumer' },
+];
+
 @Injectable()
 export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NatsConsumerService.name);
-  private subscription: JetStreamSubscription | undefined;
+  private subscriptions: JetStreamSubscription[] = [];
   private stopped = false;
 
   constructor(
@@ -33,40 +44,45 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     const js = await this.natsClient.getJetStream();
 
-    this.subscription = await js.subscribe('teamspace-one.interview.>', {
-      config: {
-        durable_name: 'interview-consumer',
-        deliver_subject: 'interview-consumer',
-        deliver_group: 'interview-consumers',
-        ack_policy: AckPolicy.Explicit,
-        deliver_policy: DeliverPolicy.All,
-        max_ack_pending: 100,
-        max_deliver: MAX_DELIVER,
-        ack_wait: ACK_WAIT_NANOS,
-        backoff: BACKOFF_NANOS,
-      },
-    });
-
-    this.consume().catch((err) => {
-      this.logger.error(`NATS consumer error: ${(err as Error).message}`);
-    });
+    for (const consumer of CONSUMERS) {
+      try {
+        const subscription = await js.subscribe(consumer.subject, {
+          stream: consumer.stream,
+          config: {
+            durable_name: consumer.durable,
+            deliver_subject: consumer.durable,
+            deliver_group: `${consumer.durable}-group`,
+            ack_policy: AckPolicy.Explicit,
+            deliver_policy: DeliverPolicy.All,
+            max_ack_pending: 100,
+            max_deliver: MAX_DELIVER,
+            ack_wait: ACK_WAIT_NANOS,
+            backoff: BACKOFF_NANOS,
+          },
+        });
+        this.subscriptions.push(subscription);
+        this.consume(subscription).catch((err) => {
+          this.logger.error(`NATS consumer error [${consumer.subject}]: ${(err as Error).message}`);
+        });
+      } catch (err) {
+        this.logger.error(`Failed to subscribe to ${consumer.subject}: ${(err as Error).message}`);
+      }
+    }
   }
 
   async onModuleDestroy() {
     this.stopped = true;
-    if (this.subscription) {
+    for (const subscription of this.subscriptions) {
       try {
-        await this.subscription.drain();
+        await subscription.drain();
       } catch (err) {
         this.logger.error(`Error draining NATS subscription: ${(err as Error).message}`);
       }
     }
   }
 
-  private async consume() {
-    if (!this.subscription) return;
-
-    for await (const msg of this.subscription) {
+  private async consume(subscription: JetStreamSubscription) {
+    for await (const msg of subscription) {
       if (this.stopped) break;
 
       const jsMsg = msg as JsMsg;

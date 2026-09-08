@@ -10,4 +10,4 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/services/search ./services/search
 EXPOSE 3011
-CMD ["sh", "-c", "node services/search/node_modules/prisma/build/index.js migrate deploy --schema services/search/prisma/schema.prisma && node services/search/dist/main"]
+CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy --schema services/search/prisma/schema.prisma && node services/search/dist/main"]

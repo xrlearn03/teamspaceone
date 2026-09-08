@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bookmark, Check, MessageCircle, Pencil, Smile, Trash2, X } from "lucide-react";
+import { Bookmark, Check, MessageCircle, Pencil, Pin, Smile, Trash2, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Avatar, AvatarFallback } from "../ui/avatar";
@@ -25,6 +25,7 @@ export interface MessageItemProps {
   onReply?: () => void;
   onEdit?: (messageId: string, content: string) => void;
   onDelete?: (messageId: string) => void;
+  onPin?: (message: MessageType) => void;
   /** Grouped under the previous message — hides avatar and author name. */
   compact?: boolean;
 }
@@ -46,6 +47,7 @@ export function MessageItem({
   onReply,
   onEdit,
   onDelete,
+  onPin,
   compact,
 }: MessageItemProps) {
   const [editing, setEditing] = useState(false);
@@ -149,7 +151,7 @@ export function MessageItem({
               {message.editedAt && !message.deletedAt ? <span className="ml-1 text-[10px] opacity-70">(edited)</span> : null}
               {message.attachments.map((attachment) => <MessageAttachment key={attachment.id} fileId={attachment.fileId} />)}
             </div>
-            {!message.deletedAt && !message.pending && (isMe || onEdit || onDelete || onReply || user) ? (
+            {!message.deletedAt && !message.pending && (isMe || onEdit || onDelete || onReply || onPin || user) ? (
               <div className="relative flex opacity-0 transition-opacity group-hover:opacity-100">
                 {user ? (
                   <Button
@@ -184,6 +186,16 @@ export function MessageItem({
                 {isMe && onDelete ? (
                   <Button size="icon" variant="ghost" onClick={() => onDelete(message.id)} aria-label="Delete message">
                     <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                ) : null}
+                {onPin ? (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => onPin(message)}
+                    aria-label={message.pinnedAt ? "Unpin message" : "Pin message"}
+                  >
+                    <Pin className={cn("h-3.5 w-3.5", message.pinnedAt && "fill-warning text-warning")} />
                   </Button>
                 ) : null}
                 {reactionPicker ? (

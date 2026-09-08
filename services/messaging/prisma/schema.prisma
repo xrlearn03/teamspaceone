@@ -49,6 +49,7 @@ model Message {
   content        String
   editedAt       DateTime?
   deletedAt      DateTime?
+  pinnedAt       DateTime?
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   channel        Channel             @relation(fields: [channelId], references: [id], onDelete: Cascade)
@@ -60,6 +61,7 @@ model Message {
 
   @@index([organisationId])
   @@index([channelId, createdAt])
+  @@index([channelId, pinnedAt])
   @@index([senderId])
   @@index([parentMessageId])
   @@map("messages")

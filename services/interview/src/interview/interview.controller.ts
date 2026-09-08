@@ -7,8 +7,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+
 import {
   CurrentOrganisation,
   type OrganisationContextValue,
@@ -227,6 +229,29 @@ export class InterviewController {
     @Param('id') id: string,
   ) {
     return this.interview.getTranscript(ctx, user, id);
+  }
+
+  @Get('sessions/:id/calendar.ics')
+  @RequirePermissions('interview.interview.view')
+  async getCalendarIcs(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') id: string,
+    @Res() res: any,
+  ) {
+    const { ics, fileName } = await this.interview.calendarIcs(ctx.organisationId, id);
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(ics);
+  }
+
+  @Post('sessions/:id/ai/join')
+  @RequirePermissions('interview.interview.conduct')
+  joinAiInterview(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+  ) {
+    return this.interview.joinAiInterview(ctx, id, user.id);
   }
 
   @Post('sessions/:id/ai/evaluate')

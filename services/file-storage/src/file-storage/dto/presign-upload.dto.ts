@@ -6,5 +6,6 @@ export class PresignUploadDto {
   resourceType?: string;
   resourceId?: string;
   workspaceId?: string;
+  folderId?: string;
   sha256!: string;
 }

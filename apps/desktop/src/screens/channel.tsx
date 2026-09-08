@@ -18,8 +18,10 @@ import {
   useMe,
   useMembers,
   useMessages,
+  usePinMessage,
   useReplaceChannelMembers,
   useSendMessageOrQueue,
+  useUnpinMessage,
   useUpdateChannel,
   useUpdateMessage,
   useUploadFile,
@@ -63,18 +65,21 @@ export function ChannelScreen() {
   const userMap = useMemo(() => new Map((channelUsers ?? []).map((u) => [u.id, u])), [channelUsers]);
   const channel =
     channels?.find((c) => c.id === activeChannelId) ?? channels?.[0];
-  const { data: messages, fetchNextPage, hasNextPage, isFetchingNextPage } = useMessages(channel?.id);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const search = searchQuery.trim() || undefined;
+  const { data: messages, fetchNextPage, hasNextPage, isFetchingNextPage } = useMessages(channel?.id, search);
   const { sendOrQueue, isPending: sending } = useSendMessageOrQueue();
   const updateMessage = useUpdateMessage();
   const deleteMessage = useDeleteMessage();
+  const pinMessage = usePinMessage();
+  const unpinMessage = useUnpinMessage();
   const uploadFile = useUploadFile();
   const createMeeting = useCreateMeeting();
   const createVoiceRoom = useCreateVoiceRoom();
   const updateChannel = useUpdateChannel();
   const replaceMembers = useReplaceChannelMembers();
   const deleteChannel = useDeleteChannel();
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [channelName, setChannelName] = useState("");
   const [privateChannel, setPrivateChannel] = useState(false);
@@ -88,6 +93,7 @@ export function ChannelScreen() {
   const canManageChannel = authzUser ? hasPermission(authzUser, "collaboration.channel.manage") : false;
   const canDeleteChannel = authzUser ? hasPermission(authzUser, "collaboration.channel.delete") : false;
   const canCreateMeeting = authzUser ? hasPermission(authzUser, "collaboration.meeting.create") : false;
+  const canPinMessage = authzUser ? hasPermission(authzUser, "collaboration.message.edit") : false;
 
   useEffect(() => {
     if (!channel) return;
@@ -140,7 +146,7 @@ export function ChannelScreen() {
     createMeeting.mutate({ title }, { onSuccess: (meeting) => { ringChannelMembers(meeting.id, "video", title); setActiveView("meeting", { meetingId: meeting.id }); } });
   }
 
-  const visibleMessages = searchQuery.trim() ? messages?.filter((message) => message.content.toLowerCase().includes(searchQuery.trim().toLowerCase())) : messages;
+  const visibleMessages = messages;
 
   function handleEdit(messageId: string, content: string) {
     if (!channel) return;
@@ -150,6 +156,15 @@ export function ChannelScreen() {
   function handleDelete(messageId: string) {
     if (!channel) return;
     deleteMessage.mutate({ messageId, channelId: channel.id });
+  }
+
+  function handlePin(message: Message) {
+    if (!channel) return;
+    if (message.pinnedAt) {
+      unpinMessage.mutate(message.id);
+    } else {
+      pinMessage.mutate(message.id);
+    }
   }
 
   return (
@@ -225,6 +240,7 @@ export function ChannelScreen() {
                       onReply={() => setThreadMessage(m)}
                       onEdit={handleEdit}
                       onDelete={handleDelete}
+                      onPin={canPinMessage ? handlePin : undefined}
                     />
                   );
                 })

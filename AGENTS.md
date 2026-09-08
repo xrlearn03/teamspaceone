@@ -9,10 +9,11 @@
 
 ## Security model (added in audit remediation)
 
-- Required env vars (no insecure defaults): `JWT_SECRET`, `INTERNAL_API_KEY`, `SFU_TOKEN_SECRET`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `NATS_USER`/`NATS_PASSWORD`, `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`, `S3_ACCESS_KEY`/`S3_SECRET_KEY`. See root `.env.example`.
+- Required env vars (no insecure defaults): `JWT_SECRET`, `INTERNAL_API_KEY`, `SFU_TOKEN_SECRET`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `NATS_USER`/`NATS_PASSWORD`, `S3_ACCESS_KEY`/`S3_SECRET_KEY`. See root `.env.example`.
 - All service HTTP requests require `x-internal-api-key` (enforced by `OrganisationContextMiddleware` from `@teamspace-one/organisation-context`); `/health` and `/socket.io` are exempt. The API gateway attaches the key when proxying and sets `x-actor-id` from the verified JWT — clients cannot spoof identity headers (stripped inbound).
 - Service-to-service HTTP calls must send `x-internal-api-key` + `x-internal-caller: <service-name>` and propagate `x-actor-id`/`x-organisation-id` when acting for a user.
-- The SFU (`services/sfu`, Rust) requires an HMAC token in `Join`: clients call `POST /meetings/:id/sfu-token` (issued by meeting-service after participant check) and pass it in the join message.
+- The SFU (`services/sfu`, Rust) is the only media path (LiveKit removed). It requires an HMAC token in `Join`: clients call `POST /meetings/:id/sfu-token` (issued by meeting-service after participant check) and pass it in the join message. Media runs over UDP via `SFU_UDP_MUX_PORT` (single muxed port) and `SFU_NAT_1TO1_IPS` advertises public IPs behind NAT.
+- SFU recording: internal control API on `SFU_CONTROL_PORT` (default 8445, not published) — meeting-service `setRecording` calls `POST /rooms/:id/recording/start|stop` with an HMAC `x-sfu-control-token`. Per-track files (`.ogg`/`.ivf`/`.h264`) land in `SFU_RECORDING_DIR` and are uploaded to file-storage as the recorder's uploads on stop or when the room drains. Needs `FILE_STORAGE_SERVICE_URL` + `INTERNAL_API_KEY` on the SFU.
 - CORS: gateway + realtime use `CORS_ORIGINS` (comma-separated); defaults cover Tauri/Vite dev origins.
 - Direct calls to a service port in local dev need the `x-internal-api-key` header (value = `INTERNAL_API_KEY`).
 - Member invite flow: `POST /organisations/:id/members/invite` (`admin.user.manage`, email + roleId + optional names) → org service calls auth `POST /auth/internal/provision` (internal key + `x-internal-caller` only; the gateway strips `x-internal-caller` from clients so it can't be reached externally) → user created with a generated temp password and `mustChangePassword` → membership + `MEMBER_INVITED` event → notification service emails credentials. Invited users are forced through a set-new-password screen on first login. Employee/candidate category roles are rejected (they onboard via HR/recruitment workflows). Needs `AUTH_SERVICE_URL` on the organisation service.
@@ -47,6 +48,8 @@
 - Set `FILE_HLS_ENABLED=true` to enable HLS transcoding (off by default; CPU-heavy).
 - PDF/Office/CSV/EPUB text extraction uses `officeparser`; zip listings use `unzipper`.
 - Uploads: clients should use `POST /files/presign-upload` (send hex `sha256`) → `PUT` to the returned URL with `uploadHeaders` → `POST /files/:id/complete`. The service enforces the checksum via S3 `ChecksumSHA256` and re-verifies on complete.
+- Storage keys are `organisations/<orgId>/users/<uploaderId>/<typeFolder>/<ts>-<name>` where `typeFolder` is derived from MIME type (`fileTypeFolder` in `services/file-storage/src/storage/storage.service.ts`: images, videos, audio, documents, spreadsheets, presentations, archives, other). Previews nest under `<typeFolder>/previews/`.
+- Quotas: `STORAGE_QUOTA_PER_USER_BYTES` (default 2 GiB) caps each uploader; the org limit is `memberCount × per-user quota` (member count via `GET /organisations/:id/members/count`, 30s cache; falls back to distinct uploader count). Enforced in `presignUpload`/`upload` (413 `PayloadTooLargeException`); all non-`failed` `FileRecord.size` values count. `GET /files/usage` reports per-user and per-org usage/limits.
 
 ## Frontend Stack
 

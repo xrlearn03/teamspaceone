@@ -43,14 +43,25 @@ describe('StorageService', () => {
     await service.onModuleInit();
   });
 
-  it('should build organisation-scoped storage keys', () => {
+  it('should build user- and type-scoped storage keys inside the org folder', () => {
     const input: StorageKeyInput = {
       organisationId: 'org-123',
-      category: 'attachments',
+      uploaderId: 'user-1',
+      mimeType: 'application/pdf',
       fileName: 'my file.pdf',
     };
     const key = service.buildStorageKey(input);
-    expect(key).toMatch(/^organisations\/org-123\/attachments\/\d+-my_file\.pdf$/);
+    expect(key).toMatch(/^organisations\/org-123\/users\/user-1\/documents\/\d+-my_file\.pdf$/);
+  });
+
+  it('should group keys by file type folder', () => {
+    const key = service.buildStorageKey({
+      organisationId: 'org-1',
+      uploaderId: 'u1',
+      mimeType: 'image/png',
+      fileName: 'pic.png',
+    });
+    expect(key).toMatch(/^organisations\/org-1\/users\/u1\/images\/\d+-pic\.png$/);
   });
 
   it('should return a signed upload url', async () => {

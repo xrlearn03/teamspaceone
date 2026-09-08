@@ -404,6 +404,7 @@ export interface Message {
   content: string;
   editedAt?: string | null;
   deletedAt?: string | null;
+  pinnedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   attachments: MessageAttachment[];
@@ -436,6 +437,8 @@ export interface Project {
   description?: string | null;
   ownerId: string;
   status: string;
+  isTemplate: boolean;
+  templateId?: string | null;
   startDate?: string | null;
   targetDate?: string | null;
   archivedAt?: string | null;
@@ -616,12 +619,6 @@ export interface MeetingParticipant {
 
 export interface JoinMeetingResult {
   participant: MeetingParticipant;
-  token: string;
-}
-
-export interface MeetingTokenResult {
-  token: string;
-  roomName: string;
 }
 
 export interface MeetingSfuTokenResult {
@@ -896,9 +893,18 @@ export function deleteChannel(channelId: string) {
   return apiRequest<void>(`/channels/${channelId}`, { method: "DELETE" });
 }
 
-export function getMessages(channelId: string, cursor?: string, limit = 50) {
+export function addChannelModerator(channelId: string, userId: string) {
+  return apiRequest<ChannelMember>(`/channels/${channelId}/moderators`, { method: "POST", body: { userId } });
+}
+
+export function removeChannelModerator(channelId: string, userId: string) {
+  return apiRequest<ChannelMember>(`/channels/${channelId}/moderators/${userId}`, { method: "DELETE" });
+}
+
+export function getMessages(channelId: string, cursor?: string, limit = 50, query?: string) {
   const params = new URLSearchParams({ limit: String(limit) });
   if (cursor) params.set("cursor", cursor);
+  if (query) params.set("query", query);
   return apiRequest<MessagePage>(`/channels/${channelId}/messages?${params.toString()}`);
 }
 
@@ -930,6 +936,18 @@ export function toggleMessageReaction(messageId: string, emoji: string) {
   );
 }
 
+export function getPinnedMessages(channelId: string) {
+  return apiRequest<Message[]>(`/channels/${channelId}/pinned`);
+}
+
+export function pinMessage(messageId: string) {
+  return apiRequest<Message>(`/messages/${messageId}/pin`, { method: "POST" });
+}
+
+export function unpinMessage(messageId: string) {
+  return apiRequest<Message>(`/messages/${messageId}/pin`, { method: "DELETE" });
+}
+
 // Projects
 export function getProjects() {
   return apiRequest<Project[]>("/projects");
@@ -949,6 +967,22 @@ export function updateProject(projectId: string, body: { name?: string; descript
 
 export function deleteProject(projectId: string) {
   return apiRequest<void>(`/projects/${projectId}`, { method: "DELETE" });
+}
+
+export function getProjectTemplates() {
+  return apiRequest<Project[]>("/projects/templates");
+}
+
+export function createProjectFromTemplate(templateId: string, body: { name: string; description?: string; workspaceId?: string; clientId?: string; memberIds?: string[]; startDate?: string; targetDate?: string }) {
+  return apiRequest<Project>(`/projects/from-template/${templateId}`, { method: "POST", body });
+}
+
+export function markProjectAsTemplate(projectId: string) {
+  return apiRequest<Project>(`/projects/${projectId}/template`, { method: "POST" });
+}
+
+export function unmarkProjectAsTemplate(projectId: string) {
+  return apiRequest<Project>(`/projects/${projectId}/template`, { method: "DELETE" });
 }
 
 export function getTasks(projectId: string) {
@@ -1236,11 +1270,6 @@ export function joinMeeting(id: string, name?: string) {
     method: "POST",
     body: { name },
   });
-}
-
-export function getMeetingToken(id: string, name?: string) {
-  const query = name ? `?name=${encodeURIComponent(name)}` : "";
-  return apiRequest<MeetingTokenResult>(`/meetings/${id}/token${query}`);
 }
 
 export function getSfuToken(id: string) {

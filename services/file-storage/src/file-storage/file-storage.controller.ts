@@ -7,6 +7,7 @@ import {
   Param,
   Post,
   Query,
+  Req,
   Res,
   UploadedFile,
   UseGuards,
@@ -17,11 +18,12 @@ import { Response } from 'express';
 import { pipeline } from 'node:stream/promises';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { RemotePermissionGuard, RequirePermissions } from '@teamspace-one/authorization/nest';
-import { COLLABORATION_PERMISSIONS } from '@teamspace-one/authorization';
+import { COLLABORATION_PERMISSIONS, HRMS_PERMISSIONS, type AuthorizableUser } from '@teamspace-one/authorization';
 import { FileStorageService } from './file-storage.service.js';
 import { PresignUploadDto } from './dto/presign-upload.dto.js';
 import { CompleteUploadDto } from './dto/complete-upload.dto.js';
 import { CreateExternalShareDto } from './dto/create-external-share.dto.js';
+import { CreateFolderDto } from './dto/create-folder.dto.js';
 
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_BYTES) || 200 * 1024 * 1024;
 
@@ -46,10 +48,37 @@ function contentDisposition(filename: string, type: 'inline' | 'attachment' = 'i
 export class FileStorageController {
   constructor(private readonly fileStorage: FileStorageService) {}
 
+  @Get('usage')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_VIEW)
+  async usage(@CurrentOrganisation() ctx: OrganisationContextValue) {
+    return this.fileStorage.getUsage(ctx);
+  }
+
   @Get()
   @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_VIEW)
-  async list(@CurrentOrganisation() ctx: OrganisationContextValue) {
-    return this.fileStorage.list(ctx);
+  async list(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Query('folderId') folderId?: string,
+  ) {
+    return this.fileStorage.list(ctx, folderId);
+  }
+
+  @Post('folders')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_UPLOAD)
+  async createFolder(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: CreateFolderDto,
+  ) {
+    return this.fileStorage.createFolder(ctx, dto);
+  }
+
+  @Get('folders')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_VIEW)
+  async listFolders(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Query('category') category?: string,
+  ) {
+    return this.fileStorage.listFolders(ctx, category);
   }
 
   @Get(':id')
@@ -59,6 +88,15 @@ export class FileStorageController {
     @Param('id') id: string,
   ) {
     return this.fileStorage.getById(ctx, id);
+  }
+
+  @Get(':id/versions')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.FILE_VIEW)
+  async listVersions(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') id: string,
+  ) {
+    return this.fileStorage.listVersions(ctx, id);
   }
 
   @Get(':id/download')
@@ -108,8 +146,9 @@ export class FileStorageController {
   async presignUpload(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: PresignUploadDto,
+    @Req() req: { user?: AuthorizableUser },
   ) {
-    return this.fileStorage.presignUpload(ctx, dto);
+    return this.fileStorage.presignUpload(ctx, dto, req.user);
   }
 
   @Post(':id/complete')

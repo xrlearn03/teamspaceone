@@ -253,6 +253,7 @@ async function bootstrap() {
   app.use('/hrms', createAuthMiddleware(jwtSecret));
   app.use('/hrms', proxy(hrmsUrl));
 
+  app.use('/interview/public', proxy(interviewUrl));
   app.use('/interview', createAuthMiddleware(jwtSecret));
   app.use('/interview', proxy(interviewUrl));
 

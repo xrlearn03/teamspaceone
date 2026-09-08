@@ -13,7 +13,6 @@ output "desktop_endpoints" {
   value       = <<-EOF
     VITE_GATEWAY_URL=http://${google_compute_address.static.address}:3000
     VITE_REALTIME_URL=http://${google_compute_address.static.address}:3005
-    VITE_LIVEKIT_URL=ws://${google_compute_address.static.address}:7880
     VITE_SFU_URL=ws://${google_compute_address.static.address}:8443
   EOF
 }

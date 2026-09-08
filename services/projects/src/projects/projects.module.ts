@@ -7,6 +7,7 @@ import {
 } from '@teamspace-one/authorization/nest';
 import { OutboxModule } from '../outbox/outbox.module.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
+import { AuthorizationClientService } from './authorization.client.js';
 import { ProjectsService } from './projects.service.js';
 import { ProjectsController } from './projects.controller.js';
 
@@ -24,6 +25,7 @@ import { ProjectsController } from './projects.controller.js';
       inject: [ConfigService],
     },
     RemotePermissionGuard,
+    AuthorizationClientService,
     ProjectsService,
   ],
   exports: [ProjectsService],

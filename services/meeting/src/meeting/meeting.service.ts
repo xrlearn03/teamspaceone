@@ -5,7 +5,6 @@ import { type OrganisationContextValue } from '@teamspace-one/organisation-conte
 import { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
-import { LiveKitService, type MeetingTokenOptions } from '../livekit/livekit.service.js';
 import { type CreateMeetingDto } from './dto/create-meeting.dto.js';
 import { type JoinMeetingDto } from './dto/join-meeting.dto.js';
 import { type CreateVoiceRoomDto } from './dto/create-voice-room.dto.js';
@@ -21,7 +20,6 @@ export class MeetingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
-    private readonly livekit: LiveKitService,
   ) {}
 
   async resolveAccess(meetingId: string, actorId: string, organisationId: string) {
@@ -240,16 +238,6 @@ export class MeetingService {
       return updated;
     });
 
-    try {
-      await this.livekit.createRoom({
-        name: meeting.roomName,
-        maxParticipants: 100,
-        metadata: { meetingId: id, organisationId: ctx.organisationId },
-      });
-    } catch (err) {
-      // Room auto-creates on first join, so this is not fatal.
-    }
-
     return updated;
   }
 
@@ -293,12 +281,6 @@ export class MeetingService {
       return updated;
     });
 
-    try {
-      await this.livekit.deleteRoom(meeting.roomName);
-    } catch (err) {
-      // Best-effort cleanup.
-    }
-
     return updated;
   }
 
@@ -310,16 +292,6 @@ export class MeetingService {
     if (meeting.status === 'ended') throw new ConflictException('Meeting has ended');
 
     const identity = dto.identity ?? `user-${userId}`;
-    const tokenOptions: MeetingTokenOptions = {
-      roomName: meeting.roomName,
-      identity,
-      userId,
-      name: dto.name || identity,
-      canPublish: true,
-      canSubscribe: true,
-      canScreenShare: true,
-      isAdmin: userId === meeting.createdBy,
-    };
 
     const participantId = randomUUID();
     const payload = {
@@ -341,8 +313,6 @@ export class MeetingService {
       correlationId: ctx.correlationId,
       payload,
     });
-
-    const token = await this.livekit.generateToken(tokenOptions);
 
     const [participant] = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.meetingParticipant.findUnique({
@@ -367,7 +337,7 @@ export class MeetingService {
       return [created];
     });
 
-    return { participant, token };
+    return { participant };
   }
 
   async leave(ctx: OrganisationContextValue, id: string) {
@@ -449,30 +419,6 @@ export class MeetingService {
     });
   }
 
-  async getToken(ctx: OrganisationContextValue, id: string, name?: string) {
-    const userId = ctx.actorId;
-    if (!userId) throw new ForbiddenException('Missing actor');
-
-    const meeting = await this.getById(ctx, id);
-    const participant = await this.prisma.meetingParticipant.findFirst({
-      where: { meetingId: id, userId, leftAt: null },
-    });
-    if (!participant) throw new ForbiddenException('Join the meeting first');
-
-    const token = await this.livekit.generateToken({
-      roomName: meeting.roomName,
-      identity: `user-${userId}`,
-      userId,
-      name: name || `user-${userId}`,
-      isAdmin: userId === meeting.createdBy,
-      canPublish: true,
-      canSubscribe: true,
-      canScreenShare: true,
-    });
-
-    return { token, roomName: meeting.roomName };
-  }
-
   async getSfuToken(ctx: OrganisationContextValue, id: string) {
     const userId = ctx.actorId;
     if (!userId) throw new ForbiddenException('Missing actor');
@@ -481,13 +427,53 @@ export class MeetingService {
     const secret = process.env.SFU_TOKEN_SECRET;
     if (!secret) throw new Error('SFU_TOKEN_SECRET environment variable is required');
 
-    const exp = Math.floor(Date.now() / 1000) + 3600;
+    const ttlSeconds = Number(process.env.SFU_TOKEN_TTL_SECONDS ?? 4 * 60 * 60);
+    const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
     const roomB64 = Buffer.from(meeting.id).toString('base64url');
     const userB64 = Buffer.from(userId).toString('base64url');
     const base = `${roomB64}.${userB64}.${exp}`;
     const signature = createHmac('sha256', secret).update(base).digest('hex');
 
     return { token: `${base}.${signature}`, roomId: meeting.id, userId };
+  }
+
+  async createInterviewRoom(organisationId: string, id: string, title: string) {
+    const existing = await this.prisma.meeting.findFirst({
+      where: { id, organisationId },
+    });
+    if (existing) return existing;
+
+    const roomName = `interview-${id}`;
+    return this.prisma.meeting.create({
+      data: {
+        id,
+        organisationId,
+        roomName,
+        title,
+        type: 'interview',
+        status: 'scheduled',
+        createdBy: 'interview-service',
+      },
+    });
+  }
+
+  async getSfuTokenForInterview(organisationId: string, id: string, userId: string) {
+    const meeting = await this.prisma.meeting.findFirst({
+      where: { id, organisationId },
+    });
+    if (!meeting) throw new NotFoundException('Meeting not found');
+
+    const secret = process.env.SFU_TOKEN_SECRET;
+    if (!secret) throw new Error('SFU_TOKEN_SECRET environment variable is required');
+
+    const ttlSeconds = Number(process.env.SFU_TOKEN_TTL_SECONDS ?? 4 * 60 * 60);
+    const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
+    const roomB64 = Buffer.from(meeting.id).toString('base64url');
+    const userB64 = Buffer.from(userId).toString('base64url');
+    const base = `${roomB64}.${userB64}.${exp}`;
+    const signature = createHmac('sha256', secret).update(base).digest('hex');
+
+    return { token: `${base}.${signature}`, roomId: meeting.id, userId, roomName: meeting.roomName };
   }
 
   async createMeetingMessage(ctx: OrganisationContextValue, meetingId: string, content: string) {
@@ -622,6 +608,33 @@ export class MeetingService {
     });
   }
 
+  private sfuControlToken(roomId: string): string {
+    const secret = process.env.SFU_TOKEN_SECRET;
+    if (!secret) throw new Error('SFU_TOKEN_SECRET environment variable is required');
+    const exp = Math.floor(Date.now() / 1000) + 300;
+    const roomB64 = Buffer.from(roomId).toString('base64url');
+    const base = `control.${roomB64}.${exp}`;
+    const signature = createHmac('sha256', secret).update(base).digest('hex');
+    return `${base}.${signature}`;
+  }
+
+  private async sfuControl(roomId: string, action: 'start' | 'stop', body?: Record<string, unknown>) {
+    const base = (process.env.SFU_CONTROL_URL ?? 'http://localhost:8445').replace(/\/+$/, '');
+    const res = await fetch(`${base}/rooms/${roomId}/recording/${action}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-sfu-control-token': this.sfuControlToken(roomId),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new BadRequestException(`SFU recording ${action} failed: ${res.status} ${text}`);
+    }
+    return res.json().catch(() => ({}));
+  }
+
   async setRecording(ctx: OrganisationContextValue, meetingId: string, recording: boolean) {
     const userId = ctx.actorId;
     if (!userId) throw new ForbiddenException('Missing actor');
@@ -629,24 +642,23 @@ export class MeetingService {
     const meeting = await this.getById(ctx, meetingId);
     if (userId !== meeting.createdBy) throw new ForbiddenException('Only the meeting creator can control recording');
 
-    const eventType = recording ? Subjects.MEETING_RECORDING_STARTED : Subjects.MEETING_RECORDING_STOPPED;
-
-    let egressId: string | undefined | null = meeting.recordingEgressId;
-    if (recording && !egressId) {
-      const started = await this.livekit.startRecording(meeting.roomName);
-      if (!started) throw new BadRequestException('Recording cannot be started');
-      egressId = started;
-    } else if (!recording && egressId) {
-      await this.livekit.stopRecording(egressId);
-      egressId = null;
+    let uploadedFiles: unknown[] = [];
+    if (recording) {
+      if (meeting.isRecording) throw new ConflictException('Recording already in progress');
+      await this.sfuControl(meetingId, 'start', { organisation_id: ctx.organisationId, actor_id: userId });
+    } else if (meeting.isRecording) {
+      const result = (await this.sfuControl(meetingId, 'stop')) as { files?: unknown[] };
+      uploadedFiles = result.files ?? [];
     }
+
+    const eventType = recording ? Subjects.MEETING_RECORDING_STARTED : Subjects.MEETING_RECORDING_STOPPED;
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const updated = await tx.meeting.update({
         where: { id: meetingId },
-        data: { isRecording: recording, recordingEgressId: egressId, updatedAt: new Date() },
+        data: { isRecording: recording, recordingEgressId: null, updatedAt: new Date() },
       });
-      const payload = { meetingId, roomName: meeting.roomName, isRecording: recording, recordedBy: userId, egressId };
+      const payload = { meetingId, roomName: meeting.roomName, isRecording: recording, recordedBy: userId, files: uploadedFiles };
       const envelope = createEventEnvelope({
         eventType,
         organisationId: ctx.organisationId,
@@ -657,6 +669,26 @@ export class MeetingService {
         payload,
       });
       await this.outbox.createEvent(tx, envelope, eventType);
+
+      if (!recording && meeting.type === 'interview' && meeting.interviewSessionId) {
+        const transcriptEnvelope = createEventEnvelope({
+          eventType: Subjects.MEETING_RECORDING_TRANSCRIPT_READY,
+          organisationId: ctx.organisationId,
+          actorId: userId,
+          resourceType: 'interview-session',
+          resourceId: meeting.interviewSessionId,
+          correlationId: ctx.correlationId,
+          payload: {
+            meetingId,
+            interviewSessionId: meeting.interviewSessionId,
+            roomName: meeting.roomName,
+            recordedBy: userId,
+            files: uploadedFiles,
+          },
+        });
+        await this.outbox.createEvent(tx, transcriptEnvelope, Subjects.MEETING_RECORDING_TRANSCRIPT_READY);
+      }
+
       return updated;
     });
   }

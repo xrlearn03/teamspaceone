@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
-import { type EventEnvelope, isEventEnvelope } from '@teamspace-one/event-contracts';
+import { Subjects, type EventEnvelope, isEventEnvelope } from '@teamspace-one/event-contracts';
 import { type PrismaClient, Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -40,11 +41,44 @@ export class InboxService {
 
   private async processEvent(
     envelope: EventEnvelope,
-    _tx: PrismaClient | Prisma.TransactionClient,
+    tx: PrismaClient | Prisma.TransactionClient,
   ): Promise<void> {
-    // No inbound projections yet — events are recorded for idempotency and
-    // future handlers (e.g. candidate-hired → HRMS employee creation) will be
-    // added in later phases.
     this.logger.log({ eventId: envelope.eventId, eventType: envelope.eventType }, 'Processing event');
+
+    switch (envelope.eventType) {
+      case Subjects.MEETING_RECORDING_TRANSCRIPT_READY:
+        await this.createPendingRecordingEvaluation(tx, envelope);
+        break;
+      default:
+        break;
+    }
+  }
+
+  private async createPendingRecordingEvaluation(
+    tx: PrismaClient | Prisma.TransactionClient,
+    envelope: EventEnvelope,
+  ): Promise<void> {
+    const payload = (envelope.payload ?? {}) as Record<string, unknown>;
+    const sessionId = (payload.interviewSessionId ?? envelope.resourceId) as string;
+    const session = await tx.interviewSession.findFirst({
+      where: { id: sessionId, organisationId: envelope.organisationId },
+    });
+    if (!session) return;
+
+    await tx.interviewEvaluation.upsert({
+      where: { sessionId_evaluatorId: { sessionId, evaluatorId: 'ai-recording' } },
+      create: {
+        id: randomUUID(),
+        organisationId: envelope.organisationId,
+        sessionId,
+        evaluatorId: 'ai-recording',
+        source: 'recording',
+        status: 'pending_transcript',
+        aiMetadata: { meetingId: payload.meetingId, files: payload.files } as any,
+      },
+      update: {},
+    });
+
+    this.logger.log({ sessionId }, 'Created pending recording evaluation');
   }
 }

@@ -69,6 +69,26 @@ export class MessagingController {
     return this.messaging.replaceMembers(ctx, channelId, dto.memberIds);
   }
 
+  @Post('channels/:id/moderators')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.CHANNEL_MANAGE)
+  addModerator(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') channelId: string,
+    @Body() body: { userId: string },
+  ) {
+    return this.messaging.addModerator(ctx, channelId, body.userId);
+  }
+
+  @Delete('channels/:id/moderators/:userId')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.CHANNEL_MANAGE)
+  removeModerator(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') channelId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.messaging.removeModerator(ctx, channelId, userId);
+  }
+
   @Delete('channels/:id')
   @RequirePermissions(COLLABORATION_PERMISSIONS.CHANNEL_DELETE)
   async deleteChannel(
@@ -85,8 +105,9 @@ export class MessagingController {
     @Param('id') channelId: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
+    @Query('query') query?: string,
   ) {
-    return this.messaging.listMessages(ctx, channelId, cursor, limit ? Number(limit) : 50);
+    return this.messaging.listMessages(ctx, channelId, cursor, limit ? Number(limit) : 50, query);
   }
 
   @Get('messages/:id/thread')
@@ -136,5 +157,32 @@ export class MessagingController {
     @Param('id') messageId: string,
   ) {
     return this.messaging.deleteMessage(ctx, messageId);
+  }
+
+  @Post('messages/:id/pin')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MESSAGE_EDIT)
+  pinMessage(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') messageId: string,
+  ) {
+    return this.messaging.pinMessage(ctx, messageId);
+  }
+
+  @Delete('messages/:id/pin')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MESSAGE_EDIT)
+  unpinMessage(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') messageId: string,
+  ) {
+    return this.messaging.unpinMessage(ctx, messageId);
+  }
+
+  @Get('channels/:id/pinned')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MESSAGE_VIEW)
+  listPinnedMessages(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') channelId: string,
+  ) {
+    return this.messaging.listPinnedMessages(ctx, channelId);
   }
 }

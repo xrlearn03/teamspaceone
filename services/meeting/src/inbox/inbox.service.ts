@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
-import { type EventEnvelope, isEventEnvelope } from '@teamspace-one/event-contracts';
+import { Subjects, type EventEnvelope, isEventEnvelope } from '@teamspace-one/event-contracts';
 import { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -28,7 +29,7 @@ export class InboxService {
         return;
       }
 
-      await this.processEvent(envelope);
+      await this.processEvent(tx, envelope);
 
       await tx.inboxEvent.create({
         data: {
@@ -42,7 +43,7 @@ export class InboxService {
     });
   }
 
-  private async processEvent(envelope: EventEnvelope): Promise<void> {
+  private async processEvent(tx: Prisma.TransactionClient, envelope: EventEnvelope): Promise<void> {
     this.logger.log(
       { eventId: envelope.eventId, eventType: envelope.eventType, organisationId: envelope.organisationId },
       'Processing event',
@@ -56,8 +57,43 @@ export class InboxService {
         // Meeting service keeps these as read-only context for validation.
         // No local projection required for Phase 5.
         break;
+      case Subjects.INTERVIEW_SESSION_SCHEDULED:
+        await this.createInterviewMeeting(tx, envelope);
+        break;
       default:
         this.logger.debug({ eventType: envelope.eventType }, 'No handler for event type');
     }
+  }
+
+  private async createInterviewMeeting(tx: Prisma.TransactionClient, envelope: EventEnvelope): Promise<void> {
+    const payload = (envelope.payload ?? {}) as Record<string, unknown>;
+    const candidateName = String(payload.candidateName ?? 'Candidate');
+    const jobTitle = String(payload.jobTitle ?? 'Unknown role');
+    const participantIds = Array.isArray(payload.participantIds) ? (payload.participantIds as string[]).filter(Boolean) : [];
+    const scheduledAt = payload.scheduledAt ? new Date(payload.scheduledAt as string) : null;
+
+    const meeting = await tx.meeting.create({
+      data: {
+        id: randomUUID(),
+        organisationId: envelope.organisationId,
+        roomName: `interview-${randomUUID()}`,
+        title: `Interview: ${candidateName} (${jobTitle})`,
+        description: `Interview session for ${candidateName}`,
+        type: 'interview',
+        scheduledAt,
+        status: 'scheduled',
+        createdBy: envelope.actorId ?? participantIds[0] ?? '',
+        interviewSessionId: payload.sessionId as string | undefined,
+        participants: {
+          create: participantIds.map((userId) => ({
+            id: randomUUID(),
+            organisationId: envelope.organisationId,
+            userId,
+          })),
+        },
+      },
+    });
+
+    this.logger.log({ meetingId: meeting.id, organisationId: envelope.organisationId }, 'Created interview meeting from schedule');
   }
 }

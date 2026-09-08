@@ -231,6 +231,25 @@ export class OrganisationController {
     return this.organisation.listMembers(ctx.organisationId, ctx.actorId as string);
   }
 
+  @Get(':id/members/count')
+  async countMembers(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.countMembers(ctx.organisationId, ctx.actorId as string);
+  }
+
+  @Get(':id/members/:userId')
+  async findMembership(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.findMembership(ctx.organisationId, ctx.actorId as string, userId);
+  }
+
   @Patch(':id/members/:membershipId/role')
   @RequirePermissions('admin.user.manage')
   async updateMemberRole(

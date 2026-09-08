@@ -47,7 +47,7 @@ interface CacheEntry {
   expiresAt: number;
 }
 
-const DEFAULT_CACHE_TTL_MS = 30_000;
+const DEFAULT_CACHE_TTL_MS = 5_000;
 
 /**
  * Permission guard for services that do not own the RBAC schema. It resolves

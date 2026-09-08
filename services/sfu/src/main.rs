@@ -1,3 +1,6 @@
+mod control;
+mod recording;
+
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use futures::{SinkExt, StreamExt};
@@ -9,7 +12,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{info, warn};
@@ -18,14 +21,22 @@ type HmacSha256 = Hmac<Sha256>;
 const MAX_DISPLAY_NAME_CHARS: usize = 128;
 const MAX_SDP_BYTES: usize = 65536;
 const MAX_CANDIDATE_BYTES: usize = 65536;
+use webrtc::api::setting_engine::SettingEngine;
 use webrtc::api::{API, APIBuilder};
+use webrtc::ice::udp_mux::{UDPMuxDefault, UDPMuxParams};
+use webrtc::ice::udp_network::UDPNetwork;
 use webrtc::ice_transport::ice_candidate::{RTCIceCandidate, RTCIceCandidateInit};
+use webrtc::ice_transport::ice_candidate_type::RTCIceCandidateType;
+use webrtc::rtcp::packet::Packet as RtcpPacket;
+use webrtc::rtcp::payload_feedbacks::full_intra_request::FullIntraRequest;
+use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
 use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::rtp_transceiver::rtp_codec::RTPCodecType;
 use webrtc::rtp_transceiver::rtp_receiver::RTCRtpReceiver;
+use webrtc::rtp_transceiver::rtp_sender::RTCRtpSender;
 use webrtc::rtp_transceiver::rtp_transceiver_direction::RTCRtpTransceiverDirection;
 use webrtc::rtp_transceiver::RTCRtpTransceiver;
 use webrtc::rtp_transceiver::RTCRtpTransceiverInit;
@@ -115,18 +126,29 @@ struct Peer {
     pc: Option<Arc<RTCPeerConnection>>,
 }
 
+/// A published track forwarded to one subscriber peer. Keeping the
+/// `RTCRtpSender` lets us detach the track (remove + renegotiate) later.
+struct Forwarder {
+    sender: Arc<RTCRtpSender>,
+    track: Arc<TrackLocalStaticRTP>,
+}
+
+type Forwarders = Arc<Mutex<HashMap<PeerId, Forwarder>>>;
+
 #[derive(Clone)]
 struct RoomTrack {
     publisher: PeerId,
     track_id: String,
     remote: Arc<TrackRemote>,
-    forwarders: Arc<Mutex<HashMap<PeerId, Arc<TrackLocalStaticRTP>>>>,
+    forwarders: Forwarders,
+    recorder: recording::SharedTrackWriter,
 }
 
 #[derive(Default)]
 struct Room {
     participants: HashMap<PeerId, Peer>,
     tracks: Vec<RoomTrack>,
+    recording: Option<Arc<recording::Recorder>>,
 }
 
 struct State {
@@ -166,13 +188,53 @@ async fn main() -> Result<()> {
         anyhow!("SFU_TOKEN_SECRET environment variable is required")
     })?;
 
-    let api = Arc::new(APIBuilder::new().build());
+    let mut setting_engine = SettingEngine::default();
+
+    // When the SFU sits behind 1:1 NAT (Docker, cloud VM), advertise the public
+    // IP(s) instead of the local/container address so remote peers can connect.
+    let nat_ips: Vec<String> = std::env::var("SFU_NAT_1TO1_IPS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+    if !nat_ips.is_empty() {
+        info!("Advertising NAT 1:1 IPs: {:?}", nat_ips);
+        setting_engine.set_nat_1to1_ips(nat_ips, RTCIceCandidateType::Host);
+    }
+
+    // Optionally bind all ICE traffic to a single UDP port. This makes the SFU
+    // trivially deployable behind port-forwarding firewalls: publish one UDP
+    // port instead of an ephemeral range.
+    if let Ok(mux_port) = std::env::var("SFU_UDP_MUX_PORT") {
+        let mux_port: u16 = mux_port.parse()?;
+        let socket = UdpSocket::bind(("0.0.0.0", mux_port)).await?;
+        setting_engine.set_udp_network(UDPNetwork::Muxed(UDPMuxDefault::new(
+            UDPMuxParams::new(socket),
+        )));
+        info!("ICE UDP mux listening on 0.0.0.0:{}", mux_port);
+    }
+
+    let api = Arc::new(
+        APIBuilder::new()
+            .with_setting_engine(setting_engine)
+            .build(),
+    );
     let state: SharedState = Arc::new(RwLock::new(State::new(api)));
     let host = std::env::var("SFU_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = std::env::var("SFU_PORT").unwrap_or_else(|_| "8443".to_string());
     let addr = format!("{}:{}", host, port).parse::<SocketAddr>()?;
     let listener = TcpListener::bind(&addr).await?;
     info!("Teamspace SFU signaling listening on {}", addr);
+
+    let control_state = state.clone();
+    let control_secret = token_secret.clone();
+    tokio::spawn(async move {
+        if let Err(e) = control::serve(control_state, control_secret).await {
+            warn!("Control API failed: {}", e);
+        }
+    });
 
     while let Ok((stream, _)) = listener.accept().await {
         let state = state.clone();
@@ -263,14 +325,14 @@ async fn handle_peer(stream: TcpStream, state: SharedState, token_secret: String
     let _ = send_task.await;
 }
 
-fn now_unix() -> u64 {
+pub(crate) fn now_unix() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
 }
 
-fn decode_base64url(s: &str) -> Result<String> {
+pub(crate) fn decode_base64url(s: &str) -> Result<String> {
     URL_SAFE_NO_PAD
         .decode(s)
         .ok()
@@ -278,7 +340,7 @@ fn decode_base64url(s: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("invalid base64url encoding"))
 }
 
-fn decode_hex(s: &str) -> Option<Vec<u8>> {
+pub(crate) fn decode_hex(s: &str) -> Option<Vec<u8>> {
     if s.len() % 2 != 0 {
         return None;
     }
@@ -444,19 +506,7 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
                     .unwrap_or_default()
             };
             for rt in existing_tracks {
-                let codec = rt.remote.codec().capability;
-                let track_id = rt.track_id.clone();
-                let publisher = rt.publisher.clone();
-                let local_track = Arc::new(TrackLocalStaticRTP::new(
-                    codec,
-                    format!("{}-{}", track_id, publisher),
-                    publisher,
-                ));
-                pc.add_track(local_track.clone()).await?;
-                rt.forwarders
-                    .lock()
-                    .await
-                    .insert(peer_id.to_string(), local_track);
+                add_track_forwarder(&rt, &peer_id.to_string(), &pc, &state).await?;
             }
 
             pc.add_transceiver_from_kind(
@@ -675,10 +725,17 @@ async fn handle_track(
     track: Arc<TrackRemote>,
 ) -> Result<()> {
     let track_id = track.id();
-    let codec = track.codec().capability;
     let kind = track.kind();
 
-    let (room_id, forwarders, participants) = {
+    let rt = RoomTrack {
+        publisher: publisher.clone(),
+        track_id: track_id.clone(),
+        remote: Arc::clone(&track),
+        forwarders: Arc::new(Mutex::new(HashMap::new())),
+        recorder: recording::new_track_writer_slot(),
+    };
+
+    let (room_id, forwarders, participants, active_recording, publisher_pc) = {
         let mut s = state.write().await;
         let peer = s
             .peers
@@ -693,15 +750,10 @@ async fn handle_track(
             .rooms
             .get_mut(&room_id)
             .ok_or(anyhow!("room not found: {}", room_id))?;
-        let forwarders = Arc::new(Mutex::new(HashMap::new()));
-        room.tracks.push(RoomTrack {
-            publisher: publisher.clone(),
-            track_id: track_id.clone(),
-            remote: Arc::clone(&track),
-            forwarders: Arc::clone(&forwarders),
-        });
+        room.tracks.push(rt.clone());
+        let forwarders = Arc::clone(&rt.forwarders);
         let participants = room.participants.clone();
-        (room_id, forwarders, participants)
+        (room_id, forwarders, participants, room.recording.clone(), peer.pc)
     };
 
     info!(
@@ -715,33 +767,47 @@ async fn handle_track(
             continue;
         }
         if let Some(pc) = peer.pc.clone() {
-            let local_track = Arc::new(TrackLocalStaticRTP::new(
-                codec.clone(),
-                format!("{}-{}", track_id, publisher),
-                publisher.clone(),
-            ));
-            if let Err(e) = pc.add_track(local_track.clone()).await {
+            if let Err(e) = add_track_forwarder(&rt, subscriber, &pc, &state).await {
                 warn!(
                     "add_track failed for {} <- {} track {}: {}",
                     subscriber, publisher, track_id, e
                 );
-                continue;
             }
-            forwarders
-                .lock()
-                .await
-                .insert(subscriber.clone(), local_track);
+        }
+    }
+
+    // If the room is already recording, attach a writer for this new track and
+    // ask the publisher for a keyframe so the file starts cleanly.
+    if let Some(rec) = active_recording.clone() {
+        recording::attach_track_writer(&rec, &rt.recorder, &room_id, &publisher, &track_id, &track);
+        if kind == RTPCodecType::Video {
+            if let Some(pc) = publisher_pc.clone() {
+                let ssrc = track.ssrc();
+                tokio::spawn(async move {
+                    let _ = pc
+                        .write_rtcp(&[Box::new(PictureLossIndication {
+                            sender_ssrc: 0,
+                            media_ssrc: ssrc,
+                        })])
+                        .await;
+                });
+            }
         }
     }
 
     // Forward RTP packets to all current and future subscribers.
+    let cleanup_state = state.clone();
+    let track_recorder = rt.recorder.clone();
     tokio::spawn(async move {
         loop {
             match track.read_rtp().await {
                 Ok((pkt, _)) => {
+                    if let Some((writer, _)) = track_recorder.lock().await.as_mut() {
+                        writer.write_rtp(&pkt);
+                    }
                     let targets: Vec<Arc<TrackLocalStaticRTP>> = {
                         let guard = forwarders.lock().await;
-                        guard.values().cloned().collect()
+                        guard.values().map(|f| f.track.clone()).collect()
                     };
                     for t in targets {
                         if let Err(e) = t.write_rtp(&pkt).await {
@@ -758,9 +824,121 @@ async fn handle_track(
                 }
             }
         }
+        // The publisher's track ended (camera off, screenshare stopped, or the
+        // peer left) — detach it from every subscriber so their clients drop
+        // the stale tile.
+        remove_room_track(&cleanup_state, &room_id, &publisher, &track_id).await;
+        // If recording is still active, finalize just this track's file so it
+        // is flushed and queued for upload without stopping the session.
+        if let Some(rec) = active_recording {
+            recording::finish_track_writer(&rec, &track_recorder).await;
+        }
     });
 
     Ok(())
+}
+
+/// Attaches a published track to a subscriber's peer connection, registers the
+/// forwarder, relays the subscriber's PLI/FIR feedback to the publisher, and
+/// requests a keyframe so the new subscriber gets decodable video quickly.
+async fn add_track_forwarder(
+    rt: &RoomTrack,
+    subscriber_id: &str,
+    subscriber_pc: &Arc<RTCPeerConnection>,
+    state: &SharedState,
+) -> Result<()> {
+    if *subscriber_id == rt.publisher {
+        return Ok(());
+    }
+    let local_track = Arc::new(TrackLocalStaticRTP::new(
+        rt.remote.codec().capability,
+        format!("{}-{}", rt.track_id, rt.publisher),
+        rt.publisher.clone(),
+    ));
+    let sender = subscriber_pc.add_track(local_track.clone()).await?;
+    rt.forwarders.lock().await.insert(
+        subscriber_id.to_string(),
+        Forwarder {
+            sender: sender.clone(),
+            track: local_track,
+        },
+    );
+
+    let publisher_pc = {
+        let s = state.read().await;
+        s.peers.get(&rt.publisher).and_then(|p| p.pc.clone())
+    };
+    if let Some(publisher_pc) = publisher_pc {
+        // Relay keyframe requests (PLI/FIR) from this subscriber to the publisher.
+        let relay_pc = Arc::clone(&publisher_pc);
+        tokio::spawn(async move {
+            while let Ok((pkts, _)) = sender.read_rtcp().await {
+                let fwd: Vec<Box<dyn RtcpPacket + Send + Sync>> = pkts
+                    .into_iter()
+                    .filter(|p| {
+                        p.as_any().is::<PictureLossIndication>()
+                            || p.as_any().is::<FullIntraRequest>()
+                    })
+                    .collect();
+                if !fwd.is_empty() {
+                    let _ = relay_pc.write_rtcp(&fwd).await;
+                }
+            }
+        });
+
+        // Ask the publisher for an immediate keyframe for the new subscriber.
+        let _ = publisher_pc
+            .write_rtcp(&[Box::new(PictureLossIndication {
+                sender_ssrc: 0,
+                media_ssrc: rt.remote.ssrc(),
+            })])
+            .await;
+    }
+
+    Ok(())
+}
+
+/// Removes a published track from a room and detaches its forwarding senders
+/// from every remaining subscriber (which triggers renegotiation, so clients
+/// drop the removed track).
+async fn remove_room_track(
+    state: &SharedState,
+    room_id: &str,
+    publisher: &str,
+    track_id: &str,
+) {
+    let removals: Vec<(Arc<RTCPeerConnection>, Arc<RTCRtpSender>)> = {
+        let mut s = state.write().await;
+        let Some(room) = s.rooms.get_mut(room_id) else {
+            return;
+        };
+        let Some(idx) = room
+            .tracks
+            .iter()
+            .position(|rt| rt.publisher == publisher && rt.track_id == track_id)
+        else {
+            return;
+        };
+        let rt = room.tracks.remove(idx);
+        let forwarders = rt.forwarders.lock().await;
+        forwarders
+            .iter()
+            .filter_map(|(id, f)| {
+                room.participants
+                    .get(id)
+                    .and_then(|p| p.pc.clone())
+                    .map(|pc| (pc, f.sender.clone()))
+            })
+            .collect()
+    };
+    for (pc, sender) in removals {
+        if let Err(e) = pc.remove_track(&sender).await {
+            warn!(
+                "remove_track failed for track {} from {}: {}",
+                track_id, publisher, e
+            );
+        }
+    }
 }
 
 async fn leave_room(peer_id: &str, state: &SharedState) -> Option<RoomId> {
@@ -770,9 +948,49 @@ async fn leave_room(peer_id: &str, state: &SharedState) -> Option<RoomId> {
         if let Some(room_id) = room_id.clone() {
             if let Some(room) = s.rooms.get_mut(&room_id) {
                 room.participants.remove(peer_id);
-                room.tracks.retain(|rt| rt.publisher != peer_id);
+                // Drop forwarder entries aimed at the departing peer in the
+                // remaining publishers' tracks.
+                for rt in room.tracks.iter() {
+                    rt.forwarders.lock().await.remove(peer_id);
+                }
+                // Detach the departing peer's published tracks from every
+                // remaining subscriber so their clients drop the tiles.
+                let mut removed_tracks = Vec::new();
+                room.tracks.retain(|rt| {
+                    if rt.publisher == peer_id {
+                        removed_tracks.push(rt.clone());
+                        false
+                    } else {
+                        true
+                    }
+                });
+                let mut removals: Vec<(Arc<RTCPeerConnection>, Arc<RTCRtpSender>)> =
+                    Vec::new();
+                for rt in removed_tracks {
+                    let forwarders = rt.forwarders.lock().await;
+                    for (id, f) in forwarders.iter() {
+                        if let Some(pc) =
+                            room.participants.get(id).and_then(|p| p.pc.clone())
+                        {
+                            removals.push((pc, f.sender.clone()));
+                        }
+                    }
+                }
+                for (pc, sender) in removals {
+                    if let Err(e) = pc.remove_track(&sender).await {
+                        warn!("remove_track failed for leaving peer {}: {}", peer_id, e);
+                    }
+                }
                 if room.participants.is_empty() {
-                    s.rooms.remove(&room_id);
+                    if let Some(room) = s.rooms.remove(&room_id) {
+                        if room.recording.is_some() {
+                            let state = Arc::clone(state);
+                            let room_id = room_id.clone();
+                            tokio::spawn(async move {
+                                control::finalize_recording(state, &room_id).await;
+                            });
+                        }
+                    }
                 } else {
                     s.broadcast(
                         &room_id,

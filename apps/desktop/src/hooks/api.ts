@@ -269,7 +269,23 @@ export function useDeleteChannel() {
   });
 }
 
-export function useMessages(channelId?: string) {
+export function useAddChannelModerator() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { channelId: string; userId: string }) => api.addChannelModerator(args.channelId, args.userId),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["channels", orgId()] }),
+  });
+}
+
+export function useRemoveChannelModerator() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { channelId: string; userId: string }) => api.removeChannelModerator(args.channelId, args.userId),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["channels", orgId()] }),
+  });
+}
+
+export function useMessages(channelId?: string, query?: string) {
   const { joinRealtimeChannel, leaveRealtimeChannel, connected } = useRealtime();
   useEffect(() => {
     if (!channelId || !connected) return;
@@ -278,8 +294,8 @@ export function useMessages(channelId?: string) {
   }, [channelId, connected, joinRealtimeChannel, leaveRealtimeChannel]);
 
   return useInfiniteQuery({
-    queryKey: ["messages", channelId],
-    queryFn: ({ pageParam }) => api.getMessages(channelId as string, pageParam ?? undefined),
+    queryKey: ["messages", channelId, query],
+    queryFn: ({ pageParam }) => api.getMessages(channelId as string, pageParam ?? undefined, 50, query),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     select: (data) => data.pages.slice().reverse().flatMap((page) => page.items),
@@ -345,6 +361,38 @@ export function useToggleReaction() {
           : data,
       );
       void client.invalidateQueries({ queryKey: ["thread"] });
+    },
+  });
+}
+
+export function usePinnedMessages(channelId?: string) {
+  return useQuery({
+    queryKey: ["pinned", channelId],
+    queryFn: () => api.getPinnedMessages(channelId as string),
+    enabled: Boolean(channelId),
+    staleTime: 30 * 1000,
+    retry: 2,
+  });
+}
+
+export function usePinMessage() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.pinMessage,
+    onSuccess: (result) => {
+      void client.invalidateQueries({ queryKey: ["pinned", result.channelId] });
+      void client.invalidateQueries({ queryKey: ["messages", result.channelId] });
+    },
+  });
+}
+
+export function useUnpinMessage() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.unpinMessage,
+    onSuccess: (result) => {
+      void client.invalidateQueries({ queryKey: ["pinned", result.channelId] });
+      void client.invalidateQueries({ queryKey: ["messages", result.channelId] });
     },
   });
 }
@@ -436,6 +484,41 @@ export function useDeleteProject() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.deleteProject,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["projects", orgId()] }),
+  });
+}
+
+export function useProjectTemplates() {
+  const orgId = getActiveOrganisation() ?? undefined;
+  return useQuery({
+    queryKey: ["projects", orgId, "templates"],
+    queryFn: () => api.getProjectTemplates(),
+    enabled: Boolean(orgId),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useMarkProjectAsTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.markProjectAsTemplate,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["projects", orgId()] }),
+  });
+}
+
+export function useUnmarkProjectAsTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.unmarkProjectAsTemplate,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["projects", orgId()] }),
+  });
+}
+
+export function useCreateProjectFromTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { templateId: string; body: Parameters<typeof api.createProjectFromTemplate>[1] }) =>
+      api.createProjectFromTemplate(args.templateId, args.body),
     onSuccess: () => client.invalidateQueries({ queryKey: ["projects", orgId()] }),
   });
 }

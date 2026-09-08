@@ -894,6 +894,22 @@ export class OrganisationService {
     });
   }
 
+  async countMembers(organisationId: string, actorId: string): Promise<{ count: number }> {
+    await this.assertMemberOf(organisationId, actorId);
+    const count = await this.prisma.organisationMembership.count({ where: { organisationId } });
+    return { count };
+  }
+
+  async findMembership(organisationId: string, actorId: string, userId: string): Promise<unknown> {
+    await this.assertMemberOf(organisationId, actorId);
+    const membership = await this.prisma.organisationMembership.findFirst({
+      where: { organisationId, userId },
+      include: { role: true },
+    });
+    if (!membership) throw new NotFoundException('Membership not found');
+    return membership;
+  }
+
   async listPermissions(organisationId: string, actorId: string): Promise<unknown[]> {
     await this.assertMemberOf(organisationId, actorId);
     return this.authorization.listPermissions();

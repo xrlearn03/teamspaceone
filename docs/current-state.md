@@ -101,11 +101,11 @@
 
 - Scheduled and instant meetings
 - Voice rooms
-- LiveKit integration for video (`meeting-service`)
+- Native Rust SFU for video/audio (`meeting-service` issues SFU join tokens)
 - Rust SFU for native voice
 - Meeting messages, reactions, raise hands, screen sharing, recording state
 - `MeetingScreen` and `VoiceRoomScreen`
-- Token gating for joining (`meeting-service` validates membership and issues LiveKit/SFU tokens)
+- Token gating for joining (`meeting-service` validates membership and issues SFU tokens)
 
 ### Where the code lives
 
@@ -113,7 +113,7 @@
 - API: `services/meeting/src/meeting/meeting.controller.ts`
 - Realtime: `services/realtime/src/realtime/realtime.gateway.ts`
 - SFU: `services/sfu/`
-- Frontend: `apps/desktop/src/screens/meeting.tsx`, `voice-room.tsx`, `components/livekit/`
+- Frontend: `apps/desktop/src/screens/meeting.tsx`, `voice-room.tsx`, `components/livekit/` (pre-call lobby UI, no LiveKit dependency)
 
 ### What is missing
 
@@ -276,7 +276,7 @@
 ### What works
 
 - `pnpm` workspaces + `turbo` pipeline for build/dev/test/lint/typecheck
-- `docker-compose.yml` for local Postgres, Redis, NATS, MinIO, LiveKit, SFU, Jaeger, OTel, and all services
+- `docker-compose.yml` for local Postgres, Redis, NATS, MinIO, SFU, Jaeger, OTel, and all services
 - Per-service Dockerfiles and base image
 - Environment example in `.env.example`
 - `pnpm dev:desktop`, `pnpm docker:up`, `pnpm dev:gateway`, etc.

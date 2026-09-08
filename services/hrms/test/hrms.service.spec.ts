@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import type { AuthorizableUser } from '@teamspace-one/authorization';
 import { PrismaService } from '../src/prisma/prisma.service.js';
@@ -272,6 +272,149 @@ describe('PayrollService', () => {
 
     await expect(service.getPayslip(ctx, adminUser, 'p-1')).resolves.toEqual(payslip);
   });
+
+  it('processPeriod generates draft payslips for salaried employees and emits an event', async () => {
+    const upsert = jest.fn().mockResolvedValue({});
+    const tx = {
+      payrollPeriod: {
+        update: jest.fn().mockResolvedValue({ id: 'pp-1', status: 'processed' }),
+      },
+      employee: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'emp-1', salary: { base: 5000, currency: 'EUR' } },
+          { id: 'emp-2', salary: { base: 3000 } },
+        ]),
+      },
+      payslip: { upsert },
+    };
+    const prisma = {
+      payrollPeriod: { findFirst: jest.fn().mockResolvedValue({ id: 'pp-1', status: 'draft' }) },
+      $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
+    };
+    const outbox = { createEvent: jest.fn().mockResolvedValue(undefined) };
+    const module = await buildModule(prisma, outbox);
+    const service = module.get(PayrollService);
+
+    const result = await service.processPeriod(ctx, 'pp-1');
+    expect(result.payslipsGenerated).toBe(2);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          employeeId: 'emp-1',
+          grossPay: 5000,
+          netPay: 5000,
+          currency: 'EUR',
+          status: 'draft',
+        }),
+      }),
+    );
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ employeeId: 'emp-2', currency: 'USD' }),
+      }),
+    );
+    expect(outbox.createEvent).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        eventType: 'teamspace-one.hrms.payroll.period.processed',
+      }),
+      'teamspace-one.hrms.payroll.period.processed',
+    );
+  });
+
+  it('processPeriod rejects an already-paid period', async () => {
+    const prisma = {
+      payrollPeriod: { findFirst: jest.fn().mockResolvedValue({ id: 'pp-1', status: 'paid' }) },
+    };
+    const module = await buildModule(prisma, {});
+    const service = module.get(PayrollService);
+
+    await expect(service.processPeriod(ctx, 'pp-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('approvePeriod requires processed status', async () => {
+    const prisma = {
+      payrollPeriod: { findFirst: jest.fn().mockResolvedValue({ id: 'pp-1', status: 'draft' }) },
+    };
+    const module = await buildModule(prisma, {});
+    const service = module.get(PayrollService);
+
+    await expect(service.approvePeriod(ctx, 'pp-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('markPaid marks all payslips paid and emits an event', async () => {
+    const tx = {
+      payrollPeriod: {
+        update: jest.fn().mockResolvedValue({ id: 'pp-1', status: 'paid' }),
+      },
+      payslip: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
+    };
+    const prisma = {
+      payrollPeriod: { findFirst: jest.fn().mockResolvedValue({ id: 'pp-1', status: 'approved' }) },
+      $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
+    };
+    const outbox = { createEvent: jest.fn().mockResolvedValue(undefined) };
+    const module = await buildModule(prisma, outbox);
+    const service = module.get(PayrollService);
+
+    const result = await service.markPaid(ctx, 'pp-1');
+    expect(result.status).toBe('paid');
+    expect(tx.payslip.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'paid' } }),
+    );
+    expect(outbox.createEvent).toHaveBeenCalled();
+  });
+
+  it('markPaid rejects a period that is not approved', async () => {
+    const prisma = {
+      payrollPeriod: { findFirst: jest.fn().mockResolvedValue({ id: 'pp-1', status: 'processed' }) },
+    };
+    const module = await buildModule(prisma, {});
+    const service = module.get(PayrollService);
+
+    await expect(service.markPaid(ctx, 'pp-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('exportCsv returns a CSV and emits a payroll.exported audit event', async () => {
+    const adminUser: AuthorizableUser = {
+      id: 'user-1',
+      organisationId: 'org-1',
+      permissions: ['hrms.payroll.export', 'hrms.payroll.manage'],
+      dataScopes: [{ module: 'hrms', scope: 'organisation' }],
+    };
+    const prisma = {
+      employee: { findFirst: jest.fn().mockResolvedValue({ id: 'emp-1', userId: 'user-1' }) },
+      payslip: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            employeeId: 'emp-9',
+            grossPay: 5000,
+            netPay: 4200,
+            currency: 'USD',
+            status: 'paid',
+            earnings: { base: 5000 },
+            deductions: { tax: 800 },
+            employee: { firstName: 'Jane', lastName: 'Doe' },
+          },
+        ]),
+      },
+      $transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn({})),
+    };
+    const outbox = { createEvent: jest.fn().mockResolvedValue(undefined) };
+    const module = await buildModule(prisma, outbox);
+    const service = module.get(PayrollService);
+
+    const csv = await service.exportCsv(ctx, adminUser, 'pp-1');
+    const lines = csv.split('\n');
+    expect(lines[0]).toBe('employeeId,employeeName,grossPay,netPay,currency,status,earnings,deductions');
+    expect(lines[1]).toContain('emp-9');
+    expect(lines[1]).toContain('"Jane Doe"');
+    expect(outbox.createEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ eventType: 'teamspace-one.hrms.payroll.exported' }),
+      'teamspace-one.hrms.payroll.exported',
+    );
+  });
 });
 
 describe('LifecycleService', () => {
@@ -350,6 +493,105 @@ describe('LifecycleService', () => {
     );
     expect(mockOutbox.createEvent).toHaveBeenCalled();
   });
+
+  it('forbids task completion by a user who is not assignee, employee, or manager', async () => {
+    const instance = {
+      id: 'onb-1',
+      organisationId: 'org-1',
+      employeeId: 'emp-9',
+      status: 'in_progress',
+      tasks: [{ id: 'ot-1', assigneeUserId: 'user-7', status: 'pending' }],
+    };
+    const prisma = {
+      onboardingInstance: { findFirst: jest.fn().mockResolvedValue(instance) },
+      employee: { findFirst: jest.fn().mockResolvedValue({ id: 'emp-2', userId: 'user-2' }) },
+    };
+    const module = await buildModule(prisma, mockOutbox);
+    const service = module.get(LifecycleService);
+    const user: AuthorizableUser = {
+      id: 'user-2',
+      organisationId: 'org-1',
+      permissions: ['hrms.onboarding.view'],
+      dataScopes: [{ module: 'hrms', scope: 'own' }],
+    };
+
+    await expect(service.completeTask(ctx, user, 'onb-1', 'ot-1')).rejects.toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('convertToEmployee rejects instances that are not pending', async () => {
+    const prisma = {
+      onboardingInstance: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'onb-1',
+          organisationId: 'org-1',
+          status: 'in_progress',
+        }),
+      },
+    };
+    const module = await buildModule(prisma, mockOutbox);
+    const service = module.get(LifecycleService);
+
+    await expect(
+      service.convertToEmployee(ctx, orgScopedUser, 'onb-1', {
+        firstName: 'A',
+        lastName: 'B',
+        userId: 'user-9',
+      } as never),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('initiate creates the default offboarding tasks and emits an event', async () => {
+    const createMany = jest.fn().mockResolvedValue({ count: 4 });
+    const tx = {
+      offboardingCase: { create: jest.fn().mockResolvedValue({ id: 'off-1' }) },
+      offboardingTask: { createMany },
+    };
+    const case_ = { id: 'off-1', organisationId: 'org-1', status: 'in_progress', tasks: [] };
+    const prisma = {
+      employee: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'emp-9', organisationId: 'org-1' }),
+      },
+      offboardingCase: { findFirst: jest.fn().mockResolvedValue(case_) },
+      $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
+    };
+    const module = await buildModule(prisma, mockOutbox);
+    const service = module.get(LifecycleService);
+
+    await service.initiate(ctx, { employeeId: 'emp-9', type: 'resignation' });
+    expect(createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({ category: 'access' }),
+          expect.objectContaining({ category: 'settlement' }),
+        ]),
+      }),
+    );
+    expect(mockOutbox.createEvent).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        eventType: 'teamspace-one.hrms.offboarding.initiated',
+      }),
+      'teamspace-one.hrms.offboarding.initiated',
+    );
+  });
+
+  it('cancelOnboarding rejects a completed instance', async () => {
+    const prisma = {
+      onboardingInstance: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'onb-1',
+          organisationId: 'org-1',
+          status: 'completed',
+        }),
+      },
+    };
+    const module = await buildModule(prisma, mockOutbox);
+    const service = module.get(LifecycleService);
+
+    await expect(service.cancelOnboarding(ctx, 'onb-1')).rejects.toThrow(BadRequestException);
+  });
 });
 
 describe('PerformanceService', () => {
@@ -375,9 +617,88 @@ describe('PerformanceService', () => {
     expect(result[0].employeeId).toBe('emp-2');
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ employeeId: { in: ['emp-2'] } }),
+        where: expect.objectContaining({ employee: { id: 'emp-2' } }),
       }),
     );
+  });
+
+  it('rejects review updates from users who are neither reviewer nor manager', async () => {
+    const review = {
+      id: 'pr-1',
+      organisationId: 'org-1',
+      reviewerId: 'user-9',
+      employeeId: 'emp-9',
+      employee: { userId: 'user-8' },
+    };
+    const prisma = {
+      performanceReview: { findFirst: jest.fn().mockResolvedValue(review) },
+    };
+    const module = await buildModule(prisma, {});
+    const service = module.get(PerformanceService);
+
+    await expect(
+      service.updateReview(ctx, ownScopedUser, 'pr-1', { overallRating: 4 }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('lets the assigned reviewer submit a review', async () => {
+    const review = {
+      id: 'pr-1',
+      organisationId: 'org-1',
+      reviewerId: 'user-2',
+      employeeId: 'emp-9',
+      employee: { userId: 'user-8' },
+    };
+    const update = jest.fn().mockResolvedValue({ ...review, status: 'submitted' });
+    const prisma = {
+      performanceReview: { findFirst: jest.fn().mockResolvedValue(review), update },
+    };
+    const module = await buildModule(prisma, {});
+    const service = module.get(PerformanceService);
+
+    const result = await service.updateReview(ctx, ownScopedUser, 'pr-1', { overallRating: 4 });
+    expect(result.status).toBe('submitted');
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'submitted', overallRating: 4 }),
+      }),
+    );
+  });
+
+  it('rejects acknowledgement by anyone other than the reviewee', async () => {
+    const review = {
+      id: 'pr-1',
+      organisationId: 'org-1',
+      employeeId: 'emp-9',
+      employee: { userId: 'user-8' },
+    };
+    const prisma = {
+      performanceReview: { findFirst: jest.fn().mockResolvedValue(review) },
+    };
+    const module = await buildModule(prisma, {});
+    const service = module.get(PerformanceService);
+
+    await expect(service.acknowledgeReview(ctx, ownScopedUser, 'pr-1')).rejects.toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('rejects goal updates from non-owners without manage permission', async () => {
+    const goal = {
+      id: 'goal-1',
+      organisationId: 'org-1',
+      employeeId: 'emp-9',
+      employee: { userId: 'user-8' },
+    };
+    const prisma = {
+      goal: { findFirst: jest.fn().mockResolvedValue(goal) },
+    };
+    const module = await buildModule(prisma, {});
+    const service = module.get(PerformanceService);
+
+    await expect(
+      service.updateGoal(ctx, ownScopedUser, 'goal-1', { progress: 50 }),
+    ).rejects.toThrow(ForbiddenException);
   });
 });
 

@@ -117,16 +117,6 @@ export class MeetingController {
     return this.meeting.setScreenShare(ctx, id, dto.isScreenSharing);
   }
 
-  @Get(':id/token')
-  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
-  async getToken(
-    @CurrentOrganisation() ctx: OrganisationContextValue,
-    @Param('id') id: string,
-    @Query('name') name?: string,
-  ) {
-    return this.meeting.getToken(ctx, id, name);
-  }
-
   @Post(':id/sfu-token')
   @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
   async getSfuToken(

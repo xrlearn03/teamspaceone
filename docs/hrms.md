@@ -114,4 +114,4 @@ New tabs in `apps/desktop/src/screens/hrms/` after Documents: **Onboarding** (`o
 
 ## Tests
 
-`services/hrms/test/hrms.service.spec.ts` — 12 tests: scope filtering, leave approval + balance, payslip restriction, salary stripping.
+`services/hrms/test/hrms.service.spec.ts` — 30 tests: scope filtering, leave approval + balance, payslip restriction, salary stripping, payroll workflow (process/approve/mark-paid/export + audit events), onboarding/offboarding lifecycle, and performance review/goal authorization.

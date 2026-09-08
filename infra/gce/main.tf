@@ -44,16 +44,6 @@ resource "random_password" "s3_secret_key" {
   special = false
 }
 
-resource "random_password" "livekit_api_key" {
-  length  = 32
-  special = false
-}
-
-resource "random_password" "livekit_api_secret" {
-  length  = 64
-  special = false
-}
-
 resource "random_password" "sfu_token_secret" {
   length  = 64
   special = false
@@ -79,8 +69,6 @@ locals {
     nats_password      = random_password.nats.result
     s3_access_key      = random_password.s3_access_key.result
     s3_secret_key      = random_password.s3_secret_key.result
-    livekit_api_key    = random_password.livekit_api_key.result
-    livekit_api_secret = random_password.livekit_api_secret.result
     sfu_token_secret   = random_password.sfu_token_secret.result
     internal_api_key   = random_password.internal_api_key.result
     jwt_secret         = random_password.jwt_secret.result
@@ -114,12 +102,12 @@ resource "google_compute_firewall" "allow" {
 
   allow {
     protocol = "tcp"
-    ports    = ["22", "80", "443", "3000", "3005", "7880", "7882", "8443", "9000", "9001"]
+    ports    = ["22", "80", "443", "3000", "3005", "8443", "9000", "9001"]
   }
 
   allow {
     protocol = "udp"
-    ports    = ["7881"]
+    ports    = ["10000"]
   }
 
   source_ranges = ["0.0.0.0/0"]

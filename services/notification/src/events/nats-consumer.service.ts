@@ -46,6 +46,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
       { stream: Streams.ORGANISATION, subject: Subjects.MEMBER_INVITED, durable: 'notification-member-invited-consumer' },
       { stream: Streams.USERS, subject: Subjects.PASSWORD_RESET_REQUESTED, durable: 'notification-password-reset-consumer' },
       { stream: Streams.HRMS, subject: 'teamspace-one.hrms.>', durable: 'notification-hrms-consumer' },
+      { stream: Streams.INTERVIEW, subject: 'teamspace-one.interview.>', durable: 'notification-interview-consumer' },
     ];
 
     for (const c of consumers) {
@@ -137,7 +138,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
         await this.inbox.handle(data, async (tx, envelope) => {
           const created = await this.notification.createFromEvent(tx, envelope);
           for (const n of created) {
-            if (n?.deliveryIds?.length) {
+            if (n?.deliveryIds?.length && n.enqueue !== false) {
               await this.notification.enqueueDeliveries(n.deliveryIds);
             }
           }

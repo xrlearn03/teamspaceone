@@ -1,7 +1,8 @@
-import { BadRequestException, GoneException, Injectable, NotFoundException, ForbiddenException, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, GoneException, Injectable, NotFoundException, ForbiddenException, Logger, PayloadTooLargeException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'node:crypto';
 import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
+import { hasPermission, HRMS_PERMISSIONS, type AuthorizableUser } from '@teamspace-one/authorization';
 import { type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -11,6 +12,7 @@ import { FileProcessingService } from '../file-processing/file-processing.servic
 import { type PresignUploadDto } from './dto/presign-upload.dto.js';
 import { type CompleteUploadDto } from './dto/complete-upload.dto.js';
 import { type CreateExternalShareDto } from './dto/create-external-share.dto.js';
+import { type CreateFolderDto } from './dto/create-folder.dto.js';
 
 export interface MulterFile {
   originalname: string;
@@ -43,6 +45,9 @@ export interface FileRecordResult {
   etag: string | null;
   checksumSha256: string | null;
   status: string;
+  version: number;
+  versionGroupId: string | null;
+  folderId: string | null;
   previewUrl: string | null;
   thumbnailUrl: string | null;
   metadata: Prisma.JsonValue | null;
@@ -56,16 +61,23 @@ export interface FileRecordResult {
  * Files linked to these resources are only accessible to actors that can
  * access the resource itself (e.g. channel members for channel files).
  */
-const RESOURCE_ACCESS_CHECKS: Record<string, { env: string; path: (resourceId: string) => string }> = {
+const RESOURCE_ACCESS_CHECKS: Record<string, { env: string; path: (resourceId: string, ctx: OrganisationContextValue) => string }> = {
   channel: { env: 'MESSAGING_SERVICE_URL', path: (id) => `/channels/${encodeURIComponent(id)}/access` },
   project: { env: 'PROJECTS_SERVICE_URL', path: (id) => `/projects/${encodeURIComponent(id)}/access` },
   task: { env: 'PROJECTS_SERVICE_URL', path: (id) => `/tasks/${encodeURIComponent(id)}/access` },
   meeting: { env: 'MEETING_SERVICE_URL', path: (id) => `/meetings/${encodeURIComponent(id)}/access` },
+  avatar: { env: 'ORGANISATION_SERVICE_URL', path: (id, ctx) => `/organisations/${encodeURIComponent(ctx.organisationId)}/members/${encodeURIComponent(id)}` },
 };
+
+/** File statuses that count toward storage quota. 'failed' uploads are excluded. */
+const QUOTA_COUNTED_STATUSES = ['pending', 'uploaded', 'processing', 'processed'];
+const DEFAULT_PER_USER_QUOTA_BYTES = 2 * 1024 * 1024 * 1024; // 2 GiB
+const MEMBER_COUNT_CACHE_TTL_MS = 30_000;
 
 @Injectable()
 export class FileStorageService {
   private readonly logger = new Logger(FileStorageService.name);
+  private memberCountCache = new Map<string, { count: number; expiresAt: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -80,6 +92,15 @@ export class FileStorageService {
       ...record,
       downloadUrl: this.storage.getPublicUrl(record.storageKey),
     } as FileRecordResult;
+  }
+
+  private categoryPermission(category: string | undefined): string | undefined {
+    switch (category) {
+      case 'hrms':
+        return HRMS_PERMISSIONS.DOCUMENT_UPLOAD;
+      default:
+        return undefined;
+    }
   }
 
   /**
@@ -126,7 +147,7 @@ export class FileStorageService {
 
     let res: Response;
     try {
-      res = await fetch(`${baseUrl}${check.path(resourceId)}`, {
+      res = await fetch(`${baseUrl}${check.path(resourceId, ctx)}`, {
         headers: {
           'x-internal-api-key': internalApiKey,
           'x-internal-caller': 'file-storage-service',
@@ -143,7 +164,120 @@ export class FileStorageService {
     }
   }
 
-  async list(ctx: OrganisationContextValue): Promise<FileRecordResult[]> {
+  /** Per-user storage quota in bytes (default 2 GiB), configurable via STORAGE_QUOTA_PER_USER_BYTES. */
+  private perUserQuotaBytes(): number {
+    const configured = Number(this.config.get<string>('STORAGE_QUOTA_PER_USER_BYTES'));
+    return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_PER_USER_QUOTA_BYTES;
+  }
+
+  /**
+   * Organisation member count, resolved from the organisation service and
+   * cached briefly. The org quota is `memberCount * perUserQuota`.
+   */
+  private async getMemberCount(ctx: OrganisationContextValue): Promise<number> {
+    const cached = this.memberCountCache.get(ctx.organisationId);
+    if (cached && cached.expiresAt > Date.now()) return cached.count;
+
+    const baseUrl = this.config.get<string>('ORGANISATION_SERVICE_URL');
+    const internalApiKey = this.config.get<string>('INTERNAL_API_KEY');
+    if (!baseUrl || !internalApiKey) {
+      this.logger.warn('ORGANISATION_SERVICE_URL/INTERNAL_API_KEY not configured; falling back to counting distinct uploaders');
+      return this.fallbackMemberCount(ctx.organisationId);
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(`${baseUrl}/organisations/${encodeURIComponent(ctx.organisationId)}/members/count`, {
+        headers: {
+          'x-internal-api-key': internalApiKey,
+          'x-internal-caller': 'file-storage-service',
+          'x-organisation-id': ctx.organisationId,
+          'x-actor-id': ctx.actorId ?? '',
+        },
+      });
+    } catch {
+      this.logger.warn('Organisation member count unavailable; using fallback');
+      return this.fallbackMemberCount(ctx.organisationId);
+    }
+    const body = res.ok ? ((await res.json().catch(() => null)) as { count?: number } | null) : null;
+    const count = body && typeof body.count === 'number' && body.count > 0 ? Math.floor(body.count) : await this.fallbackMemberCount(ctx.organisationId);
+    this.memberCountCache.set(ctx.organisationId, { count, expiresAt: Date.now() + MEMBER_COUNT_CACHE_TTL_MS });
+    return count;
+  }
+
+  /** Fallback: distinct uploaders in this org (never less than 1). */
+  private async fallbackMemberCount(organisationId: string): Promise<number> {
+    const uploaders = await this.prisma.fileRecord.findMany({
+      where: { organisationId },
+      select: { uploaderId: true },
+      distinct: ['uploaderId'],
+    });
+    return Math.max(uploaders.length, 1);
+  }
+
+  private async usageBytes(organisationId: string, uploaderId?: string): Promise<number> {
+    const agg = await this.prisma.fileRecord.aggregate({
+      _sum: { size: true },
+      where: {
+        organisationId,
+        status: { in: QUOTA_COUNTED_STATUSES },
+        ...(uploaderId ? { uploaderId } : {}),
+      },
+    });
+    return agg._sum.size ?? 0;
+  }
+
+  /**
+   * Enforces storage quota before an upload is accepted:
+   *  - per-user: each member may store up to STORAGE_QUOTA_PER_USER_BYTES (default 2 GiB)
+   *  - per-organisation: memberCount * per-user quota
+   */
+  private async assertQuota(ctx: OrganisationContextValue, incomingBytes: number): Promise<void> {
+    const actorId = ctx.actorId as string;
+    const perUser = this.perUserQuotaBytes();
+    const [userUsed, orgUsed] = await Promise.all([
+      this.usageBytes(ctx.organisationId, actorId),
+      this.usageBytes(ctx.organisationId),
+    ]);
+
+    if (userUsed + incomingBytes > perUser) {
+      throw new PayloadTooLargeException(
+        `Personal storage quota exceeded: ${perUser} bytes allowed per user, ${userUsed} used`,
+      );
+    }
+
+    const memberCount = await this.getMemberCount(ctx);
+    const orgLimit = memberCount * perUser;
+    if (orgUsed + incomingBytes > orgLimit) {
+      throw new PayloadTooLargeException(
+        `Organisation storage quota exceeded: ${orgLimit} bytes allowed for ${memberCount} member(s), ${orgUsed} used`,
+      );
+    }
+  }
+
+  /** Current usage and quota for the actor and their organisation. */
+  async getUsage(ctx: OrganisationContextValue) {
+    const actorId = ctx.actorId;
+    if (!actorId) throw new ForbiddenException('Missing actor');
+    const perUser = this.perUserQuotaBytes();
+    const [userUsed, orgUsed, memberCount] = await Promise.all([
+      this.usageBytes(ctx.organisationId, actorId),
+      this.usageBytes(ctx.organisationId),
+      this.getMemberCount(ctx),
+    ]);
+    return {
+      perUserQuotaBytes: perUser,
+      user: { usedBytes: userUsed, limitBytes: perUser, remainingBytes: Math.max(perUser - userUsed, 0) },
+      organisation: {
+        usedBytes: orgUsed,
+        limitBytes: memberCount * perUser,
+        remainingBytes: Math.max(memberCount * perUser - orgUsed, 0),
+        memberCount,
+      },
+    };
+  }
+
+  async list(ctx: OrganisationContextValue, folderId?: string): Promise<FileRecordResult[]> {
     const actorId = ctx.actorId;
     if (!actorId) throw new ForbiddenException('Missing actor');
     // Only list files that are not bound to a restricted resource, or that the
@@ -152,11 +286,34 @@ export class FileStorageService {
     const records = await this.prisma.fileRecord.findMany({
       where: {
         organisationId: ctx.organisationId,
+        ...(folderId !== undefined ? { folderId } : {}),
         OR: [{ resourceType: null }, { resourceType: { notIn: Object.keys(RESOURCE_ACCESS_CHECKS) } }, { uploaderId: actorId }],
       },
       orderBy: { createdAt: 'desc' },
     });
     return records.map((r) => this.withSignedUrl(r));
+  }
+
+  async createFolder(ctx: OrganisationContextValue, dto: CreateFolderDto) {
+    return this.prisma.folder.create({
+      data: {
+        id: randomUUID(),
+        organisationId: ctx.organisationId,
+        name: dto.name,
+        category: dto.category,
+        parentId: dto.parentId ?? null,
+      },
+    });
+  }
+
+  async listFolders(ctx: OrganisationContextValue, category?: string) {
+    return this.prisma.folder.findMany({
+      where: {
+        organisationId: ctx.organisationId,
+        ...(category ? { category } : {}),
+      },
+      orderBy: { name: 'asc' },
+    });
   }
 
   async getById(ctx: OrganisationContextValue, id: string): Promise<FileRecordResult> {
@@ -165,7 +322,21 @@ export class FileStorageService {
     return { ...this.withSignedUrl(record), downloadUrl: signedUrl };
   }
 
-  async presignUpload(ctx: OrganisationContextValue, dto: PresignUploadDto): Promise<PresignUploadResult> {
+  async listVersions(ctx: OrganisationContextValue, id: string): Promise<FileRecordResult[]> {
+    const record = await this.accessibleRecord(ctx, id);
+    const groupId = record.versionGroupId ?? record.id;
+    const records = await this.prisma.fileRecord.findMany({
+      where: { organisationId: ctx.organisationId, versionGroupId: groupId },
+      orderBy: { version: 'desc' },
+    });
+    return Promise.all(records.map(async (r) => ({ ...this.withSignedUrl(r), downloadUrl: await this.storage.getSignedDownloadUrl(r.storageKey) })));
+  }
+
+  async presignUpload(
+    ctx: OrganisationContextValue,
+    dto: PresignUploadDto,
+    user?: AuthorizableUser,
+  ): Promise<PresignUploadResult> {
     const actorId = ctx.actorId;
     if (!actorId) {
       throw new ForbiddenException('Missing actor');
@@ -183,13 +354,29 @@ export class FileStorageService {
       }
       await this.assertResourceAccess(ctx, dto.resourceType, dto.resourceId);
     }
+
+    const categoryPermission = this.categoryPermission(dto.category);
+    if (categoryPermission && (!user || !hasPermission(user, categoryPermission))) {
+      throw new ForbiddenException(`Missing permission to upload ${dto.category} files`);
+    }
+
+    if (dto.folderId) {
+      const folder = await this.prisma.folder.findFirst({
+        where: { id: dto.folderId, organisationId: ctx.organisationId },
+      });
+      if (!folder) throw new NotFoundException('Folder not found');
+    }
+
+    await this.assertQuota(ctx, dto.size);
+
     const checksumSha256 = dto.sha256.toLowerCase();
     const checksumBase64 = Buffer.from(checksumSha256, 'hex').toString('base64');
 
     const id = randomUUID();
     const storageKey = this.storage.buildStorageKey({
       organisationId: ctx.organisationId,
-      category: dto.category,
+      uploaderId: actorId,
+      mimeType: dto.mimeType,
       fileName: dto.fileName,
     });
 
@@ -208,6 +395,7 @@ export class FileStorageService {
         resourceType: dto.resourceType,
         resourceId: dto.resourceId,
         category: dto.category,
+        folderId: dto.folderId,
         uploaderId: actorId,
         originalName: dto.fileName,
         mimeType: dto.mimeType,
@@ -279,13 +467,31 @@ export class FileStorageService {
 
     const publicUrl = this.storage.getPublicUrl(existing.storageKey);
 
+    let version = 1;
+    let versionGroupId: string | null = null;
+    let baseRecord = existing;
+    if (dto.versionOf) {
+      const previous = await this.prisma.fileRecord.findFirst({
+        where: { id: dto.versionOf, organisationId: ctx.organisationId },
+      });
+      if (!previous) throw new NotFoundException('Previous file version not found');
+      await this.assertResourceAccess(ctx, previous.resourceType, previous.resourceId, previous.uploaderId);
+      versionGroupId = previous.versionGroupId ?? previous.id;
+      const maxVersion = await this.prisma.fileRecord.aggregate({
+        where: { versionGroupId, organisationId: ctx.organisationId },
+        _max: { version: true },
+      });
+      version = (maxVersion._max.version ?? 1) + 1;
+      baseRecord = previous;
+    }
+
     const payload = {
       id,
       organisationId: ctx.organisationId,
-      workspaceId: existing.workspaceId,
-      resourceType: existing.resourceType,
-      resourceId: existing.resourceId,
-      category: existing.category,
+      workspaceId: baseRecord.workspaceId,
+      resourceType: baseRecord.resourceType,
+      resourceId: baseRecord.resourceId,
+      category: baseRecord.category,
       uploaderId: actorId,
       originalName: existing.originalName,
       mimeType: existing.mimeType,
@@ -295,13 +501,16 @@ export class FileStorageService {
       checksumSha256: expectedSha256,
       url: publicUrl,
       status: 'uploaded',
+      version,
+      versionGroupId,
+      versionOf: dto.versionOf ?? null,
     };
 
     const envelope = createEventEnvelope({
       eventType: Subjects.FILE_UPLOADED,
       organisationId: ctx.organisationId,
       actorId,
-      workspaceId: existing.workspaceId ?? undefined,
+      workspaceId: baseRecord.workspaceId ?? undefined,
       resourceType: 'file',
       resourceId: id,
       correlationId: ctx.correlationId,
@@ -311,7 +520,17 @@ export class FileStorageService {
     const updated = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const record = await tx.fileRecord.update({
         where: { id },
-        data: { status: 'uploaded', url: publicUrl, checksumSha256: expectedSha256 },
+        data: {
+          status: 'uploaded',
+          url: publicUrl,
+          checksumSha256: expectedSha256,
+          version,
+          versionGroupId,
+          workspaceId: baseRecord.workspaceId,
+          resourceType: baseRecord.resourceType,
+          resourceId: baseRecord.resourceId,
+          category: baseRecord.category,
+        },
       });
       await this.outbox.createEvent(tx, envelope, Subjects.FILE_UPLOADED);
       return record;
@@ -355,11 +574,14 @@ export class FileStorageService {
       throw new ForbiddenException('Missing actor');
     }
 
+    await this.assertQuota(ctx, file.size);
+
     const id = randomUUID();
     const category = 'attachment';
     const storageKey = this.storage.buildStorageKey({
       organisationId: ctx.organisationId,
-      category,
+      uploaderId: actorId,
+      mimeType: file.mimetype,
       fileName: file.originalname,
     });
 

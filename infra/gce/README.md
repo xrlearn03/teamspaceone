@@ -6,7 +6,7 @@ Deploys the full backend stack to a single Google Compute Engine VM with Docker 
 
 - A static external IP.
 - An `e2-standard-4` (default) Ubuntu 22.04 instance with a separate persistent SSD for data.
-- Firewall rules for the gateway, realtime, LiveKit, SFU, and MinIO.
+- Firewall rules for the gateway, realtime, SFU, and MinIO.
 - A generated `.env` with random secrets and the new external IP wired in.
 - The repo is cloned on the VM from Azure DevOps and `docker-compose.yml` is run with a small GCE overlay that sets CORS for the public IP.
 
@@ -65,7 +65,7 @@ gcloud compute ssh --project=<project> --zone=<zone> teamspace-one -- sudo bash 
 
 - **No domain/TLS**: the deployment uses HTTP on the external IP. Add a domain and a reverse proxy later if you want HTTPS.
 - **MinIO**: exposed on ports `9000` (S3 API) and `9001` (console). Generated credentials are in `/opt/teamspace-one/repo/.env` on the VM.
-- **LiveKit**: TCP `7880` and `7882`, UDP `7881` are opened to the internet.
+- **SFU**: TCP `8443` (signaling) and UDP `10000` (ICE media mux) are opened to the internet. The SFU advertises the VM external IP via `SFU_NAT_1TO1_IPS` in the generated `.env`.
 - **Secrets**: Terraform generates all secrets except `OPENAI_API_KEY`. They are stored only in the VM's `.env` and in Terraform state; keep `terraform.tfstate` safe.
 
 ## Tear down

@@ -7,13 +7,13 @@ import {
 } from '@teamspace-one/authorization/nest';
 import { OutboxModule } from '../outbox/outbox.module.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
-import { LiveKitModule } from '../livekit/livekit.module.js';
 import { MeetingService } from './meeting.service.js';
 import { MeetingController } from './meeting.controller.js';
+import { InternalMeetingController } from './internal-meeting.controller.js';
 
 @Module({
-  imports: [OutboxModule, LiveKitModule, PrismaModule],
-  controllers: [MeetingController],
+  imports: [OutboxModule, PrismaModule],
+  controllers: [MeetingController, InternalMeetingController],
   providers: [
     {
       provide: AUTHORIZATION_OPTIONS,

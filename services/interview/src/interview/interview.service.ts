@@ -5,14 +5,23 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '#prisma';
-import { createEventEnvelope } from '@teamspace-one/event-contracts';
+import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import type { AuthorizableUser } from '@teamspace-one/authorization';
 import type { OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { AiClient } from './ai.client.js';
+import { MeetingClient } from './meeting.client.js';
 
 const APPLICATION_HIRED_SUBJECT = 'teamspace-one.interview.application.hired';
+
+function formatIcsDate(date: Date): string {
+  return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+}
+
+function escapeIcsText(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\\;').replace(/\n/g, '\\n').replace(/\r/g, '');
+}
 
 const APPLICATION_STAGES = [
   'applied',
@@ -91,6 +100,7 @@ export interface UpdateTemplateInput {
 export interface AiStartInput {
   templateId?: string;
   config?: Record<string, unknown>;
+  interviewType?: 'ai_text' | 'ai_voice' | 'ai_video';
 }
 
 export interface AiAnswerInput {
@@ -119,6 +129,7 @@ export class InterviewService {
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
     private readonly ai: AiClient,
+    private readonly meeting: MeetingClient,
   ) {}
 
   /** True when the user may see all interview data for the organisation. */
@@ -515,6 +526,47 @@ export class InterviewService {
     });
   }
 
+  async calendarIcs(organisationId: string, id: string): Promise<{ ics: string; fileName: string }> {
+    const session = await this.prisma.interviewSession.findFirst({
+      where: { id, organisationId },
+      include: {
+        candidate: { select: { id: true, name: true, email: true } },
+        jobOpening: { select: { id: true, title: true } },
+        participants: { select: { userId: true } },
+      },
+    });
+    if (!session) throw new NotFoundException('Interview session not found');
+    if (!session.scheduledAt) throw new BadRequestException('Interview has no scheduled time');
+
+    const start = session.scheduledAt;
+    const end = new Date(start.getTime() + (session.durationMin ?? 60) * 60_000);
+    const jobTitle = session.jobOpening?.title ?? 'Unknown role';
+    const summary = `Interview: ${session.candidate?.name ?? 'Candidate'} (${jobTitle})`;
+    const description = `Candidate: ${session.candidate?.name ?? ''}; Job: ${jobTitle}; Session: ${session.id}`;
+    const attendeeList = session.participants.map((p) => `ATTENDEE;CN=Participant:${p.userId}`).join('\r\n');
+
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Teamspace One//Interview Calendar//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      `UID:interview-session-${session.id}@teamspace-one`,
+      `DTSTAMP:${formatIcsDate(new Date())}`,
+      `DTSTART:${formatIcsDate(start)}`,
+      `DTEND:${formatIcsDate(end)}`,
+      `SUMMARY:${escapeIcsText(summary)}`,
+      `DESCRIPTION:${escapeIcsText(description)}`,
+      `ORGANIZER;CN=Teamspace One:mailto:noreply@teamspace-one.local`,
+      attendeeList,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+
+    return { ics, fileName: `interview-${session.id}.ics` };
+  }
+
   async createSession(organisationId: string, actorId: string, dto: CreateSessionInput) {
     const candidate = await this.prisma.candidate.findFirst({
       where: { id: dto.candidateId, organisationId },
@@ -528,30 +580,54 @@ export class InterviewService {
     }
 
     const participantIds = [...new Set([actorId, ...(dto.participantIds ?? [])])];
-    return this.prisma.interviewSession.create({
-      data: {
-        id: randomUUID(),
-        organisationId,
-        candidateId: dto.candidateId,
-        jobOpeningId: dto.jobOpeningId ?? null,
-        interviewType: dto.interviewType ?? 'video',
-        scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
-        durationMin: dto.durationMin ?? 60,
-        createdBy: actorId,
-        participants: {
-          create: participantIds.map((userId) => ({
-            id: randomUUID(),
-            organisationId,
-            userId,
-            role: userId === actorId ? 'organizer' : 'interviewer',
-          })),
+    return this.prisma.$transaction(async (tx) => {
+      const session = await tx.interviewSession.create({
+        data: {
+          id: randomUUID(),
+          organisationId,
+          candidateId: dto.candidateId,
+          jobOpeningId: dto.jobOpeningId ?? null,
+          interviewType: dto.interviewType ?? 'video',
+          scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
+          durationMin: dto.durationMin ?? 60,
+          createdBy: actorId,
+          participants: {
+            create: participantIds.map((userId) => ({
+              id: randomUUID(),
+              organisationId,
+              userId,
+              role: userId === actorId ? 'organizer' : 'interviewer',
+            })),
+          },
         },
-      },
-      include: {
-        candidate: { select: { id: true, name: true, email: true } },
-        jobOpening: { select: { id: true, title: true } },
-        participants: true,
-      },
+        include: {
+          candidate: { select: { id: true, name: true, email: true } },
+          jobOpening: { select: { id: true, title: true } },
+          participants: true,
+        },
+      });
+
+      const envelope = createEventEnvelope({
+        eventType: Subjects.INTERVIEW_SESSION_SCHEDULED,
+        organisationId,
+        actorId,
+        resourceType: 'interview_session',
+        resourceId: session.id,
+        payload: {
+          sessionId: session.id,
+          candidateId: candidate.id,
+          candidateName: candidate.name,
+          candidateEmail: candidate.email,
+          jobOpeningId: dto.jobOpeningId ?? null,
+          jobTitle: session.jobOpening?.title ?? null,
+          scheduledAt: session.scheduledAt ? session.scheduledAt.toISOString() : null,
+          durationMin: session.durationMin,
+          participantIds,
+          organizerId: actorId,
+        },
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.INTERVIEW_SESSION_SCHEDULED);
+      return session;
     });
   }
 
@@ -714,44 +790,69 @@ export class InterviewService {
       },
     });
 
-    const screening = await this.prisma.screeningResult.upsert({
-      where: { applicationId },
-      update: {
-        matchScore: result.matchScore,
-        skillsFound: result.skillsFound,
-        missingRequirements: result.missingRequirements,
-        summary: result.summary,
-        confidence: result.confidence,
-        model: result.model,
-        promptVersion: result.promptVersion,
-        status: 'ai_generated',
-        reviewedBy: null,
-        reviewedAt: null,
-      },
-      create: {
-        id: randomUUID(),
-        organisationId: ctx.organisationId,
-        applicationId,
-        matchScore: result.matchScore,
-        skillsFound: result.skillsFound,
-        missingRequirements: result.missingRequirements,
-        summary: result.summary,
-        confidence: result.confidence,
-        model: result.model,
-        promptVersion: result.promptVersion,
-        status: 'ai_generated',
-        createdBy: ctx.actorId,
-      },
-    });
+    const recipientIds = [job.recruiterId, job.hiringManagerId, job.createdBy].filter(
+      (id): id is string => Boolean(id),
+    );
 
-    if (application.stage === 'applied') {
-      await this.prisma.candidateApplication.update({
-        where: { id: applicationId },
-        data: { stage: 'screening' },
+    return this.prisma.$transaction(async (tx) => {
+      const screening = await tx.screeningResult.upsert({
+        where: { applicationId },
+        update: {
+          matchScore: result.matchScore,
+          skillsFound: result.skillsFound,
+          missingRequirements: result.missingRequirements,
+          summary: result.summary,
+          confidence: result.confidence,
+          model: result.model,
+          promptVersion: result.promptVersion,
+          status: 'ai_generated',
+          reviewedBy: null,
+          reviewedAt: null,
+        },
+        create: {
+          id: randomUUID(),
+          organisationId: ctx.organisationId,
+          applicationId,
+          matchScore: result.matchScore,
+          skillsFound: result.skillsFound,
+          missingRequirements: result.missingRequirements,
+          summary: result.summary,
+          confidence: result.confidence,
+          model: result.model,
+          promptVersion: result.promptVersion,
+          status: 'ai_generated',
+          createdBy: ctx.actorId,
+        },
       });
-    }
 
-    return screening;
+      if (application.stage === 'applied') {
+        await tx.candidateApplication.update({
+          where: { id: applicationId },
+          data: { stage: 'screening' },
+        });
+      }
+
+      const envelope = createEventEnvelope({
+        eventType: Subjects.INTERVIEW_SCREENING_COMPLETED,
+        organisationId: ctx.organisationId,
+        actorId: ctx.actorId,
+        resourceType: 'candidate-application',
+        resourceId: applicationId,
+        payload: {
+          applicationId,
+          candidateId: candidate.id,
+          candidateName: candidate.name,
+          candidateEmail: candidate.email,
+          jobOpeningId: application.jobOpeningId,
+          jobTitle: job.title,
+          matchScore: result.matchScore,
+          recipientIds,
+        },
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.INTERVIEW_SCREENING_COMPLETED);
+
+      return screening;
+    });
   }
 
   async getScreening(
@@ -912,7 +1013,7 @@ export class InterviewService {
     ctx: OrganisationContextValue,
     user: AuthorizableUser,
     sessionId: string,
-  ): Promise<Prisma.InterviewSessionGetPayload<{ include: { candidate: true; jobOpening: true; answers: true } }> | null> {
+  ): Promise<Prisma.InterviewSessionGetPayload<{ include: { candidate: true; jobOpening: true; answers: true; participants: true } }> | null> {
     const where = await this.sessionWhereForUser(ctx.organisationId, user);
     return this.prisma.interviewSession.findFirst({
       where: { ...where, id: sessionId },
@@ -920,6 +1021,7 @@ export class InterviewService {
         candidate: true,
         jobOpening: true,
         answers: { orderBy: { sortOrder: 'asc' } },
+        participants: true,
       },
     });
   }
@@ -976,7 +1078,7 @@ export class InterviewService {
 
     const updated = await this.prisma.interviewSession.update({
       where: { id: sessionId },
-      data: { status: 'in_progress', interviewType: 'ai_text' },
+      data: { status: 'in_progress', interviewType: dto.interviewType ?? 'ai_text' },
       include: {
         candidate: { select: { id: true, name: true, email: true } },
         jobOpening: { select: { id: true, title: true } },
@@ -986,6 +1088,28 @@ export class InterviewService {
     });
 
     return { session: updated, questions: updated.answers };
+  }
+
+  async joinAiInterview(ctx: OrganisationContextValue, sessionId: string, userId: string) {
+    const session = await this.prisma.interviewSession.findFirst({
+      where: { id: sessionId, organisationId: ctx.organisationId },
+      include: { candidate: true, jobOpening: true },
+    });
+    if (!session) throw new NotFoundException('Interview session not found');
+
+    if (session.interviewType === 'ai_text') {
+      throw new BadRequestException('This is a text-only AI interview; use the text transcript endpoints');
+    }
+    if (session.interviewType === 'ai_video') {
+      throw new BadRequestException('Video AI interviews are not yet supported');
+    }
+    if (session.interviewType !== 'ai_voice') {
+      throw new BadRequestException(`Unsupported interview type: ${session.interviewType}`);
+    }
+
+    const title = `AI Interview: ${session.candidate?.name ?? 'Candidate'} - ${session.jobOpening?.title ?? 'Interview'}`;
+    await this.meeting.ensureRoom(ctx, sessionId, title);
+    return this.meeting.getSfuToken(ctx, sessionId, userId);
   }
 
   async answerAiQuestion(
@@ -1046,51 +1170,77 @@ export class InterviewService {
 
     const result = await this.ai.evaluate(ctx, { job, transcript });
 
-    const evaluation = await this.prisma.interviewEvaluation.upsert({
-      where: { sessionId_evaluatorId: { sessionId, evaluatorId: 'ai' } },
-      update: {
-        technicalScore: result.technicalScore,
-        communicationScore: result.communicationScore,
-        problemSolvingScore: result.problemSolvingScore,
-        cultureFitScore: result.cultureFitScore,
-        overallScore: result.overallScore,
-        recommendation: result.recommendation,
-        comments: result.summary,
-        source: 'ai',
-        status: 'ai_generated',
-        reviewedBy: null,
-        reviewedAt: null,
-        aiMetadata: {
-          model: result.model,
-          promptVersion: result.promptVersion,
-          suggestedFollowUps: result.suggestedFollowUps,
-          generatedFor: ctx.actorId,
-        },
-      },
-      create: {
-        id: randomUUID(),
-        organisationId: ctx.organisationId,
-        sessionId,
-        evaluatorId: 'ai',
-        technicalScore: result.technicalScore,
-        communicationScore: result.communicationScore,
-        problemSolvingScore: result.problemSolvingScore,
-        cultureFitScore: result.cultureFitScore,
-        overallScore: result.overallScore,
-        recommendation: result.recommendation,
-        comments: result.summary,
-        source: 'ai',
-        status: 'ai_generated',
-        aiMetadata: {
-          model: result.model,
-          promptVersion: result.promptVersion,
-          suggestedFollowUps: result.suggestedFollowUps,
-          generatedFor: ctx.actorId,
-        },
-      },
-    });
+    const recipientIds = (session.participants ?? [])
+      .map((p) => p.userId)
+      .filter((id, index, arr) => id && arr.indexOf(id) === index);
 
-    return evaluation;
+    return this.prisma.$transaction(async (tx) => {
+      const evaluation = await tx.interviewEvaluation.upsert({
+        where: { sessionId_evaluatorId: { sessionId, evaluatorId: 'ai' } },
+        update: {
+          technicalScore: result.technicalScore,
+          communicationScore: result.communicationScore,
+          problemSolvingScore: result.problemSolvingScore,
+          cultureFitScore: result.cultureFitScore,
+          overallScore: result.overallScore,
+          recommendation: result.recommendation,
+          comments: result.summary,
+          source: 'ai',
+          status: 'ai_generated',
+          reviewedBy: null,
+          reviewedAt: null,
+          aiMetadata: {
+            model: result.model,
+            promptVersion: result.promptVersion,
+            suggestedFollowUps: result.suggestedFollowUps,
+            generatedFor: ctx.actorId,
+          },
+        },
+        create: {
+          id: randomUUID(),
+          organisationId: ctx.organisationId,
+          sessionId,
+          evaluatorId: 'ai',
+          technicalScore: result.technicalScore,
+          communicationScore: result.communicationScore,
+          problemSolvingScore: result.problemSolvingScore,
+          cultureFitScore: result.cultureFitScore,
+          overallScore: result.overallScore,
+          recommendation: result.recommendation,
+          comments: result.summary,
+          source: 'ai',
+          status: 'ai_generated',
+          aiMetadata: {
+            model: result.model,
+            promptVersion: result.promptVersion,
+            suggestedFollowUps: result.suggestedFollowUps,
+            generatedFor: ctx.actorId,
+          },
+        },
+      });
+
+      const envelope = createEventEnvelope({
+        eventType: Subjects.INTERVIEW_EVALUATION_READY,
+        organisationId: ctx.organisationId,
+        actorId: ctx.actorId,
+        resourceType: 'interview-evaluation',
+        resourceId: evaluation.id,
+        payload: {
+          sessionId,
+          candidateId: session.candidate?.id,
+          candidateName: session.candidate?.name,
+          jobOpeningId: session.jobOpening?.id,
+          jobTitle: session.jobOpening?.title,
+          evaluationId: evaluation.id,
+          overallScore: result.overallScore,
+          recommendation: result.recommendation,
+          recipientIds,
+        },
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.INTERVIEW_EVALUATION_READY);
+
+      return evaluation;
+    });
   }
 
   // ---- Hiring decisions ----

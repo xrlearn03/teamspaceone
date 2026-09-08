@@ -121,7 +121,7 @@ export class MessagingService {
   }
 
   async updateChannel(ctx: OrganisationContextValue, channelId: string, dto: UpdateChannelDto) {
-    const channel = await this.ownedChannel(ctx, channelId);
+    const channel = await this.managedChannel(ctx, channelId);
     if (channel.type === 'direct') throw new BadRequestException('Direct conversations cannot be renamed');
     const data: { name?: string; type?: string } = {};
     if (dto.name !== undefined) data.name = this.name(dto.name);
@@ -163,6 +163,50 @@ export class MessagingService {
         memberIds,
         addedMemberIds,
         removedMemberIds,
+      });
+      return updated;
+    });
+  }
+
+  async addModerator(ctx: OrganisationContextValue, channelId: string, userId: string) {
+    const channel = await this.ownedChannel(ctx, channelId);
+    if (channel.type === 'direct') throw new BadRequestException('Direct conversation membership is immutable');
+    if (channel.members.some((m) => m.userId === userId && m.role === 'owner')) {
+      throw new BadRequestException('Cannot change the owner role');
+    }
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.channelMember.update({
+        where: { channelId_userId: { channelId, userId } },
+        data: { role: 'moderator' },
+      });
+      await this.event(tx, ctx, Subjects.CHANNEL_MEMBERS_UPDATED, 'channel', channelId, {
+        id: channelId,
+        name: channel.name,
+        memberIds: channel.members.map((m) => m.userId),
+        addedMemberIds: [],
+        removedMemberIds: [],
+      });
+      return updated;
+    });
+  }
+
+  async removeModerator(ctx: OrganisationContextValue, channelId: string, userId: string) {
+    const channel = await this.ownedChannel(ctx, channelId);
+    if (channel.type === 'direct') throw new BadRequestException('Direct conversation membership is immutable');
+    if (channel.members.some((m) => m.userId === userId && m.role === 'owner')) {
+      throw new BadRequestException('Cannot change the owner role');
+    }
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.channelMember.update({
+        where: { channelId_userId: { channelId, userId } },
+        data: { role: 'member' },
+      });
+      await this.event(tx, ctx, Subjects.CHANNEL_MEMBERS_UPDATED, 'channel', channelId, {
+        id: channelId,
+        name: channel.name,
+        memberIds: channel.members.map((m) => m.userId),
+        addedMemberIds: [],
+        removedMemberIds: [],
       });
       return updated;
     });
@@ -221,11 +265,16 @@ export class MessagingService {
     });
   }
 
-  async listMessages(ctx: OrganisationContextValue, channelId: string, cursor?: string, limit = 50) {
+  async listMessages(ctx: OrganisationContextValue, channelId: string, cursor?: string, limit = 50, query?: string) {
     await this.accessibleChannel(ctx, channelId);
     const take = Math.min(Math.max(Number.isFinite(limit) ? limit : 50, 1), 100);
     const rows = await this.prisma.message.findMany({
-      where: { channelId, organisationId: ctx.organisationId, parentMessageId: null },
+      where: {
+        channelId,
+        organisationId: ctx.organisationId,
+        parentMessageId: null,
+        ...(query ? { content: { contains: query, mode: 'insensitive' } } : {}),
+      },
       include: messageInclude,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       cursor: cursor ? { id: cursor } : undefined,
@@ -289,6 +338,47 @@ export class MessagingService {
       });
       await this.event(tx, ctx, Subjects.MESSAGE_DELETED, 'message', messageId, { id: messageId, channelId: message.channelId, deletedAt });
       return deleted;
+    });
+  }
+
+  async pinMessage(ctx: OrganisationContextValue, messageId: string) {
+    const message = await this.ownedMessage(ctx, messageId);
+    const pinnedAt = new Date();
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.message.update({
+        where: { id: messageId },
+        data: { pinnedAt },
+        include: messageInclude,
+      });
+      await this.event(tx, ctx, Subjects.MESSAGE_UPDATED, 'message', messageId, { ...updated, recipientIds: [] });
+      return updated;
+    });
+  }
+
+  async unpinMessage(ctx: OrganisationContextValue, messageId: string) {
+    const message = await this.ownedMessage(ctx, messageId);
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.message.update({
+        where: { id: messageId },
+        data: { pinnedAt: null },
+        include: messageInclude,
+      });
+      await this.event(tx, ctx, Subjects.MESSAGE_UPDATED, 'message', messageId, { ...updated, recipientIds: [] });
+      return updated;
+    });
+  }
+
+  async listPinnedMessages(ctx: OrganisationContextValue, channelId: string) {
+    await this.accessibleChannel(ctx, channelId);
+    return this.prisma.message.findMany({
+      where: {
+        channelId,
+        organisationId: ctx.organisationId,
+        deletedAt: null,
+        pinnedAt: { not: null },
+      },
+      orderBy: { pinnedAt: 'desc' },
+      include: messageInclude,
     });
   }
 
@@ -373,6 +463,20 @@ export class MessagingService {
     return channel;
   }
 
+  private async managedChannel(ctx: OrganisationContextValue, channelId: string) {
+    const actorId = this.actor(ctx);
+    const channel = await this.prisma.channel.findFirst({
+      where: {
+        id: channelId,
+        organisationId: ctx.organisationId,
+        members: { some: { userId: actorId, role: { in: ['owner', 'moderator'] } } },
+      },
+      include: channelInclude,
+    });
+    if (!channel) throw new NotFoundException('Channel not found or not managed by actor');
+    return channel;
+  }
+
   private async accessibleMessage(ctx: OrganisationContextValue, messageId: string) {
     const actorId = this.actor(ctx);
     const message = await this.prisma.message.findFirst({
@@ -388,10 +492,17 @@ export class MessagingService {
   }
 
   private async ownedMessage(ctx: OrganisationContextValue, messageId: string) {
+    const actorId = this.actor(ctx);
     const message = await this.prisma.message.findFirst({
-      where: { id: messageId, organisationId: ctx.organisationId, senderId: this.actor(ctx), deletedAt: null },
+      where: { id: messageId, organisationId: ctx.organisationId, deletedAt: null },
+      include: { channel: { include: { members: { where: { userId: actorId } } } } },
     });
-    if (!message) throw new NotFoundException('Message not found or not owned by actor');
+    if (!message) throw new NotFoundException('Message not found');
+    const isOwner = message.senderId === actorId;
+    const isChannelModerator =
+      message.channel.type !== 'direct' &&
+      message.channel.members.some((m) => m.role === 'owner' || m.role === 'moderator');
+    if (!isOwner && !isChannelModerator) throw new ForbiddenException('Not allowed to modify this message');
     return message;
   }
 

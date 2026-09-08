@@ -11,23 +11,26 @@ import {
 } from 'nats';
 import { isEventEnvelope, streamConfigs, type EventEnvelope, type StreamName } from '@teamspace-one/event-contracts';
 import { InboxService } from '../inbox/inbox.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { SearchService } from '../search/search.service.js';
 import { NatsClientService } from './nats-client.service.js';
 
 const MAX_DELIVERY = 5;
 const DLQ_SUBJECT = 'teamspace-one.dlq.search';
-const SEARCH_STREAMS: StreamName[] = ['MESSAGING', 'PROJECTS', 'FILES', 'MEETINGS', 'AI', 'ORGANISATION', 'USERS'];
+const SEARCH_STREAMS: StreamName[] = ['MESSAGING', 'PROJECTS', 'FILES', 'MEETINGS', 'AI', 'ORGANISATION', 'USERS', 'HRMS', 'INTERVIEW'];
 
 @Injectable()
 export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NatsConsumerService.name);
   private readonly consumers: Consumer[] = [];
   private readonly iterators: ConsumerMessages[] = [];
+  private backfillPromise?: Promise<{ processed: number }>;
 
   constructor(
     private readonly natsClient: NatsClientService,
     private readonly inbox: InboxService,
     private readonly search: SearchService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async onModuleInit() {
@@ -35,17 +38,13 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
     const js = await this.natsClient.getJetStream();
 
     for (const stream of SEARCH_STREAMS) {
-      try {
-        const consumer = await this.ensureConsumer(manager, js, stream);
-        this.consumers.push(consumer);
-        const messages = await consumer.consume({ max_messages: 10 });
-        this.iterators.push(messages);
-        this.consumeMessages(messages).catch((err) => {
-          this.logger.error(`Consumer ${stream} error: ${(err as Error).message}`);
-        });
-      } catch (err) {
-        this.logger.error(`Failed to start consumer for ${stream}: ${(err as Error).message}`);
-      }
+      const consumer = await this.ensureConsumer(manager, js, stream);
+      this.consumers.push(consumer);
+      const messages = await consumer.consume({ max_messages: 10 });
+      this.iterators.push(messages);
+      this.consumeMessages(messages).catch((err) => {
+        this.logger.error(`Consumer ${stream} error: ${(err as Error).message}`);
+      });
     }
   }
 
@@ -57,6 +56,57 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
         // ignored
       }
     }
+  }
+
+  backfill(): Promise<{ processed: number }> {
+    if (!this.backfillPromise) {
+      this.backfillPromise = this.runBackfill().finally(() => {
+        this.backfillPromise = undefined;
+      });
+    }
+    return this.backfillPromise;
+  }
+
+  private async runBackfill(): Promise<{ processed: number }> {
+    const manager = await this.natsClient.getManager();
+    const js = await this.natsClient.getJetStream();
+    let processed = 0;
+
+    for (const stream of SEARCH_STREAMS) {
+      const name = `search-backfill-${stream.toLowerCase()}-${Date.now()}`;
+      const streamConfig = streamConfigs.find((config) => config.name === stream);
+      await manager.consumers.add(stream, {
+        name,
+        ack_policy: AckPolicy.Explicit,
+        deliver_policy: DeliverPolicy.All,
+        filter_subjects: streamConfig?.subjects ?? [`teamspace-one.${stream.toLowerCase()}.>`],
+      });
+      try {
+        const consumer = await js.consumers.get(stream, name);
+        let batchSize: number;
+        do {
+          batchSize = 0;
+          const messages = await consumer.fetch({ max_messages: 500, expires: 1000 });
+          for await (const msg of messages) {
+            batchSize++;
+            const envelope = msg.json<EventEnvelope>();
+            if (!isEventEnvelope(envelope)) {
+              msg.term('invalid-envelope');
+              continue;
+            }
+            await this.prisma.$transaction((tx) => this.isDeleteEvent(envelope)
+              ? this.search.remove(tx, envelope)
+              : this.search.upsert(tx, envelope));
+            msg.ack();
+            processed++;
+          }
+        } while (batchSize === 500);
+      } finally {
+        await manager.consumers.delete(stream, name);
+      }
+    }
+
+    return { processed };
   }
 
   private async ensureConsumer(
@@ -119,11 +169,6 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    if (msg.info.deliveryCount >= MAX_DELIVERY) {
-      await this.moveToDeadLetter(msg, envelope, 'Max delivery attempts exceeded');
-      return;
-    }
-
     try {
       if (this.isDeleteEvent(envelope)) {
         await this.inbox.handle(envelope, (tx, event) => this.search.remove(tx, event));
@@ -133,7 +178,11 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
       msg.ack();
     } catch (err) {
       this.logger.error({ eventId: envelope.eventId, error: (err as Error).message }, 'Event processing failed');
-      msg.nak(5000);
+      if (msg.info.deliveryCount >= MAX_DELIVERY) {
+        await this.moveToDeadLetter(msg, envelope, (err as Error).message);
+      } else {
+        msg.nak(5000);
+      }
     }
   }
 
@@ -153,10 +202,10 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
       };
       await js.publish(`${DLQ_SUBJECT}.${envelope.eventType}`, JSON.stringify(dlqPayload));
       this.logger.warn({ eventId: envelope.eventId, reason }, 'Moved event to DLQ');
+      msg.term(reason);
     } catch (err) {
       this.logger.error({ eventId: envelope.eventId, error: (err as Error).message }, 'Failed to publish DLQ message');
-    } finally {
-      msg.term(reason);
+      msg.nak(5000);
     }
   }
 }

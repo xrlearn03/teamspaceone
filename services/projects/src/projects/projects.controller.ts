@@ -52,10 +52,38 @@ export class ProjectsController {
     return this.projects.listProjects(ctx, clientId);
   }
 
+  @Get('projects/templates')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_VIEW)
+  listProjectTemplates(@CurrentOrganisation() ctx: OrganisationContextValue) {
+    return this.projects.listProjectTemplates(ctx);
+  }
+
+  @Post('projects/from-template/:id')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_CREATE)
+  createProjectFromTemplate(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') templateId: string,
+    @Body() dto: CreateProjectDto,
+  ) {
+    return this.projects.createProjectFromTemplate(ctx, templateId, dto);
+  }
+
   @Get('projects/:id')
   @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_VIEW)
   getProject(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string) {
     return this.projects.getProject(ctx, projectId);
+  }
+
+  @Post('projects/:id/template')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_MANAGE)
+  markProjectAsTemplate(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string) {
+    return this.projects.markProjectAsTemplate(ctx, projectId);
+  }
+
+  @Delete('projects/:id/template')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_MANAGE)
+  unmarkProjectAsTemplate(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string) {
+    return this.projects.unmarkProjectAsTemplate(ctx, projectId);
   }
 
   @Patch('projects/:id')
