@@ -3,7 +3,7 @@ zone       = "asia-south1-a"
 region     = "asia-south1"
 
 # Azure DevOps clone URL (replace the placeholders)
-repo_url = "https://dev.azure.com/xrlearn/Connect/_git/Connect"
+repo_url = "https://xrlearn@dev.azure.com/xrlearn/Connect/_git/Connect"
 
 # Azure DevOps PAT for private repos; leave empty for public repos
 # git_token = "<PAT>"
