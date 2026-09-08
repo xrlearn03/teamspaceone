@@ -136,7 +136,7 @@ export class NotificationDeliveryWorker extends WorkerHost {
         if (token) headers.authorization = `Bearer ${token}`;
         if (notification.organisationId) headers['x-organisation-id'] = notification.organisationId;
         if (notification.actorId) headers['x-actor-id'] = notification.actorId;
-        const response = await fetch(`${authUrl}/users/${encodeURIComponent(notification.userId)}`, { headers });
+        const response = await fetch(`${authUrl}/auth/internal/users/${encodeURIComponent(notification.userId)}`, { headers });
         if (response.ok) {
           const user = (await response.json()) as { email?: string };
           to = user?.email;
