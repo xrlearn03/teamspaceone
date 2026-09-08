@@ -18,6 +18,7 @@ import {
   useInterviewTemplates,
   useCreateInterviewTemplate,
   useUpdateInterviewTemplate,
+  useDeleteInterviewTemplate,
 } from "../../hooks/api";
 import { cn } from "../../lib/utils";
 import type { InterviewTemplate, InterviewTemplateQuestion } from "../../lib/api";
@@ -273,9 +274,11 @@ export function TemplatesSection() {
   const { data: templates, isLoading } = useInterviewTemplates();
   const [editing, setEditing] = useState<InterviewTemplate | null>(null);
   const [creating, setCreating] = useState(false);
+  const remove = useDeleteInterviewTemplate();
   const canView = can("interview.template.view");
   const canCreate = can("interview.template.create");
   const canEdit = can("interview.template.edit");
+  const canDelete = can("interview.template.delete");
 
   if (!canView) {
     return (
@@ -346,20 +349,38 @@ export function TemplatesSection() {
                       ))}
                     </div>
                   </div>
-                  {canEdit && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setEditing(t);
-                        setCreating(false);
-                      }}
-                      className="ml-2 h-7 gap-1 text-xs"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                      Edit
-                    </Button>
-                  )}
+                  <div className="ml-2 flex gap-1">
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditing(t);
+                          setCreating(false);
+                        }}
+                        className="h-7 gap-1 text-xs"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={remove.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Delete the template "${t.name}"?`)) {
+                            remove.mutate(t.id);
+                          }
+                        }}
+                        className="h-7 gap-1 text-xs text-error"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

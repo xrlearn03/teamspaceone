@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CalendarClock, Check, Plus, X } from "lucide-react";
 import {
   useApplyLeave,
+  useHolidays,
   useHrmsCalendar,
   useLeaveBalances,
   useLeaveRequests,
@@ -106,6 +107,7 @@ export function LeaveSection() {
     to: rangeEnd.toISOString().slice(0, 10),
   });
   const review = useReviewLeaveRequest();
+  const holidays = useHolidays();
   const [applyOpen, setApplyOpen] = useState(false);
 
   if (me.isLoading || balances.isLoading || myRequests.isLoading) return <SectionSkeleton />;
@@ -282,6 +284,38 @@ export function LeaveSection() {
                 </ul>
               );
             })()
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Holidays</CardTitle></CardHeader>
+        <CardContent className="p-0">
+          {holidays.isLoading ? (
+            <p className="p-4 text-xs text-text-muted">Loading…</p>
+          ) : holidays.isError ? (
+            <SectionError onRetry={() => holidays.refetch()} />
+          ) : (holidays.data ?? []).length === 0 ? (
+            <p className="p-4 text-xs text-text-muted">No holidays configured.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs text-text-muted">
+                  <th className="px-4 py-2 font-medium">Name</th>
+                  <th className="px-4 py-2 font-medium">Date</th>
+                  <th className="px-4 py-2 font-medium">Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(holidays.data ?? []).map((h) => (
+                  <tr key={h.id} className="border-b last:border-0">
+                    <td className="px-4 py-2.5 text-text">{h.name}</td>
+                    <td className="px-4 py-2.5 text-text-secondary">{formatDate(h.date)}</td>
+                    <td className="px-4 py-2.5 text-text-secondary">{h.description ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </CardContent>
       </Card>

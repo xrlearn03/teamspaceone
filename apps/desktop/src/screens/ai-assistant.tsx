@@ -181,8 +181,6 @@ export function AIAssistantScreen() {
     );
   }
 
-  const pendingProject = projects?.find((p) => p.id === pendingAction?.projectId);
-
   const userName =
     user?.firstName
       ? `${user.firstName} ${user.lastName ?? ""}`.trim()
@@ -326,9 +324,17 @@ export function AIAssistantScreen() {
                 <span className="text-text-muted">Organisation</span>
                 <span className="font-medium text-text">{organisation?.name ?? "Current organisation"}</span>
               </div>
-              <div className="flex justify-between gap-4 py-1">
+              <div className="flex flex-col gap-1 py-1">
                 <span className="text-text-muted">Project</span>
-                <span className="font-medium text-text">{pendingProject?.name ?? pendingAction?.projectId}</span>
+                <select
+                  className="h-9 w-full rounded-md border bg-background px-2 text-sm text-text"
+                  value={pendingAction?.projectId ?? ""}
+                  onChange={(e) => setPendingAction((prev) => (prev ? { ...prev, projectId: e.target.value } : null))}
+                >
+                  {projects?.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
               </div>
               <div className="flex justify-between gap-4 py-1">
                 <span className="text-text-muted">Status</span>

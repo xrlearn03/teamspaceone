@@ -8,11 +8,13 @@ import { Button } from "../components/ui/button";
 import { useRealtime } from "../hooks/useRealtime";
 import { useNativeCamera } from "../hooks/useNativeCamera";
 import { useNativeMicrophone } from "../hooks/useNativeMicrophone";
+import { useSfu } from "../hooks/useSfu";
 import {
   endMeeting,
   getMeeting,
   joinMeeting,
   leaveMeeting,
+  setScreenShare,
   startMeeting,
   type Meeting,
 } from "../lib/api";
@@ -33,6 +35,7 @@ export function MeetingScreen() {
   );
   const { joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent, sendCallCancel } = useRealtime();
   const { data: user } = useMe();
+  const sfu = useSfu();
 
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -48,7 +51,6 @@ export function MeetingScreen() {
     error: nativeError,
     enabled: nativeVideoEnabled,
     setEnabled: setNativeVideoEnabled,
-    videoStream: nativeVideoStream,
   } = useNativeCamera();
 
   const {
@@ -57,16 +59,15 @@ export function MeetingScreen() {
     setSelectedIndex: setNativeMicrophone,
     enabled: nativeAudioEnabled,
     setEnabled: setNativeAudioEnabled,
-    audioStream: nativeAudioStream,
     error: nativeAudioError,
     resumeContext: resumeNativeAudio,
   } = useNativeMicrophone();
 
   useEffect(() => {
-    return () => {
-      mediaOptions?.stream?.getTracks().forEach((track) => track.stop());
-    };
-  }, [mediaOptions]);
+    if (sfu.error) {
+      setError(sfu.error);
+    }
+  }, [sfu.error]);
 
   useEffect(() => {
     if (!activeMeetingId) return;
@@ -114,8 +115,9 @@ export function MeetingScreen() {
       cancelled = true;
       leaveRealtimeMeeting(activeMeetingId);
       unsubscribe();
+      sfu.leave();
     };
-  }, [activeMeetingId]);
+  }, [activeMeetingId, sfu]);
 
   async function handleJoin(opts: MediaJoinOptions) {
     if (!activeMeetingId) return;
@@ -124,30 +126,31 @@ export function MeetingScreen() {
       ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
       : "Guest";
 
+    setMediaOptions(opts);
+    setError(null);
+
     try {
       await joinMeeting(activeMeetingId, displayName);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join meeting");
+      setMediaOptions(null);
       return;
     }
 
-    // Resume the AudioContext from the user gesture and combine native audio
-    // (ScriptProcessorNode) with native canvas-captured video.
     await resumeNativeAudio();
-    const combined = new MediaStream([
-      ...(opts.audioEnabled && nativeAudioStream ? nativeAudioStream.getAudioTracks() : []),
-      ...(opts.videoEnabled && nativeVideoStream ? nativeVideoStream.getVideoTracks() : []),
-    ]);
-    const full: MediaJoinOptions = {
-      ...opts,
-      audioEnabled: opts.audioEnabled && !!nativeAudioStream,
-      videoEnabled: opts.videoEnabled && !!nativeVideoStream,
-      audioInputId: String(nativeMicrophoneIndex ?? ""),
-      videoInputId: String(nativeCameraIndex ?? ""),
-      stream: combined,
-    };
-    setMediaOptions(full);
-    setToken("native");
+
+    try {
+      await sfu.join(
+        activeMeetingId,
+        displayName,
+        { audioEnabled: opts.audioEnabled, videoEnabled: opts.videoEnabled },
+        user?.id,
+      );
+      setToken("native");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to join SFU");
+      setMediaOptions(null);
+    }
   }
 
   async function handleLeave() {
@@ -159,6 +162,7 @@ export function MeetingScreen() {
         // Best-effort.
       }
     }
+    sfu.leave();
     setToken(null);
     setMeeting(null);
     setMediaOptions(null);
@@ -172,18 +176,14 @@ export function MeetingScreen() {
     await handleLeave();
   }
 
-  function handleToggleAudio() {
-    if (!mediaOptions) return;
-    const next = !mediaOptions.audioEnabled;
-    setMediaOptions((prev) => (prev ? { ...prev, audioEnabled: next } : prev));
-    setNativeAudioEnabled(next);
-  }
-
-  function handleToggleVideo() {
-    if (!mediaOptions) return;
-    const next = !mediaOptions.videoEnabled;
-    setMediaOptions((prev) => (prev ? { ...prev, videoEnabled: next } : prev));
-    setNativeVideoEnabled(next);
+  async function handleToggleScreenShare() {
+    if (!activeMeetingId) return;
+    try {
+      await sfu.toggleScreenShare();
+      await setScreenShare(activeMeetingId, sfu.screenShareEnabled);
+    } catch (err) {
+      console.error("Screen share toggle failed", err);
+    }
   }
 
   if (!activeMeetingId) {
@@ -245,23 +245,22 @@ export function MeetingScreen() {
     <NativeConference
       user={user}
       title={meeting.title}
+      connected={sfu.connected}
       meetingId={meeting.id}
       kind="video"
-      nativeFrame={nativeFrame}
-      recordingStream={
-        new MediaStream([
-          ...(nativeAudioStream?.getAudioTracks() ?? []),
-          ...(nativeVideoStream?.getVideoTracks() ?? []),
-        ])
-      }
-      localVideoEnabled={mediaOptions.videoEnabled}
-      localAudioEnabled={mediaOptions.audioEnabled}
+      localStream={sfu.localStream}
+      localVideoEnabled={sfu.localVideoEnabled}
+      localAudioEnabled={sfu.localAudioEnabled}
+      remoteStreams={sfu.remoteStreams}
+      participants={sfu.participants}
+      screenShareEnabled={sfu.screenShareEnabled}
       isRecording={meeting.isRecording}
       isHost={meeting.createdBy === user?.id}
       onLeave={handleLeave}
       onEnd={meeting.createdBy === user?.id ? handleEnd : undefined}
-      onToggleAudio={handleToggleAudio}
-      onToggleVideo={handleToggleVideo}
+      onToggleAudio={sfu.toggleAudio}
+      onToggleVideo={sfu.toggleVideo}
+      onToggleScreenShare={handleToggleScreenShare}
     />
   );
 }

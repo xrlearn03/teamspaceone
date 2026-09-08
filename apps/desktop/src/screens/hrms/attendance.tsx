@@ -5,6 +5,7 @@ import {
   useAttendanceCheckin,
   useAttendanceCheckout,
   useAttendanceCorrections,
+  useAttendancePresence,
   useMyEmployee,
   useRequestAttendanceCorrection,
   useReviewAttendanceCorrection,
@@ -117,6 +118,7 @@ export function AttendanceSection() {
   const attendance = useAttendance(params);
   const checkin = useAttendanceCheckin();
   const checkout = useAttendanceCheckout();
+  const presence = useAttendancePresence();
   const corrections = useAttendanceCorrections("pending");
   const review = useReviewAttendanceCorrection();
   const [correctionOpen, setCorrectionOpen] = useState(false);
@@ -178,6 +180,30 @@ export function AttendanceSection() {
                 onClick={() => checkout.mutate()}
               >
                 <LogOut className="mr-1 h-4 w-4" /> Check out
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!canCheckin || presence.isPending || !todayRecord?.checkInAt || Boolean(todayRecord?.checkOutAt)}
+                onClick={() => presence.mutate("lunch")}
+              >
+                Lunch
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!canCheckin || presence.isPending || !todayRecord?.checkInAt || Boolean(todayRecord?.checkOutAt)}
+                onClick={() => presence.mutate("tea_break")}
+              >
+                Tea break
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!canCheckin || presence.isPending || !todayRecord?.checkInAt || Boolean(todayRecord?.checkOutAt)}
+                onClick={() => presence.mutate("out_of_office")}
+              >
+                OOO
               </Button>
             </div>
           </div>

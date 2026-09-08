@@ -5,6 +5,7 @@ import {
   useMarkPayrollPeriodPaid,
   usePayrollPeriods,
   usePayrollSummary,
+  usePayslip,
   usePayslips,
   useProcessPayrollPeriod,
 } from "../../hooks/api";
@@ -13,6 +14,7 @@ import { exportPayrollPeriodCsv } from "../../lib/api";
 import type { PayrollPeriod } from "../../lib/api";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { EmptyState } from "../../components/ui/empty-state";
 import { SectionError, SectionSkeleton, StatusBadge, formatDate } from "./common";
 
@@ -112,6 +114,8 @@ export function PayrollSection() {
   const periods = usePayrollPeriods();
   const payslips = usePayslips();
   const summary = usePayrollSummary();
+  const [selectedPayslipId, setSelectedPayslipId] = useState<string | null>(null);
+  const selectedPayslip = usePayslip(selectedPayslipId ?? undefined);
 
   if (!can("hrms.payroll.view")) {
     return (
@@ -229,7 +233,11 @@ export function PayrollSection() {
               </thead>
               <tbody>
                 {(payslips.data ?? []).map((p) => (
-                  <tr key={p.id} className="border-b last:border-0">
+                  <tr
+                    key={p.id}
+                    className="cursor-pointer border-b last:border-0 hover:bg-surface-elevated"
+                    onClick={() => setSelectedPayslipId(p.id)}
+                  >
                     <td className="px-4 py-2.5 text-text">{p.periodName ?? periodName(p.payrollPeriodId)}</td>
                     <td className="px-4 py-2.5 text-text-secondary">{p.employeeName ?? "—"}</td>
                     <td className="px-4 py-2.5 text-text-secondary">{money(p.gross, p.currency)}</td>
@@ -242,6 +250,30 @@ export function PayrollSection() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={selectedPayslipId !== null} onOpenChange={(open) => { if (!open) setSelectedPayslipId(null); }}>
+        <DialogContent className="max-w-md p-0">
+          <DialogHeader>
+            <DialogTitle>Payslip</DialogTitle>
+            <DialogDescription>Details for the selected payslip.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 px-4 pb-4">
+            {selectedPayslip.isLoading ? (
+              <SectionSkeleton rows={3} />
+            ) : selectedPayslip.isError ? (
+              <SectionError onRetry={() => selectedPayslip.refetch()} />
+            ) : selectedPayslip.data ? (
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-text-muted">Employee</span><span className="text-text">{selectedPayslip.data.employeeName ?? "—"}</span></div>
+                <div className="flex justify-between"><span className="text-text-muted">Period</span><span className="text-text">{selectedPayslip.data.periodName ?? periodName(selectedPayslip.data.payrollPeriodId)}</span></div>
+                <div className="flex justify-between"><span className="text-text-muted">Gross</span><span className="text-text">{money(selectedPayslip.data.gross, selectedPayslip.data.currency)}</span></div>
+                <div className="flex justify-between"><span className="text-text-muted">Net</span><span className="text-text">{money(selectedPayslip.data.net, selectedPayslip.data.currency)}</span></div>
+                <div className="flex justify-between"><span className="text-text-muted">Status</span><span className="text-text"><StatusBadge status={selectedPayslip.data.status} /></span></div>
+              </div>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

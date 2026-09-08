@@ -60,9 +60,11 @@ interface EmployeeFormState {
   phone: string;
   departmentId: string;
   designationId: string;
+  managerEmployeeId: string;
   joiningDate: string;
   employmentType: string;
   employeeNumber: string;
+  status: string;
 }
 
 const EMPTY_FORM: EmployeeFormState = {
@@ -74,9 +76,11 @@ const EMPTY_FORM: EmployeeFormState = {
   phone: "",
   departmentId: "",
   designationId: "",
+  managerEmployeeId: "",
   joiningDate: "",
   employmentType: "full_time",
   employeeNumber: "",
+  status: "active",
 };
 
 function EmployeeFormDialog({
@@ -103,9 +107,11 @@ function EmployeeFormDialog({
         phone: employee.phone ?? "",
         departmentId: employee.departmentId ?? "",
         designationId: employee.designationId ?? "",
+        managerEmployeeId: employee.managerEmployeeId ?? "",
         joiningDate: employee.joiningDate?.slice(0, 10) ?? "",
         employmentType: employee.employmentType || "full_time",
         employeeNumber: employee.employeeNumber ?? "",
+        status: employee.status || "active",
       };
     }
     if (draft) {
@@ -118,9 +124,11 @@ function EmployeeFormDialog({
         phone: draft.phone ?? "",
         departmentId: "",
         designationId: "",
+        managerEmployeeId: "",
         joiningDate: "",
         employmentType: "full_time",
         employeeNumber: "",
+        status: "active",
       };
     }
     return EMPTY_FORM;
@@ -129,6 +137,7 @@ function EmployeeFormDialog({
   const [form, setForm] = useState<EmployeeFormState>(init);
   const departments = useDepartments();
   const designations = useDesignations();
+  const allEmployees = useEmployees();
   const createEmployee = useCreateEmployee();
   const updateEmployee = useUpdateEmployee();
   const busy = createEmployee.isPending || updateEmployee.isPending;
@@ -165,9 +174,11 @@ function EmployeeFormDialog({
         phone: form.phone || undefined,
         departmentId: form.departmentId || undefined,
         designationId: form.designationId || undefined,
+        managerEmployeeId: form.managerEmployeeId || undefined,
         joiningDate: form.joiningDate || undefined,
         employmentType: form.employmentType || undefined,
         employeeNumber: form.employeeNumber || undefined,
+        status: form.status || undefined,
       };
       updateEmployee.mutate(
         { id: employee.id, body },
@@ -184,9 +195,11 @@ function EmployeeFormDialog({
         phone: form.phone || undefined,
         departmentId: form.departmentId || undefined,
         designationId: form.designationId || undefined,
+        managerEmployeeId: form.managerEmployeeId || undefined,
         joiningDate: form.joiningDate || undefined,
         employmentType: form.employmentType || undefined,
         employeeNumber: form.employeeNumber || undefined,
+        status: form.status || undefined,
       };
       createEmployee.mutate(body, { onSuccess: () => onOpenChange(false) });
     }
@@ -287,6 +300,32 @@ function EmployeeFormDialog({
           <label className="flex flex-col gap-1">
             <span className={label}>Employee number</span>
             <Input value={form.employeeNumber} onChange={(e) => field("employeeNumber", e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={label}>Manager</span>
+            <select
+              className="h-9 rounded-md border bg-background px-2 text-sm text-text"
+              value={form.managerEmployeeId}
+              onChange={(e) => field("managerEmployeeId", e.target.value)}
+            >
+              <option value="">None</option>
+              {(allEmployees.data ?? []).filter((e) => e.id !== employee?.id).map((e) => (
+                <option key={e.id} value={e.id}>{employeeName(e)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={label}>Status</span>
+            <select
+              className="h-9 rounded-md border bg-background px-2 text-sm text-text"
+              value={form.status}
+              onChange={(e) => field("status", e.target.value)}
+            >
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="on_leave">On leave</option>
+              <option value="terminated">Terminated</option>
+            </select>
           </label>
         </div>
         <div className="flex justify-end gap-2 p-4 pt-0">

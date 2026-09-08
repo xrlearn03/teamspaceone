@@ -2121,6 +2121,10 @@ export function updateInterviewTemplate(id: string, body: Partial<InterviewTempl
   return apiRequest<InterviewTemplate>(`/interview/templates/${encodeURIComponent(id)}`, { method: "PATCH", body });
 }
 
+export function deleteInterviewTemplate(id: string) {
+  return apiRequest<void>(`/interview/templates/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 // ─── Phase 7 — Advanced HRMS ────────────────────────────────────────────────
 
 export interface OnboardingTemplateTask {

@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { EmptyState } from "../components/ui/empty-state";
 import { Input } from "../components/ui/input";
 import { Skeleton } from "../components/ui/skeleton";
-import { useMembers, usePermissionsList, useRoles, useUpdateMemberRole, useCreateRole, useUpdateRole, useDeleteRole, useUsers, useInviteMember } from "../hooks/api";
+import { useMembers, usePermissionsList, useRoles, useUpdateMemberRole, useRemoveMember, useCreateRole, useUpdateRole, useDeleteRole, useUsers, useInviteMember } from "../hooks/api";
 import { getActiveOrganisation, ADMIN_MANAGED_ROLE_CATEGORIES, type OrganisationRole, type Permission, type RoleCategory, type UserDataScope } from "../lib/api";
 
 const SCOPES: UserDataScope["scope"][] = ["own", "assigned", "team", "department", "organisation"];
@@ -336,6 +336,7 @@ function MembersPanel() {
   const { data: members, isLoading } = useMembers(organisationId);
   const { data: roles } = useRoles(organisationId);
   const updateMemberRole = useUpdateMemberRole();
+  const removeMember = useRemoveMember();
   const [inviteOpen, setInviteOpen] = useState(false);
   const memberUserIds = useMemo(
     () => [...new Set((members ?? []).map((m) => m.userId))],
@@ -401,6 +402,16 @@ function MembersPanel() {
                         <option key={r.id} value={r.id}>{r.name.replace(/_/g, " ")}</option>
                       ))}
                   </select>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-error"
+                    disabled={removeMember.isPending}
+                    onClick={() => removeMember.mutate({ organisationId: organisationId as string, membershipId: m.id })}
+                    title="Remove member"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               );
             })}

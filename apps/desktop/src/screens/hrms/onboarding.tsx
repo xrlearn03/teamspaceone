@@ -210,6 +210,7 @@ function ConvertToEmployeeDialog({
     phone: "",
     departmentId: "",
     designationId: "",
+    managerEmployeeId: "",
     joiningDate: instance.startDate?.slice(0, 10) ?? "",
     employmentType: "full_time",
     employeeNumber: "",
@@ -234,6 +235,7 @@ function ConvertToEmployeeDialog({
           phone: form.phone || undefined,
           departmentId: form.departmentId || undefined,
           designationId: form.designationId || undefined,
+          managerEmployeeId: form.managerEmployeeId || undefined,
           joiningDate: form.joiningDate || undefined,
           employmentType: form.employmentType || undefined,
           employeeNumber: form.employeeNumber || undefined,
@@ -290,6 +292,10 @@ function ConvertToEmployeeDialog({
                 <option key={d.id} value={d.id}>{d.title ?? d.name}</option>
               ))}
             </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelCls}>Manager</span>
+            <EmployeeSelect value={form.managerEmployeeId} onChange={(v) => field("managerEmployeeId", v)} />
           </label>
           <label className="flex flex-col gap-1">
             <span className={labelCls}>Joining date</span>

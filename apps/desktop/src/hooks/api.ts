@@ -1177,6 +1177,15 @@ export function usePayslips(params?: { employeeId?: string; payrollPeriodId?: st
   });
 }
 
+export function usePayslip(id?: string) {
+  return useQuery({
+    queryKey: ["hrms", "payslips", orgId(), id ?? ""],
+    queryFn: () => api.getPayslip(id as string),
+    enabled: hrmsEnabled() && Boolean(id),
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useEmployeeDocuments(employeeId?: string) {
   return useQuery({
     queryKey: ["hrms", "documents", orgId(), employeeId ?? "me"],
@@ -1462,6 +1471,14 @@ export function useUpdateInterviewTemplate() {
   return useMutation({
     mutationFn: (args: { id: string; body: Parameters<typeof api.updateInterviewTemplate>[1] }) =>
       api.updateInterviewTemplate(args.id, args.body),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["interview", "templates"] }),
+  });
+}
+
+export function useDeleteInterviewTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteInterviewTemplate,
     onSuccess: () => client.invalidateQueries({ queryKey: ["interview", "templates"] }),
   });
 }
