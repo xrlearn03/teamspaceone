@@ -111,14 +111,15 @@ export class NotificationDeliveryWorker extends WorkerHost {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const nodemailer = require('nodemailer') as any;
+      const smtpPort = parseInt(this.config.get<string>('SMTP_PORT') ?? '587', 10);
+      const smtpSecure = this.config.get<string>('SMTP_SECURE')?.toLowerCase() === 'true';
+      const smtpUser = this.config.get<string>('SMTP_USER');
+      const smtpPass = this.config.get<string>('SMTP_PASS');
       const transporter = nodemailer.createTransport({
         host: this.config.get<string>('SMTP_HOST'),
-        port: this.config.get<number>('SMTP_PORT', 587),
-        secure: this.config.get<boolean>('SMTP_SECURE', false),
-        auth: {
-          user: this.config.get<string>('SMTP_USER'),
-          pass: this.config.get<string>('SMTP_PASS'),
-        },
+        port: Number.isNaN(smtpPort) ? 587 : smtpPort,
+        secure: smtpSecure,
+        auth: smtpUser || smtpPass ? { user: smtpUser ?? '', pass: smtpPass ?? '' } : undefined,
       });
       const authUrl = this.config.get<string>('AUTH_SERVICE_URL');
       let to = this.config.get<string>('EMAIL_FALLBACK_TO');
