@@ -9,7 +9,7 @@ import { Badge } from "../components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { useAskAI, useConfirmAIAction, useCreateTask, useDeclineAIAction, useMe, useOrganisations, usePendingAIActions, useProjects, useUsers } from "../hooks/api";
 import { useUIStore } from "../stores/ui";
-import { cn } from "../lib/utils";
+import { cn, getUserDisplayName } from "../lib/utils";
 
 const suggestions = [
   "Summarize what changed today.",
@@ -181,10 +181,7 @@ export function AIAssistantScreen() {
     );
   }
 
-  const userName =
-    user?.firstName
-      ? `${user.firstName} ${user.lastName ?? ""}`.trim()
-      : user?.email ?? "You";
+  const userName = getUserDisplayName(user, "You");
   const userInitial = userName.charAt(0).toUpperCase();
 
   return (
@@ -397,7 +394,7 @@ export function AIAssistantScreen() {
                           <span className="text-text-muted">From</span>
                           <span className="text-text">
                             {user
-                              ? `${[user.firstName, user.lastName].filter(Boolean).join(" ") || "Host"} <${user.email}>`
+                              ? `${getUserDisplayName(user, "Host")} <${user.email}>`
                               : "Host"}
                           </span>
                         </div>

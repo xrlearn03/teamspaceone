@@ -7,7 +7,7 @@ import { MessageAttachment } from "../ui/message-attachment";
 import { MessageContent } from "./message-content";
 import { isSaved, toggleSavedMessage } from "../../lib/message-local";
 import { useToggleReaction } from "../../hooks/api";
-import { cn } from "../../lib/utils";
+import { cn, getUserDisplayName } from "../../lib/utils";
 import type { Message as MessageType, UserDto } from "../../lib/api";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "👀", "🙏", "✅", "🔥"];
@@ -30,15 +30,6 @@ export interface MessageItemProps {
   compact?: boolean;
 }
 
-function getDisplayName(_member: { userId: string }, user?: UserDto) {
-  if (user) {
-    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (fullName) return fullName;
-    return user.email;
-  }
-  return "Unknown";
-}
-
 export function MessageItem({
   message,
   user,
@@ -57,8 +48,8 @@ export function MessageItem({
   const [saved, setSaved] = useState(() => isSaved(message.id));
   const isMe = message.senderId === user?.id;
   const sender = userMap?.get(message.senderId);
-  const author = isMe ? "You" : getDisplayName({ userId: message.senderId }, sender);
-  const mentionName = user?.firstName ?? user?.email ?? null;
+  const author = isMe ? "You" : getUserDisplayName(sender);
+  const mentionName = user ? getUserDisplayName(user, "") || null : null;
 
   function saveEdit() {
     if (onEdit && editDraft.trim() && editDraft.trim() !== message.content) {

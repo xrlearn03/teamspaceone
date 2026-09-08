@@ -7,16 +7,7 @@ import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";
 import { MessageContent } from "../components/chat/message-content";
-import type { UserDto } from "../lib/api";
-
-function getDisplayName(_member: { userId: string }, user?: UserDto) {
-  if (user) {
-    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (fullName) return fullName;
-    return user.email;
-  }
-  return "Unknown";
-}
+import { getUserDisplayName } from "../lib/utils";
 
 export function SavedItemsScreen() {
   const setActiveView = useUIStore((s) => s.setActiveView);
@@ -56,7 +47,7 @@ export function SavedItemsScreen() {
               return (
                 <div key={item.id} className="group flex items-start gap-3 rounded-lg border bg-surface p-3">
                   <Avatar className="h-7 w-7">
-                    <AvatarFallback className="text-[10px]">{getDisplayName({ userId: item.senderId }, userMap.get(item.senderId)).slice(0, 2).toUpperCase()}</AvatarFallback>
+                    <AvatarFallback className="text-[10px]">{getUserDisplayName(userMap.get(item.senderId)).slice(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
                   <button type="button" onClick={() => open(item)} className="min-w-0 flex-1 text-left">
                     <div className="flex items-center gap-2 text-xs text-text-muted">

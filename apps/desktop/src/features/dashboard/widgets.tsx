@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DailyDigestResult, Meeting, Message, UserDto } from "../../lib/api";
+import type { DailyDigestResult, Meeting, Message } from "../../lib/api";
 import {
   Briefcase,
   Calendar,
@@ -63,19 +63,11 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import { UserAvatar } from "../../components/user-avatar";
+import { getUserDisplayName } from "../../lib/utils";
 
 function formatTime(iso: string) {
   const d = new Date(iso);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function getDisplayName(_member: { userId: string }, user?: UserDto) {
-  if (user) {
-    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (fullName) return fullName;
-    return user.email;
-  }
-  return "Unknown";
 }
 
 function tryParseDigestJson(text: string): { title: string; items: string[] }[] | null {
@@ -175,7 +167,7 @@ export function QuickActionsWidget() {
 
   const memberOptions = (members ?? []).map((m) => ({
     ...m,
-    displayName: getDisplayName(m, userMap.get(m.userId)),
+    displayName: getUserDisplayName(userMap.get(m.userId)),
   }));
 
   return (
@@ -415,7 +407,7 @@ export function RecentConversationsWidget() {
                   <div className="flex items-center gap-2">
                     <UserAvatar user={sender} className="h-9 w-9" />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-text">{getDisplayName({ userId: m.senderId }, sender)}</p>
+                      <p className="truncate text-sm font-medium text-text">{getUserDisplayName(sender)}</p>
                       <p className="text-xs text-text-muted">{formatRelative(m.createdAt)}</p>
                     </div>
                   </div>

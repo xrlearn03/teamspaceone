@@ -22,7 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { cn } from "../lib/utils";
+import { cn, getUserDisplayName } from "../lib/utils";
 import { useRealtime } from "../hooks/useRealtime";
 import { useUIStore } from "../stores/ui";
 import { useMembers, useUsers } from "../hooks/api";
@@ -95,9 +95,7 @@ export function NativeConference({
   const [screenSharingUsers, setScreenSharingUsers] = useState<Set<string>>(new Set());
   const processedReactionIds = useRef<Set<string>>(new Set());
 
-  const displayName = user
-    ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
-    : "Guest";
+  const displayName = getUserDisplayName(user, "Guest");
 
   const participantCount = connected ? 1 + remoteStreams.length : 0;
   const streamToRecord = recordingStream || localStream;
@@ -833,12 +831,7 @@ function ParticipantsPanel({
 }
 
 function getMemberName(_member: OrganisationMember, user?: UserDto) {
-  if (user) {
-    const full = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (full) return full;
-    return user.email;
-  }
-  return "Unknown";
+  return getUserDisplayName(user);
 }
 
 

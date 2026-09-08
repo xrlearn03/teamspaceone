@@ -10,13 +10,9 @@ import { Input } from "../components/ui/input";
 import { Skeleton } from "../components/ui/skeleton";
 import { useMembers, usePermissionsList, useRoles, useUpdateMemberRole, useRemoveMember, useCreateRole, useUpdateRole, useDeleteRole, useUsers, useInviteMember } from "../hooks/api";
 import { getActiveOrganisation, ADMIN_MANAGED_ROLE_CATEGORIES, type OrganisationRole, type Permission, type RoleCategory, type UserDataScope } from "../lib/api";
+import { getUserDisplayName } from "../lib/utils";
 
 const SCOPES: UserDataScope["scope"][] = ["own", "assigned", "team", "department", "organisation"];
-
-function getDisplayName(u?: { firstName?: string | null; lastName?: string | null; email?: string | null }) {
-  if (!u) return null;
-  return `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email;
-}
 
 function groupPermissions(permissions: Permission[]) {
   const groups = new Map<string, Permission[]>();
@@ -373,7 +369,7 @@ function MembersPanel() {
           <div className="divide-y">
             {members.map((m) => {
               const u = userMap.get(m.userId);
-              const name = getDisplayName(u) ?? m.userId;
+              const name = getUserDisplayName(u, "") ?? m.userId;
               return (
                 <div key={m.id} className="flex items-center justify-between gap-2 py-2">
                   <div className="min-w-0">

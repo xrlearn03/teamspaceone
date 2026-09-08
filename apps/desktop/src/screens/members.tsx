@@ -9,21 +9,12 @@ import { Input } from "../components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { EmptyState } from "../components/ui/empty-state";
 import type { OrganisationMember, UserDto } from "../lib/api";
+import { getUserDisplayName } from "../lib/utils";
 
 const selectClass = "h-9 w-full rounded-md border bg-surface px-3 text-sm text-text";
 
-function getDisplayName(_member: OrganisationMember, user?: UserDto) {
-  if (user) {
-    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (fullName) return fullName;
-    return user.email;
-  }
-  return "Unknown";
-}
-
 function getInitials(_member: OrganisationMember, user?: UserDto) {
-  const name = user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() : "Unknown";
-  return name.slice(0, 2).toUpperCase();
+  return getUserDisplayName(user).slice(0, 2).toUpperCase();
 }
 
 function formatRoleName(name: string) {
@@ -56,7 +47,7 @@ export function MemberDirectoryScreen() {
     if (!query.trim()) return true;
     const q = query.trim().toLowerCase();
     const user = userMap.get(m.userId);
-    const haystack = [getDisplayName(m, user), user?.email ?? ""].join(" ").toLowerCase();
+    const haystack = [getUserDisplayName(user), user?.email ?? ""].join(" ").toLowerCase();
     return haystack.includes(q) || m.role.name.toLowerCase().includes(q);
   });
   const externalRoles = (roles ?? []).filter((r) => r.roleCategory === "external" || r.roleCategory === "guest");
@@ -121,7 +112,7 @@ export function MemberDirectoryScreen() {
                       <Avatar className="h-8 w-8">
                         <AvatarFallback>{getInitials(member, user)}</AvatarFallback>
                       </Avatar>
-                      <span className="flex-1 truncate text-sm text-text">{getDisplayName(member, user)}</span>
+                      <span className="flex-1 truncate text-sm text-text">{getUserDisplayName(user)}</span>
                       <Badge variant="secondary" className="capitalize">{formatRoleName(member.role.name)}</Badge>
                       {member.role.name.toLowerCase() === "owner" ? null : (
                         <Button
@@ -156,7 +147,7 @@ export function MemberDirectoryScreen() {
                       <Avatar className="h-8 w-8">
                         <AvatarFallback>{getInitials(member, user)}</AvatarFallback>
                       </Avatar>
-                      <span className="flex-1 truncate text-sm text-text">{getDisplayName(member, user)}</span>
+                      <span className="flex-1 truncate text-sm text-text">{getUserDisplayName(user)}</span>
                       <Badge variant="warning">External</Badge>
                       <Badge variant="secondary" className="capitalize">{formatRoleName(member.role.name)}</Badge>
                       <Button

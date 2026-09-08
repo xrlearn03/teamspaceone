@@ -37,16 +37,8 @@ import { getActiveOrganisation } from "../lib/api";
 import { useRealtime } from "../hooks/useRealtime";
 import { usePermissionContext } from "@teamspace-one/authorization/react";
 import { hasPermission } from "@teamspace-one/authorization";
-import type { Message, UserDto } from "../lib/api";
-
-function getDisplayName(_member: { userId: string }, user?: UserDto) {
-  if (user) {
-    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (fullName) return fullName;
-    return user.email;
-  }
-  return "Unknown";
-}
+import type { Message } from "../lib/api";
+import { getUserDisplayName } from "../lib/utils";
 
 export function ChannelScreen() {
   const { activeChannelId, toggleRightPanel, setActiveView } = useUIStore(
@@ -128,9 +120,7 @@ export function ChannelScreen() {
     if (!channel) return;
     const userIds = channel.members.map((m) => m.userId).filter((id) => id !== user?.id);
     if (userIds.length === 0) return;
-    const callerName = user
-      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
-      : undefined;
+    const callerName = user ? getUserDisplayName(user) : undefined;
     sendCallRing({ meetingId, kind, title, channelId: channel.id, callerName, userIds });
   }
 
@@ -255,14 +245,14 @@ export function ChannelScreen() {
           <div className="border-t p-3">
             {typingUsers.length > 0 ? (
               <p className="px-1 pb-1 text-xs italic text-text-muted">
-                {typingUsers.map((id) => getDisplayName({ userId: id }, userMap.get(id))).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing…
+                {typingUsers.map((id) => getUserDisplayName(userMap.get(id))).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing…
               </p>
             ) : null}
             <Composer
               placeholder={`Message #${channel?.name ?? "channel"}`}
               draftKey={channel ? `channel:${channel.id}` : undefined}
               channelId={channel?.id}
-              members={(members ?? []).map((m) => ({ id: m.userId, name: getDisplayName(m, userMap.get(m.userId)) }))}
+              members={(members ?? []).map((m) => ({ id: m.userId, name: getUserDisplayName(userMap.get(m.userId)) }))}
               sending={sending}
               disabled={!channel || !canSendMessage}
               onSend={send}
@@ -304,7 +294,7 @@ export function ChannelScreen() {
                     disabled={!canManageChannel || member.userId === channel?.createdBy}
                     onChange={() => setChannelMemberIds((ids) => ids.includes(member.userId) ? ids.filter((id) => id !== member.userId) : [...ids, member.userId])}
                   />
-                  <span className="flex-1 truncate">{getDisplayName(member, userMap.get(member.userId))}</span>
+                  <span className="flex-1 truncate">{getUserDisplayName(userMap.get(member.userId))}</span>
                   {/client|external/i.test(member.role.name) ? (
                     <span className="rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">External</span>
                   ) : (

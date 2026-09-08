@@ -7,6 +7,7 @@ import { useMe, useUsers } from "../../hooks/api";
 import { UserAvatar } from "../user-avatar";
 import { Button } from "../ui/button";
 import { SOUNDS, loopSound } from "../../lib/sounds";
+import { getUserDisplayName } from "../../lib/utils";
 
 type IncomingCall = RealtimeEventPayloads["call.incoming"];
 
@@ -18,9 +19,7 @@ export function IncomingCallOverlay() {
   const { data: user } = useMe();
   const [call, setCall] = useState<IncomingCall | null>(null);
 
-  const myName = user
-    ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
-    : undefined;
+  const myName = user ? getUserDisplayName(user) : undefined;
 
   useEffect(() => {
     const unsubscribeIncoming = onRealtimeEvent("call.incoming", (payload) => {
@@ -78,7 +77,7 @@ export function IncomingCallOverlay() {
   const callerLabel = call?.callerName ?? "Someone";
   const visibleUsers = callUsers?.slice(0, 3) ?? [];
   const outgoingNames = (callUsers ?? []).map((callUser) =>
-    `${callUser.firstName ?? ""} ${callUser.lastName ?? ""}`.trim() || callUser.email,
+    getUserDisplayName(callUser),
   );
   const outgoingLabel = outgoingNames.length === 0
     ? outgoingCall?.title ?? "participants"

@@ -49,7 +49,7 @@ import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { UserAvatar } from "../components/user-avatar";
 import { Badge } from "../components/ui/badge";
-import { cn } from "../lib/utils";
+import { cn, getUserDisplayName } from "../lib/utils";
 
 const sections = [
   { id: "account", label: "My account", icon: User },
@@ -113,7 +113,7 @@ function AccountSettings({ user }: { user?: UserDto }) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   useEffect(() => { setFirstName(user?.firstName ?? ""); setLastName(user?.lastName ?? ""); }, [user]);
-  const name = `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() || user?.email || "User";
+  const name = getUserDisplayName(user, "User");
   const avatarBusy = upload.isPending || update.isPending;
 
   function onAvatarSelected(file?: File) {

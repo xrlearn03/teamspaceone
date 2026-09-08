@@ -55,24 +55,15 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
-import { cn } from "../../lib/utils";
+import { cn, getUserDisplayName } from "../../lib/utils";
 
 const Collapsible = CollapsiblePrimitive.Root;
 const CollapsibleTrigger = CollapsiblePrimitive.Trigger;
 const CollapsibleContent = CollapsiblePrimitive.Content;
 
-function getDisplayName(_member: { userId: string }, user?: UserDto) {
-  if (user) {
-    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (fullName) return fullName;
-    return user.email.split("@")[0] || user.email;
-  }
-  return "Unknown";
-}
-
 function getDirectMessageLabel(dm: Channel, meId: string | undefined, userMap: Map<string, UserDto>) {
   const others = dm.members.filter((m) => m.userId !== meId);
-  const names = others.map((m) => getDisplayName({ userId: m.userId }, userMap.get(m.userId)));
+  const names = others.map((m) => getUserDisplayName(userMap.get(m.userId)));
   if (names.length === 0) return dm.name || "Direct message";
   if (names.length <= 2) return names.join(", ");
   return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
@@ -708,7 +699,7 @@ export function WorkspaceSidebar() {
               {members?.map((member) => (
                 <label key={member.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-surface-elevated">
                   <input type="checkbox" checked={selectedMembers.includes(member.userId)} onChange={() => toggleMember(member.userId)} />
-                  <span className="flex-1 truncate">{getDisplayName(member, userMap.get(member.userId))}</span>
+                  <span className="flex-1 truncate">{getUserDisplayName(userMap.get(member.userId))}</span>
                   <span className="text-xs text-text-muted">{member.role.name}</span>
                 </label>
               ))}

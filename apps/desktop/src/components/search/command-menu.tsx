@@ -25,11 +25,11 @@ import {
   useUsers,
   useWorkspaces,
 } from "../../hooks/api";
-import { getActiveOrganisation, type SearchResult as ApiSearchResult, type UserDto } from "../../lib/api";
+import { getActiveOrganisation, type SearchResult as ApiSearchResult } from "../../lib/api";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
-import { cn } from "../../lib/utils";
+import { cn, getUserDisplayName } from "../../lib/utils";
 import type { LucideIcon } from "lucide-react";
 
 interface SearchResult {
@@ -84,15 +84,6 @@ function pushRecentSearch(q: string) {
 }
 
 const selectClass = "h-7 rounded-md border bg-surface px-2 text-xs text-text";
-
-function getDisplayName(_member: { userId: string }, user?: UserDto) {
-  if (user) {
-    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (fullName) return fullName;
-    return user.email;
-  }
-  return "Unknown";
-}
 
 export function CommandMenu({
   open,
@@ -254,7 +245,7 @@ export function CommandMenu({
           return {
             id: m.userId,
             type: "Member",
-            title: getDisplayName(m, user),
+            title: getUserDisplayName(user),
             subtitle: m.role.name,
             icon: User,
             userId: m.userId,
@@ -429,7 +420,7 @@ export function CommandMenu({
             <select className={selectClass} value={authorId} onChange={(e) => setAuthorId(e.target.value)} aria-label="Author filter">
               <option value="">Any author</option>
               {members?.map((m) => (
-                <option key={m.userId} value={m.userId}>{getDisplayName(m, userMap.get(m.userId))}</option>
+                <option key={m.userId} value={m.userId}>{getUserDisplayName(userMap.get(m.userId))}</option>
               ))}
             </select>
             <label className="flex items-center gap-1 text-xs text-text-muted">

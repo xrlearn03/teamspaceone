@@ -20,6 +20,13 @@ const orgScopedUser: AuthorizableUser = {
   dataScopes: [{ module: 'hrms', scope: 'organisation' }],
 };
 
+const employeeEditor: AuthorizableUser = {
+  id: 'user-1',
+  organisationId: 'org-1',
+  permissions: ['hrms.employee.view', 'hrms.employee.edit'],
+  dataScopes: [{ module: 'hrms', scope: 'organisation' }],
+};
+
 const teamScopedUser: AuthorizableUser = {
   id: 'user-1',
   organisationId: 'org-1',
@@ -131,6 +138,34 @@ describe('EmployeesService', () => {
     const module = await buildModule(prisma, mockOutbox);
     const service = module.get(EmployeesService);
     await expect(service.getById(ctx, ownScopedUser, 'emp-9')).rejects.toThrow(ForbiddenException);
+  });
+
+  it('persists employee number updates', async () => {
+    const existing = {
+      id: 'emp-1',
+      userId: 'user-1',
+      employeeNumber: null,
+      departmentId: null,
+      managerEmployeeId: null,
+    };
+    const update = jest.fn().mockResolvedValue({ ...existing, employeeNumber: 'EMP-001' });
+    const transactionClient = {
+      employee: { update },
+      employeeHistory: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const prisma = {
+      employee: { findFirst: jest.fn().mockResolvedValue(existing) },
+      $transaction: jest.fn((fn: (tx: typeof transactionClient) => unknown) => fn(transactionClient)),
+    };
+    const module = await buildModule(prisma, mockOutbox);
+    const service = module.get(EmployeesService);
+
+    await service.update(ctx, employeeEditor, 'emp-1', { ...ctx, employeeNumber: 'EMP-001' });
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'emp-1' },
+      data: { employeeNumber: 'EMP-001' },
+    });
   });
 });
 

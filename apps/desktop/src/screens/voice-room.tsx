@@ -10,6 +10,7 @@ import { endMeeting, getMeeting, joinMeeting, leaveMeeting, setScreenShare, type
 import { useMe } from "../hooks/api";
 import type { MediaJoinOptions } from "./meeting";
 import { useSfu } from "../hooks/useSfu";
+import { getUserDisplayName } from "../lib/utils";
 
 export function VoiceRoomScreen() {
   const { activeMeetingId, setActiveView } = useUIStore(
@@ -82,9 +83,7 @@ export function VoiceRoomScreen() {
   async function handleJoin(opts: MediaJoinOptions) {
     if (!activeMeetingId) return;
 
-    const displayName = user
-      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
-      : "Guest";
+    const displayName = getUserDisplayName(user, "Guest");
 
     setMediaOptions(opts);
     setError(null);

@@ -30,7 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
-import { cn } from "../../lib/utils";
+import { cn, getUserDisplayName } from "../../lib/utils";
 
 export function AppRail() {
   const { activeView, sidebarCollapsed, toggleSidebar, setActiveView, setSearchOpen } =
@@ -104,9 +104,7 @@ export function AppRail() {
     { id: "help", icon: HelpCircle, label: "Help", onClick: () => navigate("home") },
   ].filter((item) => canAny(item.permissions));
 
-  const displayName = user?.firstName
-    ? `${user.firstName} ${user.lastName ?? ""}`.trim()
-    : user?.email ?? "User";
+  const displayName = getUserDisplayName(user, "User");
 
   return (
     <nav className="flex w-14 shrink-0 flex-col items-center border-r bg-surface py-2">

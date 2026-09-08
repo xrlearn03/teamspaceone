@@ -39,6 +39,7 @@ export interface CreateEmployeeInput extends RequestContextInput {
 }
 
 export interface UpdateEmployeeInput extends RequestContextInput {
+  employeeNumber?: string;
   firstName?: string;
   lastName?: string;
   workEmail?: string;
@@ -59,6 +60,7 @@ export interface UpdateEmployeeInput extends RequestContextInput {
 }
 
 const TRACKED_FIELDS = [
+  'employeeNumber',
   'firstName',
   'lastName',
   'workEmail',

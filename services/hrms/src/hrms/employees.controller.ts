@@ -49,6 +49,7 @@ export class CreateEmployeeDto {
 }
 
 export class UpdateEmployeeDto {
+  employeeNumber?: string;
   firstName?: string;
   lastName?: string;
   workEmail?: string;

@@ -18,6 +18,7 @@ import {
   startMeeting,
   type Meeting,
 } from "../lib/api";
+import { getUserDisplayName } from "../lib/utils";
 import { useMe } from "../hooks/api";
 
 export interface MediaJoinOptions {
@@ -122,9 +123,7 @@ export function MeetingScreen() {
   async function handleJoin(opts: MediaJoinOptions) {
     if (!activeMeetingId) return;
 
-    const displayName = user
-      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
-      : "Guest";
+    const displayName = getUserDisplayName(user, "Guest");
 
     setMediaOptions(opts);
     setError(null);

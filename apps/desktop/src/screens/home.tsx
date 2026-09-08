@@ -2,7 +2,7 @@ import { usePermissionContext } from "@teamspace-one/authorization/react";
 import { LayoutDashboard } from "lucide-react";
 import { useMe } from "../hooks/api";
 import { EmptyState } from "../components/ui/empty-state";
-import { cn } from "../lib/utils";
+import { cn, getUserDisplayName } from "../lib/utils";
 import { filterDashboardWidgets } from "../features/dashboard/registry";
 
 function getGreeting() {
@@ -19,14 +19,13 @@ export function HomeScreen() {
   const bannerWidgets = widgets.filter((w) => w.banner);
   const gridWidgets = widgets.filter((w) => !w.banner);
 
-  const firstName =
-    user?.firstName ?? user?.email?.split("@")[0] ?? "there";
+  const displayName = getUserDisplayName(user, "there");
 
   return (
     <div className="mx-auto flex h-full max-w-[1600px] flex-col overflow-y-auto">
       <header className="sticky top-0 z-10 border-b bg-background/95 px-6 py-4 backdrop-blur">
         <h1 className="text-xl font-semibold text-text">
-          {getGreeting()}, {firstName}
+          {getGreeting()}, {displayName}
         </h1>
         <p className="text-sm text-text-secondary">
           Here is what needs your attention today.

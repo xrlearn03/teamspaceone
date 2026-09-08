@@ -18,7 +18,7 @@ import {
   useTasks,
   useUsers,
 } from "../../hooks/api";
-import type { UserDto } from "../../lib/api";
+import { getUserDisplayName } from "../../lib/utils";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -38,15 +38,6 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function getDisplayName(_member: { userId: string }, user?: UserDto) {
-  if (user) {
-    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (fullName) return fullName;
-    return user.email;
-  }
-  return "Unknown";
-}
-
 function MemberList({
   userIds,
   externalIds,
@@ -64,9 +55,9 @@ function MemberList({
       {userIds.map((id) => (
         <div key={id} className="flex items-center gap-2">
           <Avatar className="h-6 w-6">
-            <AvatarFallback className="text-[10px]">{getDisplayName({ userId: id }, userMap.get(id)).slice(0, 2).toUpperCase()}</AvatarFallback>
+            <AvatarFallback className="text-[10px]">{getUserDisplayName(userMap.get(id)).slice(0, 2).toUpperCase()}</AvatarFallback>
           </Avatar>
-          <span className="flex-1 truncate text-sm text-text">{getDisplayName({ userId: id }, userMap.get(id))}</span>
+          <span className="flex-1 truncate text-sm text-text">{getUserDisplayName(userMap.get(id))}</span>
           {externalIds?.has(id) ? <Badge variant="warning">External</Badge> : null}
           {renderMeta ? renderMeta(id) : null}
         </div>
@@ -142,7 +133,7 @@ function ChannelDetails() {
               const preview = m.content.length > 80 ? `${m.content.slice(0, 80)}…` : m.content;
               return (
                 <div key={m.id} className="rounded border bg-surface-elevated p-2">
-                  <p className="text-xs text-text-muted">{getDisplayName({ userId: m.senderId }, sender)}</p>
+                  <p className="text-xs text-text-muted">{getUserDisplayName(sender)}</p>
                   <p className="mt-0.5 text-sm text-text">{preview}</p>
                 </div>
               );
