@@ -63,22 +63,22 @@ locals {
   git_auth_header = var.git_token != "" ? "Authorization: Basic ${base64encode("${var.git_username}:${var.git_token}")}" : ""
 
   env_content = templatefile("${path.module}/templates/env.tpl", {
-    external_ip        = google_compute_address.static.address
-    postgres_password  = random_password.postgres.result
-    redis_password     = random_password.redis.result
-    nats_password      = random_password.nats.result
-    s3_access_key      = random_password.s3_access_key.result
-    s3_secret_key      = random_password.s3_secret_key.result
-    sfu_token_secret   = random_password.sfu_token_secret.result
-    internal_api_key   = random_password.internal_api_key.result
-    jwt_secret         = random_password.jwt_secret.result
-    openai_api_key     = var.openai_api_key
-    smtp_host          = var.smtp_host
-    smtp_port          = var.smtp_port
-    smtp_secure        = var.smtp_secure
-    smtp_user          = var.smtp_user
-    smtp_pass          = var.smtp_pass
-    smtp_from          = var.smtp_from
+    external_ip       = google_compute_address.static.address
+    postgres_password = random_password.postgres.result
+    redis_password    = random_password.redis.result
+    nats_password     = random_password.nats.result
+    s3_access_key     = random_password.s3_access_key.result
+    s3_secret_key     = random_password.s3_secret_key.result
+    sfu_token_secret  = random_password.sfu_token_secret.result
+    internal_api_key  = random_password.internal_api_key.result
+    jwt_secret        = random_password.jwt_secret.result
+    openai_api_key    = var.openai_api_key
+    smtp_host         = var.smtp_host
+    smtp_port         = var.smtp_port
+    smtp_secure       = var.smtp_secure
+    smtp_user         = var.smtp_user
+    smtp_pass         = var.smtp_pass
+    smtp_from         = var.smtp_from
   })
 
   compose_overlay_content = templatefile("${path.module}/templates/docker-compose.gce.yml.tpl", {})
@@ -158,4 +158,8 @@ resource "google_compute_instance" "vm" {
   }
 
   allow_stopping_for_update = true
+
+  lifecycle {
+    ignore_changes = [metadata["ssh-keys"]]
+  }
 }

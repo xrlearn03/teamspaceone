@@ -36,7 +36,7 @@ variable "boot_disk_size" {
 variable "data_disk_size" {
   description = "Persistent data disk size in GB"
   type        = number
-  default     = 2000
+  default     = 200
 }
 
 variable "repo_url" {
