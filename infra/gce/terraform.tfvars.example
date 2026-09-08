@@ -1,6 +1,6 @@
 project_id = "teamspace-one"
-zone       = "us-central1-a"
-# region   = "us-central1"
+zone       = "asia-south1-a"
+region     = "asia-south1"
 
 # Azure DevOps clone URL (replace the placeholders)
 repo_url = "https://dev.azure.com/xrlearn/Connect/_git/Connect"
