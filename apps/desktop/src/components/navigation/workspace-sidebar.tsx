@@ -65,7 +65,7 @@ function getDisplayName(_member: { userId: string }, user?: UserDto) {
   if (user) {
     const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
     if (fullName) return fullName;
-    return user.email;
+    return user.email.split("@")[0] || user.email;
   }
   return "Unknown";
 }

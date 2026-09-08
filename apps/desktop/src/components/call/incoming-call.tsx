@@ -106,18 +106,23 @@ export function IncomingCallOverlay() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-surface-elevated">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,var(--primary-subtle),var(--surface-elevated)_68%)] opacity-80" />
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-[#020817]"
+      style={{
+        backgroundImage: "radial-gradient(ellipse 70% 85% at 100% 72%, rgba(75, 73, 255, 0.95) 0%, rgba(31, 42, 164, 0.62) 31%, transparent 70%), radial-gradient(ellipse 60% 55% at 0% 0%, rgba(0, 102, 255, 0.9) 0%, rgba(0, 52, 126, 0.58) 38%, transparent 72%), linear-gradient(135deg, #03142d 0%, #020817 48%, #07123d 100%)",
+      }}
+    >
+      <div className="absolute inset-0 bg-black/10" />
       <div className="relative flex w-full max-w-lg flex-col items-center px-8 py-12 text-center">
         <div className="mb-6 min-h-14">
-          <p className="text-lg font-semibold text-text">
+          <p className="text-lg font-semibold text-white">
             {incoming ? callerLabel : `Calling ${outgoingLabel}`}
           </p>
-          <p className="mt-1 animate-pulse text-sm text-text-secondary">
+          <p className="mt-1 animate-pulse text-sm text-white/75">
             {incoming ? "is calling you" : "Ringing…"}
           </p>
           {(call?.title || (outgoingCall?.title && outgoingNames.length > 0)) && (
-            <p className="mt-2 text-xs text-text-muted">{call?.title ?? outgoingCall?.title}</p>
+            <p className="mt-2 text-xs text-white/55">{call?.title ?? outgoingCall?.title}</p>
           )}
         </div>
 
@@ -126,18 +131,18 @@ export function IncomingCallOverlay() {
             <UserAvatar
               key={callUser.id}
               user={callUser}
-              className="h-20 w-20 border-4 border-surface-elevated shadow-xl"
+              className="h-20 w-20 border-4 border-white/15 shadow-xl"
               fallbackClassName="text-2xl"
             />
           )) : (
             <UserAvatar
               user={{ firstName: incoming ? callerLabel : outgoingLabel, email: "" }}
-              className="h-20 w-20 border-4 border-surface-elevated shadow-xl"
+              className="h-20 w-20 border-4 border-white/15 shadow-xl"
               fallbackClassName="text-2xl"
             />
           )}
           {!incoming && userIds.length > 3 && (
-            <div className="relative flex h-20 w-20 items-center justify-center rounded-full border-4 border-surface-elevated bg-primary-subtle text-sm font-semibold text-primary shadow-xl">
+            <div className="relative flex h-20 w-20 items-center justify-center rounded-full border-4 border-white/15 bg-white/15 text-sm font-semibold text-white shadow-xl">
               +{userIds.length - 3}
             </div>
           )}
