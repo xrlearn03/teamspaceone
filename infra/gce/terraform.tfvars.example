@@ -1,4 +1,4 @@
-project_id = "my-gcp-project"
+project_id = "teamspace-one"
 zone       = "us-central1-a"
 # region   = "us-central1"
 
