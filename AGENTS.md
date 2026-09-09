@@ -124,10 +124,15 @@ Semantic tokens live in `apps/desktop/src/styles/index.css`:
 - Android debug install: `./gradlew :app:installDebug`.
 - Android release signing uses env vars `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`; falls back to the debug keystore if not set.
 - Notification service typecheck: `pnpm --filter @teamspace-one/notification-service typecheck`.
+- API gateway typecheck: `pnpm --filter @teamspace-one/api-gateway typecheck`.
 
 ## Mobile push credentials still needed
 
 - Android FCM: place `google-services.json` in `apps/mobile-android/app/` and configure the backend `GOOGLE_APPLICATION_CREDENTIALS` + `FIREBASE_PROJECT_ID`.
 - iOS APNs: configure backend env vars `APN_KEY` (path to `.p8`), `APN_KEY_ID`, `APN_TEAM_ID`, `APN_BUNDLE_ID`.
-- iOS custom URL scheme still needs `CFBundleURLTypes` added to the generated Info.plist (either via `project.yml` `info` block or a custom Info.plist).
-- iOS universal links need the `aps-environment` entitlement plus `apple-app-site-association` hosted on the domain.
+
+## Universal links / App Links
+
+- iOS: `project.yml` registers `applinks:app.teamspaceone.in`; `apple-app-site-association` is served by `api-gateway` at `/.well-known/apple-app-site-association`. Set `APPLE_TEAM_ID` on the gateway.
+- Android: `AndroidManifest.xml` has `autoVerify` intent filters for `https://app.teamspaceone.in` (`/channel`, `/meeting`, `/file` prefixes). `assetlinks.json` is served by `api-gateway` at `/.well-known/assetlinks.json`. Set `ANDROID_CERT_FINGERPRINTS` (JSON array) on the gateway.
+- Compute the release SHA-256 fingerprint with `keytool -list -v -keystore <keystore>`, or `./gradlew :app:signingReport` for debug. Add the fingerprints to the gateway env.

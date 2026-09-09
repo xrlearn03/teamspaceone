@@ -30,6 +30,11 @@ targets:
     dependencies:
       - package: SocketIO
       - package: WebRTC
+    entitlements:
+      path: TeamspaceOne.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - applinks:app.teamspaceone.in
     info:
       path: Info.plist
       properties:

@@ -28,6 +28,21 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="teamspaceone" />
             </intent-filter>
+
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="app.teamspaceone.in" android:pathPrefix="/channel" />
+                <data android:scheme="https" android:host="app.teamspaceone.in" android:pathPrefix="/channels" />
+                <data android:scheme="https" android:host="app.teamspaceone.in" android:pathPrefix="/c" />
+                <data android:scheme="https" android:host="app.teamspaceone.in" android:pathPrefix="/meeting" />
+                <data android:scheme="https" android:host="app.teamspaceone.in" android:pathPrefix="/meetings" />
+                <data android:scheme="https" android:host="app.teamspaceone.in" android:pathPrefix="/m" />
+                <data android:scheme="https" android:host="app.teamspaceone.in" android:pathPrefix="/file" />
+                <data android:scheme="https" android:host="app.teamspaceone.in" android:pathPrefix="/files" />
+                <data android:scheme="https" android:host="app.teamspaceone.in" android:pathPrefix="/f" />
+            </intent-filter>
         </activity>
 
         <service
