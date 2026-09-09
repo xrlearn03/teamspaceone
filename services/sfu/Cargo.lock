@@ -2594,6 +2594,7 @@ dependencies = [
  "futures",
  "hmac",
  "interceptor",
+ "rand 0.8.8",
  "reqwest",
  "rtc",
  "rtc-interceptor",

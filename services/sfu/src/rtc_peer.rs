@@ -23,7 +23,8 @@ use rtc::peer_connection::RTCPeerConnectionBuilder;
 use rtc::rtp_transceiver::{RTCRtpReceiverId, RTCRtpSenderId};
 use rtc::rtp_transceiver::rtp_sender::RTCRtpSender;
 use rtc::rtp_transceiver::rtp_sender::{
-    RTCPFeedback, RTCRtpCodec, RTCRtpCodecParameters, RTCRtpCodingParameters, RTCRtpEncodingParameters, RtpCodecKind,
+    RTCPFeedback, RTCRtpCodec, RTCRtpCodecParameters, RTCRtpCodingParameters, RTCRtpEncodingParameters,
+    RTCRtpFecParameters, RTCRtpRtxParameters, RtpCodecKind,
 };
 use rtc::sansio::Protocol;
 use rtc::shared::{TaggedBytesMut, TransportContext, TransportProtocol};
@@ -61,6 +62,7 @@ pub struct RtcRoomTrack {
     pub publisher: PeerId,
     pub room_id: RoomId,
     pub kind: RtpCodecKind,
+    /// Base SSRCs seen for this track. Simulcast layers are accumulated here.
     pub ssrcs: Vec<u32>,
     /// All negotiated receive codecs for this track. The first codec is used as
     /// a default until the first RTP packet resolves the actual payload type.
@@ -514,13 +516,13 @@ where
                         let (forwarders, writer, fwd_codec) = {
                             let mut s = state.write().await;
                             if let Some(t) = s.rtc_tracks.get_mut(&track_id) {
-                                if t.ssrcs.is_empty() {
-                                    let ssrc = rtp_packet.header.ssrc;
-                                    let payload_type = rtp_packet.header.payload_type;
-                                    t.ssrcs = vec![ssrc];
-                                    if let Some(matched) = t.codecs.iter().find(|c| c.payload_type == payload_type) {
-                                        t.codec = Some(matched.rtp_codec.clone());
-                                    }
+                                let ssrc = rtp_packet.header.ssrc;
+                                if !t.ssrcs.contains(&ssrc) {
+                                    t.ssrcs.push(ssrc);
+                                }
+                                let payload_type = rtp_packet.header.payload_type;
+                                if let Some(matched) = t.codecs.iter().find(|c| c.payload_type == payload_type) {
+                                    t.codec = Some(matched.rtp_codec.clone());
                                 }
                                 (
                                     t.forwarders.clone(),
@@ -727,6 +729,22 @@ where
     })
 }
 
+fn generate_rtx_fec_ssrcs(base_ssrc: u32) -> (u32, u32) {
+    let rtx = loop {
+        let s = rand::random::<u32>();
+        if s != 0 && s != base_ssrc {
+            break s;
+        }
+    };
+    let fec = loop {
+        let s = rand::random::<u32>();
+        if s != 0 && s != base_ssrc && s != rtx {
+            break s;
+        }
+    };
+    (rtx, fec)
+}
+
 fn default_codec(kind: RtpCodecKind) -> RTCRtpCodec {
     match kind {
         RtpCodecKind::Audio => RTCRtpCodec {
@@ -777,18 +795,25 @@ fn add_local_track<I: Interceptor>(
     } else {
         ssrcs
             .iter()
-            .map(|ssrc| RTCRtpEncodingParameters {
-                rtp_coding_parameters: RTCRtpCodingParameters {
-                    rid: String::new(),
-                    ssrc: Some(*ssrc),
-                    rtx: None,
-                    fec: None,
-                },
-                active: true,
-                codec: desired.clone(),
-                max_bitrate: 0,
-                max_framerate: None,
-                scale_resolution_down_by: None,
+            .map(|ssrc| {
+                let (rtx_ssrc, fec_ssrc) = generate_rtx_fec_ssrcs(*ssrc);
+                RTCRtpEncodingParameters {
+                    rtp_coding_parameters: RTCRtpCodingParameters {
+                        rid: String::new(),
+                        ssrc: Some(*ssrc),
+                        rtx: Some(RTCRtpRtxParameters {
+                            ssrc: rtx_ssrc,
+                        }),
+                        fec: Some(RTCRtpFecParameters {
+                            ssrc: fec_ssrc,
+                        }),
+                    },
+                    active: true,
+                    codec: desired.clone(),
+                    max_bitrate: 0,
+                    max_framerate: None,
+                    scale_resolution_down_by: None,
+                }
             })
             .collect()
     };
@@ -867,13 +892,34 @@ fn update_sender_ssrc<'a, I: Interceptor>(
     // mismatches are handled safely.
     let codec = pick_codec(track.kind(), desired_codec.as_ref(), &params.rtp_parameters.codecs);
 
-    if params.encodings.is_empty() {
+    if let Some(encoding) = params
+        .encodings
+        .iter_mut()
+        .find(|e| e.rtp_coding_parameters.ssrc == Some(ssrc) || e.rtp_coding_parameters.ssrc.is_none())
+    {
+        if encoding.rtp_coding_parameters.ssrc.is_none() {
+            let (rtx_ssrc, fec_ssrc) = generate_rtx_fec_ssrcs(ssrc);
+            encoding.rtp_coding_parameters.ssrc = Some(ssrc);
+            encoding.rtp_coding_parameters.rtx = Some(RTCRtpRtxParameters { ssrc: rtx_ssrc });
+            encoding.rtp_coding_parameters.fec = Some(RTCRtpFecParameters { ssrc: fec_ssrc });
+        }
+        encoding.codec = codec.clone();
+    } else if let Some(template) = params.encodings.first().cloned() {
+        let mut new_encoding = template;
+        let (rtx_ssrc, fec_ssrc) = generate_rtx_fec_ssrcs(ssrc);
+        new_encoding.rtp_coding_parameters.ssrc = Some(ssrc);
+        new_encoding.rtp_coding_parameters.rtx = Some(RTCRtpRtxParameters { ssrc: rtx_ssrc });
+        new_encoding.rtp_coding_parameters.fec = Some(RTCRtpFecParameters { ssrc: fec_ssrc });
+        new_encoding.codec = codec.clone();
+        params.encodings.push(new_encoding);
+    } else {
+        let (rtx_ssrc, fec_ssrc) = generate_rtx_fec_ssrcs(ssrc);
         params.encodings.push(RTCRtpEncodingParameters {
             rtp_coding_parameters: RTCRtpCodingParameters {
                 rid: String::new(),
                 ssrc: Some(ssrc),
-                rtx: None,
-                fec: None,
+                rtx: Some(RTCRtpRtxParameters { ssrc: rtx_ssrc }),
+                fec: Some(RTCRtpFecParameters { ssrc: fec_ssrc }),
             },
             active: true,
             codec,
@@ -881,11 +927,6 @@ fn update_sender_ssrc<'a, I: Interceptor>(
             max_framerate: None,
             scale_resolution_down_by: None,
         });
-    } else {
-        for encoding in &mut params.encodings {
-            encoding.rtp_coding_parameters.ssrc = Some(ssrc);
-            encoding.codec = codec.clone();
-        }
     }
 
     let new_track = MediaStreamTrack::new(
