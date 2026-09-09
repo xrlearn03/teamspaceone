@@ -20,3 +20,8 @@ apps/mobile-android/gradle/gradle-daemon-jvm.properties
 
 # Rust build artifacts
 services/sfu/target/
+
+# Mobile platform credentials (add these manually; never commit)
+apps/mobile-android/app/google-services.json
+**/AuthKey_*.p8
+**/google-services.json

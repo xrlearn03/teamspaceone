@@ -141,6 +141,9 @@ Semantic tokens live in `apps/desktop/src/styles/index.css`:
 ## Mobile push credentials still needed
 
 - Android FCM: place `google-services.json` in `apps/mobile-android/app/` and configure the backend `GOOGLE_APPLICATION_CREDENTIALS` + `FIREBASE_PROJECT_ID`.
+  - Add the Android app with package `com.teamspaceone.mobile` in the Firebase console.
+  - Download the generated `google-services.json` and place it in `apps/mobile-android/app/`. It is gitignored by default.
+  - For the backend, create/download a Firebase service-account key, set `GOOGLE_APPLICATION_CREDENTIALS` to its path and `FIREBASE_PROJECT_ID` to the project ID.
 - iOS APNs: configure backend env vars `APN_KEY` (path to `.p8`), `APN_KEY_ID`, `APN_TEAM_ID`, `APN_BUNDLE_ID`.
 
 ## Universal links / App Links
