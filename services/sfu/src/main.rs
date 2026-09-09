@@ -440,6 +440,13 @@ struct IceServerConfig {
     credential: Option<String>,
 }
 
+fn max_participants_per_room() -> usize {
+    std::env::var("SFU_MAX_PARTICIPANTS_PER_ROOM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(12)
+}
+
 fn ice_servers() -> Vec<RTCIceServer> {
     let default = RTCIceServer {
         urls: vec!["stun:stun.l.google.com:19302".to_owned()],
@@ -603,15 +610,24 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
                 })
             }));
 
+            let (tx, joined_peer) = {
+                let s = &mut *state.write().await;
+                let peer = s.peers.get_mut(peer_id).unwrap();
+                peer.display_name = display_name.clone();
+                peer.user_id = user_id.clone();
+                peer.room_id = Some(room_id.clone());
+                peer.pc = Some(pc);
+                (peer.tx.clone(), peer.clone())
+            };
             let mut s = state.write().await;
-            let peer = s.peers.get_mut(peer_id).unwrap();
-            peer.display_name = display_name.clone();
-            peer.user_id = user_id.clone();
-            peer.room_id = Some(room_id.clone());
-            peer.pc = Some(pc);
-            let joined_peer = peer.clone();
-            let tx = peer.tx.clone();
             let room = s.rooms.entry(room_id.clone()).or_default();
+            let max = max_participants_per_room();
+            if room.participants.len() >= max {
+                let _ = tx.send(Event::Error {
+                    message: format!("Room is full (max {} participants)", max),
+                });
+                return Err(anyhow!("room is full"));
+            }
             room.participants
                 .insert(peer_id.to_string(), joined_peer);
 
