@@ -248,6 +248,7 @@ export function MeetingScreen() {
       remoteStreams={sfu.remoteStreams}
       participants={sfu.participants}
       activeSpeakerId={sfu.activeSpeakerId}
+      qualityStats={sfu.qualityStats}
       screenShareEnabled={sfu.screenShareEnabled}
       isRecording={meeting.isRecording}
       isHost={meeting.createdBy === user?.id}

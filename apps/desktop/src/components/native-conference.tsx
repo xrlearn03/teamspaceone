@@ -39,6 +39,13 @@ import {
   type UserDto,
 } from "../lib/api";
 
+interface QualityStats {
+  audio: { packetsLost: number; jitter: number; bitrate: number };
+  video: { packetsLost: number; jitter: number; bitrate: number };
+  rtt?: number;
+  timestamp: number;
+}
+
 interface NativeConferenceProps {
   user?: UserDto | null;
   title?: string;
@@ -53,6 +60,7 @@ interface NativeConferenceProps {
   remoteStreams?: { participantId: string; stream: MediaStream }[];
   participants?: { id: string; displayName: string; userId?: string }[];
   activeSpeakerId?: string | null;
+  qualityStats?: QualityStats | null;
   screenShareEnabled?: boolean;
   isRecording?: boolean;
   isHost?: boolean;
@@ -77,6 +85,7 @@ export function NativeConference({
   remoteStreams = [],
   participants = [],
   activeSpeakerId = null,
+  qualityStats = null,
   screenShareEnabled = false,
   isRecording: initialRecording = false,
   isHost = false,
@@ -306,6 +315,36 @@ export function NativeConference({
                 <span className="flex items-center gap-1 text-error">
                   <CircleDot className="h-2 w-2 animate-pulse" />
                   Recording
+                </span>
+              </>
+            ) : null}
+            {qualityStats ? (
+              <>
+                <span className="text-text-muted">•</span>
+                <span
+                  className={cn(
+                    "flex items-center gap-1",
+                    (qualityStats.audio.packetsLost ?? 0) +
+                      (qualityStats.video.packetsLost ?? 0) >
+                      50
+                      ? "text-error"
+                      : (qualityStats.audio.packetsLost ?? 0) +
+                            (qualityStats.video.packetsLost ?? 0) >
+                          10
+                        ? "text-warning"
+                        : "text-success",
+                  )}
+                >
+                  <CircleDot className="h-2 w-2" />
+                  {(qualityStats.audio.packetsLost ?? 0) +
+                    (qualityStats.video.packetsLost ?? 0) >
+                    50
+                    ? "Poor"
+                    : (qualityStats.audio.packetsLost ?? 0) +
+                          (qualityStats.video.packetsLost ?? 0) >
+                        10
+                      ? "Fair"
+                      : "Good"}
                 </span>
               </>
             ) : null}
