@@ -179,6 +179,8 @@ struct State {
     rooms: HashMap<RoomId, Room>,
     #[cfg(feature = "rtc")]
     rtc_peers: HashMap<PeerId, rtc_peer::RtcPeer>,
+    #[cfg(feature = "rtc")]
+    rtc_tracks: HashMap<String, rtc_peer::RtcRoomTrack>,
 }
 
 impl State {
@@ -189,6 +191,8 @@ impl State {
             rooms: HashMap::new(),
             #[cfg(feature = "rtc")]
             rtc_peers: HashMap::new(),
+            #[cfg(feature = "rtc")]
+            rtc_tracks: HashMap::new(),
         }
     }
 

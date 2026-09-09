@@ -60,6 +60,7 @@ impl RtcPeer {
     pub async fn new(
         peer_id: &str,
         tx: mpsc::UnboundedSender<Event>,
+        state: SharedState,
     ) -> Result<(Self, SocketAddr)> {
         let mut media_engine = MediaEngine::default();
         media_engine
@@ -84,7 +85,7 @@ impl RtcPeer {
         info!("Rtc peer {} listening on {}", peer_id, local_addr);
 
         let (cmd_tx, cmd_rx) = mpsc::channel::<RtcCommand>(32);
-        let _ = spawn_network_task(peer_id.to_string(), pc, socket, tx, cmd_rx);
+        let _ = spawn_network_task(peer_id.to_string(), pc, socket, tx, cmd_rx, state);
 
         Ok((Self { cmd_tx, local_addr }, local_addr))
     }
@@ -123,12 +124,20 @@ impl RtcPeer {
     }
 }
 
+/// Published `rtc` track stored in the shared room state.
+#[derive(Clone)]
+pub struct RtcRoomTrack {
+    pub publisher: PeerId,
+    pub kind: rtc::rtp_transceiver::rtp_sender::RtpCodecKind,
+}
+
 fn spawn_network_task(
     peer_id: PeerId,
     mut pc: RtcPeerConnection,
     socket: UdpSocket,
     tx: mpsc::UnboundedSender<Event>,
     mut cmd_rx: mpsc::Receiver<RtcCommand>,
+    state: SharedState,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let local_addr = match socket.local_addr() {
@@ -188,9 +197,22 @@ fn spawn_network_task(
                                 "Rtc {} track opened: track_id={}, receiver_id={:?}",
                                 peer_id, init.track_id, init.receiver_id
                             );
+                            if let Some(receiver) = pc.rtp_receiver(init.receiver_id) {
+                                let kind = receiver.track().kind();
+                                let mut s = state.write().await;
+                                s.rtc_tracks.insert(
+                                    init.track_id,
+                                    RtcRoomTrack {
+                                        publisher: peer_id.clone(),
+                                        kind,
+                                    },
+                                );
+                            }
                         }
                         RTCTrackEvent::OnClose(track_id) => {
                             info!("Rtc {} track closed: {}", peer_id, track_id);
+                            let mut s = state.write().await;
+                            s.rtc_tracks.remove(&track_id);
                         }
                         _ => {}
                     },
@@ -208,6 +230,17 @@ fn spawn_network_task(
                             track_id,
                             rtp_packet.payload.len()
                         );
+                        let tracks = {
+                            let s = state.read().await;
+                            s.rtc_tracks.get(&track_id).cloned()
+                        };
+                        if let Some(track) = tracks {
+                            // TODO: forward to subscribers and recording.
+                            info!(
+                                "Rtc {} track {} published by {} (kind {:?})",
+                                peer_id, track_id, track.publisher, track.kind
+                            );
+                        }
                     }
                     RTCMessage::RtcpPacket(receiver_id, rtcp_packets) => {
                         info!(
@@ -372,7 +405,7 @@ pub async fn process_rtc_signal(
                     .clone()
             };
 
-            let (rtc_peer, _local_addr) = RtcPeer::new(peer_id, tx.clone()).await?;
+            let (rtc_peer, _local_addr) = RtcPeer::new(peer_id, tx.clone(), state.clone()).await?;
 
             {
                 let mut s = state.write().await;
