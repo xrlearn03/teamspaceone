@@ -544,6 +544,19 @@ services:
       - interview-service
       - otel-collector
 
+  web:
+    build:
+      additional_contexts:
+        teamspace-one-base: 'service:base'
+      context: .
+      dockerfile: 'apps/web/Dockerfile'
+    container_name: 'teamspace-one-web'
+    restart: unless-stopped
+    environment:
+      WEB_DOMAIN: ${WEB_DOMAIN:-teamspaceone.in}
+    ports:
+      - '${WEB_PORT:-8080}:80'
+
 volumes:
   postgres-data:
   nats-data:
