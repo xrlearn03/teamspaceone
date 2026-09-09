@@ -2597,6 +2597,7 @@ dependencies = [
  "reqwest",
  "rtc",
  "rtc-interceptor",
+ "rtc-rtcp",
  "rtc-rtp",
  "serde",
  "serde_json",
