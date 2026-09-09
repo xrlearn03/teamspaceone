@@ -1,7 +1,11 @@
 package com.teamspaceone.mobile.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -23,11 +27,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.teamspaceone.mobile.data.realtime.RealtimeManager
 import com.teamspaceone.mobile.data.remote.AuthManager
 import com.teamspaceone.mobile.data.remote.Channel
+import com.teamspaceone.mobile.data.remote.FileRepository
 import com.teamspaceone.mobile.data.remote.Message
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
@@ -35,11 +41,27 @@ import kotlinx.serialization.json.Json
 
 @Composable
 fun ChannelDetailScreen(channel: Channel, onBack: () -> Unit = {}) {
+    val context = LocalContext.current
     var isLoading by remember { mutableStateOf(true) }
     var messages by remember { mutableStateOf<List<Message>>(emptyList()) }
     var input by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
+    var pendingAttachmentIds by remember { mutableStateOf<List<String>>(emptyList()) }
     val scope = rememberCoroutineScope()
+
+    val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            status = "Uploading attachment…"
+            try {
+                val file = FileRepository.uploadFile(context, uri)
+                pendingAttachmentIds = pendingAttachmentIds + file.id
+                status = ""
+            } catch (e: Exception) {
+                status = "Attachment upload failed: ${e.message}"
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         isLoading = true
@@ -92,7 +114,15 @@ fun ChannelDetailScreen(channel: Channel, onBack: () -> Unit = {}) {
                     item { Text("No messages yet") }
                 } else {
                     items(messages) { message ->
-                        Text("${message.senderId}: ${message.content}")
+                        Column {
+                            Text("${message.senderId}: ${message.content}")
+                            if (message.attachments.isNotEmpty()) {
+                                Text(
+                                    "${message.attachments.size} attachment(s)",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
                     }
                 }
                 if (status.isNotBlank()) {
@@ -101,32 +131,40 @@ fun ChannelDetailScreen(channel: Channel, onBack: () -> Unit = {}) {
             }
         }
 
-        OutlinedTextField(
-            value = input,
-            onValueChange = { input = it },
-            label = { Text("Message") },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Button(
-            onClick = {
-                val text = input.trim()
-                if (text.isNotBlank()) {
-                    scope.launch {
-                        try {
-                            AuthManager.sendMessage(channel.id, text)
-                            input = ""
-                            messages = AuthManager.messages(channel.id)
-                        } catch (e: Exception) {
-                            status = "Send failed: ${e.message}"
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(onClick = { fileLauncher.launch("*/*") }) {
+                Text("Attach")
+            }
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it },
+                label = { Text("Message") },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                modifier = Modifier.weight(1f)
+            )
+            Button(
+                onClick = {
+                    val text = input.trim()
+                    if (text.isNotBlank() || pendingAttachmentIds.isNotEmpty()) {
+                        scope.launch {
+                            try {
+                                AuthManager.sendMessage(channel.id, text, pendingAttachmentIds)
+                                input = ""
+                                pendingAttachmentIds = emptyList()
+                                messages = AuthManager.messages(channel.id)
+                            } catch (e: Exception) {
+                                status = "Send failed: ${e.message}"
+                            }
                         }
                     }
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Send")
+                },
+                enabled = input.trim().isNotBlank() || pendingAttachmentIds.isNotEmpty()
+            ) {
+                Text("Send")
+            }
         }
     }
 }

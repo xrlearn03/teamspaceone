@@ -135,6 +135,12 @@ struct NewTask: Codable, Sendable {
     let position: Int?
 }
 
+struct SendMessageRequest: Codable, Sendable {
+    let channelId: String
+    let content: String
+    let attachmentIds: [String]
+}
+
 struct FileRecord: Codable, Sendable, Identifiable {
     let id: String
     let organisationId: String

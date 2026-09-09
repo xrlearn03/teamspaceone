@@ -73,11 +73,12 @@ actor AuthManager {
         return page.items
     }
 
-    func sendMessage(channelId: String, content: String) async throws -> Message {
-        let body: [String: String] = [
-            "channelId": channelId,
-            "content": content
-        ]
+    func sendMessage(channelId: String, content: String, attachmentIds: [String] = []) async throws -> Message {
+        let body = SendMessageRequest(
+            channelId: channelId,
+            content: content,
+            attachmentIds: attachmentIds
+        )
         return try await APIClient.request("/messages", method: "POST", body: body)
     }
 

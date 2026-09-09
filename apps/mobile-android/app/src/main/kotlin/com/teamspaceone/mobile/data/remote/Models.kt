@@ -77,6 +77,14 @@ data class Project(
 )
 
 @Serializable
+data class MessageAttachment(
+    @SerialName("id") val id: String,
+    @SerialName("messageId") val messageId: String,
+    @SerialName("fileId") val fileId: String,
+    @SerialName("createdAt") val createdAt: String
+)
+
+@Serializable
 data class Message(
     @SerialName("id") val id: String,
     @SerialName("channelId") val channelId: String,
@@ -87,7 +95,8 @@ data class Message(
     @SerialName("deletedAt") val deletedAt: String? = null,
     @SerialName("pinnedAt") val pinnedAt: String? = null,
     @SerialName("createdAt") val createdAt: String,
-    @SerialName("updatedAt") val updatedAt: String
+    @SerialName("updatedAt") val updatedAt: String,
+    @SerialName("attachments") val attachments: List<MessageAttachment> = emptyList()
 )
 
 @Serializable
@@ -99,7 +108,8 @@ data class MessagePage(
 @Serializable
 data class SendMessageBody(
     @SerialName("channelId") val channelId: String,
-    @SerialName("content") val content: String
+    @SerialName("content") val content: String,
+    @SerialName("attachmentIds") val attachmentIds: List<String> = emptyList()
 )
 
 @Serializable

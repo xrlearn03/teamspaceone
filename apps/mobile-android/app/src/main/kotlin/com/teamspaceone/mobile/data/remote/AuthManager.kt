@@ -54,10 +54,10 @@ object AuthManager {
         return page.items
     }
 
-    suspend fun sendMessage(channelId: String, content: String): Message {
+    suspend fun sendMessage(channelId: String, content: String, attachmentIds: List<String> = emptyList()): Message {
         return APIClient.http.post("${APIClient.baseUrl}/messages") {
             contentType(ContentType.Application.Json)
-            setBody(SendMessageBody(channelId, content))
+            setBody(SendMessageBody(channelId, content, attachmentIds))
         }.body()
     }
 
