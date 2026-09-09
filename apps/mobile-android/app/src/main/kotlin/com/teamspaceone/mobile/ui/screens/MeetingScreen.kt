@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,6 +42,7 @@ fun MeetingScreen(onBack: () -> Unit = {}) {
     val isSpeakerOn by WebRTCManager.isSpeakerOn.collectAsState()
     val isCameraOn by WebRTCManager.isCameraOn.collectAsState()
     val localVideoTrack by WebRTCManager.localVideoTrack.collectAsState()
+    val remoteVideoTracks by WebRTCManager.remoteVideoTracks.collectAsState()
     val permissions = remember { arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA) }
     var permissionsGranted by remember {
         mutableStateOf(permissions.all {
@@ -142,6 +144,25 @@ fun MeetingScreen(onBack: () -> Unit = {}) {
                         .fillMaxWidth()
                         .height(200.dp)
                 )
+            }
+
+            remoteVideoTracks.forEach { track ->
+                key(track.id()) {
+                    AndroidView(
+                        factory = { ctx ->
+                            org.webrtc.SurfaceViewRenderer(ctx).apply {
+                                init(WebRTCManager.eglBase?.eglBaseContext, null)
+                            }
+                        },
+                        update = { renderer ->
+                            track.removeSink(renderer)
+                            track.addSink(renderer)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                    )
+                }
             }
         }
 

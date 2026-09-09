@@ -18,6 +18,7 @@
 		5ECE43B213A3648D9275C17F /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B04DD40EEF005100E25351AB /* ProjectsView.swift */; };
 		7AF6BD4987638647B9993612 /* ProjectDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ADA93918E0CADEDAF7E8CAA /* ProjectDetailView.swift */; };
 		98FBEFF2706EAA97CBCFA1ED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B11CDCDA38D1D65403DB206 /* ContentView.swift */; };
+		9CF940DF34C0ACD722C56360 /* RemoteVideoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8A490892C0EA83148002746 /* RemoteVideoView.swift */; };
 		A1B8A92649D83EAC3E65AE71 /* LocalVideoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 289F035899CFF841C87714F9 /* LocalVideoView.swift */; };
 		A2064DC42CA85F9E3D02DD05 /* ChannelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F4714A8734BC283BB87D1D4 /* ChannelsView.swift */; };
 		B15AE55A2CC101F5E1D2E9CB /* TeamspaceOneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BF575E72C94FB842A0E9591 /* TeamspaceOneApp.swift */; };
@@ -39,6 +40,7 @@
 		9174E36E118D82E8D36CF1C7 /* MeetingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingView.swift; sourceTree = "<group>"; };
 		94C8B204934C3B67DD12FA93 /* RealtimeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeManager.swift; sourceTree = "<group>"; };
 		9ADA93918E0CADEDAF7E8CAA /* ProjectDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDetailView.swift; sourceTree = "<group>"; };
+		A8A490892C0EA83148002746 /* RemoteVideoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteVideoView.swift; sourceTree = "<group>"; };
 		A8A62EBE1E1B53B5C13BFDE3 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		B04DD40EEF005100E25351AB /* ProjectsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsView.swift; sourceTree = "<group>"; };
 		D81B4EFA1995829106ABD804 /* TeamspaceOne.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TeamspaceOne.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -101,6 +103,7 @@
 				9ADA93918E0CADEDAF7E8CAA /* ProjectDetailView.swift */,
 				B04DD40EEF005100E25351AB /* ProjectsView.swift */,
 				94C8B204934C3B67DD12FA93 /* RealtimeManager.swift */,
+				A8A490892C0EA83148002746 /* RemoteVideoView.swift */,
 				EB8DDDB8A9409A28944BC4FD /* SfuManager.swift */,
 				2BF575E72C94FB842A0E9591 /* TeamspaceOneApp.swift */,
 				DDB83F65F7AD67066EA76DDB /* WebRTCManager.swift */,
@@ -192,6 +195,7 @@
 				7AF6BD4987638647B9993612 /* ProjectDetailView.swift in Sources */,
 				5ECE43B213A3648D9275C17F /* ProjectsView.swift in Sources */,
 				5E36F8CA8B5C58AFAB3571CF /* RealtimeManager.swift in Sources */,
+				9CF940DF34C0ACD722C56360 /* RemoteVideoView.swift in Sources */,
 				C11143237190CD1072266FD2 /* SfuManager.swift in Sources */,
 				B15AE55A2CC101F5E1D2E9CB /* TeamspaceOneApp.swift in Sources */,
 				12DB1A85ECE24CEC95F39913 /* WebRTCManager.swift in Sources */,

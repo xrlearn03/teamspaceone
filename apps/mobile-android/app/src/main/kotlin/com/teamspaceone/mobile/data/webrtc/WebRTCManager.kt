@@ -62,6 +62,9 @@ object WebRTCManager {
     private val _localVideoTrack = MutableStateFlow<VideoTrack?>(null)
     val localVideoTrack: StateFlow<VideoTrack?> = _localVideoTrack.asStateFlow()
 
+    private val _remoteVideoTracks = MutableStateFlow<List<VideoTrack>>(emptyList())
+    val remoteVideoTracks: StateFlow<List<VideoTrack>> = _remoteVideoTracks.asStateFlow()
+
     internal var eglBase: EglBase? = null
     private var surfaceTextureHelper: SurfaceTextureHelper? = null
     private var videoCapturer: VideoCapturer? = null
@@ -130,6 +133,7 @@ object WebRTCManager {
         _errorMessage.value = null
         _participants.value = emptyList()
         _localVideoTrack.value = null
+        _remoteVideoTracks.value = emptyList()
         SfuManager.onSignal = null
         try { videoCapturer?.stopCapture() } catch (_: Exception) {}
         videoCapturer?.dispose()
@@ -334,7 +338,21 @@ object WebRTCManager {
         }
 
         override fun onAddTrack(receiver: org.webrtc.RtpReceiver, streams: Array<out org.webrtc.MediaStream>) {}
-        override fun onRemoveTrack(receiver: org.webrtc.RtpReceiver) {}
-        override fun onTrack(transceiver: org.webrtc.RtpTransceiver) {}
+
+        override fun onRemoveTrack(receiver: org.webrtc.RtpReceiver) {
+            val track = receiver.track() ?: return
+            if (track is VideoTrack) {
+                _remoteVideoTracks.value = _remoteVideoTracks.value.filter { it.id() != track.id() }
+            }
+        }
+
+        override fun onTrack(transceiver: org.webrtc.RtpTransceiver) {
+            val track = transceiver.receiver.track() ?: return
+            if (transceiver.direction != org.webrtc.RtpTransceiver.RtpTransceiverDirection.SEND_ONLY &&
+                track is VideoTrack &&
+                _remoteVideoTracks.value.none { it.id() == track.id() }) {
+                _remoteVideoTracks.value += track
+            }
+        }
     }
 }

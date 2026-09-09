@@ -62,6 +62,19 @@ struct MeetingView: View {
                     }
                 }
             }
+
+            Section("Remote video") {
+                if manager.remoteVideoTracks.isEmpty {
+                    Text("No remote video")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(manager.remoteVideoTracks, id: \.trackId) { track in
+                        RemoteVideoView(track: track)
+                            .frame(height: 200)
+                            .cornerRadius(12)
+                    }
+                }
+            }
         }
         .navigationTitle("Meeting")
     }
