@@ -32,6 +32,8 @@ use rtc::shared::{TaggedBytesMut, TransportContext, TransportProtocol};
 use rtc_interceptor::Interceptor;
 use rtp::Packet as RtpPacket;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, oneshot};
@@ -41,6 +43,54 @@ use tracing::{info, warn};
 use crate::{
     recording, validate_display_name, verify_sfu_token, Event, PeerId, RoomId, SharedState, Signal,
 };
+
+/// Metrics counters for the `rtc` media path.
+#[derive(Default, Clone)]
+pub struct RtcMetrics {
+    pub packets_forwarded: Arc<AtomicU64>,
+    pub bytes_forwarded: Arc<AtomicU64>,
+    pub packets_dropped: Arc<AtomicU64>,
+    pub feedback_forwarded: Arc<AtomicU64>,
+    pub ice_failures: Arc<AtomicU64>,
+}
+
+impl RtcMetrics {
+    pub fn inc_forwarded(&self, bytes: u64) {
+        self.packets_forwarded.fetch_add(1, Ordering::Relaxed);
+        self.bytes_forwarded.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    pub fn inc_dropped(&self, count: u64) {
+        self.packets_dropped.fetch_add(count, Ordering::Relaxed);
+    }
+
+    pub fn inc_feedback(&self, count: u64) {
+        self.feedback_forwarded.fetch_add(count, Ordering::Relaxed);
+    }
+
+    pub fn inc_ice_failure(&self) {
+        self.ice_failures.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+fn rtc_ice_servers() -> Vec<RTCIceServer> {
+    let configs = crate::ice_server_configs();
+    if configs.is_empty() {
+        return vec![RTCIceServer {
+            urls: vec!["stun:stun.l.google.com:19302".to_string()],
+            ..Default::default()
+        }];
+    }
+
+    configs
+        .into_iter()
+        .map(|c| RTCIceServer {
+            urls: c.urls,
+            username: c.username.unwrap_or_default(),
+            credential: c.credential.unwrap_or_default(),
+        })
+        .collect()
+}
 
 /// RTP packet plus the sender ID and resolved codec on the subscriber peer
 /// that should transmit it.
@@ -146,10 +196,7 @@ impl RtcPeer {
         let mut pc: RTCPeerConnection<_> = RTCPeerConnectionBuilder::new()
             .with_configuration(
                 RTCConfigurationBuilder::new()
-                    .with_ice_servers(vec![RTCIceServer {
-                        urls: vec!["stun:stun.l.google.com:19302".to_string()],
-                        ..Default::default()
-                    }])
+                    .with_ice_servers(rtc_ice_servers())
                     .build(),
             )
             .with_media_engine(media_engine)
@@ -193,7 +240,11 @@ impl RtcPeer {
         })?;
 
         let (cmd_tx, cmd_rx) = mpsc::channel::<RtcCommand>(32);
-        let (rtp_tx, rtp_rx) = mpsc::channel::<RtpForward>(128);
+        let (rtp_tx, rtp_rx) = mpsc::channel::<RtpForward>(crate::forward_queue_capacity());
+        let metrics = {
+            let s = state.read().await;
+            (*s.rtc_metrics).clone()
+        };
         let _ = spawn_network_task(
             peer_id.to_string(),
             pc,
@@ -205,6 +256,7 @@ impl RtcPeer {
             room_id,
             rtp_tx,
             rtp_rx,
+            metrics,
         );
 
         Ok((Self { cmd_tx }, local_addr))
@@ -295,11 +347,15 @@ impl RtcPeer {
 }
 
 fn is_feedback_packet(p: &dyn rtcp::Packet) -> bool {
-    use rtcp::header::{PacketType, FORMAT_FIR, FORMAT_PLI};
+    use rtcp::header::{PacketType, FORMAT_FIR, FORMAT_PLI, FORMAT_RRR, FORMAT_TLN};
     matches!(
         p.header().packet_type,
         PacketType::PayloadSpecificFeedback
             if p.header().count == FORMAT_PLI || p.header().count == FORMAT_FIR
+    ) || matches!(
+        p.header().packet_type,
+        PacketType::TransportSpecificFeedback
+            if p.header().count == FORMAT_TLN || p.header().count == FORMAT_RRR
     )
 }
 
@@ -342,6 +398,7 @@ fn spawn_network_task<I>(
     room_id: RoomId,
     rtp_tx: mpsc::Sender<RtpForward>,
     mut rtp_rx: mpsc::Receiver<RtpForward>,
+    metrics: RtcMetrics,
 ) -> JoinHandle<()>
 where
     I: Interceptor + Send + 'static,
@@ -368,12 +425,14 @@ where
                     RTCPeerConnectionEvent::OnIceConnectionStateChangeEvent(state) => {
                         info!("Rtc {} ICE state: {:?}", peer_id, state);
                         if state == RTCIceConnectionState::Failed {
+                            metrics.inc_ice_failure();
                             return;
                         }
                     }
                     RTCPeerConnectionEvent::OnConnectionStateChangeEvent(state) => {
                         info!("Rtc {} connection state: {:?}", peer_id, state);
                         if state == RTCPeerConnectionState::Failed {
+                            metrics.inc_ice_failure();
                             return;
                         }
                     }
@@ -583,13 +642,17 @@ where
                             }
                         };
 
+                        let packet_bytes = rtp_packet.payload.len() as u64 + 12;
                         for fwd in &forwarders {
                             let fwd_msg = RtpForward {
                                 sender_id: fwd.sender_id,
                                 packet: rtp_packet.clone(),
                                 codec: fwd_codec.clone(),
                             };
-                            if let Err(_) = fwd.tx.try_send(fwd_msg) {
+                            if fwd.tx.try_send(fwd_msg).is_ok() {
+                                metrics.inc_forwarded(packet_bytes);
+                            } else {
+                                metrics.inc_dropped(1);
                                 warn!(
                                     "Rtc {} forward queue full for track {} to {:?}",
                                     peer_id, track_id, fwd.sender_id
@@ -631,6 +694,7 @@ where
                                     .cloned()
                                     .collect();
                                 if !feedback.is_empty() {
+                                    metrics.inc_feedback(feedback.len() as u64);
                                     if let Err(e) = publisher_peer
                                         .write_receiver_rtcp(receiver_id, feedback)
                                         .await
@@ -1184,7 +1248,18 @@ pub async fn process_rtc_signal(
             validate_display_name(&display_name)?;
 
             let tx = {
-                let s = state.read().await;
+                let s = state.write().await;
+                if !s.rooms.contains_key(&room_id) && s.rooms.len() >= crate::max_rooms() {
+                    return Err(anyhow!("global room limit reached"));
+                }
+                let participant_count = s
+                    .rooms
+                    .get(&room_id)
+                    .map(|r| r.participants.len())
+                    .unwrap_or(0);
+                if participant_count >= crate::max_participants_per_room() {
+                    return Err(anyhow!("room participant limit reached"));
+                }
                 s.peers
                     .get(peer_id)
                     .ok_or_else(|| anyhow!("unknown peer {} on join", peer_id))?

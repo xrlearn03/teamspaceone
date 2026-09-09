@@ -29,26 +29,26 @@ type HmacSha256 = Hmac<Sha256>;
 const MAX_DISPLAY_NAME_CHARS: usize = 128;
 const MAX_SDP_BYTES: usize = 65536;
 const MAX_CANDIDATE_BYTES: usize = 65536;
-use webrtc::api::setting_engine::SettingEngine;
 use interceptor::nack::generator::GeneratorBuilder;
 use interceptor::nack::responder::ResponderBuilder;
 use interceptor::registry::Registry;
-use webrtc::api::{API, APIBuilder};
+use webrtc::api::setting_engine::SettingEngine;
+use webrtc::api::{APIBuilder, API};
 use webrtc::ice::udp_mux::{UDPMuxDefault, UDPMuxParams};
 use webrtc::ice::udp_network::UDPNetwork;
 #[cfg(not(feature = "rtc"))]
 use webrtc::ice_transport::ice_candidate::{RTCIceCandidate, RTCIceCandidateInit};
 use webrtc::ice_transport::ice_candidate_type::RTCIceCandidateType;
-use webrtc::rtcp::packet::Packet as RtcpPacket;
-use webrtc::rtcp::payload_feedbacks::full_intra_request::FullIntraRequest;
-use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
-use webrtc::rtp::packet::Packet as RtpPacket;
 use webrtc::ice_transport::ice_server::RTCIceServer;
 #[cfg(not(feature = "rtc"))]
 use webrtc::peer_connection::configuration::RTCConfiguration;
 #[cfg(not(feature = "rtc"))]
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use webrtc::peer_connection::RTCPeerConnection;
+use webrtc::rtcp::packet::Packet as RtcpPacket;
+use webrtc::rtcp::payload_feedbacks::full_intra_request::FullIntraRequest;
+use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
+use webrtc::rtp::packet::Packet as RtpPacket;
 use webrtc::rtp_transceiver::rtp_codec::RTPCodecType;
 #[cfg(not(feature = "rtc"))]
 use webrtc::rtp_transceiver::rtp_receiver::RTCRtpReceiver;
@@ -181,6 +181,8 @@ struct State {
     rtc_peers: HashMap<PeerId, rtc_peer::RtcPeer>,
     #[cfg(feature = "rtc")]
     rtc_tracks: HashMap<String, rtc_peer::RtcRoomTrack>,
+    #[cfg(feature = "rtc")]
+    rtc_metrics: Arc<rtc_peer::RtcMetrics>,
 }
 
 impl State {
@@ -193,6 +195,8 @@ impl State {
             rtc_peers: HashMap::new(),
             #[cfg(feature = "rtc")]
             rtc_tracks: HashMap::new(),
+            #[cfg(feature = "rtc")]
+            rtc_metrics: Arc::new(rtc_peer::RtcMetrics::default()),
         }
     }
 
@@ -214,9 +218,8 @@ type SharedState = Arc<RwLock<State>>;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let token_secret = std::env::var("SFU_TOKEN_SECRET").map_err(|_| {
-        anyhow!("SFU_TOKEN_SECRET environment variable is required")
-    })?;
+    let token_secret = std::env::var("SFU_TOKEN_SECRET")
+        .map_err(|_| anyhow!("SFU_TOKEN_SECRET environment variable is required"))?;
 
     let mut setting_engine = SettingEngine::default();
 
@@ -240,9 +243,9 @@ async fn main() -> Result<()> {
     if let Ok(mux_port) = std::env::var("SFU_UDP_MUX_PORT") {
         let mux_port: u16 = mux_port.parse()?;
         let socket = UdpSocket::bind(("0.0.0.0", mux_port)).await?;
-        setting_engine.set_udp_network(UDPNetwork::Muxed(UDPMuxDefault::new(
-            UDPMuxParams::new(socket),
-        )));
+        setting_engine.set_udp_network(UDPNetwork::Muxed(UDPMuxDefault::new(UDPMuxParams::new(
+            socket,
+        ))));
         info!("ICE UDP mux listening on 0.0.0.0:{}", mux_port);
     }
 
@@ -372,7 +375,9 @@ async fn handle_peer(stream: TcpStream, state: SharedState, token_secret: String
                 }
                 match serde_json::from_str::<Signal>(&text) {
                     Ok(signal) => {
-                        if let Err(e) = process_signal(&peer_id, signal, &state, &token_secret).await {
+                        if let Err(e) =
+                            process_signal(&peer_id, signal, &state, &token_secret).await
+                        {
                             warn!("Signal processing failed for {}: {}", peer_id, e);
                             let _ = tx.send(Event::Error {
                                 message: e.to_string(),
@@ -437,7 +442,12 @@ fn hex_value(c: u8) -> Option<u8> {
     }
 }
 
-fn verify_sfu_token(token: &str, expected_room: &str, expected_user: &Option<String>, token_secret: &str) -> Result<()> {
+fn verify_sfu_token(
+    token: &str,
+    expected_room: &str,
+    expected_user: &Option<String>,
+    token_secret: &str,
+) -> Result<()> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 4 {
         return Err(anyhow!("invalid token format"));
@@ -453,7 +463,9 @@ fn verify_sfu_token(token: &str, expected_room: &str, expected_user: &Option<Str
     } else {
         Some(decode_base64url(user_b64)?)
     };
-    let exp: u64 = exp_str.parse().map_err(|_| anyhow!("invalid token expiration"))?;
+    let exp: u64 = exp_str
+        .parse()
+        .map_err(|_| anyhow!("invalid token expiration"))?;
     if exp < now_unix() {
         return Err(anyhow!("token expired"));
     }
@@ -470,7 +482,8 @@ fn verify_sfu_token(token: &str, expected_room: &str, expected_user: &Option<Str
         .map_err(|_| anyhow!("invalid hmac key"))?;
     mac.update(base.as_bytes());
     let expected = decode_hex(sig_hex).ok_or_else(|| anyhow!("invalid signature encoding"))?;
-    mac.verify_slice(&expected).map_err(|_| anyhow!("invalid token signature"))?;
+    mac.verify_slice(&expected)
+        .map_err(|_| anyhow!("invalid token signature"))?;
 
     Ok(())
 }
@@ -496,7 +509,7 @@ fn validate_candidate(candidate: &str) -> Result<()> {
     Ok(())
 }
 
-mod string_or_vec {
+pub(crate) mod string_or_vec {
     use serde::Deserializer;
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
@@ -532,21 +545,39 @@ mod string_or_vec {
 }
 
 #[derive(Deserialize)]
-struct IceServerConfig {
+pub(crate) struct IceServerConfig {
     #[serde(with = "string_or_vec")]
-    urls: Vec<String>,
-    username: Option<String>,
-    credential: Option<String>,
+    pub(crate) urls: Vec<String>,
+    pub(crate) username: Option<String>,
+    pub(crate) credential: Option<String>,
 }
 
-fn max_participants_per_room() -> usize {
+pub(crate) fn ice_server_configs() -> Vec<IceServerConfig> {
+    let raw = match std::env::var("SFU_ICE_SERVERS") {
+        Ok(v) if !v.is_empty() => v,
+        _ => return Vec::new(),
+    };
+
+    match serde_json::from_str::<Vec<IceServerConfig>>(&raw) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(
+                "SFU_ICE_SERVERS is not valid JSON ({}); using default ICE servers",
+                e
+            );
+            Vec::new()
+        }
+    }
+}
+
+pub(crate) fn max_participants_per_room() -> usize {
     std::env::var("SFU_MAX_PARTICIPANTS_PER_ROOM")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(12)
 }
 
-fn max_rooms() -> usize {
+pub(crate) fn max_rooms() -> usize {
     std::env::var("SFU_MAX_ROOMS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -576,7 +607,7 @@ fn max_signals_per_second() -> u32 {
         .unwrap_or(50)
 }
 
-fn forward_queue_capacity() -> usize {
+pub(crate) fn forward_queue_capacity() -> usize {
     std::env::var("SFU_FORWARD_QUEUE_CAPACITY")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -584,26 +615,12 @@ fn forward_queue_capacity() -> usize {
 }
 
 fn ice_servers() -> Vec<RTCIceServer> {
-    let default = RTCIceServer {
-        urls: vec!["stun:stun.l.google.com:19302".to_owned()],
-        ..Default::default()
-    };
-
-    let raw = match std::env::var("SFU_ICE_SERVERS") {
-        Ok(v) if !v.is_empty() => v,
-        _ => return vec![default],
-    };
-
-    let configs: Vec<IceServerConfig> = match serde_json::from_str(&raw) {
-        Ok(c) => c,
-        Err(e) => {
-            warn!("SFU_ICE_SERVERS is not valid JSON ({}); using default STUN server", e);
-            return vec![default];
-        }
-    };
-
+    let configs = ice_server_configs();
     if configs.is_empty() {
-        return vec![default];
+        return vec![RTCIceServer {
+            urls: vec!["stun:stun.l.google.com:19302".to_owned()],
+            ..Default::default()
+        }];
     }
 
     configs
@@ -617,13 +634,23 @@ fn ice_servers() -> Vec<RTCIceServer> {
         .collect()
 }
 
-async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, token_secret: &str) -> Result<()> {
+async fn process_signal(
+    peer_id: &str,
+    signal: Signal,
+    state: &SharedState,
+    token_secret: &str,
+) -> Result<()> {
     #[cfg(feature = "rtc")]
     return rtc_peer::process_rtc_signal(peer_id, signal, state, token_secret).await;
 
     #[cfg(not(feature = "rtc"))]
     match signal {
-        Signal::Join { room_id, display_name, user_id, token } => {
+        Signal::Join {
+            room_id,
+            display_name,
+            user_id,
+            token,
+        } => {
             let _ = leave_room(peer_id, state).await;
             verify_sfu_token(&token, &room_id, &user_id, token_secret)?;
             validate_display_name(&display_name)?;
@@ -774,8 +801,7 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
                 });
                 return Err(anyhow!("room is full"));
             }
-            room.participants
-                .insert(peer_id.to_string(), joined_peer);
+            room.participants.insert(peer_id.to_string(), joined_peer);
 
             let others: Vec<ParticipantInfo> = room
                 .participants
@@ -821,7 +847,9 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
                     .ok_or(anyhow!("peer not found: {}", peer_id))?;
                 (
                     peer.tx.clone(),
-                    peer.pc.clone().ok_or(anyhow!("peer has no connection: {}", peer_id))?,
+                    peer.pc
+                        .clone()
+                        .ok_or(anyhow!("peer has no connection: {}", peer_id))?,
                 )
             };
             let offer = RTCSessionDescription::offer(sdp)?;
@@ -836,8 +864,14 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
         Signal::Offer { target, sdp } => {
             validate_sdp(&sdp)?;
             let s = state.read().await;
-            let sender = s.peers.get(peer_id).ok_or(anyhow!("peer not found: {}", peer_id))?;
-            let sender_room = sender.room_id.as_ref().ok_or(anyhow!("peer not in a room"))?;
+            let sender = s
+                .peers
+                .get(peer_id)
+                .ok_or(anyhow!("peer not found: {}", peer_id))?;
+            let sender_room = sender
+                .room_id
+                .as_ref()
+                .ok_or(anyhow!("peer not in a room"))?;
             if let Some(target_peer) = s.peers.get(&target) {
                 if target_peer.room_id.as_ref() != Some(sender_room) {
                     let _ = sender.tx.send(Event::Error {
@@ -873,8 +907,14 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
         Signal::Answer { target, sdp } => {
             validate_sdp(&sdp)?;
             let s = state.read().await;
-            let sender = s.peers.get(peer_id).ok_or(anyhow!("peer not found: {}", peer_id))?;
-            let sender_room = sender.room_id.as_ref().ok_or(anyhow!("peer not in a room"))?;
+            let sender = s
+                .peers
+                .get(peer_id)
+                .ok_or(anyhow!("peer not found: {}", peer_id))?;
+            let sender_room = sender
+                .room_id
+                .as_ref()
+                .ok_or(anyhow!("peer not in a room"))?;
             if let Some(target_peer) = s.peers.get(&target) {
                 if target_peer.room_id.as_ref() != Some(sender_room) {
                     let _ = sender.tx.send(Event::Error {
@@ -927,8 +967,14 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
         } => {
             validate_candidate(&candidate)?;
             let s = state.read().await;
-            let sender = s.peers.get(peer_id).ok_or(anyhow!("peer not found: {}", peer_id))?;
-            let sender_room = sender.room_id.as_ref().ok_or(anyhow!("peer not in a room"))?;
+            let sender = s
+                .peers
+                .get(peer_id)
+                .ok_or(anyhow!("peer not found: {}", peer_id))?;
+            let sender_room = sender
+                .room_id
+                .as_ref()
+                .ok_or(anyhow!("peer not in a room"))?;
             if let Some(target_peer) = s.peers.get(&target) {
                 if target_peer.room_id.as_ref() != Some(sender_room) {
                     let _ = sender.tx.send(Event::Error {
@@ -1173,12 +1219,7 @@ async fn add_track_forwarder(
 /// Removes a published track from a room and detaches its forwarding senders
 /// from every remaining subscriber (which triggers renegotiation, so clients
 /// drop the removed track).
-async fn remove_room_track(
-    state: &SharedState,
-    room_id: &str,
-    publisher: &str,
-    track_id: &str,
-) {
+async fn remove_room_track(state: &SharedState, room_id: &str, publisher: &str, track_id: &str) {
     let (removals, tasks) = {
         let mut s = state.write().await;
         let Some(room) = s.rooms.get_mut(room_id) else {
@@ -1198,11 +1239,7 @@ async fn remove_room_track(
         for (id, f) in forwarders.drain() {
             f.task.abort();
             tasks.push(f.task);
-            if let Some(pc) = room
-                .participants
-                .get(&id)
-                .and_then(|p| p.pc.clone())
-            {
+            if let Some(pc) = room.participants.get(&id).and_then(|p| p.pc.clone()) {
                 removals.push((pc, f.sender));
             }
         }
@@ -1245,14 +1282,11 @@ async fn leave_room(peer_id: &str, state: &SharedState) -> Option<RoomId> {
                         true
                     }
                 });
-                let mut removals: Vec<(Arc<RTCPeerConnection>, Arc<RTCRtpSender>)> =
-                    Vec::new();
+                let mut removals: Vec<(Arc<RTCPeerConnection>, Arc<RTCRtpSender>)> = Vec::new();
                 for rt in removed_tracks {
                     let forwarders = rt.forwarders.lock().await;
                     for (id, f) in forwarders.iter() {
-                        if let Some(pc) =
-                            room.participants.get(id).and_then(|p| p.pc.clone())
-                        {
+                        if let Some(pc) = room.participants.get(id).and_then(|p| p.pc.clone()) {
                             removals.push((pc, f.sender.clone()));
                         }
                     }

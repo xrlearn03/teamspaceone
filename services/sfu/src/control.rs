@@ -20,9 +20,9 @@ use tracing::{info, warn};
 use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
 
 #[cfg(feature = "rtc")]
-use rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication as RtcpPictureLossIndication;
-#[cfg(feature = "rtc")]
 use rtc::rtp_transceiver::rtp_sender::RtpCodecKind as RtcCodecKind;
+#[cfg(feature = "rtc")]
+use rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication as RtcpPictureLossIndication;
 
 use crate::composit;
 use crate::recording;
@@ -56,7 +56,9 @@ fn verify_control_token(headers: &HeaderMap, room: &str, secret: &str) -> Result
     if decode_base64url(parts[1])? != room {
         return Err(anyhow!("control token room mismatch"));
     }
-    let exp: u64 = parts[2].parse().map_err(|_| anyhow!("invalid control token expiry"))?;
+    let exp: u64 = parts[2]
+        .parse()
+        .map_err(|_| anyhow!("invalid control token expiry"))?;
     if exp < now_unix() {
         return Err(anyhow!("control token expired"));
     }
@@ -267,6 +269,20 @@ async fn metrics(State(app): State<ControlState>) -> Response {
     {
         body["rtc_peers"] = json!(s.rtc_peers.len());
         body["rtc_tracks"] = json!(s.rtc_tracks.len());
+        let rtc_forwarders: usize = s.rtc_tracks.values().map(|t| t.forwarders.len()).sum();
+        body["rtc_forwarders"] = json!(rtc_forwarders);
+        let m = &s.rtc_metrics;
+        body["rtc_packets_forwarded"] = json!(m
+            .packets_forwarded
+            .load(std::sync::atomic::Ordering::Relaxed));
+        body["rtc_bytes_forwarded"] =
+            json!(m.bytes_forwarded.load(std::sync::atomic::Ordering::Relaxed));
+        body["rtc_packets_dropped"] =
+            json!(m.packets_dropped.load(std::sync::atomic::Ordering::Relaxed));
+        body["rtc_feedback_forwarded"] = json!(m
+            .feedback_forwarded
+            .load(std::sync::atomic::Ordering::Relaxed));
+        body["rtc_ice_failures"] = json!(m.ice_failures.load(std::sync::atomic::Ordering::Relaxed));
     }
 
     Json(body).into_response()

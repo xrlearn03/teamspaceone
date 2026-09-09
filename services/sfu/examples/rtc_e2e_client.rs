@@ -20,9 +20,11 @@ use rtc::peer_connection::{RTCPeerConnection, RTCPeerConnectionBuilder};
 use rtc::rtp_transceiver::rtp_sender::{
     RTCPFeedback, RTCRtpCodec, RTCRtpCodingParameters, RTCRtpEncodingParameters, RtpCodecKind,
 };
-use rtc::rtp_transceiver::RTCRtpSenderId;
+use rtc::rtp_transceiver::{RTCRtpReceiverId, RTCRtpSenderId};
 use rtc::sansio::Protocol;
 use rtc::shared::{TaggedBytesMut, TransportContext, TransportProtocol};
+use rtcp::payload_feedbacks::full_intra_request::{FirEntry, FullIntraRequest};
+use rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
 use rtp::header::Header as RtpHeader;
 use rtp::Packet as RtpPacket;
 use serde_json::Value;
@@ -205,6 +207,7 @@ fn build_audio_track(track_id: &str, ssrc: u32) -> MediaStreamTrack {
 struct Stats {
     sent: usize,
     received: usize,
+    dropped: usize,
     last_seq: Option<u16>,
 }
 
@@ -214,6 +217,7 @@ fn handle_event<I>(
     pending_local_offer: &mut bool,
     ignore_next_negotiation: &mut bool,
     connected: &mut bool,
+    feedback: &mut Option<(RTCRtpReceiverId, u32)>,
 ) -> Result<Vec<String>>
 where
     I: rtc_interceptor::Interceptor,
@@ -268,6 +272,12 @@ where
                 "track opened: track_id={}, receiver_id={:?}",
                 init.track_id, init.receiver_id
             );
+
+            if let Some(receiver) = pc.rtp_receiver(init.receiver_id) {
+                let remote_ssrc = receiver.track().ssrcs().next().unwrap_or(0);
+                *feedback = Some((init.receiver_id, remote_ssrc));
+                info!("pending PLI/FIR for remote ssrc {}", remote_ssrc);
+            }
         }
         RTCPeerConnectionEvent::OnTrack(RTCTrackEvent::OnClose(track_id)) => {
             info!("track closed: {}", track_id);
@@ -399,21 +409,16 @@ async fn run_client(
 ) -> Result<()> {
     let token = make_sfu_token(&room_id, &user_id, &token_secret);
 
-    // Build a local RTC peer connection with default codecs and a STUN server.
-    let (mut pc, socket, local_addr) = build_pc().await?;
-    info!("{} local UDP address: {}", user_id, local_addr);
-
     let (ws_stream, _) = connect_async(&ws_url).await?;
     let (mut ws_out, mut ws_in) = ws_stream.split();
 
-    ws_out
-        .send(Message::Text(join_signal(
-            &room_id,
-            &display_name,
-            &user_id,
-            &token,
-        )))
-        .await?;
+    let join = join_signal(&room_id, &display_name, &user_id, &token);
+    ws_out.send(Message::Text(join)).await?;
+
+    // Build the RTC peer after the WebSocket is up; the SFU will send
+    // `connected` and then the offer/answer exchange.
+    let (mut pc, socket, local_addr) = build_pc().await?;
+    info!("{} local UDP address: {}", user_id, local_addr);
 
     let test_timeout = tokio::time::sleep(duration);
     tokio::pin!(test_timeout);
@@ -427,11 +432,30 @@ async fn run_client(
     let mut seq = 1u16;
     let mut ts = 0u32;
     let mut connected = false;
+    let mut feedback: Option<(RTCRtpReceiverId, u32)> = None;
+    let mut feedback_sent = false;
     let mut rtp_interval = tokio::time::interval(Duration::from_millis(20));
     rtp_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    let drop_rate: f64 = std::env::var("DROP_RATE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.0f64)
+        .clamp(0.0f64, 1.0f64);
+    let dropping = drop_rate > 0.0 && user_id == "client-b";
+    let mut write_count = 0usize;
+
     loop {
         while let Some(out) = pc.poll_write() {
+            let len = out.message.len();
+            let first_bytes: Vec<u8> = out.message.iter().take(8).copied().collect();
+            if write_count < 5 || (len < 80 && write_count % 20 == 0) {
+                info!(
+                    "{} poll_write #{} -> {:?} ({} bytes) bytes={:?}",
+                    user_id, write_count, out.transport.peer_addr, len, first_bytes
+                );
+            }
+            write_count += 1;
             if let Err(e) = socket.send_to(&out.message, out.transport.peer_addr).await {
                 warn!("{} UDP send failed: {:?}", user_id, e);
             }
@@ -444,6 +468,7 @@ async fn run_client(
                 &mut pending_local_offer,
                 &mut ignore_next_negotiation,
                 &mut connected,
+                &mut feedback,
             ) {
                 Ok(msgs) => {
                     for m in msgs {
@@ -467,6 +492,37 @@ async fn run_client(
                             "{} received {} RTP packets on {}",
                             user_id, s.received, track_id
                         );
+                    }
+                    drop(s);
+
+                    // Send PLI/FIR once the first packets start arriving and the
+                    // SRTP context is definitely ready.
+                    if !feedback_sent {
+                        if let Some((receiver_id, remote_ssrc)) = feedback {
+                            if let Some(mut receiver) = pc.rtp_receiver(receiver_id) {
+                                let pli = Box::new(PictureLossIndication {
+                                    sender_ssrc: 0,
+                                    media_ssrc: remote_ssrc,
+                                });
+                                let fir = Box::new(FullIntraRequest {
+                                    sender_ssrc: 0,
+                                    media_ssrc: remote_ssrc,
+                                    fir: vec![FirEntry {
+                                        ssrc: remote_ssrc,
+                                        sequence_number: 1,
+                                    }],
+                                });
+                                if let Err(e) = receiver.write_rtcp(vec![pli, fir]) {
+                                    warn!("{} failed to write RTCP feedback: {:?}", user_id, e);
+                                } else {
+                                    info!(
+                                        "{} sent PLI/FIR for remote ssrc {}",
+                                        user_id, remote_ssrc
+                                    );
+                                    feedback_sent = true;
+                                }
+                            }
+                        }
                     }
                 }
                 RTCMessage::RtcpPacket(track_id, pkts) => {
@@ -495,6 +551,14 @@ async fn run_client(
             result = socket.recv_from(&mut buf) => {
                 match result {
                     Ok((n, peer_addr)) => {
+                        if dropping && rand::random::<f64>() < drop_rate {
+                            let mut s = stats.lock().await;
+                            s.dropped += 1;
+                            if s.dropped % 10 == 0 {
+                                info!("{} dropped {} incoming packets", user_id, s.dropped);
+                            }
+                            continue;
+                        }
                         if let Err(e) = pc.handle_read(TaggedBytesMut {
                             now: Instant::now(),
                             transport: TransportContext {
@@ -588,7 +652,9 @@ async fn run_client(
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let ws_url = std::env::var("SFU_URL").unwrap_or_else(|_| "ws://127.0.0.1:8443".to_string());
+    let sfu_port = std::env::var("SFU_PORT").unwrap_or_else(|_| "18443".to_string());
+    let ws_url =
+        std::env::var("SFU_URL").unwrap_or_else(|_| format!("ws://127.0.0.1:{}", sfu_port));
     let token_secret = std::env::var("SFU_TOKEN_SECRET").unwrap_or_else(|_| "dev".to_string());
     let room_id = std::env::var("ROOM_ID").unwrap_or_else(|_| "e2e_room".to_string());
     let duration: u64 = std::env::var("DURATION_SECS")
@@ -599,11 +665,13 @@ async fn main() -> Result<()> {
     let stats_a = Arc::new(Mutex::new(Stats {
         sent: 0,
         received: 0,
+        dropped: 0,
         last_seq: None,
     }));
     let stats_b = Arc::new(Mutex::new(Stats {
         sent: 0,
         received: 0,
+        dropped: 0,
         last_seq: None,
     }));
 
@@ -633,8 +701,14 @@ async fn main() -> Result<()> {
 
     let s_a = stats_a.lock().await;
     let s_b = stats_b.lock().await;
-    info!("client-a sent={}, received={}", s_a.sent, s_a.received);
-    info!("client-b sent={}, received={}", s_b.sent, s_b.received);
+    info!(
+        "client-a sent={}, received={}, dropped={}",
+        s_a.sent, s_a.received, s_a.dropped
+    );
+    info!(
+        "client-b sent={}, received={}, dropped={}",
+        s_b.sent, s_b.received, s_b.dropped
+    );
 
     res_a?;
     res_b?;
