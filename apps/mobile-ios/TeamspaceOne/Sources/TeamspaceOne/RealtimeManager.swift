@@ -22,7 +22,7 @@ class RealtimeManager: ObservableObject {
             .reconnects(true)
         ]
 
-        manager = SocketManager(socketURL: URL(string: "http://localhost:3005")!, config: config)
+        manager = SocketManager(socketURL: Config.realtimeURL, config: config)
         socket = manager?.socket(forNamespace: "/realtime")
 
         socket?.on(clientEvent: .connect) { [weak self] _, _ in

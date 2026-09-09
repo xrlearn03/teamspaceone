@@ -22,10 +22,7 @@ final class SfuManager: ObservableObject, @unchecked Sendable {
     func connect(roomId: String, displayName: String, token: String, userId: String?) {
         disconnect()
 
-        guard let url = URL(string: "ws://127.0.0.1:8443") else {
-            errorMessage = "Invalid SFU URL"
-            return
-        }
+        let url = Config.sfuURL
 
         webSocketTask = URLSession.shared.webSocketTask(with: url)
         webSocketTask?.resume()

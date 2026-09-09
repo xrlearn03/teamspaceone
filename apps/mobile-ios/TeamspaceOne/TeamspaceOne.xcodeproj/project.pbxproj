@@ -7,9 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		09251D0FA6AA69B5125CED62 /* MeetingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9174E36E118D82E8D36CF1C7 /* MeetingView.swift */; };
 		12DB1A85ECE24CEC95F39913 /* WebRTCManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDB83F65F7AD67066EA76DDB /* WebRTCManager.swift */; };
 		134A6C8B37004CEE95DC2135 /* ChannelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C2ACB266A1318A0933AF708 /* ChannelDetailView.swift */; };
 		3334EF4DE537881589D48110 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 57A07D5FB7B7490FA6AB16CA /* WebRTC */; };
+		48E6808DFE8058FDD11A7481 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1070C81BB67A0053106E80BE /* Config.swift */; };
 		4B2A6571E53255FD0F9848C1 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0B5415019CD77F143C5813 /* APIClient.swift */; };
 		5D01BC66615C2B47E9B17718 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10C97FFB684334EDD7375160 /* AuthManager.swift */; };
 		5E36F8CA8B5C58AFAB3571CF /* RealtimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94C8B204934C3B67DD12FA93 /* RealtimeManager.swift */; };
@@ -25,12 +27,14 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		1070C81BB67A0053106E80BE /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		10C97FFB684334EDD7375160 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		2BF575E72C94FB842A0E9591 /* TeamspaceOneApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamspaceOneApp.swift; sourceTree = "<group>"; };
 		5F4714A8734BC283BB87D1D4 /* ChannelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelsView.swift; sourceTree = "<group>"; };
 		6B11CDCDA38D1D65403DB206 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		7A0B5415019CD77F143C5813 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		8C2ACB266A1318A0933AF708 /* ChannelDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelDetailView.swift; sourceTree = "<group>"; };
+		9174E36E118D82E8D36CF1C7 /* MeetingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingView.swift; sourceTree = "<group>"; };
 		94C8B204934C3B67DD12FA93 /* RealtimeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeManager.swift; sourceTree = "<group>"; };
 		9ADA93918E0CADEDAF7E8CAA /* ProjectDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDetailView.swift; sourceTree = "<group>"; };
 		A8A62EBE1E1B53B5C13BFDE3 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
@@ -87,8 +91,10 @@
 			children = (
 				8C2ACB266A1318A0933AF708 /* ChannelDetailView.swift */,
 				5F4714A8734BC283BB87D1D4 /* ChannelsView.swift */,
+				1070C81BB67A0053106E80BE /* Config.swift */,
 				6B11CDCDA38D1D65403DB206 /* ContentView.swift */,
 				A8A62EBE1E1B53B5C13BFDE3 /* HomeView.swift */,
+				9174E36E118D82E8D36CF1C7 /* MeetingView.swift */,
 				9ADA93918E0CADEDAF7E8CAA /* ProjectDetailView.swift */,
 				B04DD40EEF005100E25351AB /* ProjectsView.swift */,
 				94C8B204934C3B67DD12FA93 /* RealtimeManager.swift */,
@@ -174,8 +180,10 @@
 				5D01BC66615C2B47E9B17718 /* AuthManager.swift in Sources */,
 				134A6C8B37004CEE95DC2135 /* ChannelDetailView.swift in Sources */,
 				A2064DC42CA85F9E3D02DD05 /* ChannelsView.swift in Sources */,
+				48E6808DFE8058FDD11A7481 /* Config.swift in Sources */,
 				98FBEFF2706EAA97CBCFA1ED /* ContentView.swift in Sources */,
 				F72A59D42ABC4FA293FAFA7A /* HomeView.swift in Sources */,
+				09251D0FA6AA69B5125CED62 /* MeetingView.swift in Sources */,
 				CF6ED27190939C754DABC73C /* Models.swift in Sources */,
 				7AF6BD4987638647B9993612 /* ProjectDetailView.swift in Sources */,
 				5ECE43B213A3648D9275C17F /* ProjectsView.swift in Sources */,
@@ -241,6 +249,15 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_APIBaseURL = "http://localhost:3000";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Teamspace One needs camera access for video calls.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Teamspace One needs microphone access for voice calls.";
+				INFOPLIST_KEY_RealtimeURL = "http://localhost:3005";
+				INFOPLIST_KEY_SFUURL = "ws://127.0.0.1:8443";
+				INFOPLIST_KEY_STUNURL = "stun:stun.l.google.com:19302";
+				INFOPLIST_KEY_TURNPassword = "";
+				INFOPLIST_KEY_TURNURL = "";
+				INFOPLIST_KEY_TURNUsername = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -325,6 +342,15 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_APIBaseURL = "http://localhost:3000";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Teamspace One needs camera access for video calls.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Teamspace One needs microphone access for voice calls.";
+				INFOPLIST_KEY_RealtimeURL = "http://localhost:3005";
+				INFOPLIST_KEY_SFUURL = "ws://127.0.0.1:8443";
+				INFOPLIST_KEY_STUNURL = "stun:stun.l.google.com:19302";
+				INFOPLIST_KEY_TURNPassword = "";
+				INFOPLIST_KEY_TURNURL = "";
+				INFOPLIST_KEY_TURNUsername = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

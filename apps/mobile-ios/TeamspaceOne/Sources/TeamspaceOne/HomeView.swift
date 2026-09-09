@@ -49,6 +49,7 @@ struct HomeView: View {
                 Section("Collaboration") {
                     NavigationLink("Channels", destination: ChannelsView())
                     NavigationLink("Projects", destination: ProjectsView())
+                    NavigationLink("Meeting", destination: MeetingView())
                 }
 
                 Section("Realtime") {

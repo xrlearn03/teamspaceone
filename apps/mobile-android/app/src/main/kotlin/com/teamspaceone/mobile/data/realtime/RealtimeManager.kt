@@ -1,6 +1,7 @@
 package com.teamspaceone.mobile.data.realtime
 
 import android.util.Log
+import com.teamspaceone.mobile.BuildConfig
 import com.teamspaceone.mobile.data.remote.AuthManager
 import io.socket.client.IO
 import io.socket.client.Socket
@@ -9,7 +10,7 @@ import java.net.URI
 object RealtimeManager {
     private const val TAG = "RealtimeManager"
     private const val NAMESPACE = "/realtime"
-    private const val BASE_URL = "http://localhost:3005"
+    private const val BASE_URL = BuildConfig.REALTIME_URL
 
     private var socket: Socket? = null
     private val listeners = mutableListOf<(String, Any?) -> Unit>()

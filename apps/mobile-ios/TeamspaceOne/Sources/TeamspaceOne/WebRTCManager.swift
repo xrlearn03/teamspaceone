@@ -7,10 +7,12 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
 
     private var factory: RTCPeerConnectionFactory?
     private var peerConnection: RTCPeerConnection?
+    private var localAudioTrack: RTCAudioTrack?
     private let rtcAudioSession = RTCAudioSession.sharedInstance()
     private let sfu = SfuManager.shared
 
     @Published private(set) var isConnected = false
+    @Published private(set) var isMicEnabled = true
     @Published private(set) var remoteParticipants: [String] = []
     @Published private(set) var errorMessage: String?
 
@@ -31,7 +33,16 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
         }
     }
 
+    func setMicEnabled(_ enabled: Bool) {
+        localAudioTrack?.isEnabled = enabled
+        DispatchQueue.main.async { [weak self] in
+            self?.isMicEnabled = enabled
+        }
+    }
+
     func disconnect() {
+        localAudioTrack = nil
+        isMicEnabled = true
         peerConnection?.close()
         peerConnection = nil
         factory = nil
@@ -44,7 +55,7 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
         factory = RTCPeerConnectionFactory(encoderFactory: encoder, decoderFactory: decoder)
 
         let config = RTCConfiguration()
-        config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"])]
+        config.iceServers = Config.iceServers
         config.sdpSemantics = .unifiedPlan
         config.continualGatheringPolicy = .gatherContinually
 
@@ -73,6 +84,8 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
         let audioConstraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         let audioSource = factory.audioSource(with: audioConstraints)
         let audioTrack = factory.audioTrack(with: audioSource, trackId: "audio0")
+        audioTrack.isEnabled = isMicEnabled
+        localAudioTrack = audioTrack
         peerConnection.add(audioTrack, streamIds: ["stream0"])
     }
 

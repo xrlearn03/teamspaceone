@@ -1,7 +1,7 @@
 import Foundation
 
 enum APIClient {
-    static let baseURL = URL(string: "http://localhost:3000")!
+    static let baseURL = Config.apiBaseURL
 
     @discardableResult
     static func request<T: Decodable & Sendable>(

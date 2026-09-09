@@ -15,8 +15,10 @@ import io.ktor.client.request.header
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
+import com.teamspaceone.mobile.BuildConfig
+
 object APIClient {
-    const val baseUrl = "http://localhost:3000"
+    const val baseUrl = BuildConfig.API_BASE_URL
 
     val http = HttpClient(Android) {
         expectSuccess = true

@@ -37,6 +37,7 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     onChannels: () -> Unit = {},
     onProjects: () -> Unit = {},
+    onMeeting: () -> Unit = {},
     onSignOut: () -> Unit = {}
 ) {
     var isLoading by remember { mutableStateOf(true) }
@@ -145,6 +146,12 @@ fun HomeScreen(
                 item {
                     Button(onClick = onProjects, modifier = Modifier.fillMaxWidth()) {
                         Text("Projects")
+                    }
+                }
+
+                item {
+                    Button(onClick = onMeeting, modifier = Modifier.fillMaxWidth()) {
+                        Text("Meeting")
                     }
                 }
 

@@ -1,6 +1,7 @@
 package com.teamspaceone.mobile.data.sfu
 
 import android.util.Log
+import com.teamspaceone.mobile.BuildConfig
 import com.teamspaceone.mobile.data.remote.APIClient
 import com.teamspaceone.mobile.data.remote.SfuSignal
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
@@ -21,7 +22,7 @@ import kotlinx.serialization.json.put
 
 object SfuManager {
     private const val TAG = "SfuManager"
-    private const val SFU_URL = "ws://127.0.0.1:8443"
+    private const val SFU_URL = BuildConfig.SFU_URL
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var session: DefaultClientWebSocketSession? = null
