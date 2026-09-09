@@ -100,3 +100,17 @@ Semantic tokens live in `apps/desktop/src/styles/index.css`:
 - Frontend permission context: `PermissionBoundary` in `App.tsx` fetches `GET /organisations/:id/me/context` → `PermissionProvider`. Views are gated via `src/lib/view-permissions.ts`; unauthorized views render `screens/access-denied.tsx`.
 - Navigation and dashboard widgets are permission-filtered (`features/dashboard/registry.ts`). Views: `hrms`, `interview`, `admin` added to the `View` union.
 - IMPORTANT: existing orgs/roles/memberships need `db:seed:rbac` (see commands) or users get no permissions.
+
+## SFU tests and validation
+
+- Native `rtc` build: `cd services/sfu && cargo check --features rtc`
+- Legacy build: `cd services/sfu && cargo check`
+- Unit/integration tests: `cd services/sfu && cargo test --features rtc` (also `cargo test` for legacy-path coverage)
+- End-to-end smoke test (two clients via the SFU server):
+  ```
+  SFU_TOKEN_SECRET=dev SFU_PORT=28443 SFU_NAT_1TO1_IPS=127.0.0.1 cargo run --bin teamspace-sfu --features rtc
+  SFU_URL=ws://127.0.0.1:28443 SFU_TOKEN_SECRET=dev DURATION_SECS=10 cargo run --example rtc_e2e_client --features rtc
+  ```
+- Simulcast layer selection wire format: `{"type":"layer","track_id":"<id>","rid":"f"}`.
+- Real NAT/TURN validation requires a reachable TURN server or coturn instance and two clients on separate networks; set `SFU_ICE_SERVERS` to a JSON array of `{urls, username, credential}` and verify relay candidates are selected.
+- Real-device mobile runs need an Android device (`adb`) or enrolled iOS device; simulators can exercise UI/signaling but cannot fully validate camera/mic/NAT paths.
