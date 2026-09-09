@@ -1,9 +1,14 @@
 import SwiftUI
 
 struct MeetingView: View {
-    @State private var roomId = ""
-    @State private var displayName = ""
+    @State private var roomId: String
+    @State private var displayName: String
     @StateObject private var manager = WebRTCManager.shared
+
+    init(roomId: String = "", displayName: String = "") {
+        _roomId = State(initialValue: roomId)
+        _displayName = State(initialValue: displayName)
+    }
 
     var body: some View {
         Form {

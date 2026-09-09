@@ -35,9 +35,22 @@ struct MainTabView: View {
     @State private var isLoading = true
     @State private var status = "Loading..."
     @State private var selectedSection: MainSection? = .channels
+    @State private var activeSheet: DeepLinkSheet?
     @StateObject private var realtime = RealtimeManager.shared
     @StateObject private var deepLink = DeepLinkManager.shared
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private enum DeepLinkSheet: Identifiable {
+        case channel(id: String)
+        case meeting(id: String)
+
+        var id: String {
+            switch self {
+            case .channel(let id): return "channel-\(id)"
+            case .meeting(let id): return "meeting-\(id)"
+            }
+        }
+    }
 
     var body: some View {
         Group {
@@ -63,22 +76,18 @@ struct MainTabView: View {
             await load()
         }
         .onChange(of: deepLink.pendingURL) { _, new in
-            guard let url = new else { return }
-            let path = url.path.lowercased()
-            let host = url.host?.lowercased() ?? ""
-            switch true {
-            case path.contains("channel"), path.contains("message"), host.contains("channel"):
-                selectedSection = .channels
-            case path.contains("project"):
-                selectedSection = .projects
-            case path.contains("file"):
-                selectedSection = .files
-            case path.contains("meet"), path.contains("call"):
-                selectedSection = .meeting
-            default:
-                break
+            guard let url = new, let consumed = deepLink.consume() else { return }
+            route(from: consumed)
+        }
+        .sheet(item: $activeSheet) { sheet in
+            NavigationStack {
+                switch sheet {
+                case .channel(let id):
+                    ChannelDetailLoader(channelId: id)
+                case .meeting(let id):
+                    MeetingView(roomId: id)
+                }
             }
-            deepLink.consume()
         }
     }
 
@@ -174,6 +183,43 @@ struct MainTabView: View {
                 },
                 onSignOut: signOut
             )
+        }
+    }
+
+    private func route(from url: URL) {
+        let components = url.path.split(separator: "/").map(String.init)
+        guard let first = components.first?.lowercased() else { return }
+        let id = components.count > 1 ? components[1] : nil
+
+        switch first {
+        case "channel", "channels", "c":
+            if let id {
+                selectedSection = .channels
+                activeSheet = .channel(id: id)
+            }
+        case "meeting", "meetings", "m":
+            if let id {
+                selectedSection = .meeting
+                activeSheet = .meeting(id: id)
+            }
+        case "file", "files", "f":
+            selectedSection = .files
+            if let id {
+                Task { await openFile(id: id) }
+            }
+        default:
+            break
+        }
+    }
+
+    private func openFile(id: String) async {
+        do {
+            let file = try await FileService.getFile(id: id)
+            if let urlString = file.downloadUrl ?? file.url, let url = URL(string: urlString) {
+                await UIApplication.shared.open(url)
+            }
+        } catch {
+            // File open errors are best-effort; the Files tab is already selected.
         }
     }
 

@@ -51,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.teamspaceone.mobile.data.deeplink.DeepLink
 import com.teamspaceone.mobile.data.remote.FileRecord
 import com.teamspaceone.mobile.data.remote.FileRepository
 import kotlinx.coroutines.launch
@@ -60,7 +61,11 @@ import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FilesScreen(onBack: () -> Unit = {}) {
+fun FilesScreen(
+    onBack: () -> Unit = {},
+    deepLink: DeepLink? = null,
+    onDeepLinkConsumed: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var files by remember { mutableStateOf<List<FileRecord>>(emptyList()) }
@@ -100,6 +105,22 @@ fun FilesScreen(onBack: () -> Unit = {}) {
 
     LaunchedEffect(Unit) {
         loadFiles()
+    }
+
+    LaunchedEffect(deepLink) {
+        val target = deepLink as? DeepLink.File ?: return@LaunchedEffect
+        try {
+            val file = FileRepository.getFile(target.id)
+            val url = file.downloadUrl ?: file.url
+            if (!url.isNullOrBlank()) {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            } else {
+                errorMessage = "File has no preview URL"
+            }
+        } catch (e: Exception) {
+            errorMessage = e.message ?: "Failed to open file"
+        }
+        onDeepLinkConsumed()
     }
 
     val pullRefreshState = rememberPullToRefreshState()

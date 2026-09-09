@@ -33,11 +33,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.teamspaceone.mobile.data.remote.AuthManager
 import com.teamspaceone.mobile.data.webrtc.WebRTCManager
 import com.teamspaceone.mobile.ui.components.ParticipantGrid
 
+import com.teamspaceone.mobile.data.deeplink.DeepLink
+
 @Composable
-fun MeetingScreen(onBack: () -> Unit = {}) {
+fun MeetingScreen(
+    onBack: () -> Unit = {},
+    deepLink: DeepLink? = null,
+    onDeepLinkConsumed: () -> Unit = {}
+) {
     val context = LocalContext.current
     var roomId by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
@@ -73,6 +80,18 @@ fun MeetingScreen(onBack: () -> Unit = {}) {
         } else {
             launcher.launch(permissions)
         }
+    }
+
+    LaunchedEffect(deepLink) {
+        val target = deepLink as? DeepLink.Meeting ?: return@LaunchedEffect
+        roomId = target.id
+        displayName = try {
+            val user = AuthManager.me()
+            listOfNotNull(user.firstName, user.lastName).joinToString(" ").ifBlank { "Android User" }
+        } catch (_: Exception) {
+            "Android User"
+        }
+        onDeepLinkConsumed()
     }
 
     if (showRationale) {

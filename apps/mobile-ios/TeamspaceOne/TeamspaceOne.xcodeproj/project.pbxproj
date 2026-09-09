@@ -11,6 +11,7 @@
 		0C0F2A99525947056FA956D6 /* PushNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19D329FD4BC6DC4C16C868FD /* PushNotificationManager.swift */; };
 		12DB1A85ECE24CEC95F39913 /* WebRTCManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDB83F65F7AD67066EA76DDB /* WebRTCManager.swift */; };
 		134A6C8B37004CEE95DC2135 /* ChannelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C2ACB266A1318A0933AF708 /* ChannelDetailView.swift */; };
+		2379BB1403035B32F8D0DDE7 /* ChannelDetailLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6013AB8102FB4B7E74893481 /* ChannelDetailLoader.swift */; };
 		3334EF4DE537881589D48110 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 57A07D5FB7B7490FA6AB16CA /* WebRTC */; };
 		48E6808DFE8058FDD11A7481 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1070C81BB67A0053106E80BE /* Config.swift */; };
 		4B2A6571E53255FD0F9848C1 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0B5415019CD77F143C5813 /* APIClient.swift */; };
@@ -45,6 +46,7 @@
 		4CF612486426A1CB82A83C0E /* FileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileService.swift; sourceTree = "<group>"; };
 		57A0230F790C526F1DC6AD3C /* ParticipantGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParticipantGridView.swift; sourceTree = "<group>"; };
 		5F4714A8734BC283BB87D1D4 /* ChannelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelsView.swift; sourceTree = "<group>"; };
+		6013AB8102FB4B7E74893481 /* ChannelDetailLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelDetailLoader.swift; sourceTree = "<group>"; };
 		6B11CDCDA38D1D65403DB206 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		7A0B5415019CD77F143C5813 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		8C2ACB266A1318A0933AF708 /* ChannelDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelDetailView.swift; sourceTree = "<group>"; };
@@ -106,6 +108,7 @@
 		DDD0C96C40498DE50E718532 /* TeamspaceOne */ = {
 			isa = PBXGroup;
 			children = (
+				6013AB8102FB4B7E74893481 /* ChannelDetailLoader.swift */,
 				8C2ACB266A1318A0933AF708 /* ChannelDetailView.swift */,
 				5F4714A8734BC283BB87D1D4 /* ChannelsView.swift */,
 				1070C81BB67A0053106E80BE /* Config.swift */,
@@ -206,6 +209,7 @@
 			files = (
 				4B2A6571E53255FD0F9848C1 /* APIClient.swift in Sources */,
 				5D01BC66615C2B47E9B17718 /* AuthManager.swift in Sources */,
+				2379BB1403035B32F8D0DDE7 /* ChannelDetailLoader.swift in Sources */,
 				134A6C8B37004CEE95DC2135 /* ChannelDetailView.swift in Sources */,
 				A2064DC42CA85F9E3D02DD05 /* ChannelsView.swift in Sources */,
 				48E6808DFE8058FDD11A7481 /* Config.swift in Sources */,

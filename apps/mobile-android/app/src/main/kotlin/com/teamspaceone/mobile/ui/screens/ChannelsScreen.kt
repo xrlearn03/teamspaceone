@@ -26,11 +26,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.teamspaceone.mobile.data.deeplink.DeepLink
 import com.teamspaceone.mobile.data.remote.AuthManager
 import com.teamspaceone.mobile.data.remote.Channel
 
 @Composable
-fun ChannelsScreen(onBack: () -> Unit = {}) {
+fun ChannelsScreen(
+    onBack: () -> Unit = {},
+    deepLink: DeepLink? = null,
+    onDeepLinkConsumed: () -> Unit = {}
+) {
     var isLoading by remember { mutableStateOf(true) }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var status by remember { mutableStateOf("") }
@@ -44,6 +49,20 @@ fun ChannelsScreen(onBack: () -> Unit = {}) {
             status = "Error: ${e.message}"
         }
         isLoading = false
+    }
+
+    LaunchedEffect(deepLink) {
+        val target = deepLink as? DeepLink.Channel ?: return@LaunchedEffect
+        try {
+            val list = channels.takeIf { it.isNotEmpty() } ?: AuthManager.channels().also { channels = it }
+            selectedChannel = list.find { it.id == target.id }
+            if (selectedChannel == null) {
+                status = "Channel not found"
+            }
+        } catch (e: Exception) {
+            status = "Error: ${e.message}"
+        }
+        onDeepLinkConsumed()
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {

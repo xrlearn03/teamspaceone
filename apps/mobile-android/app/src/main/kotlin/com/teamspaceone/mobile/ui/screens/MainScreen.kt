@@ -25,11 +25,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.teamspaceone.mobile.data.deeplink.DeepLink
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
@@ -49,29 +51,34 @@ private data class TabItem(
 fun MainScreen(
     onSignOut: () -> Unit = {}
 ) {
+    var selectedTab by remember { mutableStateOf(0) }
+    var deepLink by remember { mutableStateOf<DeepLink?>(null) }
+    val pendingDeepLink by DeepLinkManager.pendingDeepLink.collectAsState()
+
+    LaunchedEffect(pendingDeepLink) {
+        pendingDeepLink?.let {
+            deepLink = it
+            DeepLinkManager.consume()
+        }
+    }
+
+    SideEffect {
+        when (deepLink) {
+            is DeepLink.Channel -> if (selectedTab != 0) selectedTab = 0
+            is DeepLink.File -> if (selectedTab != 2) selectedTab = 2
+            is DeepLink.Meeting -> if (selectedTab != 3) selectedTab = 3
+            else -> {}
+        }
+    }
+
+    val onDeepLinkConsumed = { deepLink = null }
     val tabs = listOf(
-        TabItem("Channels", Icons.AutoMirrored.Filled.Message) { ChannelsScreen() },
+        TabItem("Channels", Icons.AutoMirrored.Filled.Message) { ChannelsScreen(deepLink = deepLink, onDeepLinkConsumed = onDeepLinkConsumed) },
         TabItem("Projects", Icons.Filled.Folder) { ProjectsScreen() },
-        TabItem("Files", Icons.Filled.Description) { FilesScreen() },
-        TabItem("Meeting", Icons.Filled.VideoCall) { MeetingScreen() },
+        TabItem("Files", Icons.Filled.Description) { FilesScreen(deepLink = deepLink, onDeepLinkConsumed = onDeepLinkConsumed) },
+        TabItem("Meeting", Icons.Filled.VideoCall) { MeetingScreen(deepLink = deepLink, onDeepLinkConsumed = onDeepLinkConsumed) },
         TabItem("Profile", Icons.Filled.Person) { ProfileScreen(onSignOut) }
     )
-    var selectedTab by remember { mutableStateOf(0) }
-    val deepLink by DeepLinkManager.pendingDeepLink.collectAsState()
-
-    LaunchedEffect(deepLink) {
-        val link = deepLink ?: return@LaunchedEffect
-        val path = link.path?.lowercase() ?: link.host?.lowercase() ?: ""
-        val index = when {
-            path.contains("channel") || path.contains("message") -> 0
-            path.contains("project") -> 1
-            path.contains("file") -> 2
-            path.contains("meet") || path.contains("call") -> 3
-            else -> null
-        }
-        index?.let { selectedTab = it }
-        DeepLinkManager.consume()
-    }
 
     val context = LocalContext.current
     val requiresNotificationPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
