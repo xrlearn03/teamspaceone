@@ -999,6 +999,11 @@ async fn process_signal(
                 });
             }
         }
+        Signal::Layer { track_id, rid } => {
+            return Err(anyhow!(
+                "layer selection for track {track_id} rid {rid} is only supported with the native rtc feature"
+            ));
+        }
     }
 
     #[cfg(not(feature = "rtc"))]
@@ -1347,3 +1352,6 @@ pub(crate) async fn cleanup_peer(peer_id: &str, state: &SharedState) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

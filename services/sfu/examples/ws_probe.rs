@@ -65,19 +65,19 @@ async fn build_pc() -> Result<(
 }
 
 async fn probe(n: usize) -> Result<()> {
-    let (mut pc, socket, _local_addr) = build_pc().await?;
+    let (_pc, _socket, _local_addr) = build_pc().await?;
     let _socket2 = UdpSocket::bind("0.0.0.0:0").await?;
     let url = std::env::var("SFU_URL").unwrap_or_else(|_| "ws://127.0.0.1:18443".to_string());
     println!("{} connecting", n);
-    let (mut ws, resp) = connect_async(&url).await?;
+    let (ws, resp) = connect_async(&url).await?;
     println!("{} connected, status: {:?}", n, resp.status());
     let (mut ws_out, mut ws_in) = ws.split();
     let msg = tokio_tungstenite::tungstenite::Message::Text(
         r#"{"type":"join","room_id":"x","display_name":"a","user_id":"u","token":"x"}"#.to_string(),
     );
-    ws.send(msg).await?;
+    ws_out.send(msg).await?;
     println!("{} sent join", n);
-    if let Some(Ok(tokio_tungstenite::tungstenite::Message::Text(t))) = ws.next().await {
+    if let Some(Ok(tokio_tungstenite::tungstenite::Message::Text(t))) = ws_in.next().await {
         println!("{} recv: {}", n, t);
     }
     Ok(())
