@@ -295,11 +295,27 @@ async fn handle_peer(stream: TcpStream, state: SharedState, token_secret: String
     let peer_id_for_send = peer_id.clone();
     let send_task = tokio::spawn(async move {
         let mut ws_tx = ws_tx;
-        while let Some(event) = rx.recv().await {
-            let text = serde_json::to_string(&event).unwrap_or_default();
-            if let Err(e) = ws_tx.send(Message::Text(text)).await {
-                warn!("Send failed for {}: {}", peer_id_for_send, e);
-                break;
+        let mut ping = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            tokio::select! {
+                _ = ping.tick() => {
+                    if let Err(e) = ws_tx.send(Message::Ping(vec![])).await {
+                        warn!("Ping failed for {}: {}", peer_id_for_send, e);
+                        break;
+                    }
+                }
+                event = rx.recv() => {
+                    match event {
+                        Some(event) => {
+                            let text = serde_json::to_string(&event).unwrap_or_default();
+                            if let Err(e) = ws_tx.send(Message::Text(text)).await {
+                                warn!("Send failed for {}: {}", peer_id_for_send, e);
+                                break;
+                            }
+                        }
+                        None => break,
+                    }
+                }
             }
         }
     });
