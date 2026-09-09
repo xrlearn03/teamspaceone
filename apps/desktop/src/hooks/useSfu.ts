@@ -88,6 +88,7 @@ export function useSfu() {
   const screenShareSenderRef = useRef<RTCRtpSender | null>(null);
   const nativeUnlistenRef = useRef<(() => void) | null>(null);
   const nativeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const trackIdToParticipantRef = useRef<Record<string, string>>({});
 
   const isIntentionalLeaveRef = useRef(false);
   const reconnectAttemptRef = useRef(0);
@@ -111,6 +112,7 @@ export function useSfu() {
   const [localAudioEnabled, setLocalAudioEnabled] = useState(false);
   const [localVideoEnabled, setLocalVideoEnabled] = useState(false);
   const [screenShareEnabled, setScreenShareEnabled] = useState(false);
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
 
   interface QualityStats {
     audio: { packetsLost: number; jitter: number; bitrate: number };
@@ -179,6 +181,43 @@ export function useSfu() {
 
     update();
     const id = window.setInterval(update, 5000);
+    return () => window.clearInterval(id);
+  }, [connected]);
+
+  // Active speaker detection: poll remote audio receivers for
+  // synchronization source audio levels and pick the loudest speaker.
+  useEffect(() => {
+    if (!connected) return;
+    const pc = pcRef.current;
+    if (!pc) return;
+
+    const detect = () => {
+      let loudestId: string | null = null;
+      let loudestLevel = 0;
+      const threshold = 0.15;
+
+      for (const receiver of pc.getReceivers()) {
+        if (receiver.track?.kind !== "audio") continue;
+        const participantId = receiver.track
+          ? trackIdToParticipantRef.current[receiver.track.id]
+          : undefined;
+        if (!participantId) continue;
+
+        const sources = receiver.getSynchronizationSources();
+        for (const source of sources) {
+          const level = (source as { audioLevel?: number }).audioLevel ?? 0;
+          if (level > threshold && level > loudestLevel) {
+            loudestLevel = level;
+            loudestId = participantId;
+          }
+        }
+      }
+
+      setActiveSpeakerId(loudestId);
+    };
+
+    detect();
+    const id = window.setInterval(detect, 1000);
     return () => window.clearInterval(id);
   }, [connected]);
 
@@ -530,6 +569,7 @@ export function useSfu() {
       pc.ontrack = (e) => {
         const stream = e.streams[0] ?? new MediaStream([e.track]);
         const participantId = stream.id;
+        trackIdToParticipantRef.current[e.track.id] = participantId;
         setRemoteStreams((prev) => {
           const others = prev.filter((p) => p.participantId !== participantId);
           return [...others, { participantId, stream }];
@@ -691,5 +731,6 @@ export function useSfu() {
     connected,
     error,
     qualityStats,
+    activeSpeakerId,
   };
 }

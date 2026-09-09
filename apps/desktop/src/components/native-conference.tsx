@@ -52,6 +52,7 @@ interface NativeConferenceProps {
   localAudioEnabled?: boolean;
   remoteStreams?: { participantId: string; stream: MediaStream }[];
   participants?: { id: string; displayName: string; userId?: string }[];
+  activeSpeakerId?: string | null;
   screenShareEnabled?: boolean;
   isRecording?: boolean;
   isHost?: boolean;
@@ -75,6 +76,7 @@ export function NativeConference({
   localAudioEnabled = false,
   remoteStreams = [],
   participants = [],
+  activeSpeakerId = null,
   screenShareEnabled = false,
   isRecording: initialRecording = false,
   isHost = false,
@@ -363,7 +365,14 @@ export function NativeConference({
               isScreenSharing={user?.id ? screenSharingUsers.has(user.id) : false}
             />
             {[...remoteStreams]
-              .sort((a) => (a.participantId.startsWith("screen-") ? -1 : 1))
+              .sort((a, b) => {
+                const aScreen = a.participantId.startsWith("screen-") ? 1 : 0;
+                const bScreen = b.participantId.startsWith("screen-") ? 1 : 0;
+                if (aScreen !== bScreen) return bScreen - aScreen;
+                const aActive = participantBaseId(a.participantId) === activeSpeakerId ? 1 : 0;
+                const bActive = participantBaseId(b.participantId) === activeSpeakerId ? 1 : 0;
+                return bActive - aActive;
+              })
               .map(({ participantId, stream }) => {
                 const pUserId = remoteUserId(participantId);
                 const isScreen = participantId.startsWith("screen-");
