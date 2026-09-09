@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration as StdDuration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
@@ -292,6 +292,9 @@ async fn handle_peer(stream: TcpStream, state: SharedState, token_secret: String
         participant_id: peer_id.clone(),
     });
 
+    let mut signal_count = 0u32;
+    let mut signal_window_start = Instant::now();
+
     let peer_id_for_send = peer_id.clone();
     let send_task = tokio::spawn(async move {
         let mut ws_tx = ws_tx;
@@ -332,6 +335,19 @@ async fn handle_peer(stream: TcpStream, state: SharedState, token_secret: String
 
         match msg {
             Ok(Message::Text(text)) => {
+                let now = Instant::now();
+                if now.duration_since(signal_window_start) > StdDuration::from_secs(1) {
+                    signal_count = 0;
+                    signal_window_start = now;
+                }
+                signal_count += 1;
+                if signal_count > max_signals_per_second() {
+                    warn!("Rate limit exceeded for {}", peer_id);
+                    let _ = tx.send(Event::Error {
+                        message: "Rate limit exceeded".to_string(),
+                    });
+                    break;
+                }
                 match serde_json::from_str::<Signal>(&text) {
                     Ok(signal) => {
                         if let Err(e) = process_signal(&peer_id, signal, &state, &token_secret).await {
@@ -493,6 +509,13 @@ fn ws_timeout() -> std::time::Duration {
         .and_then(|v| v.parse().ok())
         .unwrap_or(90);
     std::time::Duration::from_secs(secs)
+}
+
+fn max_signals_per_second() -> u32 {
+    std::env::var("SFU_MAX_SIGNALS_PER_SECOND")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50)
 }
 
 fn ice_servers() -> Vec<RTCIceServer> {
