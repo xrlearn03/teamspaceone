@@ -249,12 +249,27 @@ async fn metrics(State(app): State<ControlState>) -> Response {
     let rooms = s.rooms.len();
     let peers = s.peers.len();
     let tracks: usize = s.rooms.values().map(|r| r.tracks.len()).sum();
-    Json(json!({
+
+    #[cfg(feature = "rtc")]
+    let mut body = json!({
         "rooms": rooms,
         "peers": peers,
         "tracks": tracks,
-    }))
-    .into_response()
+    });
+    #[cfg(not(feature = "rtc"))]
+    let body = json!({
+        "rooms": rooms,
+        "peers": peers,
+        "tracks": tracks,
+    });
+
+    #[cfg(feature = "rtc")]
+    {
+        body["rtc_peers"] = json!(s.rtc_peers.len());
+        body["rtc_tracks"] = json!(s.rtc_tracks.len());
+    }
+
+    Json(body).into_response()
 }
 
 async fn room_metrics(
@@ -295,13 +310,50 @@ async fn room_metrics(
         })
         .collect();
 
-    Json(json!({
+    #[cfg(feature = "rtc")]
+    let mut body = json!({
         "room_id": room_id,
         "recording": room.recording.is_some(),
         "participants": participants,
         "tracks": tracks,
-    }))
-    .into_response()
+    });
+    #[cfg(not(feature = "rtc"))]
+    let body = json!({
+        "room_id": room_id,
+        "recording": room.recording.is_some(),
+        "participants": participants,
+        "tracks": tracks,
+    });
+
+    #[cfg(feature = "rtc")]
+    {
+        let rtc_tracks: Vec<serde_json::Value> = s
+            .rtc_tracks
+            .iter()
+            .filter(|(_, t)| t.room_id == room_id)
+            .map(|(id, t)| {
+                json!({
+                    "track_id": id,
+                    "publisher": t.publisher,
+                    "kind": format!("{:?}", t.kind),
+                    "mime_type": t.codec.as_ref().map(|c| c.mime_type.clone()).unwrap_or_default(),
+                    "ssrcs": t.ssrcs,
+                    "forwarders": t.forwarders.len(),
+                    "recording": t.writer.is_some(),
+                })
+            })
+            .collect();
+        body["rtc_tracks"] = json!(rtc_tracks);
+
+        let rtc_peer_count = room
+            .participants
+            .keys()
+            .filter(|id| s.rtc_peers.contains_key(id.as_str()))
+            .count();
+        body["rtc_peers"] = json!(rtc_peer_count);
+    }
+
+    Json(body).into_response()
 }
 
 /// Runs the control API listener until shutdown.
