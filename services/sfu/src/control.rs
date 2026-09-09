@@ -183,7 +183,11 @@ pub async fn finalize_recording(state: SharedState, room_id: &str) -> Vec<serde_
         let Some(rec) = room.recording.take() else {
             return Vec::new();
         };
+        #[cfg(feature = "rtc")]
         let mut slots: Vec<recording::SharedTrackWriter> =
+            room.tracks.iter().map(|rt| rt.recorder.clone()).collect();
+        #[cfg(not(feature = "rtc"))]
+        let slots: Vec<recording::SharedTrackWriter> =
             room.tracks.iter().map(|rt| rt.recorder.clone()).collect();
 
         #[cfg(feature = "rtc")]

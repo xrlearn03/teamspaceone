@@ -28,7 +28,6 @@ use rtc::sansio::Protocol;
 use rtc::shared::{TaggedBytesMut, TransportContext, TransportProtocol};
 use rtc_interceptor::Interceptor;
 use rtp::Packet as RtpPacket;
-use rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
