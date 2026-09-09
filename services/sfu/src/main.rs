@@ -295,7 +295,7 @@ async fn handle_peer(stream: TcpStream, state: SharedState, token_secret: String
     let peer_id_for_send = peer_id.clone();
     let send_task = tokio::spawn(async move {
         let mut ws_tx = ws_tx;
-        let mut ping = tokio::time::interval(std::time::Duration::from_secs(30));
+        let mut ping = tokio::time::interval(ws_ping_interval());
         loop {
             tokio::select! {
                 _ = ping.tick() => {
@@ -468,6 +468,14 @@ fn max_rooms() -> usize {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(100)
+}
+
+fn ws_ping_interval() -> std::time::Duration {
+    let secs = std::env::var("SFU_WS_PING_INTERVAL_SECONDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30);
+    std::time::Duration::from_secs(secs)
 }
 
 fn ice_servers() -> Vec<RTCIceServer> {
