@@ -11,7 +11,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -166,9 +166,28 @@ async fn stop_recording(
     Json(json!({ "recording": false, "files": files })).into_response()
 }
 
+async fn health() -> Response {
+    Json(json!({ "status": "ok" })).into_response()
+}
+
+async fn metrics(State(app): State<ControlState>) -> Response {
+    let s = app.state.read().await;
+    let rooms = s.rooms.len();
+    let peers = s.peers.len();
+    let tracks: usize = s.rooms.values().map(|r| r.tracks.len()).sum();
+    Json(json!({
+        "rooms": rooms,
+        "peers": peers,
+        "tracks": tracks,
+    }))
+    .into_response()
+}
+
 /// Runs the control API listener until shutdown.
 pub async fn serve(state: SharedState, token_secret: String) -> Result<()> {
     let app = Router::new()
+        .route("/health", get(health))
+        .route("/metrics", get(metrics))
         .route("/rooms/{room_id}/recording/start", post(start_recording))
         .route("/rooms/{room_id}/recording/stop", post(stop_recording))
         .with_state(ControlState {
