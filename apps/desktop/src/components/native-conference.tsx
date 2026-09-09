@@ -63,6 +63,7 @@ interface NativeConferenceProps {
   screenShareEnabled?: boolean;
   isRecording?: boolean;
   isHost?: boolean;
+  audioOutputId?: string;
   onLeave: () => void;
   onEnd?: () => void;
   onToggleAudio?: () => void;
@@ -92,6 +93,7 @@ export function NativeConference({
   onToggleAudio,
   onToggleVideo,
   onToggleScreenShare,
+  audioOutputId,
 }: NativeConferenceProps) {
   const realtime = useRealtime();
   const [activePanel, setActivePanel] = useState<"chat" | "participants" | null>(null);
@@ -383,6 +385,7 @@ export function NativeConference({
                           name={`${remoteDisplayName(participantId)} (screen)`}
                           user={pUserId ? participantUserMap.get(pUserId) : undefined}
                           stream={stream}
+                          audioOutputId={audioOutputId}
                           className="aspect-video h-80 w-full"
                           videoEnabled={stream.getVideoTracks().some((t) => t.enabled && !t.muted && t.readyState !== "ended")}
                           isHandRaised={pUserId ? raisedHands.has(pUserId) : false}
@@ -399,6 +402,7 @@ export function NativeConference({
                     isLocal
                     stream={localStream}
                     nativeFrame={nativeFrame}
+                    audioOutputId={audioOutputId}
                     videoEnabled={localVideoEnabled}
                     isHandRaised={user?.id ? raisedHands.has(user.id) : false}
                     isScreenSharing={user?.id ? screenSharingUsers.has(user.id) : false}
@@ -411,6 +415,7 @@ export function NativeConference({
                         name={remoteDisplayName(participantId)}
                         user={pUserId ? participantUserMap.get(pUserId) : undefined}
                         stream={stream}
+                        audioOutputId={audioOutputId}
                         videoEnabled={stream.getVideoTracks().some((t) => t.enabled && !t.muted && t.readyState !== "ended")}
                         isHandRaised={pUserId ? raisedHands.has(pUserId) : false}
                         isScreenSharing={pUserId ? screenSharingUsers.has(pUserId) : false}
@@ -598,6 +603,7 @@ function ParticipantTile({
   videoEnabled,
   isHandRaised,
   isScreenSharing,
+  audioOutputId,
   className,
 }: {
   name: string;
@@ -608,6 +614,7 @@ function ParticipantTile({
   videoEnabled?: boolean;
   isHandRaised?: boolean;
   isScreenSharing?: boolean;
+  audioOutputId?: string;
   className?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -624,6 +631,16 @@ function ParticipantTile({
       audioRef.current.srcObject = stream;
     }
   }, [stream]);
+
+  useEffect(() => {
+    const el = videoRef.current || audioRef.current;
+    if (!el || !audioOutputId || !("setSinkId" in el)) return;
+    try {
+      (el as HTMLMediaElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(audioOutputId).catch(() => {});
+    } catch {
+      // setSinkId is best-effort and not supported everywhere.
+    }
+  }, [audioOutputId, stream]);
 
   const hasVideo =
     videoEnabled &&

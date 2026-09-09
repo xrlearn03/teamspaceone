@@ -41,6 +41,7 @@ export function MeetingScreen() {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [mediaOptions, setMediaOptions] = useState<MediaJoinOptions | null>(null);
+  const [audioOutputId, setAudioOutputId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,6 +53,7 @@ export function MeetingScreen() {
     error: nativeError,
     enabled: nativeVideoEnabled,
     setEnabled: setNativeVideoEnabled,
+    videoStream: nativeVideoStream,
   } = useNativeCamera();
 
   const {
@@ -62,6 +64,7 @@ export function MeetingScreen() {
     setEnabled: setNativeAudioEnabled,
     error: nativeAudioError,
     resumeContext: resumeNativeAudio,
+    audioStream: nativeAudioStream,
   } = useNativeMicrophone();
 
   useEffect(() => {
@@ -126,6 +129,7 @@ export function MeetingScreen() {
     const displayName = getUserDisplayName(user, "Guest");
 
     setMediaOptions(opts);
+    setAudioOutputId(opts.audioOutputId);
     setError(null);
 
     try {
@@ -160,6 +164,7 @@ export function MeetingScreen() {
     setToken(null);
     setMeeting(null);
     setMediaOptions(null);
+    setAudioOutputId(undefined);
     setActiveView("home");
   }
 
@@ -231,6 +236,8 @@ export function MeetingScreen() {
         nativeAudioEnabled={nativeAudioEnabled}
         setNativeAudioEnabled={setNativeAudioEnabled}
         nativeAudioError={nativeAudioError}
+        nativeVideoStream={nativeVideoStream}
+        nativeAudioStream={nativeAudioStream}
       />
     );
   }
@@ -252,6 +259,7 @@ export function MeetingScreen() {
       screenShareEnabled={sfu.screenShareEnabled}
       isRecording={meeting.isRecording}
       isHost={meeting.createdBy === user?.id}
+      audioOutputId={audioOutputId}
       onLeave={handleLeave}
       onEnd={meeting.createdBy === user?.id ? handleEnd : undefined}
       onToggleAudio={sfu.toggleAudio}

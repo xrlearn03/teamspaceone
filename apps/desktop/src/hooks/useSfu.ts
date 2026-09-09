@@ -413,29 +413,19 @@ export function useSfu() {
       .find((tr) => tr.receiver.track.kind === "video")?.sender;
     if (!videoSender) return;
 
-    const currentVideoTrack = cameraStreamRef.current?.getVideoTracks()[0];
-    const audioTracks = cameraStreamRef.current?.getAudioTracks() ?? [];
+    const currentVideoTrack = videoSender.track;
+    if (currentVideoTrack) {
+      // Mute/unmute the existing camera track (e.g. a native-captured stream)
+      // instead of replacing it with a browser one.
+      currentVideoTrack.enabled = !currentVideoTrack.enabled;
+      setLocalVideoEnabled(currentVideoTrack.enabled);
+      return;
+    }
+
+    const audioTracks = localStreamRef.current?.getAudioTracks() ?? [];
     const screenTrack = screenShareEnabled
       ? (localStreamRef.current?.getVideoTracks()[0] ?? null)
       : null;
-
-    if (currentVideoTrack) {
-      // Stop sending and release the camera.
-      try {
-        await videoSender.replaceTrack(null);
-      } catch (err) {
-        console.error("Failed to stop video sender", err);
-      }
-      currentVideoTrack.stop();
-      const preview = screenTrack
-        ? new MediaStream([screenTrack, ...audioTracks])
-        : new MediaStream([...audioTracks]);
-      cameraStreamRef.current = new MediaStream([...audioTracks]);
-      localStreamRef.current = preview;
-      setLocalStream(preview);
-      setLocalVideoEnabled(false);
-      return;
-    }
 
     try {
       const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });

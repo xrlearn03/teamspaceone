@@ -6,6 +6,7 @@ import { MeetingLobby } from "../components/livekit/lobby";
 import { NativeConference } from "../components/native-conference";
 import { Button } from "../components/ui/button";
 import { useRealtime } from "../hooks/useRealtime";
+import { useNativeMicrophone } from "../hooks/useNativeMicrophone";
 import { endMeeting, getMeeting, joinMeeting, leaveMeeting, setScreenShare, type Meeting } from "../lib/api";
 import { useMe } from "../hooks/api";
 import type { MediaJoinOptions } from "./meeting";
@@ -23,10 +24,11 @@ export function VoiceRoomScreen() {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [mediaOptions, setMediaOptions] = useState<MediaJoinOptions | null>(null);
-  const [lobbyAudio, setLobbyAudio] = useState(true);
-  const [lobbyVideo, setLobbyVideo] = useState(false);
+  const [audioOutputId, setAudioOutputId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const nativeMic = useNativeMicrophone();
 
   useEffect(() => {
     if (sfu.error) {
@@ -86,6 +88,7 @@ export function VoiceRoomScreen() {
     const displayName = getUserDisplayName(user, "Guest");
 
     setMediaOptions(opts);
+    setAudioOutputId(opts.audioOutputId);
     setError(null);
 
     try {
@@ -118,6 +121,7 @@ export function VoiceRoomScreen() {
     setToken(null);
     setMeeting(null);
     setMediaOptions(null);
+    setAudioOutputId(undefined);
     setActiveView("home");
   }
 
@@ -176,10 +180,14 @@ export function VoiceRoomScreen() {
         user={user}
         onJoin={handleJoin}
         onCancel={() => setActiveView("home")}
-        nativeAudioEnabled={lobbyAudio}
-        setNativeAudioEnabled={setLobbyAudio}
-        nativeVideoEnabled={lobbyVideo}
-        setNativeVideoEnabled={setLobbyVideo}
+        nativeAudioEnabled={nativeMic.enabled}
+        setNativeAudioEnabled={nativeMic.setEnabled}
+        nativeAudioDevices={nativeMic.devices}
+        nativeAudioIndex={nativeMic.selectedIndex}
+        setNativeAudio={nativeMic.setSelectedIndex}
+        nativeAudioError={nativeMic.error}
+        nativeAudioStream={nativeMic.audioStream}
+        nativeVideoEnabled={false}
       />
     );
   }
@@ -197,6 +205,7 @@ export function VoiceRoomScreen() {
       screenShareEnabled={sfu.screenShareEnabled}
       isRecording={meeting.isRecording}
       isHost={meeting.createdBy === user?.id}
+      audioOutputId={audioOutputId}
       remoteStreams={sfu.remoteStreams}
       participants={sfu.participants}
       onLeave={handleLeave}

@@ -29,6 +29,8 @@ interface MeetingLobbyProps {
   nativeAudioEnabled?: boolean;
   setNativeAudioEnabled?: (enabled: boolean) => void;
   nativeAudioError?: string | null;
+  nativeVideoStream?: MediaStream | null;
+  nativeAudioStream?: MediaStream | null;
 }
 
 export function MeetingLobby({
@@ -49,6 +51,8 @@ export function MeetingLobby({
   nativeAudioEnabled = false,
   setNativeAudioEnabled,
   nativeAudioError,
+  nativeVideoStream,
+  nativeAudioStream,
 }: MeetingLobbyProps) {
   const {
     audioOutputId,
@@ -191,15 +195,21 @@ export function MeetingLobby({
             Cancel
           </Button>
           <Button
-            onClick={() =>
+            onClick={() => {
+              const tracks: MediaStreamTrack[] = [];
+              if (nativeAudioEnabled && nativeAudioStream) {
+                tracks.push(...nativeAudioStream.getAudioTracks());
+              }
+              if (nativeVideoEnabled && nativeVideoStream) {
+                tracks.push(...nativeVideoStream.getVideoTracks());
+              }
               onJoin({
                 audioEnabled: nativeAudioEnabled,
                 videoEnabled: nativeVideoEnabled,
-                audioInputId: String(nativeAudioIndex ?? ""),
-                videoInputId: String(nativeCameraIndex ?? ""),
                 audioOutputId,
-              })
-            }
+                stream: tracks.length > 0 ? new MediaStream(tracks) : undefined,
+              });
+            }}
           >
             Join {meeting.type === "voice_room" ? "voice room" : "meeting"}
           </Button>
