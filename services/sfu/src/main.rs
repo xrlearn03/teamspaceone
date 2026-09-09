@@ -140,7 +140,7 @@ struct Peer {
 /// and `tx`/`task` run an independent forwarding loop for that subscriber.
 struct Forwarder {
     sender: Arc<RTCRtpSender>,
-    tx: mpsc::UnboundedSender<RtpPacket>,
+    tx: mpsc::Sender<RtpPacket>,
     task: JoinHandle<()>,
 }
 
@@ -556,6 +556,13 @@ fn max_signals_per_second() -> u32 {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(50)
+}
+
+fn forward_queue_capacity() -> usize {
+    std::env::var("SFU_FORWARD_QUEUE_CAPACITY")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(256)
 }
 
 fn ice_servers() -> Vec<RTCIceServer> {
@@ -1026,12 +1033,16 @@ async fn handle_track(
                     }
                     // Snapshot the sender channels while holding the lock, then
                     // dispatch to each subscriber's dedicated forwarding task.
-                    let txs: Vec<mpsc::UnboundedSender<RtpPacket>> = {
+                    // Use try_send so a slow subscriber's full queue drops packets
+                    // rather than blocking the publisher's loop.
+                    let txs: Vec<mpsc::Sender<RtpPacket>> = {
                         let guard = forwarders.lock().await;
                         guard.values().map(|f| f.tx.clone()).collect()
                     };
                     for tx in txs {
-                        let _ = tx.send(pkt.clone());
+                        if let Err(e) = tx.try_send(pkt.clone()) {
+                            warn!("forward queue full for subscriber: {}", e);
+                        }
                     }
                 }
                 Err(e) => {
@@ -1078,7 +1089,7 @@ async fn add_track_forwarder(
         local_stream_id,
     ));
     let sender = subscriber_pc.add_track(local_track.clone()).await?;
-    let (tx, mut rx) = mpsc::unbounded_channel::<RtpPacket>();
+    let (tx, mut rx) = mpsc::channel::<RtpPacket>(forward_queue_capacity());
 
     // Spawn a dedicated forwarding task for this subscriber so a slow peer
     // cannot block the publisher's loop for everyone else.
