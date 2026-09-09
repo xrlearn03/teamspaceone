@@ -63,7 +63,7 @@ fun ChannelDetailScreen(channel: Channel, onBack: () -> Unit = {}) {
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(channel.id) {
         isLoading = true
         try {
             messages = AuthManager.messages(channel.id)

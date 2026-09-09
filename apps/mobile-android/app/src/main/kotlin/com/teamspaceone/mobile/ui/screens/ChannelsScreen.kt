@@ -2,15 +2,21 @@ package com.teamspaceone.mobile.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,19 +46,64 @@ fun ChannelsScreen(onBack: () -> Unit = {}) {
         isLoading = false
     }
 
-    selectedChannel?.let { channel ->
-        ChannelDetailScreen(channel = channel, onBack = { selectedChannel = null })
-        return
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isWide = maxWidth >= 600.dp
+        if (isWide) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                ChannelList(
+                    channels = channels,
+                    isLoading = isLoading,
+                    status = status,
+                    selectedChannel = selectedChannel,
+                    onChannelSelected = { selectedChannel = it },
+                    modifier = Modifier
+                        .weight(0.4f)
+                        .fillMaxHeight()
+                )
+                VerticalDivider()
+                Box(
+                    modifier = Modifier
+                        .weight(0.6f)
+                        .fillMaxHeight()
+                ) {
+                    selectedChannel?.let { channel ->
+                        ChannelDetailScreen(channel = channel)
+                    } ?: run {
+                        EmptyDetailPane(text = "Select a channel")
+                    }
+                }
+            }
+        } else {
+            selectedChannel?.let { channel ->
+                ChannelDetailScreen(channel = channel, onBack = { selectedChannel = null })
+            } ?: run {
+                ChannelList(
+                    channels = channels,
+                    isLoading = isLoading,
+                    status = status,
+                    selectedChannel = selectedChannel,
+                    onChannelSelected = { selectedChannel = it },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
     }
+}
 
+@Composable
+private fun ChannelList(
+    channels: List<Channel>,
+    isLoading: Boolean,
+    status: String,
+    selectedChannel: Channel?,
+    onChannelSelected: (Channel) -> Unit,
+    modifier: Modifier = Modifier
+) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = modifier.padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("Channels")
+        Text("Channels", style = MaterialTheme.typography.headlineMedium)
 
         if (isLoading) {
             CircularProgressIndicator()
@@ -64,17 +115,33 @@ fun ChannelsScreen(onBack: () -> Unit = {}) {
                 if (channels.isEmpty()) {
                     item { Text("No channels") }
                 } else {
-                    items(channels) { channel ->
+                    items(channels, key = { it.id }) { channel ->
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selectedChannel = channel }
+                                .clickable { onChannelSelected(channel) }
                                 .padding(8.dp)
                         ) {
-                            Text("# ${channel.name}  (${channel.type})")
+                            Text(
+                                channel.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (selectedChannel?.id == channel.id) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
                             if (!channel.description.isNullOrBlank()) {
-                                Text(channel.description)
+                                Text(
+                                    channel.description,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                             }
+                            Text(
+                                "#${channel.type}",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                            HorizontalDivider(modifier = Modifier.padding(top = 4.dp))
                         }
                     }
                 }
@@ -83,9 +150,7 @@ fun ChannelsScreen(onBack: () -> Unit = {}) {
                 }
             }
         }
-
-        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-            Text("Back")
-        }
     }
 }
+
+

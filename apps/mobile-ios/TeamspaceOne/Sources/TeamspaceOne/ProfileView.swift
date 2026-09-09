@@ -10,8 +10,7 @@ struct ProfileView: View {
     @StateObject private var realtime = RealtimeManager.shared
 
     var body: some View {
-        NavigationStack {
-            List {
+        List {
                 if let user = user {
                     Section("User") {
                         Text(user.email)
@@ -69,7 +68,5 @@ struct ProfileView: View {
                     .foregroundStyle(.red)
                 }
             }
-            .navigationTitle("Profile")
-        }
     }
 }

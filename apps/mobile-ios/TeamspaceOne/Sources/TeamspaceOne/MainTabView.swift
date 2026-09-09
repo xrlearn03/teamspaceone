@@ -1,15 +1,42 @@
 import SwiftUI
 
+private enum MainSection: String, CaseIterable, Identifiable {
+    case channels, projects, files, meeting, profile
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .channels: return "Channels"
+        case .projects: return "Projects"
+        case .files: return "Files"
+        case .meeting: return "Meeting"
+        case .profile: return "Profile"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .channels: return "message.fill"
+        case .projects: return "folder.fill"
+        case .files: return "doc.fill"
+        case .meeting: return "video.fill"
+        case .profile: return "person.fill"
+        }
+    }
+}
+
 struct MainTabView: View {
     let onSignOut: () -> Void
 
-    @State private var selection = 0
     @State private var user: UserDto?
     @State private var organisations: [Organisation] = []
     @State private var context: UserContext?
     @State private var isLoading = true
     @State private var status = "Loading..."
+    @State private var selectedSection: MainSection? = .channels
     @StateObject private var realtime = RealtimeManager.shared
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         Group {
@@ -25,58 +52,109 @@ struct MainTabView: View {
                         signOut()
                     }
                 }
+            } else if horizontalSizeClass == .regular {
+                splitView
             } else {
-                TabView(selection: $selection) {
-                    NavigationStack {
-                        ChannelsView()
-                    }
-                    .tabItem {
-                        Label("Channels", systemImage: "message.fill")
-                    }
-                    .tag(0)
-
-                    NavigationStack {
-                        ProjectsView()
-                    }
-                    .tabItem {
-                        Label("Projects", systemImage: "folder.fill")
-                    }
-                    .tag(1)
-
-                    NavigationStack {
-                        FilesView()
-                    }
-                    .tabItem {
-                        Label("Files", systemImage: "doc.fill")
-                    }
-                    .tag(2)
-
-                    NavigationStack {
-                        MeetingView()
-                    }
-                    .tabItem {
-                        Label("Meeting", systemImage: "video.fill")
-                    }
-                    .tag(3)
-
-                    ProfileView(
-                        user: user,
-                        organisations: organisations,
-                        context: context,
-                        onSelectOrganisation: { id in
-                            Task { await selectOrganisation(id) }
-                        },
-                        onSignOut: signOut
-                    )
-                    .tabItem {
-                        Label("Profile", systemImage: "person.fill")
-                    }
-                    .tag(4)
-                }
+                tabView
             }
         }
         .task {
             await load()
+        }
+    }
+
+    @ViewBuilder
+    private var splitView: some View {
+        NavigationSplitView {
+            List(selection: $selectedSection) {
+                ForEach(MainSection.allCases) { section in
+                    Label(section.title, systemImage: section.icon)
+                        .tag(section)
+                }
+            }
+            .navigationTitle("Teamspace")
+        } detail: {
+            NavigationStack {
+                if let section = selectedSection {
+                    detailContent(for: section)
+                        .navigationTitle(section.title)
+                } else {
+                    Text("Select a section")
+                        .navigationTitle("Teamspace")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tabView: some View {
+        TabView {
+            NavigationStack {
+                ChannelsView()
+            }
+            .tabItem {
+                Label("Channels", systemImage: "message.fill")
+            }
+
+            NavigationStack {
+                ProjectsView()
+            }
+            .tabItem {
+                Label("Projects", systemImage: "folder.fill")
+            }
+
+            NavigationStack {
+                FilesView()
+            }
+            .tabItem {
+                Label("Files", systemImage: "doc.fill")
+            }
+
+            NavigationStack {
+                MeetingView()
+            }
+            .tabItem {
+                Label("Meeting", systemImage: "video.fill")
+            }
+
+            NavigationStack {
+                ProfileView(
+                    user: user,
+                    organisations: organisations,
+                    context: context,
+                    onSelectOrganisation: { id in
+                        Task { await selectOrganisation(id) }
+                    },
+                    onSignOut: signOut
+                )
+            }
+            .tabItem {
+                Label("Profile", systemImage: "person.fill")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func detailContent(for section: MainSection) -> some View {
+        switch section {
+        case .channels:
+            ChannelsView()
+        case .projects:
+            ProjectsView()
+        case .files:
+            FilesView()
+        case .meeting:
+            MeetingView()
+        case .profile:
+            ProfileView(
+                user: user,
+                organisations: organisations,
+                context: context,
+                onSelectOrganisation: { id in
+                    Task { await selectOrganisation(id) }
+                },
+                onSignOut: signOut
+            )
         }
     }
 

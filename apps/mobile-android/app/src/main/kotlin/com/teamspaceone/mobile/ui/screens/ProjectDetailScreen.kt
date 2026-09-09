@@ -37,7 +37,7 @@ fun ProjectDetailScreen(project: Project, onBack: () -> Unit = {}) {
     var status by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(project.id) {
         isLoading = true
         try {
             tasks = AuthManager.tasks(project.id)
