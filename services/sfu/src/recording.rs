@@ -7,6 +7,7 @@
 //! using the internal service-to-service headers.
 
 use anyhow::{anyhow, Result};
+use serde_json::json;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -369,6 +370,36 @@ pub async fn collect_recording_files(
         }
     }
     paths
+}
+
+/// Build JSON records for finalized recording files that are staying local
+/// because upload is disabled or failed. This lets the `stop` endpoint still
+/// report what was produced on disk.
+pub fn local_file_records(paths: &[PathBuf]) -> Vec<serde_json::Value> {
+    paths
+        .iter()
+        .map(|path| {
+            let file_name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "recording.bin".to_string());
+            let mime = match path.extension().and_then(|e| e.to_str()) {
+                Some("ogg") => "audio/ogg",
+                Some("ivf") => "video/x-ivf",
+                Some("h264") => "video/h264",
+                Some("mp4") => "video/mp4",
+                _ => "application/octet-stream",
+            };
+            let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+            json!({
+                "name": file_name,
+                "path": path.to_string_lossy(),
+                "mimeType": mime,
+                "size": size,
+                "status": "local",
+            })
+        })
+        .collect()
 }
 
 pub fn require_recording_env() -> Result<(String, String)> {

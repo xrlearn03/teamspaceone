@@ -219,11 +219,22 @@ pub async fn finalize_recording(state: SharedState, room_id: &str) -> Vec<serde_
         }
     }
 
+    // Always produce records for the files that were finalized on disk; when
+    // upload is disabled (or fails) these are the only records we can return.
+    let local_files = recording::local_file_records(&paths);
+
     match recording::require_recording_env() {
-        Ok((url, key)) => recording::upload_files(&url, &key, &rec, paths).await,
+        Ok((url, key)) => {
+            let uploaded = recording::upload_files(&url, &key, &rec, paths).await;
+            if uploaded.is_empty() {
+                local_files
+            } else {
+                uploaded
+            }
+        }
         Err(e) => {
             warn!("Cannot upload recordings for room {}: {}", room_id, e);
-            Vec::new()
+            local_files
         }
     }
 }
