@@ -565,7 +565,7 @@ where
 {
     tokio::spawn(async move {
         let mut buf = vec![0u8; 2000];
-        let default_timeout = Instant::now() + Duration::from_secs(86400);
+        let default_timeout = Instant::now() + Duration::from_secs(60);
 
         // Negotiation state tracked inside this task to avoid glare collisions.
         let mut pending_local_offer = false;
