@@ -19,6 +19,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.util.concurrent.atomic.AtomicBoolean
 
 object SfuManager {
     private const val TAG = "SfuManager"
@@ -26,8 +27,10 @@ object SfuManager {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var session: DefaultClientWebSocketSession? = null
+    private val _isConnected = AtomicBoolean(false)
 
     var onSignal: ((SfuSignal) -> Unit)? = null
+    val isConnected: Boolean get() = _isConnected.get()
 
     fun connect(roomId: String, displayName: String, token: String, userId: String?) {
         disconnect()
@@ -43,12 +46,14 @@ object SfuManager {
                     }
                 }
             } catch (e: Exception) {
+                _isConnected.set(false)
                 Log.e(TAG, "WebSocket error", e)
             }
         }
     }
 
     fun disconnect() {
+        _isConnected.set(false)
         scope.launch {
             session?.cancel()
             session = null
@@ -107,7 +112,10 @@ object SfuManager {
         try {
             val signal: SfuSignal = Json { ignoreUnknownKeys = true }.decodeFromString(text)
             when (signal.type) {
-                "connected" -> Log.d(TAG, "connected: ${signal.participantId}")
+                "connected" -> {
+                    _isConnected.set(true)
+                    Log.d(TAG, "connected: ${signal.participantId}")
+                }
                 "room_state" -> Log.d(TAG, "participants: ${signal.participants?.size}")
                 "participant_joined" -> Log.d(TAG, "joined: ${signal.participantId}")
                 "participant_left" -> Log.d(TAG, "left: ${signal.participantId}")

@@ -2,6 +2,7 @@ import Foundation
 import Combine
 
 protocol SfuManagerDelegate: AnyObject {
+    func sfuManagerDidConnect(_ manager: SfuManager)
     func sfuManager(_ manager: SfuManager, didReceiveOffer sdp: String, from: String)
     func sfuManager(_ manager: SfuManager, didReceiveAnswer sdp: String, from: String)
     func sfuManager(_ manager: SfuManager, didReceiveIce candidate: String, sdpMLineIndex: Int, sdpMid: String?, from: String)
@@ -114,6 +115,7 @@ final class SfuManager: ObservableObject, @unchecked Sendable {
             case "connected":
                 self.myParticipantId = signal.participant_id
                 self.isConnected = true
+                self.delegate?.sfuManagerDidConnect(self)
             case "room_state":
                 self.participants = signal.participants ?? []
             case "participant_joined":

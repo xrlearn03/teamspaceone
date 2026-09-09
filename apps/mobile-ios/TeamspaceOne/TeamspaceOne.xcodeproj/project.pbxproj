@@ -20,6 +20,7 @@
 		6E6F365C6FED158951E2829B /* FileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF612486426A1CB82A83C0E /* FileService.swift */; };
 		7AF6BD4987638647B9993612 /* ProjectDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ADA93918E0CADEDAF7E8CAA /* ProjectDetailView.swift */; };
 		98FBEFF2706EAA97CBCFA1ED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B11CDCDA38D1D65403DB206 /* ContentView.swift */; };
+		99C01D17A73F31A7E8182565 /* ParticipantGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57A0230F790C526F1DC6AD3C /* ParticipantGridView.swift */; };
 		9CF940DF34C0ACD722C56360 /* RemoteVideoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8A490892C0EA83148002746 /* RemoteVideoView.swift */; };
 		A1B8A92649D83EAC3E65AE71 /* LocalVideoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 289F035899CFF841C87714F9 /* LocalVideoView.swift */; };
 		A2064DC42CA85F9E3D02DD05 /* ChannelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F4714A8734BC283BB87D1D4 /* ChannelsView.swift */; };
@@ -38,6 +39,7 @@
 		2BF575E72C94FB842A0E9591 /* TeamspaceOneApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamspaceOneApp.swift; sourceTree = "<group>"; };
 		2F6708349452E77ED315170D /* FilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesView.swift; sourceTree = "<group>"; };
 		4CF612486426A1CB82A83C0E /* FileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileService.swift; sourceTree = "<group>"; };
+		57A0230F790C526F1DC6AD3C /* ParticipantGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParticipantGridView.swift; sourceTree = "<group>"; };
 		5F4714A8734BC283BB87D1D4 /* ChannelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelsView.swift; sourceTree = "<group>"; };
 		6B11CDCDA38D1D65403DB206 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		7A0B5415019CD77F143C5813 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
@@ -108,6 +110,7 @@
 				289F035899CFF841C87714F9 /* LocalVideoView.swift */,
 				CE13872FAF7BC6FC9F322505 /* MainTabView.swift */,
 				9174E36E118D82E8D36CF1C7 /* MeetingView.swift */,
+				57A0230F790C526F1DC6AD3C /* ParticipantGridView.swift */,
 				9DE2DB6573B9A5CCB538E7E7 /* ProfileView.swift */,
 				9ADA93918E0CADEDAF7E8CAA /* ProjectDetailView.swift */,
 				B04DD40EEF005100E25351AB /* ProjectsView.swift */,
@@ -203,6 +206,7 @@
 				5776071EEA8CD8D3FECA0A4B /* MainTabView.swift in Sources */,
 				09251D0FA6AA69B5125CED62 /* MeetingView.swift in Sources */,
 				CF6ED27190939C754DABC73C /* Models.swift in Sources */,
+				99C01D17A73F31A7E8182565 /* ParticipantGridView.swift in Sources */,
 				A8AF6E0515D2E14E97DE2239 /* ProfileView.swift in Sources */,
 				7AF6BD4987638647B9993612 /* ProjectDetailView.swift in Sources */,
 				5ECE43B213A3648D9275C17F /* ProjectsView.swift in Sources */,

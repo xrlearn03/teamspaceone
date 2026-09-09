@@ -14,22 +14,18 @@ struct MeetingView: View {
                     .textFieldStyle(.roundedBorder)
 
                 if manager.isConnected {
-                    Button(manager.isMicEnabled ? "Mute" : "Unmute") {
-                        manager.setMicEnabled(!manager.isMicEnabled)
-                    }
+                    HStack(spacing: 12) {
+                        Button(manager.isMicEnabled ? "Mute" : "Unmute") {
+                            manager.setMicEnabled(!manager.isMicEnabled)
+                        }
 
-                    Button(manager.isSpeakerOn ? "Earpiece" : "Speaker") {
-                        manager.setSpeakerOn(!manager.isSpeakerOn)
-                    }
+                        Button(manager.isSpeakerOn ? "Earpiece" : "Speaker") {
+                            manager.setSpeakerOn(!manager.isSpeakerOn)
+                        }
 
-                    Button(manager.isCameraOn ? "Camera Off" : "Camera On") {
-                        manager.setCameraEnabled(!manager.isCameraOn)
-                    }
-
-                    if manager.isCameraOn, let track = manager.localVideoTrack {
-                        LocalVideoView(track: track)
-                            .frame(height: 200)
-                            .cornerRadius(12)
+                        Button(manager.isCameraOn ? "Cam Off" : "Cam On") {
+                            manager.setCameraEnabled(!manager.isCameraOn)
+                        }
                     }
                 }
 
@@ -47,33 +43,26 @@ struct MeetingView: View {
                 .disabled(roomId.trimmingCharacters(in: .whitespaces).isEmpty)
             }
 
-            Section("Status") {
+            Section("Participants") {
+                ZStack(alignment: .topTrailing) {
+                    if manager.remoteParticipants.isEmpty {
+                        Text("No participants")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 120, alignment: .center)
+                    } else {
+                        ParticipantGridView(participants: manager.remoteParticipants)
+                    }
+
+                    if manager.isCameraOn, let track = manager.localVideoTrack {
+                        LocalVideoView(track: track)
+                            .frame(width: 120, height: 90)
+                            .cornerRadius(8)
+                            .padding(8)
+                    }
+                }
+
                 Text(manager.isConnected ? "Connected" : "Disconnected")
                     .foregroundStyle(manager.isConnected ? .green : .secondary)
-            }
-
-            Section("Participants") {
-                if manager.participants.isEmpty {
-                    Text("No participants")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(manager.participants) { participant in
-                        Text(participant.display_name)
-                    }
-                }
-            }
-
-            Section("Remote video") {
-                if manager.remoteVideoTracks.isEmpty {
-                    Text("No remote video")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(manager.remoteVideoTracks, id: \.trackId) { track in
-                        RemoteVideoView(track: track)
-                            .frame(height: 200)
-                            .cornerRadius(12)
-                    }
-                }
             }
         }
         .navigationTitle("Meeting")

@@ -31,6 +31,7 @@ import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoCapturer
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
+import java.util.concurrent.atomic.AtomicBoolean
 
 object WebRTCManager {
     private const val TAG = "WebRTCManager"
@@ -53,6 +54,20 @@ object WebRTCManager {
     private val _participants = MutableStateFlow<List<SfuParticipant>>(emptyList())
     val participants: StateFlow<List<SfuParticipant>> = _participants.asStateFlow()
 
+    data class RemoteParticipant(
+        val id: String,
+        val displayName: String,
+        val videoTrack: VideoTrack? = null,
+        val audioTrack: AudioTrack? = null,
+        val isScreenShare: Boolean = false
+    ) {
+        val hasAudio: Boolean get() = audioTrack?.enabled() == true
+        val hasVideo: Boolean get() = videoTrack?.enabled() == true
+    }
+
+    private val _remoteParticipants = MutableStateFlow<List<RemoteParticipant>>(emptyList())
+    val remoteParticipants: StateFlow<List<RemoteParticipant>> = _remoteParticipants.asStateFlow()
+
     private val _isSpeakerOn = MutableStateFlow(false)
     val isSpeakerOn: StateFlow<Boolean> = _isSpeakerOn.asStateFlow()
 
@@ -73,6 +88,7 @@ object WebRTCManager {
     private var appContext: Context? = null
 
     private var audioManager: AudioManager? = null
+    private val pendingOffer = AtomicBoolean(false)
 
     private val iceServers: List<PeerConnection.IceServer>
         get() = buildList {
@@ -132,6 +148,7 @@ object WebRTCManager {
         _isCameraOn.value = false
         _errorMessage.value = null
         _participants.value = emptyList()
+        _remoteParticipants.value = emptyList()
         _localVideoTrack.value = null
         _remoteVideoTracks.value = emptyList()
         SfuManager.onSignal = null
@@ -211,6 +228,11 @@ object WebRTCManager {
         _isCameraOn.value = enabled
     }
 
+    private fun maybeOffer() {
+        if (!SfuManager.isConnected || !pendingOffer.compareAndSet(true, false)) return
+        offer()
+    }
+
     private fun offer() {
         val constraints = MediaConstraints()
         peerConnection?.createOffer(object : SdpObserver {
@@ -282,8 +304,27 @@ object WebRTCManager {
         peerConnection?.addIceCandidate(IceCandidate(sdpMid, sdpMLineIndex, candidate))
     }
 
+    private fun participantName(id: String): String {
+        return _participants.value.find { it.id == id }?.displayName ?: id
+    }
+
+    private fun updateRemoteParticipantNames() {
+        _remoteParticipants.value = _remoteParticipants.value.map { rp ->
+            val baseId = if (rp.id.startsWith("screen-")) rp.id.removePrefix("screen-") else rp.id
+            val name = participantName(baseId)
+            rp.copy(displayName = if (rp.isScreenShare) "$name (screen)" else name)
+        }
+    }
+
+    private fun removeRemoteParticipants(participantId: String) {
+        _remoteParticipants.value = _remoteParticipants.value.filter {
+            it.id != participantId && !it.id.startsWith("screen-$participantId")
+        }
+    }
+
     private fun handleSignal(signal: SfuSignal) {
         when (signal.type) {
+            "connected" -> maybeOffer()
             "offer" -> signal.sdp?.let { setRemoteOffer(it) }
             "answer" -> signal.sdp?.let { setRemoteAnswer(it) }
             "ice" -> {
@@ -292,17 +333,22 @@ object WebRTCManager {
                     addIceCandidate(it, index, signal.sdpMid)
                 }
             }
-            "room_state" -> _participants.value = signal.participants ?: emptyList()
+            "room_state" -> {
+                _participants.value = signal.participants ?: emptyList()
+                updateRemoteParticipantNames()
+            }
             "participant_joined" -> {
                 val id = signal.participantId
                 val name = signal.displayName
                 if (id != null && name != null) {
                     _participants.value = _participants.value + SfuParticipant(id, name, signal.userId)
+                    updateRemoteParticipantNames()
                 }
             }
             "participant_left" -> {
                 signal.participantId?.let { id ->
                     _participants.value = _participants.value.filter { it.id != id }
+                    removeRemoteParticipants(id)
                 }
             }
             "error" -> _errorMessage.value = signal.message
@@ -334,25 +380,86 @@ object WebRTCManager {
         override fun onRemoveStream(stream: org.webrtc.MediaStream) {}
         override fun onDataChannel(channel: org.webrtc.DataChannel) {}
         override fun onRenegotiationNeeded() {
-            offer()
+            pendingOffer.set(true)
+            maybeOffer()
         }
 
-        override fun onAddTrack(receiver: org.webrtc.RtpReceiver, streams: Array<out org.webrtc.MediaStream>) {}
+        override fun onAddTrack(
+            receiver: org.webrtc.RtpReceiver,
+            streams: Array<out org.webrtc.MediaStream>
+        ) {
+            // Some WebRTC builds still dispatch track addition through this legacy
+            // callback. It carries the remote MediaStream ID, which is the only
+            // reliable way to detect screen-share streams (`screen-<participant>`).
+            val track = receiver.track() ?: return
+            val streamId = streams.firstOrNull()?.id
+            val isScreenShare = streamId?.startsWith("screen-") == true
+            updateRemoteParticipantForTrack(track, isScreenShare)
+        }
 
         override fun onRemoveTrack(receiver: org.webrtc.RtpReceiver) {
             val track = receiver.track() ?: return
-            if (track is VideoTrack) {
-                _remoteVideoTracks.value = _remoteVideoTracks.value.filter { it.id() != track.id() }
-            }
+            removeRemoteParticipantTrack(track)
         }
 
         override fun onTrack(transceiver: org.webrtc.RtpTransceiver) {
             val track = transceiver.receiver.track() ?: return
-            if (transceiver.direction != org.webrtc.RtpTransceiver.RtpTransceiverDirection.SEND_ONLY &&
-                track is VideoTrack &&
-                _remoteVideoTracks.value.none { it.id() == track.id() }) {
-                _remoteVideoTracks.value += track
+            if (transceiver.direction == org.webrtc.RtpTransceiver.RtpTransceiverDirection.SEND_ONLY) {
+                return
             }
+            updateRemoteParticipantForTrack(track, isScreenShare = false)
+        }
+
+        private fun updateRemoteParticipantForTrack(track: org.webrtc.MediaStreamTrack, isScreenShare: Boolean) {
+            val trackId = track.id() ?: return
+            val baseParticipantId = trackId.substringAfterLast("-", "")
+            if (baseParticipantId.isBlank()) return
+
+            val existingBase = _remoteParticipants.value.find { it.id == baseParticipantId && !it.isScreenShare }
+            val treatAsScreen = isScreenShare || (track is VideoTrack && existingBase?.videoTrack != null)
+            val participantId = if (treatAsScreen) "screen-$baseParticipantId" else baseParticipantId
+
+            val current = _remoteParticipants.value.toMutableList()
+            val index = current.indexOfFirst { it.id == participantId }
+            val old = if (index >= 0) current[index] else null
+            val name = participantName(baseParticipantId)
+
+            val updated = when (track) {
+                is VideoTrack -> {
+                    if (_remoteVideoTracks.value.none { it.id() == trackId }) {
+                        _remoteVideoTracks.value += track
+                    }
+                    old?.copy(videoTrack = track, displayName = if (treatAsScreen) "$name (screen)" else name, isScreenShare = treatAsScreen)
+                        ?: RemoteParticipant(
+                            participantId,
+                            if (treatAsScreen) "$name (screen)" else name,
+                            videoTrack = track,
+                            isScreenShare = treatAsScreen
+                        )
+                }
+                is AudioTrack -> {
+                    old?.copy(audioTrack = track, displayName = name)
+                        ?: RemoteParticipant(participantId, name, audioTrack = track)
+                }
+                else -> return
+            }
+            if (old != null) current[index] = updated else current.add(updated)
+            _remoteParticipants.value = current
+        }
+
+        private fun removeRemoteParticipantTrack(track: org.webrtc.MediaStreamTrack) {
+            val trackId = track.id() ?: return
+
+            _remoteVideoTracks.value = _remoteVideoTracks.value.filter { it.id() != trackId }
+
+            val updated = _remoteParticipants.value.map { rp ->
+                when {
+                    rp.videoTrack?.id() == trackId -> rp.copy(videoTrack = null)
+                    rp.audioTrack?.id() == trackId -> rp.copy(audioTrack = null)
+                    else -> rp
+                }
+            }.filter { it.videoTrack != null || it.audioTrack != null }
+            _remoteParticipants.value = updated
         }
     }
 }

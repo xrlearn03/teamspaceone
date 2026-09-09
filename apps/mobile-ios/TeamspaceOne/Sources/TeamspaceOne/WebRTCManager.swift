@@ -19,7 +19,21 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
     @Published private(set) var isCameraOn = false
     @Published private(set) var participants: [SfuParticipant] = []
     @Published private(set) var remoteVideoTracks: [RTCVideoTrack] = []
+    @Published private(set) var remoteParticipants: [RemoteParticipant] = []
     @Published private(set) var errorMessage: String?
+
+    struct RemoteParticipant: Identifiable {
+        let id: String
+        var displayName: String
+        var videoTrack: RTCVideoTrack?
+        var audioTrack: RTCAudioTrack?
+        var isScreenShare: Bool
+
+        var hasAudio: Bool { audioTrack?.isEnabled ?? false }
+        var hasVideo: Bool { videoTrack?.isEnabled ?? false }
+    }
+
+    private var needsNegotiation = false
 
     private override init() {
         super.init()
@@ -84,6 +98,7 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
     }
 
     func disconnect() {
+        needsNegotiation = false
         videoCapturer?.stopCapture()
         localAudioTrack = nil
         localVideoTrack = nil
@@ -94,10 +109,17 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
         errorMessage = nil
         participants = []
         remoteVideoTracks = []
+        remoteParticipants = []
         peerConnection?.close()
         peerConnection = nil
         factory = nil
         sfu.disconnect()
+    }
+
+    private func maybeOffer() {
+        guard needsNegotiation, peerConnection != nil, sfu.isConnected else { return }
+        needsNegotiation = false
+        offer()
     }
 
     private func startPeerConnection() {
@@ -196,6 +218,12 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
 
     // MARK: - SfuManagerDelegate
 
+    func sfuManagerDidConnect(_ manager: SfuManager) {
+        DispatchQueue.main.async { [weak self] in
+            self?.maybeOffer()
+        }
+    }
+
     func sfuManager(_ manager: SfuManager, didReceiveOffer sdp: String, from: String) {
         setRemoteOffer(sdp)
     }
@@ -211,7 +239,90 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
     func sfuManager(_ manager: SfuManager, didUpdateParticipants participants: [SfuParticipant]) {
         DispatchQueue.main.async { [weak self] in
             self?.participants = participants
+            self?.updateRemoteParticipantNames()
         }
+    }
+
+    private func updateRemoteParticipantNames() {
+        remoteParticipants = remoteParticipants.map { rp in
+            let baseId = rp.id.hasPrefix("screen-") ? String(rp.id.dropFirst("screen-".count)) : rp.id
+            let name = participants.first { $0.id == baseId }?.display_name ?? baseId
+            var updated = rp
+            updated.displayName = rp.isScreenShare ? "\(name) (screen)" : name
+            return updated
+        }
+    }
+
+    private func participantName(for id: String) -> String {
+        let baseId = id.hasPrefix("screen-") ? String(id.dropFirst("screen-".count)) : id
+        return participants.first { $0.id == baseId }?.display_name ?? baseId
+    }
+
+    private func upsertRemoteParticipant(streamId: String, stream: RTCMediaStream) {
+        guard streamId != "stream0" else { return }
+
+        let isScreenShare = streamId.hasPrefix("screen-")
+        let baseId = isScreenShare ? String(streamId.dropFirst("screen-".count)) : streamId
+        let participantId = isScreenShare ? streamId : baseId
+        let displayName = isScreenShare ? "\(participantName(for: baseId)) (screen)" : participantName(for: baseId)
+
+        var list = remoteParticipants
+        let index = list.firstIndex { $0.id == participantId }
+        var participant = index != nil ? list[index!] : RemoteParticipant(
+            id: participantId,
+            displayName: displayName,
+            isScreenShare: isScreenShare
+        )
+
+        for track in stream.videoTracks {
+            if remoteVideoTracks.contains(where: { $0.trackId == track.trackId }) { continue }
+            remoteVideoTracks.append(track)
+            participant.videoTrack = track
+        }
+
+        for track in stream.audioTracks {
+            participant.audioTrack = track
+        }
+
+        participant.displayName = displayName
+
+        if let index = index {
+            list[index] = participant
+        } else {
+            list.append(participant)
+        }
+
+        remoteParticipants = list
+    }
+
+    private func removeRemoteParticipant(streamId: String, stream: RTCMediaStream) {
+        guard streamId != "stream0" else { return }
+
+        var list = remoteParticipants
+        if let index = list.firstIndex(where: { $0.id == streamId }) {
+            var participant = list[index]
+
+            for track in stream.videoTracks {
+                remoteVideoTracks.removeAll { $0.trackId == track.trackId }
+                if participant.videoTrack?.trackId == track.trackId {
+                    participant.videoTrack = nil
+                }
+            }
+
+            for track in stream.audioTracks {
+                if participant.audioTrack?.trackId == track.trackId {
+                    participant.audioTrack = nil
+                }
+            }
+
+            if participant.videoTrack == nil && participant.audioTrack == nil {
+                list.remove(at: index)
+            } else {
+                list[index] = participant
+            }
+        }
+
+        remoteParticipants = list
     }
 
     // MARK: - RTCPeerConnectionDelegate
@@ -219,29 +330,22 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
-        let streamId = stream.streamId
-        let tracks = stream.videoTracks
-        guard streamId != "stream0" else { return }
         DispatchQueue.main.async { [weak self] in
-            for track in tracks where !(self?.remoteVideoTracks.contains(where: { $0.trackId == track.trackId }) ?? false) {
-                self?.remoteVideoTracks.append(track)
-            }
+            self?.upsertRemoteParticipant(streamId: stream.streamId, stream: stream)
         }
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {
-        let streamId = stream.streamId
-        let tracks = stream.videoTracks
-        guard streamId != "stream0" else { return }
         DispatchQueue.main.async { [weak self] in
-            self?.remoteVideoTracks.removeAll { track in
-                tracks.contains { $0.trackId == track.trackId }
-            }
+            self?.removeRemoteParticipant(streamId: stream.streamId, stream: stream)
         }
     }
 
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {
-        offer()
+        DispatchQueue.main.async { [weak self] in
+            self?.needsNegotiation = true
+            self?.maybeOffer()
+        }
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
