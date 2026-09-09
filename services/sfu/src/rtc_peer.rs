@@ -20,7 +20,7 @@ use rtc::peer_connection::state::{
 use rtc::peer_connection::transport::RTCIceCandidateInit;
 use rtc::peer_connection::RTCPeerConnection;
 use rtc::peer_connection::RTCPeerConnectionBuilder;
-use rtc::rtp_transceiver::RTCRtpSenderId;
+use rtc::rtp_transceiver::{RTCRtpReceiverId, RTCRtpSenderId};
 use rtc::rtp_transceiver::rtp_sender::{
     RTCPFeedback, RTCRtpCodec, RTCRtpCodingParameters, RTCRtpEncodingParameters, RtpCodecKind,
 };
@@ -28,6 +28,7 @@ use rtc::sansio::Protocol;
 use rtc::shared::{TaggedBytesMut, TransportContext, TransportProtocol};
 use rtc_interceptor::Interceptor;
 use rtp::Packet as RtpPacket;
+use rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
@@ -59,6 +60,7 @@ pub struct RtcRoomTrack {
     pub kind: RtpCodecKind,
     pub ssrcs: Vec<u32>,
     pub codec: Option<RTCRtpCodec>,
+    pub receiver_id: Option<RTCRtpReceiverId>,
     pub forwarders: Vec<TrackForwarder>,
     pub writer: Option<recording::SharedTrackWriter>,
 }
@@ -84,6 +86,10 @@ enum RtcCommand {
         ssrcs: Vec<u32>,
         codec: Option<RTCRtpCodec>,
         respond: oneshot::Sender<Result<(RTCRtpSenderId, mpsc::Sender<RtpForward>)>>,
+    },
+    WriteReceiverRtcp {
+        receiver_id: RTCRtpReceiverId,
+        packets: Vec<Box<dyn rtcp::Packet>>,
     },
     Close,
 }
@@ -201,6 +207,26 @@ impl RtcPeer {
         rx.await
             .map_err(|_| anyhow!("rtc network task dropped sender"))?
     }
+
+    pub async fn write_receiver_rtcp(
+        &self,
+        receiver_id: RTCRtpReceiverId,
+        packets: Vec<Box<dyn rtcp::Packet>>,
+    ) -> Result<()> {
+        self.cmd_tx
+            .send(RtcCommand::WriteReceiverRtcp { receiver_id, packets })
+            .await
+            .map_err(|_| anyhow!("rtc network task gone"))
+    }
+}
+
+fn is_feedback_packet(p: &dyn rtcp::Packet) -> bool {
+    use rtcp::header::{PacketType, FORMAT_FIR, FORMAT_PLI};
+    matches!(
+        p.header().packet_type,
+        PacketType::PayloadSpecificFeedback
+            if p.header().count == FORMAT_PLI || p.header().count == FORMAT_FIR
+    )
 }
 
 fn to_webrtc_packet(pkt: &RtpPacket) -> webrtc::rtp::packet::Packet {
@@ -354,6 +380,7 @@ where
                                         kind,
                                         ssrcs: ssrcs.clone(),
                                         codec: codec.clone(),
+                                        receiver_id: Some(init.receiver_id),
                                         forwarders: vec![],
                                         writer,
                                     },
@@ -461,16 +488,44 @@ where
                         }
                     }
                     RTCMessage::RtcpPacket(track_id, rtcp_packets) => {
-                        // With the default interceptor chain, NACKs/PLIs are generated and
-                        // consumed automatically by the peer connection. We log the inbound
-                        // RTCP for observability; later passes can forward selected feedback
-                        // (e.g. PLI/FIR) across the room.
                         info!(
                             "Rtc {} RTCP on track {}: {} packets",
                             peer_id,
                             track_id,
                             rtcp_packets.len()
                         );
+
+                        // Forward PLI/FIR feedback from subscribers back to the original
+                        // publisher so the encoder can refresh the keyframe.
+                        if let Some(track) = {
+                            let s = state.read().await;
+                            s.rtc_tracks.get(&track_id).cloned()
+                        } {
+                            if let (Some(receiver_id), Some(publisher_peer)) = (
+                                track.receiver_id,
+                                {
+                                    let s = state.read().await;
+                                    s.rtc_peers.get(&track.publisher).cloned()
+                                },
+                            ) {
+                                let feedback: Vec<Box<dyn rtcp::Packet>> = rtcp_packets
+                                    .iter()
+                                    .filter(|p| is_feedback_packet(p.as_ref()))
+                                    .cloned()
+                                    .collect();
+                                if !feedback.is_empty() {
+                                    if let Err(e) = publisher_peer
+                                        .write_receiver_rtcp(receiver_id, feedback)
+                                        .await
+                                    {
+                                        warn!(
+                                            "Rtc {} failed to forward RTCP for track {} to publisher {}: {:?}",
+                                            peer_id, track_id, track.publisher, e
+                                        );
+                                    }
+                                }
+                            }
+                        }
                     }
                     RTCMessage::DataChannelMessage(channel_id, message) => {
                         info!(
@@ -552,6 +607,13 @@ where
                             }
                             let response = result.map(|sender_id| (sender_id, rtp_tx.clone()));
                             let _ = respond.send(response);
+                        }
+                        Some(RtcCommand::WriteReceiverRtcp { receiver_id, packets }) => {
+                            if let Some(mut receiver) = pc.rtp_receiver(receiver_id) {
+                                if let Err(e) = receiver.write_rtcp(packets) {
+                                    warn!("Rtc {} write_rtcp on receiver {:?} failed: {:?}", peer_id, receiver_id, e);
+                                }
+                            }
                         }
                         Some(RtcCommand::Close) | None => {
                             info!("Rtc {} closing", peer_id);

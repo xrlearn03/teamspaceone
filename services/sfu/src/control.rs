@@ -19,6 +19,11 @@ use serde_json::json;
 use tracing::{info, warn};
 use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
 
+#[cfg(feature = "rtc")]
+use rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication as RtcpPictureLossIndication;
+#[cfg(feature = "rtc")]
+use rtc::rtp_transceiver::rtp_sender::RtpCodecKind as RtcCodecKind;
+
 use crate::composit;
 use crate::recording;
 use crate::{decode_base64url, decode_hex, now_unix, SharedState};
@@ -121,6 +126,48 @@ async fn start_recording(
         }
     }
 
+    // Same for rtc-published tracks when the rtc migration feature is enabled.
+    #[cfg(feature = "rtc")]
+    {
+        let rtc_tracks: Vec<(String, crate::rtc_peer::RtcRoomTrack)> = s
+            .rtc_tracks
+            .iter()
+            .filter(|(_, t)| t.room_id == room_id)
+            .map(|(id, t)| (id.clone(), t.clone()))
+            .collect();
+        for (track_id, rt) in rtc_tracks {
+            if rt.writer.is_none() {
+                let slot = recording::new_track_writer_slot();
+                recording::attach_rtc_track_writer(
+                    &rec,
+                    &slot,
+                    &room_id,
+                    &rt.publisher,
+                    &track_id,
+                    rt.codec.as_ref(),
+                );
+                s.rtc_tracks.get_mut(&track_id).unwrap().writer = Some(slot);
+            }
+            if rt.kind == RtcCodecKind::Video {
+                if let (Some(receiver_id), Some(publisher_peer), Some(ssrc)) = (
+                    rt.receiver_id,
+                    s.rtc_peers.get(&rt.publisher).cloned(),
+                    rt.ssrcs.first().copied(),
+                ) {
+                    let pli = Box::new(RtcpPictureLossIndication {
+                        sender_ssrc: 0,
+                        media_ssrc: ssrc,
+                    });
+                    tokio::spawn(async move {
+                        let _ = publisher_peer
+                            .write_receiver_rtcp(receiver_id, vec![pli])
+                            .await;
+                    });
+                }
+            }
+        }
+    }
+
     info!("Recording started for room {}", room_id);
     Json(json!({ "recording": true })).into_response()
 }
@@ -136,7 +183,18 @@ pub async fn finalize_recording(state: SharedState, room_id: &str) -> Vec<serde_
         let Some(rec) = room.recording.take() else {
             return Vec::new();
         };
-        let slots = room.tracks.iter().map(|rt| rt.recorder.clone()).collect();
+        let mut slots: Vec<recording::SharedTrackWriter> =
+            room.tracks.iter().map(|rt| rt.recorder.clone()).collect();
+
+        #[cfg(feature = "rtc")]
+        {
+            slots.extend(
+                s.rtc_tracks
+                    .iter()
+                    .filter(|(_, t)| t.room_id == room_id)
+                    .filter_map(|(_, t)| t.writer.clone()),
+            );
+        }
         (rec, slots)
     };
 
