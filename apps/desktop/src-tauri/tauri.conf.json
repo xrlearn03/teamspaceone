@@ -53,7 +53,7 @@
       }
     },
     "macOS": {
-      "signingIdentity": "Developer ID Application: EDUTAPXR TECHNOLOGIES PRIVATE LIMITED (7K3F8KC3R8)",
+      "signingIdentity": "-",
       "entitlements": "entitlements.plist",
       "infoPlist": "Info.plist"
     },

@@ -119,12 +119,24 @@ Semantic tokens live in `apps/desktop/src/styles/index.css`:
 
 - iOS project is generated with XcodeGen: `cd apps/mobile-ios/TeamspaceOne && xcodegen generate`.
 - iOS simulator build: `xcodebuild -project TeamspaceOne.xcodeproj -scheme TeamspaceOne -destination 'platform=iOS Simulator,id=<sim-id>' CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO build`.
-- iOS real-device build requires `TEAM_ID` (or set `DEVELOPMENT_TEAM` in `project.yml`) and an enrolled device destination.
+- iOS real-device build requires `APPLE_DEVELOPMENT_TEAM` (or set `DEVELOPMENT_TEAM` in `project.yml`) and an enrolled device destination.
 - Android compile check: `cd apps/mobile-android && ./gradlew :app:compileDebugKotlin`.
 - Android debug install: `./gradlew :app:installDebug`.
 - Android release signing uses env vars `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`; falls back to the debug keystore if not set.
 - Notification service typecheck: `pnpm --filter @teamspace-one/notification-service typecheck`.
 - API gateway typecheck: `pnpm --filter @teamspace-one/api-gateway typecheck`.
+
+## Desktop (Tauri) macOS signing and notarization
+
+- The macOS `signingIdentity` and iOS `developmentTeam` in `apps/desktop/src-tauri/tauri.conf.json` can be overridden at build time with env vars.
+- Required env vars for distribution:
+  - `APPLE_DEVELOPMENT_TEAM` — iOS team ID (overrides `bundle.iOS.developmentTeam`).
+  - `APPLE_SIGNING_IDENTITY` — macOS signing identity (overrides `bundle.macOS.signingIdentity`).
+  - `APPLE_CERTIFICATE` + `APPLE_CERTIFICATE_PASSWORD` — base64-encoded `.p12` and its password for CI.
+  - Notarization (API key method): `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH`.
+  - Notarization (Apple ID method, alternative): `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`.
+- Updater signing needs `TAURI_SIGNING_PRIVATE_KEY` (path or content) and optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The public key is already in `tauri.conf.json > plugins.updater.pubkey`.
+- For CI, set these as repository secrets and pass them in `.github/workflows/release.yml`.
 
 ## Mobile push credentials still needed
 
