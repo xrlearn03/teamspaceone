@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { User } from "lucide-react";
 import { downloadFile, type UserDto } from "../lib/api";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { cn, getUserDisplayName } from "../lib/utils";
@@ -40,7 +41,7 @@ export function UserAvatar({ user, className, fallbackClassName }: UserAvatarPro
     <Avatar className={className}>
       {imageUrl ? <AvatarImage src={imageUrl} alt={name} /> : null}
       <AvatarFallback className={cn(fallbackClassName)}>
-        {name.charAt(0).toUpperCase()}
+        <User className="h-1/2 w-1/2" />
       </AvatarFallback>
     </Avatar>
   );

@@ -80,6 +80,10 @@ export class AccessService {
       ids.push(payload.userId);
     }
 
+    if (typeof payload.createdBy === 'string') {
+      ids.push(payload.createdBy);
+    }
+
     if (Array.isArray(payload.memberIds)) {
       ids.push(...(payload.memberIds as string[]));
     }

@@ -167,7 +167,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   ): Promise<void> {
     const userId = client.data.userId as string | undefined;
     if (!userId || !data.meetingId || !Array.isArray(data.userIds)) return;
-    if (!(await this.access.canAccess(userId, 'meeting', data.meetingId))) return;
     if (data.channelId && !(await this.access.canAccess(userId, 'channel', data.channelId))) return;
     const payload = {
       meetingId: data.meetingId,

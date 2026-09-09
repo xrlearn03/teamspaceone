@@ -115,6 +115,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [outgoingCall, setOutgoingCall] = useState<OutgoingCall | null>(null);
   const handlersRef = useRef<Map<string, Set<(payload: unknown) => void>>>(new Map());
+  const userIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -130,6 +131,14 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
     async function connect() {
       const token = await getAccessToken();
+      if (token) {
+        try {
+          const jwtPayload = JSON.parse(atob(token.split('.')[1] ?? '')) as { sub?: string } | undefined;
+          userIdRef.current = jwtPayload?.sub ?? null;
+        } catch {
+          userIdRef.current = null;
+        }
+      }
       const socket = io(`${REALTIME_URL}/realtime`, {
         transports: ["websocket", "polling"],
         auth: token ? { token } : undefined,
@@ -233,6 +242,22 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           }
           if (event === "message.created") {
             const message = payload as Message;
+            if (message.senderId !== userIdRef.current) {
+              playSound(SOUNDS.notification);
+              const activeChannelId = useUIStore.getState().activeChannelId;
+              if (activeChannelId !== message.channelId) {
+                useUIStore.getState().addNotificationToast({
+                  title: "New message",
+                  body: message.content
+                    ? message.content.length > 60
+                      ? `${message.content.slice(0, 60)}…`
+                      : message.content
+                    : "Attachment",
+                  resourceType: "channel",
+                  link: `/channels/${message.channelId}/messages/${message.id}`,
+                });
+              }
+            }
             if (!message.parentMessageId) {
               queryClient.setQueryData<InfiniteData<MessagePage, string | null>>(["messages", message.channelId], (data) => {
                 if (!data || data.pages.some((page) => page.items.some((item) => item.id === message.id))) return data;

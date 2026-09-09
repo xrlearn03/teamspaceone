@@ -294,7 +294,7 @@ export function useMessages(channelId?: string, query?: string) {
   }, [channelId, connected, joinRealtimeChannel, leaveRealtimeChannel]);
 
   return useInfiniteQuery({
-    queryKey: ["messages", channelId, query],
+    queryKey: ["messages", channelId, ...(query ? [query] : [])],
     queryFn: ({ pageParam }) => api.getMessages(channelId as string, pageParam ?? undefined, 50, query),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
