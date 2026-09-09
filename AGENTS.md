@@ -114,3 +114,20 @@ Semantic tokens live in `apps/desktop/src/styles/index.css`:
 - Simulcast layer selection wire format: `{"type":"layer","track_id":"<id>","rid":"f"}`.
 - Real NAT/TURN validation requires a reachable TURN server or coturn instance and two clients on separate networks; set `SFU_ICE_SERVERS` to a JSON array of `{urls, username, credential}` and verify relay candidates are selected.
 - Real-device mobile runs need an Android device (`adb`) or enrolled iOS device; simulators can exercise UI/signaling but cannot fully validate camera/mic/NAT paths.
+
+## Native mobile builds (iOS / Android)
+
+- iOS project is generated with XcodeGen: `cd apps/mobile-ios/TeamspaceOne && xcodegen generate`.
+- iOS simulator build: `xcodebuild -project TeamspaceOne.xcodeproj -scheme TeamspaceOne -destination 'platform=iOS Simulator,id=<sim-id>' CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO build`.
+- iOS real-device build requires `TEAM_ID` (or set `DEVELOPMENT_TEAM` in `project.yml`) and an enrolled device destination.
+- Android compile check: `cd apps/mobile-android && ./gradlew :app:compileDebugKotlin`.
+- Android debug install: `./gradlew :app:installDebug`.
+- Android release signing uses env vars `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`; falls back to the debug keystore if not set.
+- Notification service typecheck: `pnpm --filter @teamspace-one/notification-service typecheck`.
+
+## Mobile push credentials still needed
+
+- Android FCM: place `google-services.json` in `apps/mobile-android/app/` and configure the backend `GOOGLE_APPLICATION_CREDENTIALS` + `FIREBASE_PROJECT_ID`.
+- iOS APNs: configure backend env vars `APN_KEY` (path to `.p8`), `APN_KEY_ID`, `APN_TEAM_ID`, `APN_BUNDLE_ID`.
+- iOS custom URL scheme still needs `CFBundleURLTypes` added to the generated Info.plist (either via `project.yml` `info` block or a custom Info.plist).
+- iOS universal links need the `aps-environment` entitlement plus `apple-app-site-association` hosted on the domain.
