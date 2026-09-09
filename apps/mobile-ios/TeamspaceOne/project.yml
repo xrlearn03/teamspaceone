@@ -33,6 +33,9 @@ settings:
     INFOPLIST_KEY_TURNUsername: ""
     INFOPLIST_KEY_TURNPassword: ""
     TARGETED_DEVICE_FAMILY: "1,2"
+    CODE_SIGN_STYLE: "Automatic"
+    CODE_SIGN_IDENTITY: "iPhone Developer"
+    DEVELOPMENT_TEAM: "$(TEAM_ID)"
 targets:
   TeamspaceOne:
     type: application

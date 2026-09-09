@@ -2,6 +2,7 @@ plugins {
     id("com.android.application") version "8.12.0"
     id("org.jetbrains.kotlin.android") version "2.1.10"
     id("org.jetbrains.kotlin.plugin.compose") version "2.1.10"
+    id("com.google.gms.google-services") version "4.4.2" apply false
 }
 
 android {
@@ -24,9 +25,33 @@ android {
         buildConfigField("String", "TURN_PASSWORD", "\"\"")
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH") ?: "release.keystore"
+            val keystoreFile = file(keystorePath)
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: ""
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: ""
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: ""
+            } else {
+                // Fallback to the debug keystore so release builds can still compile
+                // for local/real-device testing. Replace with a real release keystore
+                // for distribution.
+                val debugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
+                if (debugKeystore.exists()) {
+                    storeFile = debugKeystore
+                    storePassword = "android"
+                    keyAlias = "androiddebugkey"
+                    keyPassword = "android"
+                }
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -69,6 +94,11 @@ dependencies {
     implementation("io.socket:socket.io-client:2.1.0")
     implementation("ch.threema:webrtc-android:144.0.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("com.google.firebase:firebase-messaging-ktx:24.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+}
+
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
 }

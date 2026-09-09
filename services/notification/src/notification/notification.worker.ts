@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PushService } from './push.service.js';
 import { renderEmailHtml } from './templates.js';
 
 @Processor('notification')
@@ -12,6 +13,7 @@ export class NotificationDeliveryWorker extends WorkerHost {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly push: PushService,
   ) {
     super();
   }
@@ -177,33 +179,35 @@ export class NotificationDeliveryWorker extends WorkerHost {
 
   private async sendPush(notification: { id: string; title: string; body: string; userId: string; link?: string | null }): Promise<void> {
     const pushWebhookUrl = this.config.get<string>('PUSH_WEBHOOK_URL');
-    if (!pushWebhookUrl) {
+    if (pushWebhookUrl) {
+      const response = await fetch(pushWebhookUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          userId: notification.userId,
+          title: notification.title,
+          body: notification.body,
+          link: notification.link,
+          notificationId: notification.id,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Push webhook returned ${response.status}`);
+      }
+
       this.logger.debug(
         { notificationId: notification.id, userId: notification.userId },
-        'PUSH_WEBHOOK_URL not configured; skipping push delivery',
+        'Push notification sent via webhook',
       );
-      return;
     }
 
-    const response = await fetch(pushWebhookUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        userId: notification.userId,
-        title: notification.title,
-        body: notification.body,
-        link: notification.link,
-        notificationId: notification.id,
-      }),
+    await this.push.sendPush({
+      userId: notification.userId,
+      title: notification.title,
+      body: notification.body,
+      link: notification.link,
+      notificationId: notification.id,
     });
-
-    if (!response.ok) {
-      throw new Error(`Push webhook returned ${response.status}`);
-    }
-
-    this.logger.debug(
-      { notificationId: notification.id, userId: notification.userId },
-      'Push notification sent via webhook',
-    );
   }
 }

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		09251D0FA6AA69B5125CED62 /* MeetingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9174E36E118D82E8D36CF1C7 /* MeetingView.swift */; };
+		0C0F2A99525947056FA956D6 /* PushNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19D329FD4BC6DC4C16C868FD /* PushNotificationManager.swift */; };
 		12DB1A85ECE24CEC95F39913 /* WebRTCManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDB83F65F7AD67066EA76DDB /* WebRTCManager.swift */; };
 		134A6C8B37004CEE95DC2135 /* ChannelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C2ACB266A1318A0933AF708 /* ChannelDetailView.swift */; };
 		3334EF4DE537881589D48110 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 57A07D5FB7B7490FA6AB16CA /* WebRTC */; };
@@ -36,6 +37,7 @@
 /* Begin PBXFileReference section */
 		1070C81BB67A0053106E80BE /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		10C97FFB684334EDD7375160 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
+		19D329FD4BC6DC4C16C868FD /* PushNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationManager.swift; sourceTree = "<group>"; };
 		1E7A643BAE7E5FF954387F4D /* DeepLinkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkManager.swift; sourceTree = "<group>"; };
 		289F035899CFF841C87714F9 /* LocalVideoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoView.swift; sourceTree = "<group>"; };
 		2BF575E72C94FB842A0E9591 /* TeamspaceOneApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamspaceOneApp.swift; sourceTree = "<group>"; };
@@ -117,6 +119,7 @@
 				9DE2DB6573B9A5CCB538E7E7 /* ProfileView.swift */,
 				9ADA93918E0CADEDAF7E8CAA /* ProjectDetailView.swift */,
 				B04DD40EEF005100E25351AB /* ProjectsView.swift */,
+				19D329FD4BC6DC4C16C868FD /* PushNotificationManager.swift */,
 				94C8B204934C3B67DD12FA93 /* RealtimeManager.swift */,
 				A8A490892C0EA83148002746 /* RemoteVideoView.swift */,
 				EB8DDDB8A9409A28944BC4FD /* SfuManager.swift */,
@@ -167,6 +170,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					BBB12ECAACBC2A1424773BC0 = {
+						DevelopmentTeam = "$(TEAM_ID)";
+						ProvisioningStyle = Automatic;
+					};
 				};
 			};
 			buildConfigurationList = B48BD465FCDFAF998C63DE93 /* Build configuration list for PBXProject "TeamspaceOne" */;
@@ -214,6 +221,7 @@
 				A8AF6E0515D2E14E97DE2239 /* ProfileView.swift in Sources */,
 				7AF6BD4987638647B9993612 /* ProjectDetailView.swift in Sources */,
 				5ECE43B213A3648D9275C17F /* ProjectsView.swift in Sources */,
+				0C0F2A99525947056FA956D6 /* PushNotificationManager.swift in Sources */,
 				5E36F8CA8B5C58AFAB3571CF /* RealtimeManager.swift in Sources */,
 				9CF940DF34C0ACD722C56360 /* RemoteVideoView.swift in Sources */,
 				C11143237190CD1072266FD2 /* SfuManager.swift in Sources */,
@@ -258,8 +266,11 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "$(TEAM_ID)";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -357,8 +368,11 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "$(TEAM_ID)";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;

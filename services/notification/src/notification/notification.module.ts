@@ -11,6 +11,7 @@ import { PrismaModule } from '../prisma/prisma.module.js';
 import { NotificationService } from './notification.service.js';
 import { NotificationController } from './notification.controller.js';
 import { NotificationDeliveryWorker } from './notification.worker.js';
+import { PushService } from './push.service.js';
 import { GuestInvitationEmailService } from './guest-invitation-email.service.js';
 import { MemberInvitationEmailService } from './member-invitation-email.service.js';
 import { PasswordResetEmailService } from './password-reset-email.service.js';
@@ -35,10 +36,11 @@ import { PasswordResetEmailService } from './password-reset-email.service.js';
     RemotePermissionGuard,
     NotificationService,
     NotificationDeliveryWorker,
+    PushService,
     GuestInvitationEmailService,
     MemberInvitationEmailService,
     PasswordResetEmailService,
   ],
-  exports: [NotificationService, GuestInvitationEmailService, MemberInvitationEmailService, PasswordResetEmailService],
+  exports: [NotificationService, PushService, GuestInvitationEmailService, MemberInvitationEmailService, PasswordResetEmailService],
 })
 export class NotificationModule {}

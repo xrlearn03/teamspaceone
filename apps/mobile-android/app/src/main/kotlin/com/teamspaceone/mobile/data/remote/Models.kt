@@ -200,3 +200,8 @@ data class SfuSignal(
 )
 
 class APIError(message: String, val status: Int = 0) : Exception(message)
+
+@Serializable
+data class RegisterDeviceResponse(
+    @SerialName("id") val id: String
+)

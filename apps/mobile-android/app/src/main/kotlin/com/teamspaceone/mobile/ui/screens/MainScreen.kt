@@ -1,5 +1,10 @@
 package com.teamspaceone.mobile.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,10 +31,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import com.teamspaceone.mobile.data.deeplink.DeepLinkManager
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import com.teamspaceone.mobile.data.deeplink.DeepLinkManager
+import com.teamspaceone.mobile.data.push.PushTokenManager
 
 private data class TabItem(
     val label: String,
@@ -64,6 +72,37 @@ fun MainScreen(
         index?.let { selectedTab = it }
         DeepLinkManager.consume()
     }
+
+    val context = LocalContext.current
+    val requiresNotificationPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    var notificationsGranted by remember {
+        mutableStateOf(
+            if (requiresNotificationPermission) {
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notificationsGranted = granted
+    }
+
+    LaunchedEffect(Unit) {
+        if (requiresNotificationPermission && !notificationsGranted) {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    LaunchedEffect(notificationsGranted) {
+        if (notificationsGranted) {
+            PushTokenManager.fetchAndRegisterToken(context)
+        }
+    }
+
     val isTablet = LocalConfiguration.current.screenWidthDp >= 600
 
     if (isTablet) {
