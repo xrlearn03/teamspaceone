@@ -7,7 +7,7 @@ struct ContentView: View {
         Group {
             if let isAuthenticated = isAuthenticated {
                 if isAuthenticated {
-                    HomeView()
+                    MainTabView(onSignOut: { self.isAuthenticated = false })
                 } else {
                     LoginView(onAuthenticated: { self.isAuthenticated = true })
                 }

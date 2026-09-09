@@ -8,25 +8,15 @@ import androidx.compose.runtime.setValue
 import com.teamspaceone.mobile.data.remote.AuthManager
 
 private enum class AuthRoute {
-    Login, Home, Channels, Projects, Meeting, Files
+    Login, Main
 }
 
 @Composable
 fun RootScreen() {
-    var route by remember { mutableStateOf(if (AuthManager.accessToken() != null) AuthRoute.Home else AuthRoute.Login) }
+    var route by remember { mutableStateOf(if (AuthManager.accessToken() != null) AuthRoute.Main else AuthRoute.Login) }
 
     when (route) {
-        AuthRoute.Login -> LoginScreen(onLoggedIn = { route = AuthRoute.Home })
-        AuthRoute.Home -> HomeScreen(
-            onChannels = { route = AuthRoute.Channels },
-            onProjects = { route = AuthRoute.Projects },
-            onMeeting = { route = AuthRoute.Meeting },
-            onFiles = { route = AuthRoute.Files },
-            onSignOut = { route = AuthRoute.Login }
-        )
-        AuthRoute.Channels -> ChannelsScreen(onBack = { route = AuthRoute.Home })
-        AuthRoute.Projects -> ProjectsScreen(onBack = { route = AuthRoute.Home })
-        AuthRoute.Meeting -> MeetingScreen(onBack = { route = AuthRoute.Home })
-        AuthRoute.Files -> FilesScreen(onBack = { route = AuthRoute.Home })
+        AuthRoute.Login -> LoginScreen(onLoggedIn = { route = AuthRoute.Main })
+        AuthRoute.Main -> MainScreen(onSignOut = { route = AuthRoute.Login })
     }
 }

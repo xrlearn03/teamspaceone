@@ -34,11 +34,7 @@ import com.teamspaceone.mobile.data.remote.UserDto
 import kotlinx.coroutines.launch
 
 @Composable
-fun HomeScreen(
-    onChannels: () -> Unit = {},
-    onProjects: () -> Unit = {},
-    onMeeting: () -> Unit = {},
-    onFiles: () -> Unit = {},
+fun ProfileScreen(
     onSignOut: () -> Unit = {}
 ) {
     var isLoading by remember { mutableStateOf(true) }
@@ -130,35 +126,6 @@ fun HomeScreen(
                         if (ctx.isSuperAdmin == true) {
                             Text("Super admin")
                         }
-                    }
-                }
-
-                item {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    Text("Collaboration", style = MaterialTheme.typography.titleMedium)
-                }
-
-                item {
-                    Button(onClick = onChannels, modifier = Modifier.fillMaxWidth()) {
-                        Text("Channels")
-                    }
-                }
-
-                item {
-                    Button(onClick = onProjects, modifier = Modifier.fillMaxWidth()) {
-                        Text("Projects")
-                    }
-                }
-
-                item {
-                    Button(onClick = onMeeting, modifier = Modifier.fillMaxWidth()) {
-                        Text("Meeting")
-                    }
-                }
-
-                item {
-                    Button(onClick = onFiles, modifier = Modifier.fillMaxWidth()) {
-                        Text("Files")
                     }
                 }
 
