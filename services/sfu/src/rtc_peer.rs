@@ -23,7 +23,7 @@ use rtc::peer_connection::RTCPeerConnectionBuilder;
 use rtc::rtp_transceiver::{RTCRtpReceiverId, RTCRtpSenderId};
 use rtc::rtp_transceiver::rtp_sender::RTCRtpSender;
 use rtc::rtp_transceiver::rtp_sender::{
-    RTCPFeedback, RTCRtpCodec, RTCRtpCodingParameters, RTCRtpEncodingParameters, RtpCodecKind,
+    RTCPFeedback, RTCRtpCodec, RTCRtpCodecParameters, RTCRtpCodingParameters, RTCRtpEncodingParameters, RtpCodecKind,
 };
 use rtc::sansio::Protocol;
 use rtc::shared::{TaggedBytesMut, TransportContext, TransportProtocol};
@@ -38,11 +38,13 @@ use tracing::{info, warn};
 
 use crate::{recording, validate_display_name, verify_sfu_token, Event, PeerId, RoomId, SharedState, Signal};
 
-/// RTP packet plus the sender ID on the subscriber peer that should transmit it.
+/// RTP packet plus the sender ID and resolved codec on the subscriber peer
+/// that should transmit it.
 #[derive(Clone)]
 pub struct RtpForward {
     pub sender_id: RTCRtpSenderId,
     pub packet: RtpPacket,
+    pub codec: Option<RTCRtpCodec>,
 }
 
 /// A subscriber forwarding slot for one published track.
@@ -60,6 +62,9 @@ pub struct RtcRoomTrack {
     pub room_id: RoomId,
     pub kind: RtpCodecKind,
     pub ssrcs: Vec<u32>,
+    /// All negotiated receive codecs for this track. The first codec is used as
+    /// a default until the first RTP packet resolves the actual payload type.
+    pub codecs: Vec<RTCRtpCodecParameters>,
     pub codec: Option<RTCRtpCodec>,
     pub receiver_id: Option<RTCRtpReceiverId>,
     pub forwarders: Vec<TrackForwarder>,
@@ -374,12 +379,12 @@ where
                                 let track = receiver.track().clone();
                                 let kind = track.kind();
                                 let ssrcs: Vec<u32> = track.ssrcs().collect();
-                                let codec = receiver
+                                let codecs = receiver
                                     .get_parameters()
                                     .rtp_parameters
                                     .codecs
-                                    .first()
-                                    .map(|c| c.rtp_codec.clone());
+                                    .to_vec();
+                                let codec = codecs.first().map(|c| c.rtp_codec.clone());
                                 let writer = {
                                     let s = state.read().await;
                                     s.rooms
@@ -407,6 +412,7 @@ where
                                         room_id: room_id.clone(),
                                         kind,
                                         ssrcs: ssrcs.clone(),
+                                        codecs: codecs.clone(),
                                         codec: codec.clone(),
                                         receiver_id: Some(init.receiver_id),
                                         forwarders: vec![],
@@ -505,38 +511,46 @@ where
             while let Some(message) = pc.poll_read() {
                 match message {
                     RTCMessage::RtpPacket(track_id, rtp_packet) => {
-                        let tracks = {
-                            let s = state.read().await;
-                            s.rtc_tracks.get(&track_id).cloned()
-                        };
-                        if let Some(track) = tracks {
-                            if track.ssrcs.is_empty() {
-                                let ssrc = rtp_packet.header.ssrc;
-                                let mut s = state.write().await;
-                                if let Some(t) = s.rtc_tracks.get_mut(&track_id) {
+                        let (forwarders, writer, fwd_codec) = {
+                            let mut s = state.write().await;
+                            if let Some(t) = s.rtc_tracks.get_mut(&track_id) {
+                                if t.ssrcs.is_empty() {
+                                    let ssrc = rtp_packet.header.ssrc;
+                                    let payload_type = rtp_packet.header.payload_type;
                                     t.ssrcs = vec![ssrc];
+                                    if let Some(matched) = t.codecs.iter().find(|c| c.payload_type == payload_type) {
+                                        t.codec = Some(matched.rtp_codec.clone());
+                                    }
                                 }
+                                (
+                                    t.forwarders.clone(),
+                                    t.writer.clone(),
+                                    t.codec.clone(),
+                                )
+                            } else {
+                                (Vec::new(), None, None)
                             }
+                        };
 
-                            for fwd in &track.forwarders {
-                                let fwd_msg = RtpForward {
-                                    sender_id: fwd.sender_id,
-                                    packet: rtp_packet.clone(),
-                                };
-                                if let Err(_) = fwd.tx.try_send(fwd_msg) {
-                                    warn!(
-                                        "Rtc {} forward queue full for track {} to {:?}",
-                                        peer_id, track_id, fwd.sender_id
-                                    );
-                                }
+                        for fwd in &forwarders {
+                            let fwd_msg = RtpForward {
+                                sender_id: fwd.sender_id,
+                                packet: rtp_packet.clone(),
+                                codec: fwd_codec.clone(),
+                            };
+                            if let Err(_) = fwd.tx.try_send(fwd_msg) {
+                                warn!(
+                                    "Rtc {} forward queue full for track {} to {:?}",
+                                    peer_id, track_id, fwd.sender_id
+                                );
                             }
+                        }
 
-                            if let Some(ref writer) = track.writer {
-                                let w_pkt = to_webrtc_packet(&rtp_packet);
-                                let mut guard = writer.lock().await;
-                                if let Some((ref mut w, _)) = guard.as_mut() {
-                                    w.write_rtp(&w_pkt);
-                                }
+                        if let Some(ref writer) = writer {
+                            let w_pkt = to_webrtc_packet(&rtp_packet);
+                            let mut guard = writer.lock().await;
+                            if let Some((ref mut w, _)) = guard.as_mut() {
+                                w.write_rtp(&w_pkt);
                             }
                         }
                     }
@@ -696,7 +710,7 @@ where
                         if let Some(mut sender) = pc.rtp_sender(fwd.sender_id) {
                             let ssrc = fwd.packet.header.ssrc;
                             if sender.track().ssrcs().next().is_none() {
-                                if let Err(e) = update_sender_ssrc(&mut sender, &room_id, &peer_id, ssrc) {
+                                if let Err(e) = update_sender_ssrc(&mut sender, &room_id, &peer_id, ssrc, fwd.codec.clone()) {
                                     warn!("Rtc {} failed to set sender {:?} ssrc to {}: {:?}", peer_id, fwd.sender_id, ssrc, e);
                                     continue;
                                 }
@@ -743,9 +757,9 @@ fn add_local_track<I: Interceptor>(
     track_id: String,
     kind: RtpCodecKind,
     ssrcs: Vec<u32>,
-    codec: Option<RTCRtpCodec>,
+    desired_codec: Option<RTCRtpCodec>,
 ) -> Result<RTCRtpSenderId> {
-    let codec = codec.unwrap_or_else(|| default_codec(kind));
+    let desired = desired_codec.unwrap_or_else(|| default_codec(kind));
     let codings: Vec<RTCRtpEncodingParameters> = if ssrcs.is_empty() {
         vec![RTCRtpEncodingParameters {
             rtp_coding_parameters: RTCRtpCodingParameters {
@@ -755,7 +769,7 @@ fn add_local_track<I: Interceptor>(
                 fec: None,
             },
             active: true,
-            codec,
+            codec: desired.clone(),
             max_bitrate: 0,
             max_framerate: None,
             scale_resolution_down_by: None,
@@ -771,7 +785,7 @@ fn add_local_track<I: Interceptor>(
                     fec: None,
                 },
                 active: true,
-                codec: codec.clone(),
+                codec: desired.clone(),
                 max_bitrate: 0,
                 max_framerate: None,
                 scale_resolution_down_by: None,
@@ -787,8 +801,56 @@ fn add_local_track<I: Interceptor>(
         codings,
     );
 
-    pc.add_track(track)
-        .map_err(|e| anyhow!("add_track failed: {:?}", e))
+    let sender_id = pc
+        .add_track(track)
+        .map_err(|e| anyhow!("add_track failed: {:?}", e))?;
+
+    // Align the sender's encoding codec with the codecs this peer actually
+    // negotiated. This avoids payload-type mismatches when forwarding.
+    if let Some(mut sender) = pc.rtp_sender(sender_id) {
+        let mut params = sender.get_parameters().clone();
+        let codec = pick_codec(kind, Some(&desired), &params.rtp_parameters.codecs);
+        for encoding in &mut params.encodings {
+            encoding.codec = codec.clone();
+        }
+        if let Err(e) = sender.set_parameters(params, None) {
+            warn!("Rtc {} failed to set sender parameters: {:?}", peer_id, e);
+        }
+    }
+
+    Ok(sender_id)
+}
+
+fn pick_codec(kind: RtpCodecKind, desired: Option<&RTCRtpCodec>, available: &[RTCRtpCodecParameters]) -> RTCRtpCodec {
+    if let Some(desired) = desired.filter(|c| !c.mime_type.is_empty()) {
+        // Exact MIME + fmtp match.
+        if let Some(matched) = available.iter().find(|c| {
+            c.rtp_codec.mime_type.to_uppercase() == desired.mime_type.to_uppercase()
+                && (desired.sdp_fmtp_line.is_empty()
+                    || c.rtp_codec.sdp_fmtp_line.is_empty()
+                    || c.rtp_codec.sdp_fmtp_line == desired.sdp_fmtp_line)
+        }) {
+            return matched.rtp_codec.clone();
+        }
+        // MIME-only match.
+        if let Some(matched) = available
+            .iter()
+            .find(|c| c.rtp_codec.mime_type.to_uppercase() == desired.mime_type.to_uppercase())
+        {
+            return matched.rtp_codec.clone();
+        }
+    }
+
+    // Fall back to the first codec that matches the track kind.
+    let kind_prefix = kind.to_string().to_uppercase();
+    if let Some(matched) = available
+        .iter()
+        .find(|c| c.rtp_codec.mime_type.to_uppercase().starts_with(&kind_prefix))
+    {
+        return matched.rtp_codec.clone();
+    }
+
+    default_codec(kind)
 }
 
 fn update_sender_ssrc<'a, I: Interceptor>(
@@ -796,17 +858,16 @@ fn update_sender_ssrc<'a, I: Interceptor>(
     room_id: &RoomId,
     peer_id: &PeerId,
     ssrc: u32,
+    desired_codec: Option<RTCRtpCodec>,
 ) -> Result<()> {
     let track = sender.track().clone();
     let mut params = sender.get_parameters().clone();
 
+    // Pick a codec that the sender actually negotiated so payload-type
+    // mismatches are handled safely.
+    let codec = pick_codec(track.kind(), desired_codec.as_ref(), &params.rtp_parameters.codecs);
+
     if params.encodings.is_empty() {
-        let codec = params
-            .rtp_parameters
-            .codecs
-            .first()
-            .map(|c| c.rtp_codec.clone())
-            .unwrap_or_else(|| default_codec(track.kind()));
         params.encodings.push(RTCRtpEncodingParameters {
             rtp_coding_parameters: RTCRtpCodingParameters {
                 rid: String::new(),
@@ -823,6 +884,7 @@ fn update_sender_ssrc<'a, I: Interceptor>(
     } else {
         for encoding in &mut params.encodings {
             encoding.rtp_coding_parameters.ssrc = Some(ssrc);
+            encoding.codec = codec.clone();
         }
     }
 
