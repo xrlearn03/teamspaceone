@@ -37,6 +37,7 @@ APP_URL=https://app.${domain}
 %{ else }
 APP_URL=http://${external_ip}:3000
 %{ endif }
+WEB_DOMAIN=${domain}
 %{ if domain != "" }
 CORS_ORIGINS=tauri://localhost,http://tauri.localhost,http://localhost:1420,http://localhost:5173,https://${domain},https://app.${domain},https://api.${domain},https://realtime.${domain},https://sfu.${domain}
 %{ else }

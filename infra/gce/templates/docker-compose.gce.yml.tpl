@@ -43,6 +43,14 @@ services:
       service: minio
     ports: !override []
 
+  web:
+    extends:
+      file: ./docker-compose.yml
+      service: web
+    environment:
+      WEB_DOMAIN: ${domain}
+    ports: !override []
+
   caddy:
     image: caddy:2
     container_name: teamspace-one-caddy

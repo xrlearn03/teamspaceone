@@ -56,7 +56,8 @@ Caddy will obtain Let's Encrypt certs automatically once DNS resolves. It proxie
 
 | Domain | Backend |
 | --- | --- |
-| `teamspaceone.in` / `app.teamspaceone.in` / `api.teamspaceone.in` | `api-gateway:3000` |
+| `teamspaceone.in` / `www.teamspaceone.in` | `web:80` |
+| `app.teamspaceone.in` / `api.teamspaceone.in` | `api-gateway:3000` |
 | `realtime.teamspaceone.in` | `realtime-service:3005` |
 | `sfu.teamspaceone.in` | `sfu:8443` |
 | `s3.teamspaceone.in` | `minio:9000` |

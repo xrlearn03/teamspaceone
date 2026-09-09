@@ -5,7 +5,11 @@
 }
 
 ${domain} {
-  reverse_proxy api-gateway:3000
+  reverse_proxy web:80
+}
+
+www.${domain} {
+  reverse_proxy web:80
 }
 
 app.${domain} {
