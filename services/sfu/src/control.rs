@@ -183,11 +183,59 @@ async fn metrics(State(app): State<ControlState>) -> Response {
     .into_response()
 }
 
+async fn room_metrics(
+    State(app): State<ControlState>,
+    Path(room_id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(e) = verify_control_token(&headers, &room_id, &app.token_secret) {
+        return err(StatusCode::UNAUTHORIZED, &e.to_string());
+    }
+
+    let s = app.state.read().await;
+    let Some(room) = s.rooms.get(&room_id) else {
+        return err(StatusCode::NOT_FOUND, "room not found");
+    };
+
+    let participants: Vec<serde_json::Value> = room
+        .participants
+        .iter()
+        .map(|(id, p)| {
+            json!({
+                "id": id,
+                "display_name": p.display_name,
+                "user_id": p.user_id,
+            })
+        })
+        .collect();
+    let tracks: Vec<serde_json::Value> = room
+        .tracks
+        .iter()
+        .map(|t| {
+            json!({
+                "publisher": t.publisher,
+                "track_id": t.track_id,
+                "kind": format!("{:?}", t.remote.kind()),
+                "screen": t.is_screen,
+            })
+        })
+        .collect();
+
+    Json(json!({
+        "room_id": room_id,
+        "recording": room.recording.is_some(),
+        "participants": participants,
+        "tracks": tracks,
+    }))
+    .into_response()
+}
+
 /// Runs the control API listener until shutdown.
 pub async fn serve(state: SharedState, token_secret: String) -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/metrics", get(metrics))
+        .route("/rooms/{room_id}", get(room_metrics))
         .route("/rooms/{room_id}/recording/start", post(start_recording))
         .route("/rooms/{room_id}/recording/stop", post(stop_recording))
         .with_state(ControlState {
