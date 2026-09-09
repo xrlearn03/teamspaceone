@@ -135,6 +135,33 @@ struct NewTask: Codable, Sendable {
     let position: Int?
 }
 
+struct FileRecord: Codable, Sendable, Identifiable {
+    let id: String
+    let organisationId: String
+    let workspaceId: String?
+    let resourceType: String?
+    let resourceId: String?
+    let category: String
+    let uploaderId: String
+    let originalName: String
+    let mimeType: String
+    let size: Int
+    let status: String
+    let url: String?
+    let downloadUrl: String?
+    let previewUrl: String?
+    let thumbnailUrl: String?
+    let createdAt: String
+    let updatedAt: String
+}
+
+struct PresignUploadResponse: Codable, Sendable {
+    let id: String
+    let uploadUrl: String
+    let storageKey: String
+    let uploadHeaders: [String: String]
+}
+
 struct SfuToken: Codable, Sendable {
     let token: String
 }

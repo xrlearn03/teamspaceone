@@ -133,6 +133,35 @@ data class NewTask(
 )
 
 @Serializable
+data class FileRecord(
+    @SerialName("id") val id: String,
+    @SerialName("organisationId") val organisationId: String,
+    @SerialName("workspaceId") val workspaceId: String? = null,
+    @SerialName("resourceType") val resourceType: String? = null,
+    @SerialName("resourceId") val resourceId: String? = null,
+    @SerialName("category") val category: String,
+    @SerialName("uploaderId") val uploaderId: String,
+    @SerialName("originalName") val originalName: String,
+    @SerialName("mimeType") val mimeType: String,
+    @SerialName("size") val size: Int,
+    @SerialName("status") val status: String,
+    @SerialName("url") val url: String? = null,
+    @SerialName("downloadUrl") val downloadUrl: String? = null,
+    @SerialName("previewUrl") val previewUrl: String? = null,
+    @SerialName("thumbnailUrl") val thumbnailUrl: String? = null,
+    @SerialName("createdAt") val createdAt: String,
+    @SerialName("updatedAt") val updatedAt: String
+)
+
+@Serializable
+data class PresignUploadResponse(
+    @SerialName("id") val id: String,
+    @SerialName("uploadUrl") val uploadUrl: String,
+    @SerialName("storageKey") val storageKey: String,
+    @SerialName("uploadHeaders") val uploadHeaders: Map<String, String> = emptyMap()
+)
+
+@Serializable
 data class SfuToken(
     @SerialName("token") val token: String
 )

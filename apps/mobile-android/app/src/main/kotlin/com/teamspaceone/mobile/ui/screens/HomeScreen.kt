@@ -38,6 +38,7 @@ fun HomeScreen(
     onChannels: () -> Unit = {},
     onProjects: () -> Unit = {},
     onMeeting: () -> Unit = {},
+    onFiles: () -> Unit = {},
     onSignOut: () -> Unit = {}
 ) {
     var isLoading by remember { mutableStateOf(true) }
@@ -152,6 +153,12 @@ fun HomeScreen(
                 item {
                     Button(onClick = onMeeting, modifier = Modifier.fillMaxWidth()) {
                         Text("Meeting")
+                    }
+                }
+
+                item {
+                    Button(onClick = onFiles, modifier = Modifier.fillMaxWidth()) {
+                        Text("Files")
                     }
                 }
 

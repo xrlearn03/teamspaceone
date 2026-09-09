@@ -8,7 +8,7 @@ import androidx.compose.runtime.setValue
 import com.teamspaceone.mobile.data.remote.AuthManager
 
 private enum class AuthRoute {
-    Login, Home, Channels, Projects, Meeting
+    Login, Home, Channels, Projects, Meeting, Files
 }
 
 @Composable
@@ -21,10 +21,12 @@ fun RootScreen() {
             onChannels = { route = AuthRoute.Channels },
             onProjects = { route = AuthRoute.Projects },
             onMeeting = { route = AuthRoute.Meeting },
+            onFiles = { route = AuthRoute.Files },
             onSignOut = { route = AuthRoute.Login }
         )
         AuthRoute.Channels -> ChannelsScreen(onBack = { route = AuthRoute.Home })
         AuthRoute.Projects -> ProjectsScreen(onBack = { route = AuthRoute.Home })
         AuthRoute.Meeting -> MeetingScreen(onBack = { route = AuthRoute.Home })
+        AuthRoute.Files -> FilesScreen(onBack = { route = AuthRoute.Home })
     }
 }

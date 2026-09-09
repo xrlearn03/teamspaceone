@@ -50,6 +50,7 @@ struct HomeView: View {
                     NavigationLink("Channels", destination: ChannelsView())
                     NavigationLink("Projects", destination: ProjectsView())
                     NavigationLink("Meeting", destination: MeetingView())
+                    NavigationLink("Files", destination: FilesView())
                 }
 
                 Section("Realtime") {
