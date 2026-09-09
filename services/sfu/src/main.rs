@@ -100,6 +100,11 @@ enum Signal {
         sdp_m_line_index: u16,
         sdp_mid: Option<String>,
     },
+    #[serde(rename = "layer")]
+    Layer {
+        track_id: String,
+        rid: String,
+    },
 }
 
 /// Messages sent from the SFU to the client.

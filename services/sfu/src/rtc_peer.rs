@@ -34,6 +34,7 @@ use rtc::shared::{
 use rtc_interceptor::{Interceptor, Packet as IcptPacket, StreamInfo, TaggedPacket};
 use rtp::Packet as RtpPacket;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -193,6 +194,8 @@ pub struct TrackForwarder {
     pub subscriber: PeerId,
     pub sender_id: RTCRtpSenderId,
     pub tx: mpsc::Sender<RtpForward>,
+    /// Selected simulcast RID for this subscriber. `None` forwards all layers.
+    pub selected_rid: Option<String>,
 }
 
 /// Published `rtc` track stored in the shared room state.
@@ -203,6 +206,8 @@ pub struct RtcRoomTrack {
     pub kind: RtpCodecKind,
     /// Base SSRCs seen for this track. Simulcast layers are accumulated here.
     pub ssrcs: Vec<u32>,
+    /// RID to base SSRC mapping, discovered from the first RTP packet of each layer.
+    pub rid_to_ssrc: HashMap<String, u32>,
     /// All negotiated receive codecs for this track. The first codec is used as
     /// a default until the first RTP packet resolves the actual payload type.
     pub codecs: Vec<RTCRtpCodecParameters>,
@@ -642,8 +647,8 @@ where
                     RTCPeerConnectionEvent::OnTrack(track_event) => match track_event {
                         RTCTrackEvent::OnOpen(init) => {
                             info!(
-                                "Rtc {} track opened: track_id={}, receiver_id={:?}",
-                                peer_id, init.track_id, init.receiver_id
+                                "Rtc {} track opened: track_id={}, receiver_id={:?}, rid={:?}",
+                                peer_id, init.track_id, init.receiver_id, init.rid
                             );
                             if let Some(mut receiver) = pc.rtp_receiver(init.receiver_id) {
                                 let track = receiver.track().clone();
@@ -652,88 +657,125 @@ where
                                 let codecs =
                                     receiver.get_parameters().rtp_parameters.codecs.to_vec();
                                 let codec = codecs.first().map(|c| c.rtp_codec.clone());
-                                let writer = {
+
+                                // Build the RID -> SSRC map from what the rtc crate has already
+                                // learned from the RTP RID header extension.
+                                let mut rid_to_ssrc: HashMap<String, u32> = HashMap::new();
+                                for ssrc in &ssrcs {
+                                    if let Some(rid) = track.rid(*ssrc) {
+                                        rid_to_ssrc.insert(rid.to_string(), *ssrc);
+                                    }
+                                }
+                                // The OnTrack event itself tells us the RID for this layer.
+                                if let (Some(rid), Some(ssrc)) = (init.rid.as_ref(), ssrcs.first()) {
+                                    rid_to_ssrc.entry(rid.clone()).or_insert(*ssrc);
+                                }
+
+                                // If this track already exists we are just discovering a new
+                                // simulcast layer; do not create duplicate senders/subscribers.
+                                let track_exists = {
                                     let s = state.read().await;
-                                    s.rooms.get(&room_id).and_then(|r| r.recording.clone()).map(
-                                        |rec| {
-                                            let slot = recording::new_track_writer_slot();
-                                            recording::attach_rtc_track_writer(
-                                                &rec,
-                                                &slot,
-                                                &room_id,
-                                                &peer_id,
-                                                &init.track_id,
-                                                codec.as_ref(),
-                                            );
-                                            slot
-                                        },
-                                    )
+                                    s.rtc_tracks.contains_key(&init.track_id)
                                 };
 
-                                let mut s = state.write().await;
-                                s.rtc_tracks.insert(
-                                    init.track_id.clone(),
-                                    RtcRoomTrack {
-                                        publisher: peer_id.clone(),
-                                        room_id: room_id.clone(),
-                                        kind,
-                                        ssrcs: ssrcs.clone(),
-                                        codecs: codecs.clone(),
-                                        codec: codec.clone(),
-                                        receiver_id: Some(init.receiver_id),
-                                        forwarders: vec![],
-                                        writer,
-                                    },
-                                );
-                                drop(s);
-
-                                // Add this new track to every other rtc peer already in the room.
-                                let other_peers: Vec<String> = {
-                                    let s = state.read().await;
-                                    s.rooms
-                                        .get(&room_id)
-                                        .map(|r| {
-                                            r.participants
-                                                .keys()
-                                                .filter(|id| *id != &peer_id)
-                                                .cloned()
-                                                .collect()
-                                        })
-                                        .unwrap_or_default()
-                                };
-
-                                for other_id in other_peers {
-                                    let maybe_peer = {
-                                        let s = state.read().await;
-                                        s.rtc_peers.get(&other_id).cloned()
-                                    };
-                                    if let Some(other_peer) = maybe_peer {
-                                        match other_peer
-                                            .add_local_track(
-                                                init.track_id.clone(),
-                                                kind,
-                                                ssrcs.clone(),
-                                                codec.clone(),
-                                            )
-                                            .await
-                                        {
-                                            Ok((sender_id, rtp_tx)) => {
-                                                let mut s = state.write().await;
-                                                if let Some(room_track) =
-                                                    s.rtc_tracks.get_mut(&init.track_id)
-                                                {
-                                                    room_track.forwarders.push(TrackForwarder {
-                                                        subscriber: other_id.clone(),
-                                                        sender_id,
-                                                        tx: rtp_tx,
-                                                    });
-                                                }
+                                if track_exists {
+                                    let mut s = state.write().await;
+                                    if let Some(room_track) = s.rtc_tracks.get_mut(&init.track_id) {
+                                        for ssrc in &ssrcs {
+                                            if !room_track.ssrcs.contains(ssrc) {
+                                                room_track.ssrcs.push(*ssrc);
                                             }
-                                            Err(e) => {
-                                                warn!(
-                                                    "Rtc {} failed to forward track {} to {}: {:?}",
-                                                    peer_id, init.track_id, other_id, e
+                                        }
+                                        room_track.rid_to_ssrc.extend(rid_to_ssrc);
+                                    }
+                                } else {
+                                    let writer = {
+                                        let s = state.read().await;
+                                        s.rooms.get(&room_id).and_then(|r| r.recording.clone()).map(
+                                            |rec| {
+                                                let slot = recording::new_track_writer_slot();
+                                                recording::attach_rtc_track_writer(
+                                                    &rec,
+                                                    &slot,
+                                                    &room_id,
+                                                    &peer_id,
+                                                    &init.track_id,
+                                                    codec.as_ref(),
                                                 );
+                                                slot
+                                            },
+                                        )
+                                    };
+
+                                    {
+                                        let mut s = state.write().await;
+                                        s.rtc_tracks.insert(
+                                            init.track_id.clone(),
+                                            RtcRoomTrack {
+                                                publisher: peer_id.clone(),
+                                                room_id: room_id.clone(),
+                                                kind,
+                                                ssrcs: ssrcs.clone(),
+                                                rid_to_ssrc: rid_to_ssrc.clone(),
+                                                codecs: codecs.clone(),
+                                                codec: codec.clone(),
+                                                receiver_id: Some(init.receiver_id),
+                                                forwarders: vec![],
+                                                writer,
+                                            },
+                                        );
+                                    }
+
+                                    // Add this new track to every other rtc peer already in the room.
+                                    let other_peers: Vec<String> = {
+                                        let s = state.read().await;
+                                        s.rooms
+                                            .get(&room_id)
+                                            .map(|r| {
+                                                r.participants
+                                                    .keys()
+                                                    .filter(|id| *id != &peer_id)
+                                                    .cloned()
+                                                    .collect()
+                                            })
+                                            .unwrap_or_default()
+                                    };
+
+                                    for other_id in other_peers {
+                                        let maybe_peer = {
+                                            let s = state.read().await;
+                                            s.rtc_peers.get(&other_id).cloned()
+                                        };
+                                        if let Some(other_peer) = maybe_peer {
+                                            match other_peer
+                                                .add_local_track(
+                                                    init.track_id.clone(),
+                                                    kind,
+                                                    ssrcs.clone(),
+                                                    codec.clone(),
+                                                )
+                                                .await
+                                            {
+                                                Ok((sender_id, rtp_tx)) => {
+                                                    let mut s = state.write().await;
+                                                    if let Some(room_track) =
+                                                        s.rtc_tracks.get_mut(&init.track_id)
+                                                    {
+                                                        room_track.forwarders.retain(|f| f.subscriber != other_id);
+                                                        room_track.forwarders.push(TrackForwarder {
+                                                            subscriber: other_id.clone(),
+                                                            sender_id,
+                                                            tx: rtp_tx,
+                                                            selected_rid: None,
+                                                        });
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    warn!(
+                                                        "Rtc {} failed to forward track {} to {}: {:?}",
+                                                        peer_id, init.track_id, other_id, e
+                                                    );
+                                                }
                                             }
                                         }
                                     }
@@ -785,7 +827,7 @@ where
             while let Some(message) = pc.poll_read() {
                 match message {
                     RTCMessage::RtpPacket(track_id, rtp_packet) => {
-                        let (forwarders, writer, fwd_codec) = {
+                        let (forwarders, writer, fwd_codec, receiver_id) = {
                             let mut s = state.write().await;
                             if let Some(t) = s.rtc_tracks.get_mut(&track_id) {
                                 let ssrc = rtp_packet.header.ssrc;
@@ -798,14 +840,48 @@ where
                                 {
                                     t.codec = Some(matched.rtp_codec.clone());
                                 }
-                                (t.forwarders.clone(), t.writer.clone(), t.codec.clone())
+                                (
+                                    t.forwarders.clone(),
+                                    t.writer.clone(),
+                                    t.codec.clone(),
+                                    t.receiver_id,
+                                )
                             } else {
-                                (Vec::new(), None, None)
+                                (Vec::new(), None, None, None)
                             }
                         };
 
+                        // Resolve the packet's RID, if the rtc crate has learned it from the
+                        // RTP header extension. This is the source of truth for simulcast.
+                        let packet_rid = if let Some(receiver_id) = receiver_id {
+                            pc.rtp_receiver(receiver_id).and_then(|receiver| {
+                                receiver
+                                    .track()
+                                    .rid(rtp_packet.header.ssrc)
+                                    .map(|r| r.to_string())
+                            })
+                        } else {
+                            None
+                        };
+
+                        if let Some(ref rid) = packet_rid {
+                            let mut s = state.write().await;
+                            if let Some(t) = s.rtc_tracks.get_mut(&track_id) {
+                                t.rid_to_ssrc.insert(rid.clone(), rtp_packet.header.ssrc);
+                            }
+                        }
+
                         let packet_bytes = rtp_packet.payload.len() as u64 + 12;
                         for fwd in &forwarders {
+                            // Per-subscriber RID filtering.
+                            if let (Some(selected), Some(rid)) =
+                                (&fwd.selected_rid, &packet_rid)
+                            {
+                                if selected != rid {
+                                    continue;
+                                }
+                            }
+
                             let fwd_msg = RtpForward {
                                 sender_id: fwd.sender_id,
                                 packet: rtp_packet.clone(),
@@ -990,7 +1066,7 @@ where
                     if let Some(fwd) = rtp {
                         if let Some(mut sender) = pc.rtp_sender(fwd.sender_id) {
                             let ssrc = fwd.packet.header.ssrc;
-                            if sender.track().ssrcs().next().is_none() {
+                            if !sender.track().ssrcs().any(|s| s == ssrc) {
                                 if let Err(e) = update_sender_ssrc(&mut sender, &room_id, &peer_id, ssrc, fwd.codec.clone()) {
                                     warn!("Rtc {} failed to set sender {:?} ssrc to {}: {:?}", peer_id, fwd.sender_id, ssrc, e);
                                     continue;
@@ -1300,6 +1376,7 @@ async fn handle_offer_sdp<I: Interceptor>(
                         subscriber: peer_id.clone(),
                         sender_id,
                         tx: rtp_tx.clone(),
+                        selected_rid: None,
                     });
                 }
             }
@@ -1560,6 +1637,30 @@ pub async fn process_rtc_signal(
             rtc_peer
                 .add_ice_candidate(candidate, sdp_m_line_index, sdp_mid)
                 .await?;
+        }
+
+        Signal::Layer { track_id, rid } => {
+            let mut s = state.write().await;
+            if let Some(room_track) = s.rtc_tracks.get_mut(&track_id) {
+                if let Some(fwd) = room_track
+                    .forwarders
+                    .iter_mut()
+                    .find(|f| f.subscriber == peer_id)
+                {
+                    info!(
+                        "Rtc {} selecting rid {} for track {}",
+                        peer_id, rid, track_id
+                    );
+                    fwd.selected_rid = Some(rid);
+                } else {
+                    warn!(
+                        "Rtc {} has no forwarder for track {} to select layer",
+                        peer_id, track_id
+                    );
+                }
+            } else {
+                warn!("Rtc {} select_layer for unknown track {}", peer_id, track_id);
+            }
         }
 
         Signal::Leave => {
