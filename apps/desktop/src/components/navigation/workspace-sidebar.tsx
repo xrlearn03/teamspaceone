@@ -49,6 +49,8 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Avatar, AvatarFallback } from "../ui/avatar";
 import { Badge } from "../ui/badge";
+import { useRealtime } from "../../hooks/useRealtime";
+import { UserAvatar } from "../user-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -245,6 +247,9 @@ export function WorkspaceSidebar() {
   const { data: users } = useUsers(memberUserIds);
   const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
   const { data: me } = useMe();
+  const meIdRef = useRef(me?.id);
+  useEffect(() => { meIdRef.current = me?.id; }, [me?.id]);
+  const { connected, joinRealtimeChannel, leaveRealtimeChannel, sendPresence, onRealtimeEvent } = useRealtime();
   const { user: authzUser } = usePermissionContext();
   const canAny = (permissions: string[]) =>
     authzUser ? hasAnyPermission(authzUser, permissions) : false;
@@ -358,6 +363,41 @@ export function WorkspaceSidebar() {
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 10);
   }, [channels]);
+  const directMessagesRef = useRef(directMessages);
+  useEffect(() => { directMessagesRef.current = directMessages; }, [directMessages]);
+
+  const [presenceMap, setPresenceMap] = useState<Record<string, { status: string; at: number }>>({});
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const unsub = onRealtimeEvent("presence", (payload) => {
+      if (!meIdRef.current || payload.userId === meIdRef.current) return;
+      if (!payload.room.startsWith("channel:")) return;
+      const channelId = payload.room.slice("channel:".length);
+      if (!directMessagesRef.current.some((d) => d.id === channelId)) return;
+      setPresenceMap((prev) => ({ ...prev, [payload.userId]: { status: payload.status, at: Date.now() } }));
+    });
+    return () => { unsub(); };
+  }, []);
+
+  useEffect(() => {
+    if (!connected) return;
+    for (const dm of directMessages) {
+      joinRealtimeChannel(dm.id);
+      sendPresence(dm.id, "online");
+    }
+    return () => {
+      for (const dm of directMessages) {
+        leaveRealtimeChannel(dm.id);
+      }
+    };
+  }, [connected, directMessages, joinRealtimeChannel, leaveRealtimeChannel, sendPresence]);
+
   const visibleProjects = projects?.filter((p) => inWorkspace(p.workspaceId)) ?? [];
   const visibleMeetings = meetings?.filter((m) => inWorkspace((m as { workspaceId?: string }).workspaceId)) ?? [];
 
@@ -588,13 +628,31 @@ export function WorkspaceSidebar() {
         <SidebarSection title="Direct messages">
           {directMessages.length > 0 ? (
             directMessages.map((dm) => {
+              const other = dm.members.find((m) => m.userId !== me?.id);
+              const otherUser = other ? userMap.get(other.userId) : undefined;
+              const otherPresence = other ? presenceMap[other.userId] : undefined;
+              const status = (() => {
+                if (!otherPresence) return "offline";
+                if (now - otherPresence.at > 2 * 60 * 60 * 1000) return "offline";
+                if (["online", "away", "busy"].includes(otherPresence.status)) return otherPresence.status;
+                return "offline";
+              })();
               const Icon = ({ className }: { className?: string }) => (
-                <span
-                  className={cn(
-                    "h-2 w-2 rounded-full bg-online",
-                    className,
-                  )}
-                />
+                <span className={cn(className, "relative h-6 w-6 shrink-0")}>
+                  <UserAvatar user={otherUser} className="h-full w-full" />
+                  <span
+                    className={cn(
+                      "absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-surface",
+                      status === "online"
+                        ? "bg-online"
+                        : status === "away"
+                          ? "bg-away"
+                          : status === "busy"
+                            ? "bg-busy"
+                            : "bg-offline",
+                    )}
+                  />
+                </span>
               );
               return (
                 <SidebarItem
