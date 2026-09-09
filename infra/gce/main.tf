@@ -100,7 +100,7 @@ resource "google_compute_address" "static" {
 
 resource "google_compute_disk" "data" {
   name = "${var.instance_name}-data"
-  type = "pd-ssd"
+  type = "pd-balanced"
   zone = var.zone
   size = var.data_disk_size
 }
