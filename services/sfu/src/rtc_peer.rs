@@ -9,7 +9,7 @@ use bytes::BytesMut;
 use rtc::media_stream::MediaStreamTrack;
 use rtc::peer_connection::configuration::{
     interceptor_registry::register_default_interceptors, media_engine::MediaEngine,
-    RTCConfigurationBuilder, RTCIceServer,
+    setting_engine::SettingEngine, RTCConfigurationBuilder, RTCIceServer,
 };
 use rtc::peer_connection::event::{RTCPeerConnectionEvent, RTCTrackEvent};
 use rtc::peer_connection::message::RTCMessage;
@@ -18,26 +18,29 @@ use rtc::peer_connection::state::{
     RTCIceConnectionState, RTCIceGatheringState, RTCPeerConnectionState,
 };
 use rtc::peer_connection::transport::RTCIceCandidateInit;
+use rtc::peer_connection::transport::RTCIceCandidateType;
 use rtc::peer_connection::RTCPeerConnection;
 use rtc::peer_connection::RTCPeerConnectionBuilder;
-use rtc::rtp_transceiver::{RTCRtpReceiverId, RTCRtpSenderId};
 use rtc::rtp_transceiver::rtp_sender::RTCRtpSender;
 use rtc::rtp_transceiver::rtp_sender::{
-    RTCPFeedback, RTCRtpCodec, RTCRtpCodecParameters, RTCRtpCodingParameters, RTCRtpEncodingParameters,
-    RTCRtpFecParameters, RTCRtpRtxParameters, RtpCodecKind,
+    RTCPFeedback, RTCRtpCodec, RTCRtpCodecParameters, RTCRtpCodingParameters,
+    RTCRtpEncodingParameters, RTCRtpFecParameters, RTCRtpRtxParameters, RtpCodecKind,
 };
+use rtc::rtp_transceiver::{RTCRtpReceiverId, RTCRtpSenderId};
 use rtc::sansio::Protocol;
 use rtc::shared::{TaggedBytesMut, TransportContext, TransportProtocol};
 use rtc_interceptor::Interceptor;
 use rtp::Packet as RtpPacket;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
-use crate::{recording, validate_display_name, verify_sfu_token, Event, PeerId, RoomId, SharedState, Signal};
+use crate::{
+    recording, validate_display_name, verify_sfu_token, Event, PeerId, RoomId, SharedState, Signal,
+};
 
 /// RTP packet plus the sender ID and resolved codec on the subscriber peer
 /// that should transmit it.
@@ -123,13 +126,24 @@ impl RtcPeer {
         media_engine
             .register_default_codecs()
             .map_err(|e| anyhow!("failed to register default codecs: {:?}", e))?;
-        let registry = register_default_interceptors(
-            rtc_interceptor::Registry::new(),
-            &mut media_engine,
-        )
-        .map_err(|e| anyhow!("failed to register default interceptors: {:?}", e))?;
+        let registry =
+            register_default_interceptors(rtc_interceptor::Registry::new(), &mut media_engine)
+                .map_err(|e| anyhow!("failed to register default interceptors: {:?}", e))?;
 
-        let pc: RTCPeerConnection<_> = RTCPeerConnectionBuilder::new()
+        let mut setting_engine = SettingEngine::default();
+        if let Ok(nat_ips) = std::env::var("SFU_NAT_1TO1_IPS") {
+            let ips: Vec<String> = nat_ips
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect();
+            if !ips.is_empty() {
+                setting_engine.set_nat_1to1_ips(ips, RTCIceCandidateType::Host);
+            }
+        }
+
+        let mut pc: RTCPeerConnection<_> = RTCPeerConnectionBuilder::new()
             .with_configuration(
                 RTCConfigurationBuilder::new()
                     .with_ice_servers(vec![RTCIceServer {
@@ -140,12 +154,43 @@ impl RtcPeer {
             )
             .with_media_engine(media_engine)
             .with_interceptor_registry(registry)
+            .with_setting_engine(setting_engine)
             .build()
             .map_err(|e| anyhow!("failed to build rtc peer: {:?}", e))?;
 
         let socket = UdpSocket::bind("0.0.0.0:0").await?;
-        let local_addr = socket.local_addr()?;
-        info!("Rtc peer {} listening on {}", peer_id, local_addr);
+        let socket_addr = socket.local_addr()?;
+        let port = socket_addr.port();
+
+        // Advertise a host candidate using the configured NAT IP (or loopback for local dev).
+        let advertised_ip = std::env::var("SFU_NAT_1TO1_IPS")
+            .ok()
+            .and_then(|s| s.split(',').next().map(str::trim).map(String::from))
+            .unwrap_or_else(|| "127.0.0.1".to_string());
+        let local_ip: IpAddr = advertised_ip
+            .parse()
+            .unwrap_or_else(|_| IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        let local_addr = SocketAddr::new(local_ip, port);
+        info!(
+            "Rtc peer {} listening on {} (advertised {})",
+            peer_id, socket_addr, local_addr
+        );
+
+        let mut candidate_init = RTCIceCandidateInit::default();
+        candidate_init.candidate = format!(
+            "candidate:1 1 udp 2130706431 {} {} typ host",
+            local_addr.ip(),
+            local_addr.port()
+        );
+        candidate_init.sdp_mid = Some("0".to_string());
+        candidate_init.sdp_mline_index = Some(0);
+        pc.add_local_candidate(candidate_init).map_err(|e| {
+            anyhow!(
+                "failed to add local host candidate for {}: {:?}",
+                peer_id,
+                e
+            )
+        })?;
 
         let (cmd_tx, cmd_rx) = mpsc::channel::<RtcCommand>(32);
         let (rtp_tx, rtp_rx) = mpsc::channel::<RtpForward>(128);
@@ -153,6 +198,7 @@ impl RtcPeer {
             peer_id.to_string(),
             pc,
             socket,
+            local_addr,
             tx,
             cmd_rx,
             state,
@@ -167,7 +213,11 @@ impl RtcPeer {
     pub async fn handle_offer(&self, sdp: String, target: PeerId) -> Result<String> {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
-            .send(RtcCommand::HandleOffer { sdp, target, respond: tx })
+            .send(RtcCommand::HandleOffer {
+                sdp,
+                target,
+                respond: tx,
+            })
             .await
             .map_err(|_| anyhow!("rtc network task gone"))?;
         rx.await
@@ -228,7 +278,10 @@ impl RtcPeer {
         packets: Vec<Box<dyn rtcp::Packet>>,
     ) -> Result<()> {
         self.cmd_tx
-            .send(RtcCommand::WriteReceiverRtcp { receiver_id, packets })
+            .send(RtcCommand::WriteReceiverRtcp {
+                receiver_id,
+                packets,
+            })
             .await
             .map_err(|_| anyhow!("rtc network task gone"))
     }
@@ -282,6 +335,7 @@ fn spawn_network_task<I>(
     peer_id: PeerId,
     mut pc: RTCPeerConnection<I>,
     socket: UdpSocket,
+    local_addr: SocketAddr,
     tx: mpsc::UnboundedSender<Event>,
     mut cmd_rx: mpsc::Receiver<RtcCommand>,
     state: SharedState,
@@ -293,13 +347,6 @@ where
     I: Interceptor + Send + 'static,
 {
     tokio::spawn(async move {
-        let local_addr = match socket.local_addr() {
-            Ok(a) => a,
-            Err(e) => {
-                warn!("Rtc network task {}: cannot get local addr: {}", peer_id, e);
-                return;
-            }
-        };
         let mut buf = vec![0u8; 2000];
         let default_timeout = Instant::now() + Duration::from_secs(86400);
 
@@ -381,18 +428,13 @@ where
                                 let track = receiver.track().clone();
                                 let kind = track.kind();
                                 let ssrcs: Vec<u32> = track.ssrcs().collect();
-                                let codecs = receiver
-                                    .get_parameters()
-                                    .rtp_parameters
-                                    .codecs
-                                    .to_vec();
+                                let codecs =
+                                    receiver.get_parameters().rtp_parameters.codecs.to_vec();
                                 let codec = codecs.first().map(|c| c.rtp_codec.clone());
                                 let writer = {
                                     let s = state.read().await;
-                                    s.rooms
-                                        .get(&room_id)
-                                        .and_then(|r| r.recording.clone())
-                                        .map(|rec| {
+                                    s.rooms.get(&room_id).and_then(|r| r.recording.clone()).map(
+                                        |rec| {
                                             let slot = recording::new_track_writer_slot();
                                             recording::attach_rtc_track_writer(
                                                 &rec,
@@ -403,7 +445,8 @@ where
                                                 codec.as_ref(),
                                             );
                                             slot
-                                        })
+                                        },
+                                    )
                                 };
 
                                 let mut s = state.write().await;
@@ -485,9 +528,17 @@ where
                                     for fwd in &track.forwarders {
                                         removals.push((fwd.subscriber.clone(), fwd.sender_id));
                                     }
-                                    if let Some(recorder) = s.rooms.get(&room_id).and_then(|r| r.recording.clone()) {
+                                    if let Some(recorder) =
+                                        s.rooms.get(&room_id).and_then(|r| r.recording.clone())
+                                    {
                                         tokio::spawn(async move {
-                                            recording::finish_track_writer(&recorder, &track.writer.unwrap_or_else(recording::new_track_writer_slot)).await;
+                                            recording::finish_track_writer(
+                                                &recorder,
+                                                &track.writer.unwrap_or_else(
+                                                    recording::new_track_writer_slot,
+                                                ),
+                                            )
+                                            .await;
                                         });
                                     }
                                 }
@@ -521,14 +572,12 @@ where
                                     t.ssrcs.push(ssrc);
                                 }
                                 let payload_type = rtp_packet.header.payload_type;
-                                if let Some(matched) = t.codecs.iter().find(|c| c.payload_type == payload_type) {
+                                if let Some(matched) =
+                                    t.codecs.iter().find(|c| c.payload_type == payload_type)
+                                {
                                     t.codec = Some(matched.rtp_codec.clone());
                                 }
-                                (
-                                    t.forwarders.clone(),
-                                    t.writer.clone(),
-                                    t.codec.clone(),
-                                )
+                                (t.forwarders.clone(), t.writer.clone(), t.codec.clone())
                             } else {
                                 (Vec::new(), None, None)
                             }
@@ -570,13 +619,12 @@ where
                             let s = state.read().await;
                             s.rtc_tracks.get(&track_id).cloned()
                         } {
-                            if let (Some(receiver_id), Some(publisher_peer)) = (
-                                track.receiver_id,
-                                {
+                            if let (Some(receiver_id), Some(publisher_peer)) =
+                                (track.receiver_id, {
                                     let s = state.read().await;
                                     s.rtc_peers.get(&track.publisher).cloned()
-                                },
-                            ) {
+                                })
+                            {
                                 let feedback: Vec<Box<dyn rtcp::Packet>> = rtcp_packets
                                     .iter()
                                     .filter(|p| is_feedback_packet(p.as_ref()))
@@ -801,12 +849,8 @@ fn add_local_track<I: Interceptor>(
                     rtp_coding_parameters: RTCRtpCodingParameters {
                         rid: String::new(),
                         ssrc: Some(*ssrc),
-                        rtx: Some(RTCRtpRtxParameters {
-                            ssrc: rtx_ssrc,
-                        }),
-                        fec: Some(RTCRtpFecParameters {
-                            ssrc: fec_ssrc,
-                        }),
+                        rtx: Some(RTCRtpRtxParameters { ssrc: rtx_ssrc }),
+                        fec: Some(RTCRtpFecParameters { ssrc: fec_ssrc }),
                     },
                     active: true,
                     codec: desired.clone(),
@@ -818,13 +862,7 @@ fn add_local_track<I: Interceptor>(
             .collect()
     };
 
-    let track = MediaStreamTrack::new(
-        room_id.clone(),
-        track_id,
-        peer_id.clone(),
-        kind,
-        codings,
-    );
+    let track = MediaStreamTrack::new(room_id.clone(), track_id, peer_id.clone(), kind, codings);
 
     let sender_id = pc
         .add_track(track)
@@ -846,7 +884,11 @@ fn add_local_track<I: Interceptor>(
     Ok(sender_id)
 }
 
-fn pick_codec(kind: RtpCodecKind, desired: Option<&RTCRtpCodec>, available: &[RTCRtpCodecParameters]) -> RTCRtpCodec {
+fn pick_codec(
+    kind: RtpCodecKind,
+    desired: Option<&RTCRtpCodec>,
+    available: &[RTCRtpCodecParameters],
+) -> RTCRtpCodec {
     if let Some(desired) = desired.filter(|c| !c.mime_type.is_empty()) {
         // Exact MIME + fmtp match.
         if let Some(matched) = available.iter().find(|c| {
@@ -868,10 +910,12 @@ fn pick_codec(kind: RtpCodecKind, desired: Option<&RTCRtpCodec>, available: &[RT
 
     // Fall back to the first codec that matches the track kind.
     let kind_prefix = kind.to_string().to_uppercase();
-    if let Some(matched) = available
-        .iter()
-        .find(|c| c.rtp_codec.mime_type.to_uppercase().starts_with(&kind_prefix))
-    {
+    if let Some(matched) = available.iter().find(|c| {
+        c.rtp_codec
+            .mime_type
+            .to_uppercase()
+            .starts_with(&kind_prefix)
+    }) {
         return matched.rtp_codec.clone();
     }
 
@@ -890,13 +934,15 @@ fn update_sender_ssrc<'a, I: Interceptor>(
 
     // Pick a codec that the sender actually negotiated so payload-type
     // mismatches are handled safely.
-    let codec = pick_codec(track.kind(), desired_codec.as_ref(), &params.rtp_parameters.codecs);
+    let codec = pick_codec(
+        track.kind(),
+        desired_codec.as_ref(),
+        &params.rtp_parameters.codecs,
+    );
 
-    if let Some(encoding) = params
-        .encodings
-        .iter_mut()
-        .find(|e| e.rtp_coding_parameters.ssrc == Some(ssrc) || e.rtp_coding_parameters.ssrc.is_none())
-    {
+    if let Some(encoding) = params.encodings.iter_mut().find(|e| {
+        e.rtp_coding_parameters.ssrc == Some(ssrc) || e.rtp_coding_parameters.ssrc.is_none()
+    }) {
         if encoding.rtp_coding_parameters.ssrc.is_none() {
             let (rtx_ssrc, fec_ssrc) = generate_rtx_fec_ssrcs(ssrc);
             encoding.rtp_coding_parameters.ssrc = Some(ssrc);
@@ -961,7 +1007,10 @@ async fn handle_offer_sdp<I: Interceptor>(
         pc.set_local_description(rollback)
             .map_err(|e| anyhow!("failed to rollback pending local offer: {:?}", e))?;
         *pending_local_offer = false;
-        info!("Rtc {} rolled back pending local offer to accept remote offer", peer_id);
+        info!(
+            "Rtc {} rolled back pending local offer to accept remote offer",
+            peer_id
+        );
     }
 
     let offer = RTCSessionDescription::offer(sdp.to_string())
@@ -984,9 +1033,7 @@ async fn handle_offer_sdp<I: Interceptor>(
             Ok(sender_id) => {
                 let mut s = state.write().await;
                 if let Some(room_track) = s.rtc_tracks.get_mut(&track_id) {
-                    room_track
-                        .forwarders
-                        .retain(|f| f.subscriber != *peer_id);
+                    room_track.forwarders.retain(|f| f.subscriber != *peer_id);
                     room_track.forwarders.push(TrackForwarder {
                         subscriber: peer_id.clone(),
                         sender_id,
@@ -1036,7 +1083,10 @@ fn handle_answer_sdp<I: Interceptor>(
 /// peers to drop the corresponding senders. This is safe to call from any leave
 /// or connection-drop path because `rtc_peers` removal is idempotent.
 pub async fn cleanup_rtc_peer(peer_id: &str, room_id: &RoomId, state: &SharedState) {
-    let mut to_finalize: Vec<(std::sync::Arc<recording::Recorder>, recording::SharedTrackWriter)> = Vec::new();
+    let mut to_finalize: Vec<(
+        std::sync::Arc<recording::Recorder>,
+        recording::SharedTrackWriter,
+    )> = Vec::new();
     let mut removals: Vec<(PeerId, RTCRtpSenderId)> = Vec::new();
     {
         let mut s = state.write().await;
