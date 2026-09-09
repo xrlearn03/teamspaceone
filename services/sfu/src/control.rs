@@ -19,6 +19,7 @@ use serde_json::json;
 use tracing::{info, warn};
 use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
 
+use crate::composit;
 use crate::recording;
 use crate::{decode_base64url, decode_hex, now_unix, SharedState};
 use hmac::{Hmac, Mac};
@@ -139,10 +140,21 @@ pub async fn finalize_recording(state: SharedState, room_id: &str) -> Vec<serde_
         (rec, slots)
     };
 
-    let paths = recording::collect_recording_files(&rec, slots).await;
+    let mut paths = recording::collect_recording_files(&rec, slots).await;
     if paths.is_empty() {
         return Vec::new();
     }
+
+    let composited = rec.dir.join("composited.mp4");
+    match composit::compose_room(room_id, &paths, &composited).await {
+        Ok(_) => {
+            paths.push(composited);
+        }
+        Err(e) => {
+            warn!("Compositing failed for room {}: {}", room_id, e);
+        }
+    }
+
     match recording::require_recording_env() {
         Ok((url, key)) => recording::upload_files(&url, &key, &rec, paths).await,
         Err(e) => {
