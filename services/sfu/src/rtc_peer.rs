@@ -25,6 +25,7 @@ use rtc::rtp_transceiver::rtp_sender::{
 use rtc::sansio::Protocol;
 use rtc::shared::{TaggedBytesMut, TransportContext, TransportProtocol};
 use rtp::Packet as RtpPacket;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
@@ -59,7 +60,7 @@ pub struct RtcRoomTrack {
     pub kind: RtpCodecKind,
     pub ssrcs: Vec<u32>,
     pub codec: Option<RTCRtpCodec>,
-    pub forwarders: Vec<TrackForwarder>,
+    pub forwarders: HashMap<PeerId, TrackForwarder>,
 }
 
 enum RtcCommand {
@@ -199,6 +200,57 @@ impl RtcPeer {
     }
 }
 
+/// Add a local forwarded track to every other participant in the room.
+async fn add_track_to_subscribers(
+    state: &SharedState,
+    room_id: &RoomId,
+    publisher_id: &PeerId,
+    global_track_id: &str,
+    kind: RtpCodecKind,
+    ssrcs: &[u32],
+    codec: Option<RTCRtpCodec>,
+) -> Vec<(PeerId, TrackForwarder)> {
+    let subscribers: Vec<(PeerId, RtcPeer)> = {
+        let s = state.read().await;
+        let room = match s.rooms.get(room_id) {
+            Some(r) => r,
+            None => return Vec::new(),
+        };
+        s.rtc_peers
+            .iter()
+            .filter(|(id, _)| {
+                let id = *id;
+                id != publisher_id && room.participants.contains_key(id)
+            })
+            .map(|(id, p)| (id.clone(), p.clone()))
+            .collect()
+    };
+
+    let mut added = Vec::new();
+    for (sub_id, sub_peer) in subscribers {
+        match sub_peer
+            .add_local_track(
+                global_track_id.to_string(),
+                kind,
+                ssrcs.to_vec(),
+                codec.clone(),
+            )
+            .await
+        {
+            Ok((sender_id, tx)) => {
+                added.push((sub_id, TrackForwarder { sender_id, tx }));
+            }
+            Err(e) => {
+                warn!(
+                    "Rtc peer {} could not add track {} for subscriber {}: {:?}",
+                    publisher_id, global_track_id, sub_id, e
+                );
+            }
+        }
+    }
+    added
+}
+
 fn spawn_network_task(
     peer_id: PeerId,
     mut pc: RtcPeerConnection,
@@ -291,24 +343,46 @@ fn spawn_network_task(
                                     .codecs
                                     .first()
                                     .map(|c| c.rtp_codec.clone());
-                                let mut s = state.write().await;
-                                s.rtc_tracks.insert(
-                                    init.track_id.clone(),
-                                    RtcRoomTrack {
-                                        publisher: peer_id.clone(),
-                                        room_id: room_id.clone(),
+                                let global_id = format!("{}-{}", peer_id, init.track_id);
+                                {
+                                    let mut s = state.write().await;
+                                    s.rtc_tracks.insert(
+                                        global_id.clone(),
+                                        RtcRoomTrack {
+                                            publisher: peer_id.clone(),
+                                            room_id: room_id.clone(),
+                                            kind,
+                                            ssrcs: ssrcs.clone(),
+                                            codec: codec.clone(),
+                                            forwarders: HashMap::new(),
+                                        },
+                                    );
+                                }
+                                if !ssrcs.is_empty() {
+                                    let added = add_track_to_subscribers(
+                                        &state,
+                                        &room_id,
+                                        &peer_id,
+                                        &global_id,
                                         kind,
-                                        ssrcs,
+                                        &ssrcs,
                                         codec,
-                                        forwarders: vec![],
-                                    },
-                                );
+                                    )
+                                    .await;
+                                    let mut s = state.write().await;
+                                    if let Some(room_track) = s.rtc_tracks.get_mut(&global_id) {
+                                        for (sub_id, fwd) in added {
+                                            room_track.forwarders.insert(sub_id, fwd);
+                                        }
+                                    }
+                                }
                             }
                         }
                         RTCTrackEvent::OnClose(track_id) => {
                             info!("Rtc {} track closed: {}", peer_id, track_id);
                             let mut s = state.write().await;
-                            s.rtc_tracks.remove(&track_id);
+                            let global_id = format!("{}-{}", peer_id, track_id);
+                            s.rtc_tracks.remove(&global_id);
                         }
                         _ => {}
                     },
@@ -320,21 +394,53 @@ fn spawn_network_task(
             while let Some(message) = pc.poll_read() {
                 match message {
                     RTCMessage::RtpPacket(track_id, rtp_packet) => {
-                        let tracks = {
+                        let global_id = format!("{}-{}", peer_id, track_id);
+                        let mut track = {
                             let s = state.read().await;
-                            s.rtc_tracks.get(&track_id).cloned()
+                            s.rtc_tracks.get(&global_id).cloned()
                         };
-                        if let Some(track) = tracks {
-                            for fwd in &track.forwarders {
-                                let fwd_msg = RtpForward {
-                                    sender_id: fwd.sender_id,
-                                    packet: rtp_packet.clone(),
-                                };
-                                if let Err(_) = fwd.tx.try_send(fwd_msg) {
-                                    warn!(
-                                        "Rtc {} forward queue full for track {} to {:?}",
-                                        peer_id, track_id, fwd.sender_id
-                                    );
+                        if let Some(ref mut track) = track {
+                            if track.ssrcs.is_empty() {
+                                let ssrc = rtp_packet.header.ssrc;
+                                track.ssrcs = vec![ssrc];
+                                let added = add_track_to_subscribers(
+                                    &state,
+                                    &room_id,
+                                    &peer_id,
+                                    &global_id,
+                                    track.kind,
+                                    &track.ssrcs,
+                                    track.codec.clone(),
+                                )
+                                .await;
+                                {
+                                    let mut s = state.write().await;
+                                    if let Some(room_track) = s.rtc_tracks.get_mut(&global_id) {
+                                        room_track.ssrcs = track.ssrcs.clone();
+                                        for (sub_id, fwd) in added {
+                                            room_track.forwarders.insert(sub_id, fwd);
+                                        }
+                                    }
+                                }
+                            }
+                            let forwarders = {
+                                let s = state.read().await;
+                                s.rtc_tracks
+                                    .get(&global_id)
+                                    .map(|t| t.forwarders.clone())
+                            };
+                            if let Some(forwarders) = forwarders {
+                                for fwd in forwarders.values() {
+                                    let fwd_msg = RtpForward {
+                                        sender_id: fwd.sender_id,
+                                        packet: rtp_packet.clone(),
+                                    };
+                                    if let Err(_) = fwd.tx.try_send(fwd_msg) {
+                                        warn!(
+                                            "Rtc {} forward queue full for track {} to {:?}",
+                                            peer_id, global_id, fwd.sender_id
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -629,7 +735,9 @@ pub async fn process_rtc_signal(
                 let s = state.read().await;
                 s.rtc_tracks
                     .iter()
-                    .filter(|(_, t)| t.room_id == room_id && t.publisher != peer_id)
+                    .filter(|(_, t)| {
+                        t.room_id == room_id && t.publisher != peer_id && !t.ssrcs.is_empty()
+                    })
                     .map(|(id, t)| (id.clone(), t.clone()))
                     .collect()
             };
@@ -646,7 +754,9 @@ pub async fn process_rtc_signal(
                     Ok((sender_id, rtp_tx)) => {
                         let mut s = state.write().await;
                         if let Some(room_track) = s.rtc_tracks.get_mut(&track_id) {
-                            room_track.forwarders.push(TrackForwarder { sender_id, tx: rtp_tx });
+                            room_track
+                                .forwarders
+                                .insert(peer_id.to_string(), TrackForwarder { sender_id, tx: rtp_tx });
                         }
                     }
                     Err(e) => {
