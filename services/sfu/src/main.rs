@@ -1293,7 +1293,11 @@ async fn leave_room(peer_id: &str, state: &SharedState) -> Option<RoomId> {
 }
 
 async fn cleanup_peer(peer_id: &str, state: &SharedState) {
-    let _ = leave_room(peer_id, state).await;
+    let _room_id = leave_room(peer_id, state).await;
+    #[cfg(feature = "rtc")]
+    if let Some(ref room_id) = _room_id {
+        crate::rtc_peer::cleanup_rtc_peer(peer_id, room_id, state).await;
+    }
     let pc = {
         let mut s = state.write().await;
         s.peers.remove(peer_id).and_then(|p| p.pc)
