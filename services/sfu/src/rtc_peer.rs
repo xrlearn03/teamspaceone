@@ -113,6 +113,9 @@ impl RtcPeer {
         room_id: RoomId,
     ) -> Result<(Self, SocketAddr)> {
         let mut media_engine = MediaEngine::default();
+        media_engine
+            .register_default_codecs()
+            .map_err(|e| anyhow!("failed to register default codecs: {:?}", e))?;
         let registry = register_default_interceptors(
             rtc_interceptor::Registry::new(),
             &mut media_engine,
