@@ -3,6 +3,9 @@ mod control;
 mod recording;
 
 #[cfg(feature = "rtc")]
+mod rtc_peer;
+
+#[cfg(feature = "rtc")]
 mod rtc_spike;
 
 use anyhow::{anyhow, Result};
@@ -33,6 +36,7 @@ use interceptor::registry::Registry;
 use webrtc::api::{API, APIBuilder};
 use webrtc::ice::udp_mux::{UDPMuxDefault, UDPMuxParams};
 use webrtc::ice::udp_network::UDPNetwork;
+#[cfg(not(feature = "rtc"))]
 use webrtc::ice_transport::ice_candidate::{RTCIceCandidate, RTCIceCandidateInit};
 use webrtc::ice_transport::ice_candidate_type::RTCIceCandidateType;
 use webrtc::rtcp::packet::Packet as RtcpPacket;
@@ -40,14 +44,20 @@ use webrtc::rtcp::payload_feedbacks::full_intra_request::FullIntraRequest;
 use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
 use webrtc::rtp::packet::Packet as RtpPacket;
 use webrtc::ice_transport::ice_server::RTCIceServer;
+#[cfg(not(feature = "rtc"))]
 use webrtc::peer_connection::configuration::RTCConfiguration;
+#[cfg(not(feature = "rtc"))]
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::rtp_transceiver::rtp_codec::RTPCodecType;
+#[cfg(not(feature = "rtc"))]
 use webrtc::rtp_transceiver::rtp_receiver::RTCRtpReceiver;
 use webrtc::rtp_transceiver::rtp_sender::RTCRtpSender;
+#[cfg(not(feature = "rtc"))]
 use webrtc::rtp_transceiver::rtp_transceiver_direction::RTCRtpTransceiverDirection;
+#[cfg(not(feature = "rtc"))]
 use webrtc::rtp_transceiver::RTCRtpTransceiver;
+#[cfg(not(feature = "rtc"))]
 use webrtc::rtp_transceiver::RTCRtpTransceiverInit;
 use webrtc::track::track_local::track_local_static_rtp::TrackLocalStaticRTP;
 use webrtc::track::track_local::TrackLocalWriter;
@@ -167,6 +177,8 @@ struct State {
     api: Arc<API>,
     peers: HashMap<PeerId, Peer>,
     rooms: HashMap<RoomId, Room>,
+    #[cfg(feature = "rtc")]
+    rtc_peers: HashMap<PeerId, rtc_peer::RtcPeer>,
 }
 
 impl State {
@@ -175,6 +187,8 @@ impl State {
             api,
             peers: HashMap::new(),
             rooms: HashMap::new(),
+            #[cfg(feature = "rtc")]
+            rtc_peers: HashMap::new(),
         }
     }
 
@@ -600,6 +614,10 @@ fn ice_servers() -> Vec<RTCIceServer> {
 }
 
 async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, token_secret: &str) -> Result<()> {
+    #[cfg(feature = "rtc")]
+    return rtc_peer::process_rtc_signal(peer_id, signal, state, token_secret).await;
+
+    #[cfg(not(feature = "rtc"))]
     match signal {
         Signal::Join { room_id, display_name, user_id, token } => {
             let _ = leave_room(peer_id, state).await;
@@ -928,6 +946,7 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
         }
     }
 
+    #[cfg(not(feature = "rtc"))]
     Ok(())
 }
 
@@ -1258,6 +1277,10 @@ async fn leave_room(peer_id: &str, state: &SharedState) -> Option<RoomId> {
                     );
                 }
             }
+        }
+        #[cfg(feature = "rtc")]
+        {
+            s.rtc_peers.remove(peer_id);
         }
         return room_id;
     }
