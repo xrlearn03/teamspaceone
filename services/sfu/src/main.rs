@@ -23,6 +23,9 @@ const MAX_DISPLAY_NAME_CHARS: usize = 128;
 const MAX_SDP_BYTES: usize = 65536;
 const MAX_CANDIDATE_BYTES: usize = 65536;
 use webrtc::api::setting_engine::SettingEngine;
+use interceptor::nack::generator::GeneratorBuilder;
+use interceptor::nack::responder::ResponderBuilder;
+use interceptor::registry::Registry;
 use webrtc::api::{API, APIBuilder};
 use webrtc::ice::udp_mux::{UDPMuxDefault, UDPMuxParams};
 use webrtc::ice::udp_network::UDPNetwork;
@@ -221,9 +224,13 @@ async fn main() -> Result<()> {
         info!("ICE UDP mux listening on 0.0.0.0:{}", mux_port);
     }
 
+    let mut interceptor_registry = Registry::new();
+    interceptor_registry.add(Box::new(GeneratorBuilder::default()));
+    interceptor_registry.add(Box::new(ResponderBuilder::default()));
     let api = Arc::new(
         APIBuilder::new()
             .with_setting_engine(setting_engine)
+            .with_interceptor_registry(interceptor_registry)
             .build(),
     );
     let state: SharedState = Arc::new(RwLock::new(State::new(api)));

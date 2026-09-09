@@ -2219,6 +2219,7 @@ dependencies = [
  "base64",
  "futures",
  "hmac",
+ "interceptor",
  "reqwest",
  "serde",
  "serde_json",
