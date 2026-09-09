@@ -12,3 +12,9 @@ coverage
 .tauri
 *.db
 *.db-journal
+
+# Gradle
+.gradle
+
+# Rust build artifacts
+services/sfu/target/

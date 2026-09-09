@@ -14,6 +14,14 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        buildConfigField("String", "API_BASE_URL", "\"http://localhost:3000\"")
+        buildConfigField("String", "REALTIME_URL", "\"http://localhost:3005\"")
+        buildConfigField("String", "SFU_URL", "\"ws://127.0.0.1:8443\"")
+        buildConfigField("String", "STUN_URL", "\"stun:stun.l.google.com:19302\"")
+        buildConfigField("String", "TURN_URL", "\"\"")
+        buildConfigField("String", "TURN_USERNAME", "\"\"")
+        buildConfigField("String", "TURN_PASSWORD", "\"\"")
     }
 
     buildTypes {
@@ -34,6 +42,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
