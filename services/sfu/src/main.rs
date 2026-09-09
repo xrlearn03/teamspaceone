@@ -1,6 +1,9 @@
 mod control;
 mod recording;
 
+#[cfg(feature = "rtc")]
+mod rtc_spike;
+
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use futures::{SinkExt, StreamExt};
