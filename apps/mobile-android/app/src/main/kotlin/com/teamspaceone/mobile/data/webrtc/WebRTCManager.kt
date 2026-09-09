@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.teamspaceone.mobile.BuildConfig
 import com.teamspaceone.mobile.data.remote.AuthManager
+import com.teamspaceone.mobile.data.remote.SfuParticipant
 import com.teamspaceone.mobile.data.remote.SfuSignal
 import com.teamspaceone.mobile.data.sfu.SfuManager
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +40,9 @@ object WebRTCManager {
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    private val _participants = MutableStateFlow<List<SfuParticipant>>(emptyList())
+    val participants: StateFlow<List<SfuParticipant>> = _participants.asStateFlow()
 
     private val iceServers: List<PeerConnection.IceServer>
         get() = buildList {
@@ -79,6 +83,7 @@ object WebRTCManager {
         _isConnected.value = false
         _isMicEnabled.value = true
         _errorMessage.value = null
+        _participants.value = emptyList()
         SfuManager.onSignal = null
         audioTrack = null
         audioSource?.dispose()
@@ -97,9 +102,8 @@ object WebRTCManager {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
         }
-        val constraints = MediaConstraints()
 
-        peerConnection = factory?.createPeerConnection(config, constraints, peerConnectionObserver)
+        peerConnection = factory?.createPeerConnection(config, peerConnectionObserver)
 
         val audioConstraints = MediaConstraints()
         audioSource = factory?.createAudioSource(audioConstraints)
@@ -192,6 +196,19 @@ object WebRTCManager {
                 signal.candidate?.let {
                     val index = signal.sdpMLineIndex ?: 0
                     addIceCandidate(it, index, signal.sdpMid)
+                }
+            }
+            "room_state" -> _participants.value = signal.participants ?: emptyList()
+            "participant_joined" -> {
+                val id = signal.participantId
+                val name = signal.displayName
+                if (id != null && name != null) {
+                    _participants.value = _participants.value + SfuParticipant(id, name, signal.userId)
+                }
+            }
+            "participant_left" -> {
+                signal.participantId?.let { id ->
+                    _participants.value = _participants.value.filter { it.id != id }
                 }
             }
             "error" -> _errorMessage.value = signal.message

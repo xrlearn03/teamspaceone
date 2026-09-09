@@ -39,12 +39,12 @@ struct MeetingView: View {
             }
 
             Section("Participants") {
-                if manager.remoteParticipants.isEmpty {
-                    Text("No remote participants")
+                if manager.participants.isEmpty {
+                    Text("No participants")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(manager.remoteParticipants, id: \.self) { participant in
-                        Text(participant)
+                    ForEach(manager.participants) { participant in
+                        Text(participant.display_name)
                     }
                 }
             }

@@ -35,6 +35,7 @@ fun MeetingScreen(onBack: () -> Unit = {}) {
     val isConnected by WebRTCManager.isConnected.collectAsState()
     val isMicEnabled by WebRTCManager.isMicEnabled.collectAsState()
     val errorMessage by WebRTCManager.errorMessage.collectAsState()
+    val participants by WebRTCManager.participants.collectAsState()
     val permissions = remember { arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA) }
     var permissionsGranted by remember {
         mutableStateOf(permissions.all {
@@ -111,6 +112,11 @@ fun MeetingScreen(onBack: () -> Unit = {}) {
 
         errorMessage?.let {
             Text(it, color = MaterialTheme.colorScheme.error)
+        }
+
+        Text("Participants: ${participants.size}")
+        participants.forEach { participant ->
+            Text(participant.displayName)
         }
 
         Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {

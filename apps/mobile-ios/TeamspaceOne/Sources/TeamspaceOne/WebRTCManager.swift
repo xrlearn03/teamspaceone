@@ -13,7 +13,7 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
 
     @Published private(set) var isConnected = false
     @Published private(set) var isMicEnabled = true
-    @Published private(set) var remoteParticipants: [String] = []
+    @Published private(set) var participants: [SfuParticipant] = []
     @Published private(set) var errorMessage: String?
 
     private override init() {
@@ -43,6 +43,8 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
     func disconnect() {
         localAudioTrack = nil
         isMicEnabled = true
+        errorMessage = nil
+        participants = []
         peerConnection?.close()
         peerConnection = nil
         factory = nil
@@ -150,23 +152,19 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
         addIceCandidate(candidate, sdpMLineIndex: sdpMLineIndex, sdpMid: sdpMid)
     }
 
+    func sfuManager(_ manager: SfuManager, didUpdateParticipants participants: [SfuParticipant]) {
+        DispatchQueue.main.async { [weak self] in
+            self?.participants = participants
+        }
+    }
+
     // MARK: - RTCPeerConnectionDelegate
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
 
-    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
-        let streamId = stream.streamId
-        DispatchQueue.main.async { [weak self] in
-            self?.remoteParticipants.append(streamId)
-        }
-    }
+    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
 
-    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {
-        let streamId = stream.streamId
-        DispatchQueue.main.async { [weak self] in
-            self?.remoteParticipants.removeAll { $0 == streamId }
-        }
-    }
+    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
 
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {
         offer()

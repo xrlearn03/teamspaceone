@@ -5,6 +5,7 @@ protocol SfuManagerDelegate: AnyObject {
     func sfuManager(_ manager: SfuManager, didReceiveOffer sdp: String, from: String)
     func sfuManager(_ manager: SfuManager, didReceiveAnswer sdp: String, from: String)
     func sfuManager(_ manager: SfuManager, didReceiveIce candidate: String, sdpMLineIndex: Int, sdpMid: String?, from: String)
+    func sfuManager(_ manager: SfuManager, didUpdateParticipants participants: [SfuParticipant])
 }
 
 final class SfuManager: ObservableObject, @unchecked Sendable {
@@ -148,6 +149,8 @@ final class SfuManager: ObservableObject, @unchecked Sendable {
             default:
                 break
             }
+
+            self.delegate?.sfuManager(self, didUpdateParticipants: self.participants)
         }
     }
 }

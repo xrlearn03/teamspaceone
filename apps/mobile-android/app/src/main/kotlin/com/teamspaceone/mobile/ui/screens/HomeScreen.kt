@@ -10,7 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -99,7 +99,7 @@ fun HomeScreen(
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
-                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     }
                 }
 
@@ -122,7 +122,7 @@ fun HomeScreen(
 
                 context?.let { ctx ->
                     item {
-                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                         Text("Context", style = MaterialTheme.typography.titleMedium)
                         Text("Organisation: ${ctx.organisationId}")
                         Text("Permissions: ${ctx.permissions.size}")
@@ -133,7 +133,7 @@ fun HomeScreen(
                 }
 
                 item {
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     Text("Collaboration", style = MaterialTheme.typography.titleMedium)
                 }
 
@@ -161,7 +161,7 @@ fun HomeScreen(
 
                 if (events.isNotEmpty()) {
                     item {
-                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                         Text("Realtime events", style = MaterialTheme.typography.titleMedium)
                     }
                     items(events) { event ->
