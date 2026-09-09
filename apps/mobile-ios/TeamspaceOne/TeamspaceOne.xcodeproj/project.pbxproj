@@ -29,12 +29,14 @@
 		B15AE55A2CC101F5E1D2E9CB /* TeamspaceOneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BF575E72C94FB842A0E9591 /* TeamspaceOneApp.swift */; };
 		C11143237190CD1072266FD2 /* SfuManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB8DDDB8A9409A28944BC4FD /* SfuManager.swift */; };
 		CF6ED27190939C754DABC73C /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEF266BA6FE51D790FBABD23 /* Models.swift */; };
+		D6F2FAE2F11D208E09C1EA27 /* DeepLinkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E7A643BAE7E5FF954387F4D /* DeepLinkManager.swift */; };
 		F20D1897C36D237C10C0765E /* SocketIO in Frameworks */ = {isa = PBXBuildFile; productRef = 85D2594ABA9CCC8B1E6A0040 /* SocketIO */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		1070C81BB67A0053106E80BE /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		10C97FFB684334EDD7375160 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
+		1E7A643BAE7E5FF954387F4D /* DeepLinkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkManager.swift; sourceTree = "<group>"; };
 		289F035899CFF841C87714F9 /* LocalVideoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoView.swift; sourceTree = "<group>"; };
 		2BF575E72C94FB842A0E9591 /* TeamspaceOneApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamspaceOneApp.swift; sourceTree = "<group>"; };
 		2F6708349452E77ED315170D /* FilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesView.swift; sourceTree = "<group>"; };
@@ -106,6 +108,7 @@
 				5F4714A8734BC283BB87D1D4 /* ChannelsView.swift */,
 				1070C81BB67A0053106E80BE /* Config.swift */,
 				6B11CDCDA38D1D65403DB206 /* ContentView.swift */,
+				1E7A643BAE7E5FF954387F4D /* DeepLinkManager.swift */,
 				2F6708349452E77ED315170D /* FilesView.swift */,
 				289F035899CFF841C87714F9 /* LocalVideoView.swift */,
 				CE13872FAF7BC6FC9F322505 /* MainTabView.swift */,
@@ -200,6 +203,7 @@
 				A2064DC42CA85F9E3D02DD05 /* ChannelsView.swift in Sources */,
 				48E6808DFE8058FDD11A7481 /* Config.swift in Sources */,
 				98FBEFF2706EAA97CBCFA1ED /* ContentView.swift in Sources */,
+				D6F2FAE2F11D208E09C1EA27 /* DeepLinkManager.swift in Sources */,
 				6E6F365C6FED158951E2829B /* FileService.swift in Sources */,
 				B099E920D52246A52E93A1E1 /* FilesView.swift in Sources */,
 				A1B8A92649D83EAC3E65AE71 /* LocalVideoView.swift in Sources */,

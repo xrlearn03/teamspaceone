@@ -276,6 +276,13 @@ private struct AttachmentChips: View {
                         .lineLimit(1)
 
                     Spacer()
+
+                    if let urlString = file?.downloadUrl ?? file?.url, let url = URL(string: urlString) {
+                        ShareLink(item: url, subject: Text(fileName)) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.caption)
+                        }
+                    }
                 }
                 .padding(8)
                 .background(Color.gray.opacity(0.15))

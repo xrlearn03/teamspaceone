@@ -1,5 +1,6 @@
 package com.teamspaceone.mobile.ui.screens
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -369,6 +371,7 @@ private fun AttachmentChips(
     attachments: List<MessageAttachment>,
     attachmentFiles: Map<String, FileRecord>
 ) {
+    val context = LocalContext.current
     Column(
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -377,6 +380,7 @@ private fun AttachmentChips(
             val fileName = file?.originalName ?: "Attachment"
             val isVisual = file?.mimeType?.startsWith("image/") == true || file?.mimeType?.startsWith("video/") == true
             val imageUrl = file?.thumbnailUrl ?: file?.previewUrl
+            val url = file?.downloadUrl ?: file?.url
 
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -414,6 +418,21 @@ private fun AttachmentChips(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
+
+                    if (!url.isNullOrBlank()) {
+                        IconButton(
+                            onClick = {
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, url)
+                                    putExtra(Intent.EXTRA_SUBJECT, fileName)
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Share $fileName"))
+                            }
+                        ) {
+                            Icon(Icons.Filled.Share, contentDescription = "Share")
+                        }
+                    }
                 }
             }
         }

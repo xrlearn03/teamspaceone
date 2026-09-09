@@ -2,6 +2,7 @@ package com.teamspaceone.mobile.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -14,10 +15,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,14 +56,44 @@ fun MeetingScreen(onBack: () -> Unit = {}) {
         })
     }
 
+    var showRationale by remember { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         permissionsGranted = result.values.all { it }
     }
 
+    val activity = context as? ComponentActivity
+    val needsRationale = permissions.any { activity?.shouldShowRequestPermissionRationale(it) == true }
+
     LaunchedEffect(Unit) {
-        if (!permissionsGranted) launcher.launch(permissions)
+        if (permissionsGranted) return@LaunchedEffect
+        if (needsRationale) {
+            showRationale = true
+        } else {
+            launcher.launch(permissions)
+        }
+    }
+
+    if (showRationale) {
+        AlertDialog(
+            onDismissRequest = { showRationale = false },
+            title = { Text("Camera & microphone required") },
+            text = { Text("Teamspace One needs access to your camera and microphone so other participants can see and hear you during calls.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRationale = false
+                    launcher.launch(permissions)
+                }) {
+                    Text("Grant")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRationale = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     Column(

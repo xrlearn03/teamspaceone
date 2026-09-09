@@ -120,6 +120,15 @@ private struct FileRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Spacer()
+
+            if let urlString = file.downloadUrl ?? file.url, let url = URL(string: urlString) {
+                ShareLink(item: url, subject: Text(file.originalName)) {
+                    Image(systemName: "square.and.arrow.up")
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
         }
         .padding(.vertical, 4)
     }

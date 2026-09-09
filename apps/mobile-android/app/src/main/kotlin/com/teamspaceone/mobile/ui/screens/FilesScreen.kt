@@ -19,14 +19,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AudioFile
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -166,13 +168,17 @@ fun FilesScreen(onBack: () -> Unit = {}) {
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(files, key = { it.id }) { file ->
-                        FileListItem(file = file) { url ->
-                            if (!url.isNullOrBlank()) {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                )
-                            }
-                        }
+                        FileListItem(
+                            file = file,
+                            onOpen = { url ->
+                                if (!url.isNullOrBlank()) {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                    )
+                                }
+                            },
+                            onShare = { shareFile(context, file) }
+                        )
                     }
                 }
             }
@@ -192,7 +198,7 @@ private fun EmptyFilesView(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
-            imageVector = Icons.Default.InsertDriveFile,
+            imageVector = Icons.AutoMirrored.Filled.InsertDriveFile,
             contentDescription = null,
             modifier = Modifier.size(64.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -208,12 +214,13 @@ private fun EmptyFilesView(modifier: Modifier = Modifier) {
 @Composable
 private fun FileListItem(
     file: FileRecord,
-    onClick: (String?) -> Unit
+    onOpen: (String?) -> Unit,
+    onShare: () -> Unit
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick(file.downloadUrl ?: file.url) },
+            .clickable { onOpen(file.downloadUrl ?: file.url) },
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.medium
     ) {
@@ -239,6 +246,10 @@ private fun FileListItem(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            IconButton(onClick = onShare) {
+                Icon(Icons.Filled.Share, contentDescription = "Share")
             }
         }
     }
@@ -274,7 +285,7 @@ private fun fileTypeIcon(mimeType: String) = when {
     mimeType.startsWith("audio/") -> Icons.Default.AudioFile
     mimeType.contains("pdf") || mimeType.contains("document") || mimeType.contains("text/") ->
         Icons.Default.Description
-    else -> Icons.Default.InsertDriveFile
+    else -> Icons.AutoMirrored.Filled.InsertDriveFile
 }
 
 private fun formatBytes(bytes: Int): String {
@@ -299,4 +310,14 @@ private fun formatDate(iso: String): String {
     } catch (_: Exception) {
         iso
     }
+}
+
+private fun shareFile(context: android.content.Context, file: FileRecord) {
+    val url = file.downloadUrl ?: file.url ?: return
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, url)
+        putExtra(Intent.EXTRA_SUBJECT, file.originalName)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share ${file.originalName}"))
 }

@@ -36,6 +36,7 @@ struct MainTabView: View {
     @State private var status = "Loading..."
     @State private var selectedSection: MainSection? = .channels
     @StateObject private var realtime = RealtimeManager.shared
+    @StateObject private var deepLink = DeepLinkManager.shared
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
@@ -60,6 +61,24 @@ struct MainTabView: View {
         }
         .task {
             await load()
+        }
+        .onChange(of: deepLink.pendingURL) { _, new in
+            guard let url = new else { return }
+            let path = url.path.lowercased()
+            let host = url.host?.lowercased() ?? ""
+            switch true {
+            case path.contains("channel"), path.contains("message"), host.contains("channel"):
+                selectedSection = .channels
+            case path.contains("project"):
+                selectedSection = .projects
+            case path.contains("file"):
+                selectedSection = .files
+            case path.contains("meet"), path.contains("call"):
+                selectedSection = .meeting
+            default:
+                break
+            }
+            deepLink.consume()
         }
     }
 
