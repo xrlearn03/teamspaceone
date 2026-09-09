@@ -1,6 +1,9 @@
 package com.teamspaceone.mobile.data.webrtc
 
 import android.content.Context
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.os.Build
 import android.util.Log
 import com.teamspaceone.mobile.BuildConfig
 import com.teamspaceone.mobile.data.remote.AuthManager
@@ -44,6 +47,11 @@ object WebRTCManager {
     private val _participants = MutableStateFlow<List<SfuParticipant>>(emptyList())
     val participants: StateFlow<List<SfuParticipant>> = _participants.asStateFlow()
 
+    private val _isSpeakerOn = MutableStateFlow(false)
+    val isSpeakerOn: StateFlow<Boolean> = _isSpeakerOn.asStateFlow()
+
+    private var audioManager: AudioManager? = null
+
     private val iceServers: List<PeerConnection.IceServer>
         get() = buildList {
             add(PeerConnection.IceServer.builder(BuildConfig.STUN_URL).createIceServer())
@@ -61,11 +69,26 @@ object WebRTCManager {
         val options = PeerConnectionFactory.InitializationOptions.builder(context.applicationContext)
             .createInitializationOptions()
         PeerConnectionFactory.initialize(options)
+        audioManager = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+
+    fun setSpeakerOn(enabled: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val targetType = if (enabled) AudioDeviceInfo.TYPE_BUILTIN_SPEAKER else AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+            audioManager?.availableCommunicationDevices
+                ?.find { it.type == targetType }
+                ?.let { audioManager?.setCommunicationDevice(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager?.isSpeakerphoneOn = enabled
+        }
+        _isSpeakerOn.value = enabled
     }
 
     fun connect(roomId: String, displayName: String, userId: String?) {
         stop()
         startPeerConnection()
+        setSpeakerOn(_isSpeakerOn.value)
         SfuManager.onSignal = { handleSignal(it) }
 
         scope.launch {

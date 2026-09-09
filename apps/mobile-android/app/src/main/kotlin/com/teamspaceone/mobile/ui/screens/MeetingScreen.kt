@@ -36,6 +36,7 @@ fun MeetingScreen(onBack: () -> Unit = {}) {
     val isMicEnabled by WebRTCManager.isMicEnabled.collectAsState()
     val errorMessage by WebRTCManager.errorMessage.collectAsState()
     val participants by WebRTCManager.participants.collectAsState()
+    val isSpeakerOn by WebRTCManager.isSpeakerOn.collectAsState()
     val permissions = remember { arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA) }
     var permissionsGranted by remember {
         mutableStateOf(permissions.all {
@@ -105,6 +106,13 @@ fun MeetingScreen(onBack: () -> Unit = {}) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (isMicEnabled) "Mute" else "Unmute")
+            }
+
+            Button(
+                onClick = { WebRTCManager.setSpeakerOn(!isSpeakerOn) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (isSpeakerOn) "Earpiece" else "Speaker")
             }
         }
 

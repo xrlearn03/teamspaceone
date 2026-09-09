@@ -17,6 +17,10 @@ struct MeetingView: View {
                     Button(manager.isMicEnabled ? "Mute" : "Unmute") {
                         manager.setMicEnabled(!manager.isMicEnabled)
                     }
+
+                    Button(manager.isSpeakerOn ? "Earpiece" : "Speaker") {
+                        manager.setSpeakerOn(!manager.isSpeakerOn)
+                    }
                 }
 
                 Button(manager.isConnected ? "Disconnect" : "Connect") {

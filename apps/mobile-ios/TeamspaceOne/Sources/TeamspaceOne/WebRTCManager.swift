@@ -13,6 +13,7 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
 
     @Published private(set) var isConnected = false
     @Published private(set) var isMicEnabled = true
+    @Published private(set) var isSpeakerOn = false
     @Published private(set) var participants: [SfuParticipant] = []
     @Published private(set) var errorMessage: String?
 
@@ -40,9 +41,21 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
         }
     }
 
+    func setSpeakerOn(_ enabled: Bool) {
+        do {
+            try AVAudioSession.sharedInstance().overrideOutputAudioPort(enabled ? .speaker : .none)
+            DispatchQueue.main.async { [weak self] in
+                self?.isSpeakerOn = enabled
+            }
+        } catch {
+            debugPrint("Error setting speaker: \(error)")
+        }
+    }
+
     func disconnect() {
         localAudioTrack = nil
         isMicEnabled = true
+        isSpeakerOn = false
         errorMessage = nil
         participants = []
         peerConnection?.close()
