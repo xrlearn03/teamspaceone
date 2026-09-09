@@ -447,6 +447,13 @@ fn max_participants_per_room() -> usize {
         .unwrap_or(12)
 }
 
+fn max_rooms() -> usize {
+    std::env::var("SFU_MAX_ROOMS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(100)
+}
+
 fn ice_servers() -> Vec<RTCIceServer> {
     let default = RTCIceServer {
         urls: vec!["stun:stun.l.google.com:19302".to_owned()],
@@ -620,6 +627,12 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
                 (peer.tx.clone(), peer.clone())
             };
             let mut s = state.write().await;
+            if !s.rooms.contains_key(&room_id) && s.rooms.len() >= max_rooms() {
+                let _ = tx.send(Event::Error {
+                    message: "Maximum number of rooms reached".to_string(),
+                });
+                return Err(anyhow!("max rooms reached"));
+            }
             let room = s.rooms.entry(room_id.clone()).or_default();
             let max = max_participants_per_room();
             if room.participants.len() >= max {
