@@ -195,7 +195,7 @@ async fn test_layer_signal_selects_rid() {
         "p1",
         Signal::Layer {
             track_id: "t1".to_string(),
-            rid: "h".to_string(),
+            rid: Some("h".to_string()),
         },
         &state,
         "secret",

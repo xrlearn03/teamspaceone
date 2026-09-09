@@ -103,7 +103,7 @@ enum Signal {
     #[serde(rename = "layer")]
     Layer {
         track_id: String,
-        rid: String,
+        rid: Option<String>,
     },
 }
 
@@ -1001,7 +1001,8 @@ async fn process_signal(
         }
         Signal::Layer { track_id, rid } => {
             return Err(anyhow!(
-                "layer selection for track {track_id} rid {rid} is only supported with the native rtc feature"
+                "layer selection for track {track_id} rid {:?} is only supported with the native rtc feature",
+                rid
             ));
         }
     }

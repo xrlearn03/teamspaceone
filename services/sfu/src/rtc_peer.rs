@@ -1640,6 +1640,7 @@ pub async fn process_rtc_signal(
         }
 
         Signal::Layer { track_id, rid } => {
+            let selected = rid.filter(|r| !r.is_empty());
             let mut s = state.write().await;
             if let Some(room_track) = s.rtc_tracks.get_mut(&track_id) {
                 if let Some(fwd) = room_track
@@ -1648,10 +1649,10 @@ pub async fn process_rtc_signal(
                     .find(|f| f.subscriber == peer_id)
                 {
                     info!(
-                        "Rtc {} selecting rid {} for track {}",
-                        peer_id, rid, track_id
+                        "Rtc {} selecting rid {:?} for track {}",
+                        peer_id, selected, track_id
                     );
-                    fwd.selected_rid = Some(rid);
+                    fwd.selected_rid = selected;
                 } else {
                     warn!(
                         "Rtc {} has no forwarder for track {} to select layer",
