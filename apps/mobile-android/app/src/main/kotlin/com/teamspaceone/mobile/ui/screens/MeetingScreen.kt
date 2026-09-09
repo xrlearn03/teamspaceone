@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -37,6 +39,8 @@ fun MeetingScreen(onBack: () -> Unit = {}) {
     val errorMessage by WebRTCManager.errorMessage.collectAsState()
     val participants by WebRTCManager.participants.collectAsState()
     val isSpeakerOn by WebRTCManager.isSpeakerOn.collectAsState()
+    val isCameraOn by WebRTCManager.isCameraOn.collectAsState()
+    val localVideoTrack by WebRTCManager.localVideoTrack.collectAsState()
     val permissions = remember { arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA) }
     var permissionsGranted by remember {
         mutableStateOf(permissions.all {
@@ -113,6 +117,31 @@ fun MeetingScreen(onBack: () -> Unit = {}) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (isSpeakerOn) "Earpiece" else "Speaker")
+            }
+
+            Button(
+                onClick = { WebRTCManager.setCameraEnabled(!isCameraOn) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (isCameraOn) "Camera Off" else "Camera On")
+            }
+
+            localVideoTrack?.let { track ->
+                AndroidView(
+                    factory = { ctx ->
+                        org.webrtc.SurfaceViewRenderer(ctx).apply {
+                            init(WebRTCManager.eglBase?.eglBaseContext, null)
+                            setMirror(true)
+                        }
+                    },
+                    update = { renderer ->
+                        track.removeSink(renderer)
+                        track.addSink(renderer)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                )
             }
         }
 

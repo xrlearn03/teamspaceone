@@ -8,12 +8,15 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
     private var factory: RTCPeerConnectionFactory?
     private var peerConnection: RTCPeerConnection?
     private var localAudioTrack: RTCAudioTrack?
+    private(set) var localVideoTrack: RTCVideoTrack?
+    private var videoCapturer: RTCCameraVideoCapturer?
     private let rtcAudioSession = RTCAudioSession.sharedInstance()
     private let sfu = SfuManager.shared
 
     @Published private(set) var isConnected = false
     @Published private(set) var isMicEnabled = true
     @Published private(set) var isSpeakerOn = false
+    @Published private(set) var isCameraOn = false
     @Published private(set) var participants: [SfuParticipant] = []
     @Published private(set) var errorMessage: String?
 
@@ -52,10 +55,41 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
         }
     }
 
+    func setCameraEnabled(_ enabled: Bool) {
+        guard let videoCapturer = videoCapturer, let localVideoTrack = localVideoTrack else { return }
+
+        if enabled {
+            let devices = RTCCameraVideoCapturer.captureDevices()
+            guard let device = devices.first(where: { $0.position == .front }) ?? devices.first else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.errorMessage = "No camera available"
+                }
+                return
+            }
+            let formats = RTCCameraVideoCapturer.supportedFormats(for: device)
+            guard let format = formats.last else { return }
+            videoCapturer.startCapture(with: device, format: format, fps: 30)
+            localVideoTrack.isEnabled = true
+            DispatchQueue.main.async { [weak self] in
+                self?.isCameraOn = true
+            }
+        } else {
+            videoCapturer.stopCapture()
+            localVideoTrack.isEnabled = false
+            DispatchQueue.main.async { [weak self] in
+                self?.isCameraOn = false
+            }
+        }
+    }
+
     func disconnect() {
+        videoCapturer?.stopCapture()
         localAudioTrack = nil
+        localVideoTrack = nil
+        videoCapturer = nil
         isMicEnabled = true
         isSpeakerOn = false
+        isCameraOn = false
         errorMessage = nil
         participants = []
         peerConnection?.close()
@@ -102,6 +136,13 @@ final class WebRTCManager: NSObject, ObservableObject, SfuManagerDelegate, RTCPe
         audioTrack.isEnabled = isMicEnabled
         localAudioTrack = audioTrack
         peerConnection.add(audioTrack, streamIds: ["stream0"])
+
+        let videoSource = factory.videoSource()
+        let videoTrack = factory.videoTrack(with: videoSource, trackId: "video0")
+        videoTrack.isEnabled = false
+        localVideoTrack = videoTrack
+        peerConnection.add(videoTrack, streamIds: ["stream0"])
+        videoCapturer = RTCCameraVideoCapturer(delegate: videoSource)
     }
 
     private func offer() {

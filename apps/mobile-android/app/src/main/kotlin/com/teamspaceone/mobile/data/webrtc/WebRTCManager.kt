@@ -19,12 +19,18 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
+import org.webrtc.Camera2Enumerator
+import org.webrtc.EglBase
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
+import org.webrtc.SurfaceTextureHelper
+import org.webrtc.VideoCapturer
+import org.webrtc.VideoSource
+import org.webrtc.VideoTrack
 
 object WebRTCManager {
     private const val TAG = "WebRTCManager"
@@ -50,6 +56,19 @@ object WebRTCManager {
     private val _isSpeakerOn = MutableStateFlow(false)
     val isSpeakerOn: StateFlow<Boolean> = _isSpeakerOn.asStateFlow()
 
+    private val _isCameraOn = MutableStateFlow(false)
+    val isCameraOn: StateFlow<Boolean> = _isCameraOn.asStateFlow()
+
+    private val _localVideoTrack = MutableStateFlow<VideoTrack?>(null)
+    val localVideoTrack: StateFlow<VideoTrack?> = _localVideoTrack.asStateFlow()
+
+    internal var eglBase: EglBase? = null
+    private var surfaceTextureHelper: SurfaceTextureHelper? = null
+    private var videoCapturer: VideoCapturer? = null
+    private var videoSource: VideoSource? = null
+    private var videoTrack: VideoTrack? = null
+    private var appContext: Context? = null
+
     private var audioManager: AudioManager? = null
 
     private val iceServers: List<PeerConnection.IceServer>
@@ -69,6 +88,8 @@ object WebRTCManager {
         val options = PeerConnectionFactory.InitializationOptions.builder(context.applicationContext)
             .createInitializationOptions()
         PeerConnectionFactory.initialize(options)
+        eglBase = EglBase.create()
+        appContext = context.applicationContext
         audioManager = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
 
@@ -105,9 +126,19 @@ object WebRTCManager {
     fun stop() {
         _isConnected.value = false
         _isMicEnabled.value = true
+        _isCameraOn.value = false
         _errorMessage.value = null
         _participants.value = emptyList()
+        _localVideoTrack.value = null
         SfuManager.onSignal = null
+        try { videoCapturer?.stopCapture() } catch (_: Exception) {}
+        videoCapturer?.dispose()
+        videoCapturer = null
+        surfaceTextureHelper?.dispose()
+        surfaceTextureHelper = null
+        videoSource?.dispose()
+        videoSource = null
+        videoTrack = null
         audioTrack = null
         audioSource?.dispose()
         audioSource = null
@@ -133,11 +164,47 @@ object WebRTCManager {
         audioTrack = factory?.createAudioTrack("audio0", audioSource)
         audioTrack?.setEnabled(_isMicEnabled.value)
         peerConnection?.addTrack(audioTrack, listOf("stream0"))
+
+        val eglContext = eglBase?.eglBaseContext
+        if (eglContext != null) {
+            val context = factory ?: return
+            val helper = SurfaceTextureHelper.create("CaptureThread", eglContext)
+            surfaceTextureHelper = helper
+            val source = context.createVideoSource(false)
+            videoSource = source
+            val track = context.createVideoTrack("video0", source)
+            track.setEnabled(false)
+            videoTrack = track
+            peerConnection?.addTrack(track, listOf("stream0"))
+            _localVideoTrack.value = track
+
+            videoCapturer = createCameraCapturer()
+            videoCapturer?.initialize(helper, null, source.capturerObserver)
+        }
+    }
+
+    private fun createCameraCapturer(): VideoCapturer? {
+        val context = appContext ?: return null
+        val enumerator = Camera2Enumerator(context)
+        val names = enumerator.deviceNames
+        val front = names.firstOrNull { enumerator.isFrontFacing(it) }
+        val target = front ?: names.firstOrNull() ?: return null
+        return enumerator.createCapturer(target, null)
     }
 
     fun setMicEnabled(enabled: Boolean) {
         audioTrack?.setEnabled(enabled)
         _isMicEnabled.value = enabled
+    }
+
+    fun setCameraEnabled(enabled: Boolean) {
+        if (enabled) {
+            videoCapturer?.startCapture(640, 480, 30)
+        } else {
+            try { videoCapturer?.stopCapture() } catch (_: Exception) {}
+        }
+        videoTrack?.setEnabled(enabled)
+        _isCameraOn.value = enabled
     }
 
     private fun offer() {

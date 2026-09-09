@@ -18,6 +18,7 @@
 		5ECE43B213A3648D9275C17F /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B04DD40EEF005100E25351AB /* ProjectsView.swift */; };
 		7AF6BD4987638647B9993612 /* ProjectDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ADA93918E0CADEDAF7E8CAA /* ProjectDetailView.swift */; };
 		98FBEFF2706EAA97CBCFA1ED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B11CDCDA38D1D65403DB206 /* ContentView.swift */; };
+		A1B8A92649D83EAC3E65AE71 /* LocalVideoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 289F035899CFF841C87714F9 /* LocalVideoView.swift */; };
 		A2064DC42CA85F9E3D02DD05 /* ChannelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F4714A8734BC283BB87D1D4 /* ChannelsView.swift */; };
 		B15AE55A2CC101F5E1D2E9CB /* TeamspaceOneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BF575E72C94FB842A0E9591 /* TeamspaceOneApp.swift */; };
 		C11143237190CD1072266FD2 /* SfuManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB8DDDB8A9409A28944BC4FD /* SfuManager.swift */; };
@@ -29,6 +30,7 @@
 /* Begin PBXFileReference section */
 		1070C81BB67A0053106E80BE /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		10C97FFB684334EDD7375160 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
+		289F035899CFF841C87714F9 /* LocalVideoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVideoView.swift; sourceTree = "<group>"; };
 		2BF575E72C94FB842A0E9591 /* TeamspaceOneApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamspaceOneApp.swift; sourceTree = "<group>"; };
 		5F4714A8734BC283BB87D1D4 /* ChannelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelsView.swift; sourceTree = "<group>"; };
 		6B11CDCDA38D1D65403DB206 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -94,6 +96,7 @@
 				1070C81BB67A0053106E80BE /* Config.swift */,
 				6B11CDCDA38D1D65403DB206 /* ContentView.swift */,
 				A8A62EBE1E1B53B5C13BFDE3 /* HomeView.swift */,
+				289F035899CFF841C87714F9 /* LocalVideoView.swift */,
 				9174E36E118D82E8D36CF1C7 /* MeetingView.swift */,
 				9ADA93918E0CADEDAF7E8CAA /* ProjectDetailView.swift */,
 				B04DD40EEF005100E25351AB /* ProjectsView.swift */,
@@ -183,6 +186,7 @@
 				48E6808DFE8058FDD11A7481 /* Config.swift in Sources */,
 				98FBEFF2706EAA97CBCFA1ED /* ContentView.swift in Sources */,
 				F72A59D42ABC4FA293FAFA7A /* HomeView.swift in Sources */,
+				A1B8A92649D83EAC3E65AE71 /* LocalVideoView.swift in Sources */,
 				09251D0FA6AA69B5125CED62 /* MeetingView.swift in Sources */,
 				CF6ED27190939C754DABC73C /* Models.swift in Sources */,
 				7AF6BD4987638647B9993612 /* ProjectDetailView.swift in Sources */,

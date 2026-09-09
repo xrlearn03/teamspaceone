@@ -21,6 +21,16 @@ struct MeetingView: View {
                     Button(manager.isSpeakerOn ? "Earpiece" : "Speaker") {
                         manager.setSpeakerOn(!manager.isSpeakerOn)
                     }
+
+                    Button(manager.isCameraOn ? "Camera Off" : "Camera On") {
+                        manager.setCameraEnabled(!manager.isCameraOn)
+                    }
+
+                    if manager.isCameraOn, let track = manager.localVideoTrack {
+                        LocalVideoView(track: track)
+                            .frame(height: 200)
+                            .cornerRadius(12)
+                    }
                 }
 
                 Button(manager.isConnected ? "Disconnect" : "Connect") {
