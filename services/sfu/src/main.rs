@@ -320,7 +320,16 @@ async fn handle_peer(stream: TcpStream, state: SharedState, token_secret: String
         }
     });
 
-    while let Some(msg) = ws_rx.next().await {
+    loop {
+        let msg = match tokio::time::timeout(ws_timeout(), ws_rx.next()).await {
+            Ok(Some(msg)) => msg,
+            Ok(None) => break,
+            Err(_) => {
+                warn!("WebSocket timeout for {}", peer_id);
+                break;
+            }
+        };
+
         match msg {
             Ok(Message::Text(text)) => {
                 match serde_json::from_str::<Signal>(&text) {
@@ -475,6 +484,14 @@ fn ws_ping_interval() -> std::time::Duration {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(30);
+    std::time::Duration::from_secs(secs)
+}
+
+fn ws_timeout() -> std::time::Duration {
+    let secs = std::env::var("SFU_WS_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(90);
     std::time::Duration::from_secs(secs)
 }
 
