@@ -47,6 +47,7 @@ pub struct RtpForward {
 /// A subscriber forwarding slot for one published track.
 #[derive(Clone)]
 pub struct TrackForwarder {
+    pub subscriber: PeerId,
     pub sender_id: RTCRtpSenderId,
     pub tx: mpsc::Sender<RtpForward>,
 }
@@ -89,6 +90,9 @@ enum RtcCommand {
     WriteReceiverRtcp {
         receiver_id: RTCRtpReceiverId,
         packets: Vec<Box<dyn rtcp::Packet>>,
+    },
+    RemoveTrack {
+        sender_id: RTCRtpSenderId,
     },
     Close,
 }
@@ -217,6 +221,13 @@ impl RtcPeer {
             .await
             .map_err(|_| anyhow!("rtc network task gone"))
     }
+
+    pub async fn remove_track(&self, sender_id: RTCRtpSenderId) -> Result<()> {
+        self.cmd_tx
+            .send(RtcCommand::RemoveTrack { sender_id })
+            .await
+            .map_err(|_| anyhow!("rtc network task gone"))
+    }
 }
 
 fn is_feedback_packet(p: &dyn rtcp::Packet) -> bool {
@@ -281,6 +292,10 @@ where
         let mut buf = vec![0u8; 2000];
         let default_timeout = Instant::now() + Duration::from_secs(86400);
 
+        // Negotiation state tracked inside this task to avoid glare collisions.
+        let mut pending_local_offer = false;
+        let mut ignore_next_negotiation = false;
+
         loop {
             // Drain outgoing network packets.
             while let Some(out) = pc.poll_write() {
@@ -320,12 +335,22 @@ where
                         info!("Rtc {} ICE gathering complete", peer_id);
                     }
                     RTCPeerConnectionEvent::OnNegotiationNeededEvent => {
+                        if ignore_next_negotiation {
+                            ignore_next_negotiation = false;
+                            info!("Rtc {} ignoring queued negotiation needed", peer_id);
+                            continue;
+                        }
+                        if pending_local_offer {
+                            info!("Rtc {} already has a pending local offer", peer_id);
+                            continue;
+                        }
                         info!("Rtc {} negotiation needed", peer_id);
                         match pc.create_offer(None) {
                             Ok(offer) => {
                                 if let Err(e) = pc.set_local_description(offer.clone()) {
                                     warn!("Rtc {} set_local_description failed: {:?}", peer_id, e);
                                 } else {
+                                    pending_local_offer = true;
                                     let _ = tx.send(Event::Offer {
                                         from: crate::SFU_ID.to_string(),
                                         sdp: offer.sdp,
@@ -422,6 +447,7 @@ where
                                                     s.rtc_tracks.get_mut(&init.track_id)
                                                 {
                                                     room_track.forwarders.push(TrackForwarder {
+                                                        subscriber: other_id.clone(),
                                                         sender_id,
                                                         tx: rtp_tx,
                                                     });
@@ -440,12 +466,28 @@ where
                         }
                         RTCTrackEvent::OnClose(track_id) => {
                             info!("Rtc {} track closed: {}", peer_id, track_id);
-                            let mut s = state.write().await;
-                            if let Some(track) = s.rtc_tracks.remove(&track_id) {
-                                if let Some(recorder) = s.rooms.get(&room_id).and_then(|r| r.recording.clone()) {
-                                    tokio::spawn(async move {
-                                        recording::finish_track_writer(&recorder, &track.writer.unwrap_or_else(recording::new_track_writer_slot)).await;
-                                    });
+                            let mut removals: Vec<(PeerId, RTCRtpSenderId)> = Vec::new();
+                            {
+                                let mut s = state.write().await;
+                                if let Some(track) = s.rtc_tracks.remove(&track_id) {
+                                    for fwd in &track.forwarders {
+                                        removals.push((fwd.subscriber.clone(), fwd.sender_id));
+                                    }
+                                    if let Some(recorder) = s.rooms.get(&room_id).and_then(|r| r.recording.clone()) {
+                                        tokio::spawn(async move {
+                                            recording::finish_track_writer(&recorder, &track.writer.unwrap_or_else(recording::new_track_writer_slot)).await;
+                                        });
+                                    }
+                                }
+                            }
+                            for (sub_id, sender_id) in removals {
+                                if let Some(sub_peer) = {
+                                    let s = state.read().await;
+                                    s.rtc_peers.get(&sub_id).cloned()
+                                } {
+                                    if let Err(e) = sub_peer.remove_track(sender_id).await {
+                                        warn!("Rtc {} failed to remove sender {:?} from subscriber {}: {:?}", peer_id, sender_id, sub_id, e);
+                                    }
                                 }
                             }
                         }
@@ -576,7 +618,17 @@ where
                 cmd = cmd_rx.recv() => {
                     match cmd {
                         Some(RtcCommand::HandleOffer { sdp, target: _, respond }) => {
-                            let answer_sdp = handle_offer_sdp(&mut pc, &sdp);
+                            let answer_sdp = handle_offer_sdp(
+                                &mut pc,
+                                &sdp,
+                                &state,
+                                &room_id,
+                                &peer_id,
+                                &rtp_tx,
+                                &mut pending_local_offer,
+                                &mut ignore_next_negotiation,
+                            )
+                            .await;
                             if let Err(ref e) = answer_sdp {
                                 warn!("Rtc {} handle offer failed: {:?}", peer_id, e);
                             }
@@ -585,6 +637,8 @@ where
                         Some(RtcCommand::HandleAnswer { sdp, target: _ }) => {
                             if let Err(e) = handle_answer_sdp(&mut pc, &sdp) {
                                 warn!("Rtc {} handle answer failed: {:?}", peer_id, e);
+                            } else {
+                                pending_local_offer = false;
                             }
                         }
                         Some(RtcCommand::AddIceCandidate { candidate, sdp_m_line_index, sdp_mid }) => {
@@ -612,6 +666,11 @@ where
                                 if let Err(e) = receiver.write_rtcp(packets) {
                                     warn!("Rtc {} write_rtcp on receiver {:?} failed: {:?}", peer_id, receiver_id, e);
                                 }
+                            }
+                        }
+                        Some(RtcCommand::RemoveTrack { sender_id }) => {
+                            if let Err(e) = pc.remove_track(sender_id) {
+                                warn!("Rtc {} remove_track {:?} failed: {:?}", peer_id, sender_id, e);
                             }
                         }
                         Some(RtcCommand::Close) | None => {
@@ -712,16 +771,78 @@ fn add_local_track<I: Interceptor>(
         .map_err(|e| anyhow!("add_track failed: {:?}", e))
 }
 
-fn handle_offer_sdp<I: Interceptor>(pc: &mut RTCPeerConnection<I>, sdp: &str) -> Result<String> {
+async fn handle_offer_sdp<I: Interceptor>(
+    pc: &mut RTCPeerConnection<I>,
+    sdp: &str,
+    state: &SharedState,
+    room_id: &RoomId,
+    peer_id: &PeerId,
+    rtp_tx: &mpsc::Sender<RtpForward>,
+    pending_local_offer: &mut bool,
+    ignore_next_negotiation: &mut bool,
+) -> Result<String> {
+    if *pending_local_offer {
+        let rollback = RTCSessionDescription::rollback(None)
+            .map_err(|e| anyhow!("failed to create rollback description: {:?}", e))?;
+        pc.set_local_description(rollback)
+            .map_err(|e| anyhow!("failed to rollback pending local offer: {:?}", e))?;
+        *pending_local_offer = false;
+        info!("Rtc {} rolled back pending local offer to accept remote offer", peer_id);
+    }
+
     let offer = RTCSessionDescription::offer(sdp.to_string())
         .map_err(|e| anyhow!("failed to parse offer: {:?}", e))?;
     pc.set_remote_description(offer)
         .map_err(|e| anyhow!("set_remote_description failed: {:?}", e))?;
+
+    // Subscribe this peer to every track already published in the room.
+    let existing_tracks: Vec<(String, RtpCodecKind, Vec<u32>, Option<RTCRtpCodec>)> = {
+        let s = state.read().await;
+        s.rtc_tracks
+            .iter()
+            .filter(|(_, t)| t.room_id == *room_id && t.publisher != *peer_id && !t.ssrcs.is_empty())
+            .map(|(id, t)| (id.clone(), t.kind, t.ssrcs.clone(), t.codec.clone()))
+            .collect()
+    };
+
+    let mut tracks_added = false;
+    for (track_id, kind, ssrcs, codec) in existing_tracks {
+        match add_local_track(pc, room_id, peer_id, track_id.clone(), kind, ssrcs, codec) {
+            Ok(sender_id) => {
+                let mut s = state.write().await;
+                if let Some(room_track) = s.rtc_tracks.get_mut(&track_id) {
+                    room_track
+                        .forwarders
+                        .retain(|f| f.subscriber != *peer_id);
+                    room_track.forwarders.push(TrackForwarder {
+                        subscriber: peer_id.clone(),
+                        sender_id,
+                        tx: rtp_tx.clone(),
+                    });
+                    tracks_added = true;
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Rtc {} could not subscribe to existing track {}: {:?}",
+                    peer_id, track_id, e
+                );
+            }
+        }
+    }
+
     let answer = pc
         .create_answer(None)
         .map_err(|e| anyhow!("create_answer failed: {:?}", e))?;
     pc.set_local_description(answer.clone())
         .map_err(|e| anyhow!("set_local_description failed: {:?}", e))?;
+
+    *pending_local_offer = false;
+    if tracks_added {
+        // Adding tracks may emit an OnNegotiationNeeded event, but the
+        // answer we just generated already includes the new transceivers.
+        *ignore_next_negotiation = true;
+    }
     Ok(answer.sdp)
 }
 
@@ -810,39 +931,8 @@ pub async fn process_rtc_signal(
                 room.participants.insert(peer_id.to_string(), peer);
             }
 
-            // Subscribe this new peer to tracks already being published in the room.
-            let existing_tracks: Vec<(String, RtcRoomTrack)> = {
-                let s = state.read().await;
-                s.rtc_tracks
-                    .iter()
-                    .filter(|(_, t)| t.room_id == room_id && t.publisher != peer_id)
-                    .map(|(id, t)| (id.clone(), t.clone()))
-                    .collect()
-            };
-            for (track_id, track) in existing_tracks {
-                match rtc_peer
-                    .add_local_track(
-                        track_id.clone(),
-                        track.kind,
-                        track.ssrcs.clone(),
-                        track.codec.clone(),
-                    )
-                    .await
-                {
-                    Ok((sender_id, rtp_tx)) => {
-                        let mut s = state.write().await;
-                        if let Some(room_track) = s.rtc_tracks.get_mut(&track_id) {
-                            room_track.forwarders.push(TrackForwarder { sender_id, tx: rtp_tx });
-                        }
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Rtc peer {} could not subscribe to track {}: {:?}",
-                            peer_id, track_id, e
-                        );
-                    }
-                }
-            }
+            // Existing published tracks are subscribed to when the peer sends its
+            // offer and the SFU answers, so no action is needed here.
 
             let _ = tx.send(Event::Connected {
                 participant_id: peer_id.to_string(),
@@ -911,9 +1001,64 @@ pub async fn process_rtc_signal(
         }
 
         Signal::Leave => {
-            crate::leave_room(peer_id, state).await;
-            let mut s = state.write().await;
-            s.rtc_peers.remove(peer_id);
+            let room_id = crate::leave_room(peer_id, state).await;
+            let Some(room_id) = room_id else {
+                return Ok(());
+            };
+
+            // Clean up rtc-specific state.
+            let mut to_finalize: Vec<(std::sync::Arc<recording::Recorder>, recording::SharedTrackWriter)> = Vec::new();
+            let mut removals: Vec<(PeerId, RTCRtpSenderId)> = Vec::new();
+            {
+                let mut s = state.write().await;
+                s.rtc_peers.remove(peer_id);
+
+                // Drop the departing peer as a subscriber from all tracks.
+                for track in s.rtc_tracks.values_mut() {
+                    if track.room_id == room_id {
+                        track.forwarders.retain(|f| f.subscriber != peer_id);
+                    }
+                }
+
+                let rec = s.rooms.get(&room_id).and_then(|r| r.recording.clone());
+
+                // Remove tracks published by this peer and remember the sender
+                // IDs used by remaining subscribers so their peer connections can
+                // drop the remote tracks.
+                s.rtc_tracks.retain(|_, track| {
+                    if track.publisher == peer_id && track.room_id == room_id {
+                        if let (Some(writer), Some(rec)) = (track.writer.clone(), rec.as_ref()) {
+                            to_finalize.push((rec.clone(), writer));
+                        }
+                        for fwd in &track.forwarders {
+                            removals.push((fwd.subscriber.clone(), fwd.sender_id));
+                        }
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
+
+            for (rec, writer) in to_finalize {
+                tokio::spawn(async move {
+                    recording::finish_track_writer(&rec, &writer).await;
+                });
+            }
+
+            for (subscriber_id, sender_id) in removals {
+                if let Some(sub_peer) = {
+                    let s = state.read().await;
+                    s.rtc_peers.get(&subscriber_id).cloned()
+                } {
+                    if let Err(e) = sub_peer.remove_track(sender_id).await {
+                        warn!(
+                            "Rtc failed to remove track sender from subscriber {}: {:?}",
+                            subscriber_id, e
+                        );
+                    }
+                }
+            }
         }
     }
 

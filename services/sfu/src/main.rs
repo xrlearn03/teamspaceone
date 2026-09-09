@@ -1233,6 +1233,7 @@ async fn leave_room(peer_id: &str, state: &SharedState) -> Option<RoomId> {
                 for rt in room.tracks.iter() {
                     rt.forwarders.lock().await.remove(peer_id);
                 }
+
                 // Detach the departing peer's published tracks from every
                 // remaining subscriber so their clients drop the tiles.
                 let mut removed_tracks = Vec::new();
