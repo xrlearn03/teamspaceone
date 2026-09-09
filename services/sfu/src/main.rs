@@ -1326,7 +1326,7 @@ async fn leave_room(peer_id: &str, state: &SharedState) -> Option<RoomId> {
     None
 }
 
-async fn cleanup_peer(peer_id: &str, state: &SharedState) {
+pub(crate) async fn cleanup_peer(peer_id: &str, state: &SharedState) {
     let _room_id = leave_room(peer_id, state).await;
     #[cfg(feature = "rtc")]
     if let Some(ref room_id) = _room_id {

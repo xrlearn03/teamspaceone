@@ -28,7 +28,9 @@ use rtc::rtp_transceiver::rtp_sender::{
 };
 use rtc::rtp_transceiver::{RTCRtpReceiverId, RTCRtpSenderId};
 use rtc::sansio::Protocol;
-use rtc::shared::{error::Error as SharedError, TaggedBytesMut, TransportContext, TransportProtocol};
+use rtc::shared::{
+    error::Error as SharedError, TaggedBytesMut, TransportContext, TransportProtocol,
+};
 use rtc_interceptor::{Interceptor, Packet as IcptPacket, StreamInfo, TaggedPacket};
 use rtp::Packet as RtpPacket;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -498,7 +500,10 @@ async fn handle_incoming_rtcp(
                 ssrc,
                 publisher
             );
-            if let Err(e) = publisher_peer.write_receiver_rtcp(receiver_id, feedback).await {
+            if let Err(e) = publisher_peer
+                .write_receiver_rtcp(receiver_id, feedback)
+                .await
+            {
                 warn!(
                     "Rtc {} failed to forward RTCP for ssrc {} to publisher {}: {:?}",
                     peer_id, ssrc, publisher, e
@@ -561,6 +566,9 @@ where
         let mut pending_local_offer = false;
         let mut ignore_next_negotiation = false;
 
+        // ICE candidates may arrive before the remote SDP if trickling races.
+        let mut pending_ice_candidates: Vec<(String, u16, Option<String>)> = Vec::new();
+
         loop {
             // Drain outgoing network packets.
             while let Some(out) = pc.poll_write() {
@@ -572,17 +580,21 @@ where
             // Drain events (ICE candidates, state changes, tracks).
             while let Some(event) = pc.poll_event() {
                 match event {
-                    RTCPeerConnectionEvent::OnIceConnectionStateChangeEvent(state) => {
-                        info!("Rtc {} ICE state: {:?}", peer_id, state);
-                        if state == RTCIceConnectionState::Failed {
+                    RTCPeerConnectionEvent::OnIceConnectionStateChangeEvent(ice_state) => {
+                        info!("Rtc {} ICE state: {:?}", peer_id, ice_state);
+                        if ice_state == RTCIceConnectionState::Failed {
+                            warn!("Rtc {} ICE failed; cleaning up peer", peer_id);
                             metrics.inc_ice_failure();
+                            crate::cleanup_peer(&peer_id, &state).await;
                             return;
                         }
                     }
-                    RTCPeerConnectionEvent::OnConnectionStateChangeEvent(state) => {
-                        info!("Rtc {} connection state: {:?}", peer_id, state);
-                        if state == RTCPeerConnectionState::Failed {
+                    RTCPeerConnectionEvent::OnConnectionStateChangeEvent(conn_state) => {
+                        info!("Rtc {} connection state: {:?}", peer_id, conn_state);
+                        if conn_state == RTCPeerConnectionState::Failed {
+                            warn!("Rtc {} connection failed; cleaning up peer", peer_id);
                             metrics.inc_ice_failure();
+                            crate::cleanup_peer(&peer_id, &state).await;
                             return;
                         }
                     }
@@ -917,6 +929,7 @@ where
                                 &rtp_tx,
                                 &mut pending_local_offer,
                                 &mut ignore_next_negotiation,
+                                &mut pending_ice_candidates,
                             )
                             .await;
                             if let Err(ref e) = answer_sdp {
@@ -925,22 +938,26 @@ where
                             let _ = respond.send(answer_sdp);
                         }
                         Some(RtcCommand::HandleAnswer { sdp, target: _ }) => {
-                            if let Err(e) = handle_answer_sdp(&mut pc, &sdp, &mut ignore_next_negotiation) {
+                            if let Err(e) = handle_answer_sdp(&mut pc, &sdp, &mut ignore_next_negotiation, &mut pending_ice_candidates, &peer_id) {
                                 warn!("Rtc {} handle answer failed: {:?}", peer_id, e);
                             } else {
                                 pending_local_offer = false;
                             }
                         }
                         Some(RtcCommand::AddIceCandidate { candidate, sdp_m_line_index, sdp_mid }) => {
-                            let init = RTCIceCandidateInit {
-                                candidate,
-                                sdp_mid,
-                                sdp_mline_index: Some(sdp_m_line_index),
-                                username_fragment: None,
-                                url: None,
-                            };
-                            if let Err(e) = pc.add_remote_candidate(init) {
-                                warn!("Rtc {} add_remote_candidate failed: {:?}", peer_id, e);
+                            if pc.remote_description().is_none() {
+                                pending_ice_candidates.push((candidate, sdp_m_line_index, sdp_mid));
+                            } else {
+                                let init = RTCIceCandidateInit {
+                                    candidate,
+                                    sdp_mid,
+                                    sdp_mline_index: Some(sdp_m_line_index),
+                                    username_fragment: None,
+                                    url: None,
+                                };
+                                if let Err(e) = pc.add_remote_candidate(init) {
+                                    warn!("Rtc {} add_remote_candidate failed: {:?}", peer_id, e);
+                                }
                             }
                         }
                         Some(RtcCommand::AddLocalTrack { track_id, kind, ssrcs, codec, respond }) => {
@@ -1210,6 +1227,32 @@ fn update_sender_ssrc<'a, I: Interceptor>(
     Ok(())
 }
 
+fn set_remote_description_and_flush<I: Interceptor>(
+    pc: &mut RTCPeerConnection<I>,
+    sdp: RTCSessionDescription,
+    pending_candidates: &mut Vec<(String, u16, Option<String>)>,
+    peer_id: &PeerId,
+) -> Result<()> {
+    pc.set_remote_description(sdp)
+        .map_err(|e| anyhow!("set_remote_description failed: {:?}", e))?;
+    for (candidate, mline, mid) in pending_candidates.drain(..) {
+        let init = RTCIceCandidateInit {
+            candidate,
+            sdp_mid: mid,
+            sdp_mline_index: Some(mline),
+            username_fragment: None,
+            url: None,
+        };
+        if let Err(e) = pc.add_remote_candidate(init) {
+            warn!(
+                "Rtc {} flushed pending remote candidate failed: {:?}",
+                peer_id, e
+            );
+        }
+    }
+    Ok(())
+}
+
 async fn handle_offer_sdp<I: Interceptor>(
     pc: &mut RTCPeerConnection<I>,
     sdp: &str,
@@ -1219,6 +1262,7 @@ async fn handle_offer_sdp<I: Interceptor>(
     rtp_tx: &mpsc::Sender<RtpForward>,
     pending_local_offer: &mut bool,
     ignore_next_negotiation: &mut bool,
+    pending_candidates: &mut Vec<(String, u16, Option<String>)>,
 ) -> Result<String> {
     if *pending_local_offer {
         let rollback = RTCSessionDescription::rollback(None)
@@ -1234,8 +1278,7 @@ async fn handle_offer_sdp<I: Interceptor>(
 
     let offer = RTCSessionDescription::offer(sdp.to_string())
         .map_err(|e| anyhow!("failed to parse offer: {:?}", e))?;
-    pc.set_remote_description(offer)
-        .map_err(|e| anyhow!("set_remote_description failed: {:?}", e))?;
+    set_remote_description_and_flush(pc, offer, pending_candidates, peer_id)?;
 
     // Subscribe this peer to every track already published in the room.
     let existing_tracks: Vec<(String, RtpCodecKind, Vec<u32>, Option<RTCRtpCodec>)> = {
@@ -1287,11 +1330,12 @@ fn handle_answer_sdp<I: Interceptor>(
     pc: &mut RTCPeerConnection<I>,
     sdp: &str,
     ignore_next_negotiation: &mut bool,
+    pending_candidates: &mut Vec<(String, u16, Option<String>)>,
+    peer_id: &PeerId,
 ) -> Result<()> {
     let answer = RTCSessionDescription::answer(sdp.to_string())
         .map_err(|e| anyhow!("failed to parse answer: {:?}", e))?;
-    pc.set_remote_description(answer)
-        .map_err(|e| anyhow!("set_remote_description failed: {:?}", e))?;
+    set_remote_description_and_flush(pc, answer, pending_candidates, peer_id)?;
     // set_remote_description(answer) can emit OnNegotiationNeeded; the answer
     // is already applied, so ignore one event.
     *ignore_next_negotiation = true;
