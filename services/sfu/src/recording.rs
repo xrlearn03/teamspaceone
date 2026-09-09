@@ -20,6 +20,9 @@ use webrtc::media::io::Writer;
 use webrtc::rtp::packet::Packet as RtpPacket;
 use webrtc::track::track_remote::TrackRemote;
 
+#[cfg(feature = "rtc")]
+use rtc::rtp_transceiver::rtp_sender::RTCRtpCodec;
+
 fn sanitize(s: &str) -> String {
     s.chars()
         .map(|c| {
@@ -90,6 +93,45 @@ impl TrackWriter {
             )?),
             "video/vp8" => Self::Ivf(IVFWriter::new(file, &ivf_header(*b"VP80", cap.clock_rate))?),
             "video/vp9" => Self::Ivf(IVFWriter::new(file, &ivf_header(*b"VP90", cap.clock_rate))?),
+            "video/h264" => Self::H264(H264Writer::new(file)),
+            _ => unreachable!(),
+        };
+        Ok(Some((writer, path)))
+    }
+
+    /// Create a writer from an `rtc` codec descriptor instead of a webrtc `TrackRemote`.
+    #[cfg(feature = "rtc")]
+    pub fn create_from_rtc_codec(
+        dir: &Path,
+        room_id: &str,
+        publisher: &str,
+        track_id: &str,
+        codec: &RTCRtpCodec,
+    ) -> Result<Option<(Self, PathBuf)>> {
+        let mime = codec.mime_type.to_ascii_lowercase();
+        let ext = match mime.as_str() {
+            "audio/opus" => "ogg",
+            "video/vp8" | "video/vp9" => "ivf",
+            "video/h264" => "h264",
+            _ => return Ok(None),
+        };
+        let file_name = format!(
+            "{}-{}-{}.{}",
+            sanitize(room_id),
+            sanitize(publisher),
+            sanitize(track_id),
+            ext
+        );
+        let path = dir.join(&file_name);
+        let file = File::create(&path)?;
+        let writer = match mime.as_str() {
+            "audio/opus" => Self::Ogg(OggWriter::new(
+                file,
+                codec.clock_rate,
+                u8::try_from(codec.channels).unwrap_or(2),
+            )?),
+            "video/vp8" => Self::Ivf(IVFWriter::new(file, &ivf_header(*b"VP80", codec.clock_rate))?),
+            "video/vp9" => Self::Ivf(IVFWriter::new(file, &ivf_header(*b"VP90", codec.clock_rate))?),
             "video/h264" => Self::H264(H264Writer::new(file)),
             _ => unreachable!(),
         };
@@ -184,6 +226,46 @@ pub fn attach_track_writer(
             );
         }
         Err(e) => warn!("Failed to create recorder for track {}: {}", track_id, e),
+    }
+}
+
+/// `rtc` variant of `attach_track_writer`.
+#[cfg(feature = "rtc")]
+pub fn attach_rtc_track_writer(
+    rec: &Recorder,
+    slot: &SharedTrackWriter,
+    room_id: &str,
+    publisher: &str,
+    track_id: &str,
+    codec: Option<&RTCRtpCodec>,
+) {
+    if let Some(codec) = codec {
+        match TrackWriter::create_from_rtc_codec(&rec.dir, room_id, publisher, track_id, codec) {
+            Ok(Some(w)) => {
+                info!(
+                    "Recording rtc track {} from {} -> {}",
+                    track_id,
+                    publisher,
+                    w.1.display()
+                );
+                let slot = slot.clone();
+                tokio::spawn(async move {
+                    *slot.lock().await = Some(w);
+                });
+            }
+            Ok(None) => {
+                info!(
+                    "Skipping recording for rtc track {} from {} (unsupported codec)",
+                    track_id, publisher
+                );
+            }
+            Err(e) => warn!("Failed to create rtc recorder for track {}: {}", track_id, e),
+        }
+    } else {
+        info!(
+            "Skipping recording for rtc track {} from {} (no codec)",
+            track_id, publisher
+        );
     }
 }
 

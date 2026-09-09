@@ -1,14 +1,15 @@
 //! `webrtc` → `rtc` migration: `RTCPeerConnection` peer wrapper and signal handler.
 //!
-//! This module is compiled only with the `rtc` feature. It is a first pass at
-//! replacing the `webrtc`-based `process_signal` for join/offer/answer/ice and
-//! at forwarding published RTP to subscribers.
+//! This module is compiled only with the `rtc` feature. It implements join/offer/
+//! answer/ice, per-subscriber RTP forwarding, recording tee, and uses the `rtc`
+//! default interceptor chain for NACK/RTCP plumbing.
 
 use anyhow::{anyhow, Result};
 use bytes::BytesMut;
 use rtc::media_stream::MediaStreamTrack;
 use rtc::peer_connection::configuration::{
-    media_engine::MediaEngine, RTCConfigurationBuilder, RTCIceServer,
+    interceptor_registry::register_default_interceptors, media_engine::MediaEngine,
+    RTCConfigurationBuilder, RTCIceServer,
 };
 use rtc::peer_connection::event::{RTCPeerConnectionEvent, RTCTrackEvent};
 use rtc::peer_connection::message::RTCMessage;
@@ -17,15 +18,16 @@ use rtc::peer_connection::state::{
     RTCIceConnectionState, RTCIceGatheringState, RTCPeerConnectionState,
 };
 use rtc::peer_connection::transport::RTCIceCandidateInit;
-use rtc::peer_connection::{RTCPeerConnection, RTCPeerConnectionBuilder};
+use rtc::peer_connection::RTCPeerConnection;
+use rtc::peer_connection::RTCPeerConnectionBuilder;
 use rtc::rtp_transceiver::RTCRtpSenderId;
 use rtc::rtp_transceiver::rtp_sender::{
     RTCPFeedback, RTCRtpCodec, RTCRtpCodingParameters, RTCRtpEncodingParameters, RtpCodecKind,
 };
 use rtc::sansio::Protocol;
 use rtc::shared::{TaggedBytesMut, TransportContext, TransportProtocol};
+use rtc_interceptor::Interceptor;
 use rtp::Packet as RtpPacket;
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
@@ -33,10 +35,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
-use crate::{validate_display_name, verify_sfu_token, Event, PeerId, RoomId, SharedState, Signal};
-
-/// Alias for the default `RTCPeerConnection` (NoopInterceptor) used in this spike.
-type RtcPeerConnection = RTCPeerConnection<rtc_interceptor::NoopInterceptor>;
+use crate::{recording, validate_display_name, verify_sfu_token, Event, PeerId, RoomId, SharedState, Signal};
 
 /// RTP packet plus the sender ID on the subscriber peer that should transmit it.
 #[derive(Clone)]
@@ -60,7 +59,8 @@ pub struct RtcRoomTrack {
     pub kind: RtpCodecKind,
     pub ssrcs: Vec<u32>,
     pub codec: Option<RTCRtpCodec>,
-    pub forwarders: HashMap<PeerId, TrackForwarder>,
+    pub forwarders: Vec<TrackForwarder>,
+    pub writer: Option<recording::SharedTrackWriter>,
 }
 
 enum RtcCommand {
@@ -103,11 +103,13 @@ impl RtcPeer {
         room_id: RoomId,
     ) -> Result<(Self, SocketAddr)> {
         let mut media_engine = MediaEngine::default();
-        media_engine
-            .register_default_codecs()
-            .map_err(|e| anyhow!("failed to register default codecs: {:?}", e))?;
+        let registry = register_default_interceptors(
+            rtc_interceptor::Registry::new(),
+            &mut media_engine,
+        )
+        .map_err(|e| anyhow!("failed to register default interceptors: {:?}", e))?;
 
-        let pc = RTCPeerConnectionBuilder::new()
+        let pc: RTCPeerConnection<_> = RTCPeerConnectionBuilder::new()
             .with_configuration(
                 RTCConfigurationBuilder::new()
                     .with_ice_servers(vec![RTCIceServer {
@@ -117,6 +119,7 @@ impl RtcPeer {
                     .build(),
             )
             .with_media_engine(media_engine)
+            .with_interceptor_registry(registry)
             .build()
             .map_err(|e| anyhow!("failed to build rtc peer: {:?}", e))?;
 
@@ -200,60 +203,37 @@ impl RtcPeer {
     }
 }
 
-/// Add a local forwarded track to every other participant in the room.
-async fn add_track_to_subscribers(
-    state: &SharedState,
-    room_id: &RoomId,
-    publisher_id: &PeerId,
-    global_track_id: &str,
-    kind: RtpCodecKind,
-    ssrcs: &[u32],
-    codec: Option<RTCRtpCodec>,
-) -> Vec<(PeerId, TrackForwarder)> {
-    let subscribers: Vec<(PeerId, RtcPeer)> = {
-        let s = state.read().await;
-        let room = match s.rooms.get(room_id) {
-            Some(r) => r,
-            None => return Vec::new(),
-        };
-        s.rtc_peers
-            .iter()
-            .filter(|(id, _)| {
-                let id = *id;
-                id != publisher_id && room.participants.contains_key(id)
-            })
-            .map(|(id, p)| (id.clone(), p.clone()))
-            .collect()
-    };
-
-    let mut added = Vec::new();
-    for (sub_id, sub_peer) in subscribers {
-        match sub_peer
-            .add_local_track(
-                global_track_id.to_string(),
-                kind,
-                ssrcs.to_vec(),
-                codec.clone(),
-            )
-            .await
-        {
-            Ok((sender_id, tx)) => {
-                added.push((sub_id, TrackForwarder { sender_id, tx }));
-            }
-            Err(e) => {
-                warn!(
-                    "Rtc peer {} could not add track {} for subscriber {}: {:?}",
-                    publisher_id, global_track_id, sub_id, e
-                );
-            }
-        }
+fn to_webrtc_packet(pkt: &RtpPacket) -> webrtc::rtp::packet::Packet {
+    webrtc::rtp::packet::Packet {
+        header: webrtc::rtp::header::Header {
+            version: pkt.header.version,
+            padding: pkt.header.padding,
+            extension: pkt.header.extension,
+            marker: pkt.header.marker,
+            payload_type: pkt.header.payload_type,
+            sequence_number: pkt.header.sequence_number,
+            timestamp: pkt.header.timestamp,
+            ssrc: pkt.header.ssrc,
+            csrc: pkt.header.csrc.clone(),
+            extension_profile: pkt.header.extension_profile,
+            extensions: pkt
+                .header
+                .extensions
+                .iter()
+                .map(|e| webrtc::rtp::header::Extension {
+                    id: e.id,
+                    payload: e.payload.clone(),
+                })
+                .collect(),
+            extensions_padding: 0,
+        },
+        payload: pkt.payload.clone(),
     }
-    added
 }
 
-fn spawn_network_task(
+fn spawn_network_task<I>(
     peer_id: PeerId,
-    mut pc: RtcPeerConnection,
+    mut pc: RTCPeerConnection<I>,
     socket: UdpSocket,
     tx: mpsc::UnboundedSender<Event>,
     mut cmd_rx: mpsc::Receiver<RtcCommand>,
@@ -261,7 +241,10 @@ fn spawn_network_task(
     room_id: RoomId,
     rtp_tx: mpsc::Sender<RtpForward>,
     mut rtp_rx: mpsc::Receiver<RtpForward>,
-) -> JoinHandle<()> {
+) -> JoinHandle<()>
+where
+    I: Interceptor + Send + 'static,
+{
     tokio::spawn(async move {
         let local_addr = match socket.local_addr() {
             Ok(a) => a,
@@ -343,36 +326,87 @@ fn spawn_network_task(
                                     .codecs
                                     .first()
                                     .map(|c| c.rtp_codec.clone());
-                                let global_id = format!("{}-{}", peer_id, init.track_id);
-                                {
-                                    let mut s = state.write().await;
-                                    s.rtc_tracks.insert(
-                                        global_id.clone(),
-                                        RtcRoomTrack {
-                                            publisher: peer_id.clone(),
-                                            room_id: room_id.clone(),
-                                            kind,
-                                            ssrcs: ssrcs.clone(),
-                                            codec: codec.clone(),
-                                            forwarders: HashMap::new(),
-                                        },
-                                    );
-                                }
-                                if !ssrcs.is_empty() {
-                                    let added = add_track_to_subscribers(
-                                        &state,
-                                        &room_id,
-                                        &peer_id,
-                                        &global_id,
+                                let writer = {
+                                    let s = state.read().await;
+                                    s.rooms
+                                        .get(&room_id)
+                                        .and_then(|r| r.recording.clone())
+                                        .map(|rec| {
+                                            let slot = recording::new_track_writer_slot();
+                                            recording::attach_rtc_track_writer(
+                                                &rec,
+                                                &slot,
+                                                &room_id,
+                                                &peer_id,
+                                                &init.track_id,
+                                                codec.as_ref(),
+                                            );
+                                            slot
+                                        })
+                                };
+
+                                let mut s = state.write().await;
+                                s.rtc_tracks.insert(
+                                    init.track_id.clone(),
+                                    RtcRoomTrack {
+                                        publisher: peer_id.clone(),
+                                        room_id: room_id.clone(),
                                         kind,
-                                        &ssrcs,
-                                        codec,
-                                    )
-                                    .await;
-                                    let mut s = state.write().await;
-                                    if let Some(room_track) = s.rtc_tracks.get_mut(&global_id) {
-                                        for (sub_id, fwd) in added {
-                                            room_track.forwarders.insert(sub_id, fwd);
+                                        ssrcs: ssrcs.clone(),
+                                        codec: codec.clone(),
+                                        forwarders: vec![],
+                                        writer,
+                                    },
+                                );
+                                drop(s);
+
+                                // Add this new track to every other rtc peer already in the room.
+                                let other_peers: Vec<String> = {
+                                    let s = state.read().await;
+                                    s.rooms
+                                        .get(&room_id)
+                                        .map(|r| {
+                                            r.participants
+                                                .keys()
+                                                .filter(|id| *id != &peer_id)
+                                                .cloned()
+                                                .collect()
+                                        })
+                                        .unwrap_or_default()
+                                };
+
+                                for other_id in other_peers {
+                                    let maybe_peer = {
+                                        let s = state.read().await;
+                                        s.rtc_peers.get(&other_id).cloned()
+                                    };
+                                    if let Some(other_peer) = maybe_peer {
+                                        match other_peer
+                                            .add_local_track(
+                                                init.track_id.clone(),
+                                                kind,
+                                                ssrcs.clone(),
+                                                codec.clone(),
+                                            )
+                                            .await
+                                        {
+                                            Ok((sender_id, rtp_tx)) => {
+                                                let mut s = state.write().await;
+                                                if let Some(room_track) =
+                                                    s.rtc_tracks.get_mut(&init.track_id)
+                                                {
+                                                    room_track.forwarders.push(TrackForwarder {
+                                                        sender_id,
+                                                        tx: rtp_tx,
+                                                    });
+                                                }
+                                            }
+                                            Err(e) => {
+                                                warn!(
+                                                    "Rtc {} failed to forward track {} to {}: {:?}",
+                                                    peer_id, init.track_id, other_id, e
+                                                );
+                                            }
                                         }
                                     }
                                 }
@@ -381,8 +415,13 @@ fn spawn_network_task(
                         RTCTrackEvent::OnClose(track_id) => {
                             info!("Rtc {} track closed: {}", peer_id, track_id);
                             let mut s = state.write().await;
-                            let global_id = format!("{}-{}", peer_id, track_id);
-                            s.rtc_tracks.remove(&global_id);
+                            if let Some(track) = s.rtc_tracks.remove(&track_id) {
+                                if let Some(recorder) = s.rooms.get(&room_id).and_then(|r| r.recording.clone()) {
+                                    tokio::spawn(async move {
+                                        recording::finish_track_writer(&recorder, &track.writer.unwrap_or_else(recording::new_track_writer_slot)).await;
+                                    });
+                                }
+                            }
                         }
                         _ => {}
                     },
@@ -394,62 +433,42 @@ fn spawn_network_task(
             while let Some(message) = pc.poll_read() {
                 match message {
                     RTCMessage::RtpPacket(track_id, rtp_packet) => {
-                        let global_id = format!("{}-{}", peer_id, track_id);
-                        let mut track = {
+                        let tracks = {
                             let s = state.read().await;
-                            s.rtc_tracks.get(&global_id).cloned()
+                            s.rtc_tracks.get(&track_id).cloned()
                         };
-                        if let Some(ref mut track) = track {
-                            if track.ssrcs.is_empty() {
-                                let ssrc = rtp_packet.header.ssrc;
-                                track.ssrcs = vec![ssrc];
-                                let added = add_track_to_subscribers(
-                                    &state,
-                                    &room_id,
-                                    &peer_id,
-                                    &global_id,
-                                    track.kind,
-                                    &track.ssrcs,
-                                    track.codec.clone(),
-                                )
-                                .await;
-                                {
-                                    let mut s = state.write().await;
-                                    if let Some(room_track) = s.rtc_tracks.get_mut(&global_id) {
-                                        room_track.ssrcs = track.ssrcs.clone();
-                                        for (sub_id, fwd) in added {
-                                            room_track.forwarders.insert(sub_id, fwd);
-                                        }
-                                    }
+                        if let Some(track) = tracks {
+                            for fwd in &track.forwarders {
+                                let fwd_msg = RtpForward {
+                                    sender_id: fwd.sender_id,
+                                    packet: rtp_packet.clone(),
+                                };
+                                if let Err(_) = fwd.tx.try_send(fwd_msg) {
+                                    warn!(
+                                        "Rtc {} forward queue full for track {} to {:?}",
+                                        peer_id, track_id, fwd.sender_id
+                                    );
                                 }
                             }
-                            let forwarders = {
-                                let s = state.read().await;
-                                s.rtc_tracks
-                                    .get(&global_id)
-                                    .map(|t| t.forwarders.clone())
-                            };
-                            if let Some(forwarders) = forwarders {
-                                for fwd in forwarders.values() {
-                                    let fwd_msg = RtpForward {
-                                        sender_id: fwd.sender_id,
-                                        packet: rtp_packet.clone(),
-                                    };
-                                    if let Err(_) = fwd.tx.try_send(fwd_msg) {
-                                        warn!(
-                                            "Rtc {} forward queue full for track {} to {:?}",
-                                            peer_id, global_id, fwd.sender_id
-                                        );
-                                    }
+
+                            if let Some(ref writer) = track.writer {
+                                let w_pkt = to_webrtc_packet(&rtp_packet);
+                                let mut guard = writer.lock().await;
+                                if let Some((ref mut w, _)) = guard.as_mut() {
+                                    w.write_rtp(&w_pkt);
                                 }
                             }
                         }
                     }
-                    RTCMessage::RtcpPacket(receiver_id, rtcp_packets) => {
+                    RTCMessage::RtcpPacket(track_id, rtcp_packets) => {
+                        // With the default interceptor chain, NACKs/PLIs are generated and
+                        // consumed automatically by the peer connection. We log the inbound
+                        // RTCP for observability; later passes can forward selected feedback
+                        // (e.g. PLI/FIR) across the room.
                         info!(
-                            "Rtc {} RTCP on receiver {:?}: {} packets",
+                            "Rtc {} RTCP on track {}: {} packets",
                             peer_id,
-                            receiver_id,
+                            track_id,
                             rtcp_packets.len()
                         );
                     }
@@ -577,8 +596,8 @@ fn default_codec(kind: RtpCodecKind) -> RTCRtpCodec {
     }
 }
 
-fn add_local_track(
-    pc: &mut RtcPeerConnection,
+fn add_local_track<I: Interceptor>(
+    pc: &mut RTCPeerConnection<I>,
     room_id: &RoomId,
     peer_id: &PeerId,
     track_id: String,
@@ -632,7 +651,7 @@ fn add_local_track(
         .map_err(|e| anyhow!("add_track failed: {:?}", e))
 }
 
-fn handle_offer_sdp(pc: &mut RtcPeerConnection, sdp: &str) -> Result<String> {
+fn handle_offer_sdp<I: Interceptor>(pc: &mut RTCPeerConnection<I>, sdp: &str) -> Result<String> {
     let offer = RTCSessionDescription::offer(sdp.to_string())
         .map_err(|e| anyhow!("failed to parse offer: {:?}", e))?;
     pc.set_remote_description(offer)
@@ -645,7 +664,7 @@ fn handle_offer_sdp(pc: &mut RtcPeerConnection, sdp: &str) -> Result<String> {
     Ok(answer.sdp)
 }
 
-fn handle_answer_sdp(pc: &mut RtcPeerConnection, sdp: &str) -> Result<()> {
+fn handle_answer_sdp<I: Interceptor>(pc: &mut RTCPeerConnection<I>, sdp: &str) -> Result<()> {
     let answer = RTCSessionDescription::answer(sdp.to_string())
         .map_err(|e| anyhow!("failed to parse answer: {:?}", e))?;
     pc.set_remote_description(answer)
@@ -735,9 +754,7 @@ pub async fn process_rtc_signal(
                 let s = state.read().await;
                 s.rtc_tracks
                     .iter()
-                    .filter(|(_, t)| {
-                        t.room_id == room_id && t.publisher != peer_id && !t.ssrcs.is_empty()
-                    })
+                    .filter(|(_, t)| t.room_id == room_id && t.publisher != peer_id)
                     .map(|(id, t)| (id.clone(), t.clone()))
                     .collect()
             };
@@ -754,9 +771,7 @@ pub async fn process_rtc_signal(
                     Ok((sender_id, rtp_tx)) => {
                         let mut s = state.write().await;
                         if let Some(room_track) = s.rtc_tracks.get_mut(&track_id) {
-                            room_track
-                                .forwarders
-                                .insert(peer_id.to_string(), TrackForwarder { sender_id, tx: rtp_tx });
+                            room_track.forwarders.push(TrackForwarder { sender_id, tx: rtp_tx });
                         }
                     }
                     Err(e) => {
