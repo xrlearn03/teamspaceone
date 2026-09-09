@@ -478,8 +478,44 @@ fn validate_candidate(candidate: &str) -> Result<()> {
     Ok(())
 }
 
+mod string_or_vec {
+    use serde::Deserializer;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = Vec<String>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string or an array of strings")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(vec![value.to_owned()])
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut out = Vec::new();
+                while let Some(v) = seq.next_element::<String>()? {
+                    out.push(v);
+                }
+                Ok(out)
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
 #[derive(Deserialize)]
 struct IceServerConfig {
+    #[serde(with = "string_or_vec")]
     urls: Vec<String>,
     username: Option<String>,
     credential: Option<String>,

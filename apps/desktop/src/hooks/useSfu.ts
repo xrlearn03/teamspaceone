@@ -66,11 +66,33 @@ const STUN_SERVER =
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000];
 
+function normalizeIceServers(input: unknown): RTCIceServer[] {
+  if (!Array.isArray(input)) {
+    console.warn("VITE_ICE_SERVERS is not an array; falling back to STUN");
+    return [{ urls: [STUN_SERVER] }];
+  }
+
+  return input
+    .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+    .map((entry) => {
+      const urls = Array.isArray(entry.urls)
+        ? entry.urls.filter((u): u is string => typeof u === "string")
+        : typeof entry.urls === "string"
+          ? [entry.urls]
+          : [STUN_SERVER];
+      const server: RTCIceServer = { urls };
+      if (typeof entry.username === "string") server.username = entry.username;
+      if (typeof entry.credential === "string") server.credential = entry.credential;
+      return server;
+    })
+    .filter((entry) => entry.urls.length > 0);
+}
+
 function getIceServers(): RTCIceServer[] {
   const raw = import.meta.env.VITE_ICE_SERVERS as string | undefined;
   if (raw) {
     try {
-      return JSON.parse(raw) as RTCIceServer[];
+      return normalizeIceServers(JSON.parse(raw));
     } catch {
       console.warn("VITE_ICE_SERVERS is not valid JSON; falling back to STUN");
     }
