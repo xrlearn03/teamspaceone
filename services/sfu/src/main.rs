@@ -1,3 +1,4 @@
+mod composit;
 mod control;
 mod recording;
 
