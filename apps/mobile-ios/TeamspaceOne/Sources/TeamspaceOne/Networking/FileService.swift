@@ -7,6 +7,10 @@ enum FileService {
         try await APIClient.request("files")
     }
 
+    static func getFile(id: String) async throws -> FileRecord {
+        try await APIClient.request("files/\(id)")
+    }
+
     static func uploadFile(url: URL, organisationId: String) async throws -> FileRecord {
         let data = try readFile(url)
         let size = data.count

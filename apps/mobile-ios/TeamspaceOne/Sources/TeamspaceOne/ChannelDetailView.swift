@@ -9,6 +9,7 @@ struct ChannelDetailView: View {
     @State private var status = ""
     @State private var showImporter = false
     @State private var pendingAttachmentIds: [String] = []
+    @State private var attachmentFiles: [String: FileRecord] = [:]
     @StateObject private var realtime = RealtimeManager.shared
 
     private var groupedMessages: [(String, [Message])] {
@@ -69,7 +70,7 @@ struct ChannelDetailView: View {
                     ForEach(groupedMessages, id: \.0) { date, dayMessages in
                         Section(header: Text(date).font(.caption).foregroundStyle(.secondary)) {
                             ForEach(dayMessages) { message in
-                                MessageRow(message: message)
+                                MessageRow(message: message, attachmentFiles: attachmentFiles)
                             }
                         }
                     }
@@ -130,6 +131,9 @@ struct ChannelDetailView: View {
                 }
             }
         }
+        .onChange(of: messages) { _, _ in
+            Task { await loadAttachmentFiles() }
+        }
     }
 
     private func load() async {
@@ -141,6 +145,33 @@ struct ChannelDetailView: View {
             status = "Error: \(error.localizedDescription)"
         }
         isLoading = false
+        await loadAttachmentFiles()
+    }
+
+    private func loadAttachmentFiles() async {
+        let fileIds = messages.flatMap { $0.attachments.map(\.fileId) }
+        let missing = Set(fileIds).subtracting(attachmentFiles.keys)
+        guard !missing.isEmpty else { return }
+
+        var updated = attachmentFiles
+        await withTaskGroup(of: (String, FileRecord)?.self) { group in
+            for id in missing {
+                group.addTask {
+                    do {
+                        let file = try await FileService.getFile(id: id)
+                        return (id, file)
+                    } catch {
+                        return nil
+                    }
+                }
+            }
+            for await result in group {
+                if let (id, file) = result {
+                    updated[id] = file
+                }
+            }
+        }
+        attachmentFiles = updated
     }
 
     private func send() async {
@@ -191,16 +222,17 @@ struct ChannelDetailView: View {
 
 private struct MessageRow: View {
     let message: Message
+    let attachmentFiles: [String: FileRecord]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(message.content)
-                .strikethrough(message.deletedAt != nil, color: .secondary)
+            if !message.content.isEmpty {
+                Text(message.content)
+                    .strikethrough(message.deletedAt != nil, color: .secondary)
+            }
 
             if !message.attachments.isEmpty {
-                Text("\(message.attachments.count) attachment(s)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                AttachmentChips(attachments: message.attachments, attachmentFiles: attachmentFiles)
             }
 
             Text(message.senderId)
@@ -208,5 +240,47 @@ private struct MessageRow: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct AttachmentChips: View {
+    let attachments: [MessageAttachment]
+    let attachmentFiles: [String: FileRecord]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(attachments) { attachment in
+                let file = attachmentFiles[attachment.fileId]
+                let fileName = file?.originalName ?? "Attachment"
+                let isVisual = file?.mimeType.lowercased().hasPrefix("image/") == true || file?.mimeType.lowercased().hasPrefix("video/") == true
+
+                HStack(spacing: 8) {
+                    if isVisual, let urlString = file?.thumbnailUrl ?? file?.previewUrl, let url = URL(string: urlString) {
+                        AsyncImage(url: url) { phase in
+                            if let image = phase.image {
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            } else if phase.error != nil {
+                                Image(systemName: "paperclip")
+                            } else {
+                                ProgressView()
+                            }
+                        }
+                        .frame(width: 40, height: 40)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    } else {
+                        Image(systemName: "paperclip")
+                    }
+
+                    Text(fileName)
+                        .font(.caption)
+                        .lineLimit(1)
+
+                    Spacer()
+                }
+                .padding(8)
+                .background(Color.gray.opacity(0.15))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
     }
 }

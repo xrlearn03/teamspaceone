@@ -109,10 +109,7 @@ private struct FileRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: fileTypeIcon(for: file.mimeType))
-                .font(.title2)
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 40, height: 40)
+            FileThumbnail(file: file)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.originalName)
@@ -142,8 +139,43 @@ private struct FileRow: View {
         output.timeStyle = .short
         return output.string(from: date)
     }
+}
 
-    private func fileTypeIcon(for mimeType: String) -> String {
+private struct FileThumbnail: View {
+    let file: FileRecord
+
+    var body: some View {
+        let imageUrl = file.thumbnailUrl ?? file.previewUrl
+        let isVisual = file.mimeType.lowercased().hasPrefix("image/") || file.mimeType.lowercased().hasPrefix("video/")
+
+        if isVisual, let urlString = imageUrl, let url = URL(string: urlString) {
+            AsyncImage(url: url) { phase in
+                if let image = phase.image {
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else if phase.error != nil {
+                    fileTypeIcon()
+                } else {
+                    ProgressView()
+                }
+            }
+            .frame(width: 48, height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        } else {
+            fileTypeIcon()
+        }
+    }
+
+    @ViewBuilder
+    private func fileTypeIcon() -> some View {
+        Image(systemName: fileTypeIconName(for: file.mimeType))
+            .font(.title2)
+            .foregroundStyle(Color.accentColor)
+            .frame(width: 40, height: 40)
+    }
+
+    private func fileTypeIconName(for mimeType: String) -> String {
         let lower = mimeType.lowercased()
         if lower.hasPrefix("image/") { return "photo" }
         if lower.hasPrefix("video/") { return "film" }

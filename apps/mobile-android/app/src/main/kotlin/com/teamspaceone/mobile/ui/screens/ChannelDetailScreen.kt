@@ -43,16 +43,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.teamspaceone.mobile.data.realtime.RealtimeManager
 import com.teamspaceone.mobile.data.remote.AuthManager
 import com.teamspaceone.mobile.data.remote.Channel
+import com.teamspaceone.mobile.data.remote.FileRecord
 import com.teamspaceone.mobile.data.remote.FileRepository
 import com.teamspaceone.mobile.data.remote.Message
 import com.teamspaceone.mobile.data.remote.MessageAttachment
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -71,6 +77,7 @@ fun ChannelDetailScreen(channel: Channel, onBack: () -> Unit = {}) {
     var input by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
     var pendingAttachmentIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var attachmentFiles by remember { mutableStateOf<Map<String, FileRecord>>(emptyMap()) }
 
     val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri ?: return@rememberLauncherForActivityResult
@@ -101,6 +108,20 @@ fun ChannelDetailScreen(channel: Channel, onBack: () -> Unit = {}) {
 
     LaunchedEffect(channel.id) {
         loadMessages()
+    }
+
+    LaunchedEffect(messages) {
+        val fileIds = messages.flatMap { it.attachments.map { a -> a.fileId } }.toSet()
+        val missing = fileIds.filter { it !in attachmentFiles }
+        if (missing.isEmpty()) return@LaunchedEffect
+        val records = try {
+            missing.map { id -> async { runCatching { FileRepository.getFile(id) }.getOrNull() } }
+                .awaitAll()
+                .filterNotNull()
+        } catch (_: Exception) {
+            emptyList()
+        }
+        attachmentFiles = attachmentFiles + records.associateBy { it.id }
     }
 
     DisposableEffect(channel.id) {
@@ -166,7 +187,10 @@ fun ChannelDetailScreen(channel: Channel, onBack: () -> Unit = {}) {
                                 DateHeader(date = date)
                             }
                             items(dayMessages, key = { it.id }) { message ->
-                                MessageItem(message = message)
+                                MessageItem(
+                                    message = message,
+                                    attachmentFiles = attachmentFiles
+                                )
                             }
                         }
                     }
@@ -290,7 +314,10 @@ private fun DateHeader(date: String) {
 }
 
 @Composable
-private fun MessageItem(message: Message) {
+private fun MessageItem(
+    message: Message,
+    attachmentFiles: Map<String, FileRecord>
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -320,35 +347,76 @@ private fun MessageItem(message: Message) {
                 )
             }
 
-            Text(
-                text = message.content,
-                style = MaterialTheme.typography.bodyMedium
-            )
+            if (message.content.isNotBlank()) {
+                Text(
+                    text = message.content,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
 
             if (message.attachments.isNotEmpty()) {
-                AttachmentsRow(attachments = message.attachments)
+                AttachmentChips(
+                    attachments = message.attachments,
+                    attachmentFiles = attachmentFiles
+                )
             }
         }
     }
 }
 
 @Composable
-private fun AttachmentsRow(attachments: List<MessageAttachment>) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+private fun AttachmentChips(
+    attachments: List<MessageAttachment>,
+    attachmentFiles: Map<String, FileRecord>
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Icon(
-            imageVector = Icons.Default.AttachFile,
-            contentDescription = null,
-            modifier = Modifier.size(16.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = "${attachments.size} attachment(s)",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        attachments.forEach { attachment ->
+            val file = attachmentFiles[attachment.fileId]
+            val fileName = file?.originalName ?: "Attachment"
+            val isVisual = file?.mimeType?.startsWith("image/") == true || file?.mimeType?.startsWith("video/") == true
+            val imageUrl = file?.thumbnailUrl ?: file?.previewUrl
+
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                shape = MaterialTheme.shapes.small
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (isVisual && !imageUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = imageUrl,
+                            contentDescription = fileName,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(MaterialTheme.shapes.small)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.AttachFile,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Text(
+                        text = fileName,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -9,6 +9,8 @@ import java.security.MessageDigest
 object FileRepository {
     suspend fun listFiles(): List<FileRecord> = APIClient.request("/files")
 
+    suspend fun getFile(fileId: String): FileRecord = APIClient.request("/files/$fileId")
+
     suspend fun uploadFile(context: Context, uri: Uri): FileRecord {
         val resolver = context.contentResolver
         val (fileName, mimeType, size) = resolver.query(uri, null, null, null, null)?.use { cursor ->

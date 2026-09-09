@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -44,9 +43,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.teamspaceone.mobile.data.remote.FileRecord
 import com.teamspaceone.mobile.data.remote.FileRepository
 import kotlinx.coroutines.launch
@@ -221,12 +223,7 @@ private fun FileListItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = fileTypeIcon(file.mimeType),
-                contentDescription = null,
-                modifier = Modifier.size(40.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
+            FileThumbnail(file = file)
 
             Spacer(modifier = Modifier.width(12.dp))
 
@@ -244,6 +241,30 @@ private fun FileListItem(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FileThumbnail(file: FileRecord) {
+    val imageUrl = file.thumbnailUrl ?: file.previewUrl
+    val isVisual = file.mimeType.startsWith("image/") || file.mimeType.startsWith("video/")
+
+    if (isVisual && !imageUrl.isNullOrBlank()) {
+        AsyncImage(
+            model = imageUrl,
+            contentDescription = file.originalName,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(48.dp)
+                .clip(MaterialTheme.shapes.small)
+        )
+    } else {
+        Icon(
+            imageVector = fileTypeIcon(file.mimeType),
+            contentDescription = null,
+            modifier = Modifier.size(40.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
     }
 }
 

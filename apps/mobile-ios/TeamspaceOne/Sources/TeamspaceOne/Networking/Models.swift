@@ -65,14 +65,14 @@ struct Project: Codable, Sendable, Identifiable {
     let createdAt: String
 }
 
-struct MessageAttachment: Codable, Sendable {
+struct MessageAttachment: Codable, Sendable, Identifiable, Equatable {
     let id: String
     let messageId: String
     let fileId: String
     let createdAt: String
 }
 
-struct MessageReaction: Codable, Sendable {
+struct MessageReaction: Codable, Sendable, Identifiable, Equatable {
     let id: String
     let messageId: String
     let userId: String
@@ -80,13 +80,13 @@ struct MessageReaction: Codable, Sendable {
     let createdAt: String
 }
 
-struct MessageMention: Codable, Sendable {
+struct MessageMention: Codable, Sendable, Equatable {
     let messageId: String
     let userId: String
     let createdAt: String
 }
 
-struct Message: Codable, Sendable, Identifiable {
+struct Message: Codable, Sendable, Identifiable, Equatable {
     let id: String
     let channelId: String
     let senderId: String
