@@ -17,12 +17,12 @@ struct FilesView: View {
             }
 
             ForEach(files) { file in
-                VStack(alignment: .leading) {
-                    Text(file.originalName)
-                        .lineLimit(1)
-                    Text("\(byteCount(file.size)) • \(file.status)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if let urlString = file.downloadUrl ?? file.url, let url = URL(string: urlString) {
+                    Link(destination: url) {
+                        FileRow(file: file)
+                    }
+                } else {
+                    FileRow(file: file)
                 }
             }
         }
@@ -84,6 +84,24 @@ struct FilesView: View {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func byteCount(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+}
+
+private struct FileRow: View {
+    let file: FileRecord
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text(file.originalName)
+                .lineLimit(1)
+            Text("\(byteCount(file.size)) • \(file.status)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func byteCount(_ bytes: Int) -> String {

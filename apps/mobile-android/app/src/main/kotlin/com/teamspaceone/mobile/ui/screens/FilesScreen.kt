@@ -1,8 +1,10 @@
 package com.teamspaceone.mobile.ui.screens
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -92,7 +94,17 @@ fun FilesScreen(onBack: () -> Unit = {}) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(files, key = { it.id }) { file ->
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            val url = file.downloadUrl ?: file.url
+                            if (!url.isNullOrBlank()) {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                context.startActivity(intent)
+                            }
+                        }
+                ) {
                     Text(file.originalName, maxLines = 1)
                     Text(
                         "${formatBytes(file.size)} • ${file.status}",
