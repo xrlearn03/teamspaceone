@@ -104,5 +104,17 @@ variable "smtp_pass" {
 variable "smtp_from" {
   description = "SMTP from address"
   type        = string
-  default     = "no-reply@teamspace.one"
+  default     = "no-reply@teamspaceone.in"
+}
+
+variable "domain" {
+  description = "Public domain to use for HTTPS endpoints (e.g. teamspaceone.in). If empty, the deployment uses the external IP over HTTP."
+  type        = string
+  default     = ""
+}
+
+variable "acme_email" {
+  description = "Email address for Let's Encrypt ACME account (required when domain is set)"
+  type        = string
+  default     = ""
 }

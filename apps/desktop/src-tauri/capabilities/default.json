@@ -11,8 +11,8 @@
       "ws://localhost:*/*",
       "tauri://localhost/*",
       "http://tauri.localhost/*",
-      "http://34.180.49.184:*/*",
-      "ws://34.180.49.184:*/*"
+      "https://*.teamspaceone.in/*",
+      "wss://*.teamspaceone.in/*"
     ]
   },
   "permissions": [
@@ -37,10 +37,13 @@
           "url": "http://localhost:5173/*"
         },
         {
-          "url": "http://34.180.49.184:3000/*"
+          "url": "https://app.teamspaceone.in/*"
         },
         {
-          "url": "http://34.180.49.184:3005/*"
+          "url": "https://api.teamspaceone.in/*"
+        },
+        {
+          "url": "https://realtime.teamspaceone.in/*"
         }
       ]
     },

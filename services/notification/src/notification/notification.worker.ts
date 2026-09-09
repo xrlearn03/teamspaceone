@@ -69,7 +69,7 @@ export class NotificationDeliveryWorker extends WorkerHost {
   private async sendEmail(notification: { id: string; title: string; body: string; userId: string; eventType: string; link?: string | null; organisationId?: string; actorId?: string | null }): Promise<void> {
     const webhookUrl = this.config.get<string>('EMAIL_WEBHOOK_URL');
     if (webhookUrl) {
-      const appUrl = this.config.get<string>('APP_URL', 'https://app.teamspace.one');
+      const appUrl = this.config.get<string>('APP_URL', 'https://teamspaceone.in');
       const response = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -148,9 +148,9 @@ export class NotificationDeliveryWorker extends WorkerHost {
         this.logger.log({ notificationId: notification.id, userId: notification.userId, subject: notification.title, body: notification.body }, 'Email content');
         return;
       }
-      const appUrl = this.config.get<string>('APP_URL', 'https://app.teamspace.one');
+      const appUrl = this.config.get<string>('APP_URL', 'https://teamspaceone.in');
       await transporter.sendMail({
-        from: this.config.get<string>('SMTP_FROM', 'no-reply@teamspace.one'),
+        from: this.config.get<string>('SMTP_FROM', 'no-reply@teamspaceone.in'),
         to,
         subject: notification.title,
         text: notification.body,

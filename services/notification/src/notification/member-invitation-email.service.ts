@@ -17,7 +17,7 @@ export class MemberInvitationEmailService {
       return;
     }
 
-    const appUrl = this.config.get<string>('APP_URL') ?? 'https://app.teamspace.one';
+    const appUrl = this.config.get<string>('APP_URL') ?? 'https://teamspaceone.in';
     const orgName = payload.organisationName ?? 'an organisation';
     const roleName = payload.roleName?.replace(/_/g, ' ') ?? 'member';
     const name = [payload.firstName, payload.lastName].filter(Boolean).join(' ').trim();

@@ -275,13 +275,13 @@ services:
       NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
       REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
       AUTH_SERVICE_URL: 'http://auth-service:3002'
-      APP_URL: ${APP_URL:-https://app.teamspace.one}
+      APP_URL: ${APP_URL:-https://teamspaceone.in}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-no-reply@teamspace.one}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@teamspaceone.in}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
       ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'

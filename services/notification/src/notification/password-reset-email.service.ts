@@ -17,7 +17,7 @@ export class PasswordResetEmailService {
       return;
     }
 
-    const appUrl = this.config.get<string>('APP_URL') ?? 'https://app.teamspace.one';
+    const appUrl = this.config.get<string>('APP_URL') ?? 'https://teamspaceone.in';
     const subject = 'Reset your Teamspace One password';
     const body =
       'Hi,\n\n' +

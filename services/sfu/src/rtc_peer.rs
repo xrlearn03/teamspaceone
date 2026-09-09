@@ -28,8 +28,8 @@ use rtc::rtp_transceiver::rtp_sender::{
 };
 use rtc::rtp_transceiver::{RTCRtpReceiverId, RTCRtpSenderId};
 use rtc::sansio::Protocol;
-use rtc::shared::{TaggedBytesMut, TransportContext, TransportProtocol};
-use rtc_interceptor::Interceptor;
+use rtc::shared::{error::Error as SharedError, TaggedBytesMut, TransportContext, TransportProtocol};
+use rtc_interceptor::{Interceptor, Packet as IcptPacket, StreamInfo, TaggedPacket};
 use rtp::Packet as RtpPacket;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -70,6 +70,90 @@ impl RtcMetrics {
 
     pub fn inc_ice_failure(&self) {
         self.ice_failures.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Interceptor that clones incoming RTCP packets and forwards them to a channel
+/// so the SFU network task can route feedback (PLI/FIR) to the original publisher.
+/// The `rtc` default interceptor chain terminates RTCP reads in `NoopInterceptor`,
+/// so without this layer the SFU would never observe subscriber feedback.
+pub struct RtcpForwarder<P> {
+    next: P,
+    rtcp_tx: mpsc::Sender<Vec<Box<dyn rtcp::Packet>>>,
+}
+
+impl<P> RtcpForwarder<P> {
+    pub fn new(next: P, rtcp_tx: mpsc::Sender<Vec<Box<dyn rtcp::Packet>>>) -> Self {
+        Self { next, rtcp_tx }
+    }
+}
+
+impl<P: Interceptor> Protocol<TaggedPacket, TaggedPacket, ()> for RtcpForwarder<P> {
+    type Rout = TaggedPacket;
+    type Wout = TaggedPacket;
+    type Eout = ();
+    type Error = SharedError;
+    type Time = Instant;
+
+    fn handle_read(&mut self, msg: TaggedPacket) -> Result<(), Self::Error> {
+        if let IcptPacket::Rtcp(rtcp_packets) = &msg.message {
+            let cloned: Vec<Box<dyn rtcp::Packet>> =
+                rtcp_packets.iter().map(|p| p.cloned()).collect();
+            if self.rtcp_tx.try_send(cloned).is_err() {
+                warn!("RtcpForwarder: rtcp_tx channel full or closed, dropping RTCP");
+            }
+        }
+        self.next.handle_read(msg)
+    }
+
+    fn poll_read(&mut self) -> Option<Self::Rout> {
+        self.next.poll_read()
+    }
+
+    fn handle_write(&mut self, msg: TaggedPacket) -> Result<(), Self::Error> {
+        self.next.handle_write(msg)
+    }
+
+    fn poll_write(&mut self) -> Option<Self::Wout> {
+        self.next.poll_write()
+    }
+
+    fn handle_event(&mut self, _evt: ()) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn poll_event(&mut self) -> Option<Self::Eout> {
+        None
+    }
+
+    fn handle_timeout(&mut self, _now: Instant) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn poll_timeout(&mut self) -> Option<Instant> {
+        None
+    }
+
+    fn close(&mut self) -> Result<(), Self::Error> {
+        self.next.close()
+    }
+}
+
+impl<P: Interceptor> Interceptor for RtcpForwarder<P> {
+    fn bind_local_stream(&mut self, info: &StreamInfo) {
+        self.next.bind_local_stream(info);
+    }
+
+    fn unbind_local_stream(&mut self, info: &StreamInfo) {
+        self.next.unbind_local_stream(info);
+    }
+
+    fn bind_remote_stream(&mut self, info: &StreamInfo) {
+        self.next.bind_remote_stream(info);
+    }
+
+    fn unbind_remote_stream(&mut self, info: &StreamInfo) {
+        self.next.unbind_remote_stream(info);
     }
 }
 
@@ -180,6 +264,12 @@ impl RtcPeer {
             register_default_interceptors(rtc_interceptor::Registry::new(), &mut media_engine)
                 .map_err(|e| anyhow!("failed to register default interceptors: {:?}", e))?;
 
+        // Forward incoming RTCP packets out of the interceptor chain so the SFU can
+        // route PLI/FIR feedback to publishers. The default `NoopInterceptor`
+        // terminates RTCP reads, so this layer clones them before they are consumed.
+        let (rtcp_tx, rtcp_rx) = mpsc::channel::<Vec<Box<dyn rtcp::Packet>>>(32);
+        let registry = registry.with(|inner| RtcpForwarder::new(inner, rtcp_tx));
+
         let mut setting_engine = SettingEngine::default();
         if let Ok(nat_ips) = std::env::var("SFU_NAT_1TO1_IPS") {
             let ips: Vec<String> = nat_ips
@@ -256,6 +346,7 @@ impl RtcPeer {
             room_id,
             rtp_tx,
             rtp_rx,
+            rtcp_rx,
             metrics,
         );
 
@@ -359,6 +450,64 @@ fn is_feedback_packet(p: &dyn rtcp::Packet) -> bool {
     )
 }
 
+/// Process incoming RTCP packets captured by `RtcpForwarder` and forward
+/// PLI/FIR feedback to the publisher of the track identified by the RTCP
+/// `destination_ssrc`.
+async fn handle_incoming_rtcp(
+    peer_id: &PeerId,
+    state: &SharedState,
+    rtcp_packets: Vec<Box<dyn rtcp::Packet>>,
+    metrics: &RtcMetrics,
+) {
+    let feedback: Vec<Box<dyn rtcp::Packet>> = rtcp_packets
+        .into_iter()
+        .filter(|p| is_feedback_packet(p.as_ref()))
+        .collect();
+    if feedback.is_empty() {
+        return;
+    }
+
+    metrics.inc_feedback(feedback.len() as u64);
+
+    let ssrc = feedback
+        .iter()
+        .find_map(|p| p.destination_ssrc().first().copied());
+    let ssrc = match ssrc {
+        Some(s) => s,
+        None => return,
+    };
+
+    let track_info = {
+        let s = state.read().await;
+        s.rtc_tracks
+            .values()
+            .find(|t| t.ssrcs.contains(&ssrc))
+            .map(|t| (t.publisher.clone(), t.receiver_id))
+    };
+
+    if let Some((publisher, Some(receiver_id))) = track_info {
+        let publisher_peer = {
+            let s = state.read().await;
+            s.rtc_peers.get(&publisher).cloned()
+        };
+        if let Some(publisher_peer) = publisher_peer {
+            info!(
+                "Rtc {} forwarding {} RTCP feedback packet(s) for ssrc {} to publisher {}",
+                peer_id,
+                feedback.len(),
+                ssrc,
+                publisher
+            );
+            if let Err(e) = publisher_peer.write_receiver_rtcp(receiver_id, feedback).await {
+                warn!(
+                    "Rtc {} failed to forward RTCP for ssrc {} to publisher {}: {:?}",
+                    peer_id, ssrc, publisher, e
+                );
+            }
+        }
+    }
+}
+
 fn to_webrtc_packet(pkt: &RtpPacket) -> webrtc::rtp::packet::Packet {
     webrtc::rtp::packet::Packet {
         header: webrtc::rtp::header::Header {
@@ -398,6 +547,7 @@ fn spawn_network_task<I>(
     room_id: RoomId,
     rtp_tx: mpsc::Sender<RtpForward>,
     mut rtp_rx: mpsc::Receiver<RtpForward>,
+    mut rtcp_rx: mpsc::Receiver<Vec<Box<dyn rtcp::Packet>>>,
     metrics: RtcMetrics,
 ) -> JoinHandle<()>
 where
@@ -834,6 +984,11 @@ where
                                 warn!("Rtc {} write_rtp failed for sender {:?}: {:?}", peer_id, fwd.sender_id, e);
                             }
                         }
+                    }
+                }
+                rtcp = rtcp_rx.recv() => {
+                    if let Some(rtcp_packets) = rtcp {
+                        handle_incoming_rtcp(&peer_id, &state, rtcp_packets, &metrics).await;
                     }
                 }
             }

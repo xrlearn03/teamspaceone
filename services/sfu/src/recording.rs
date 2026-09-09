@@ -130,8 +130,14 @@ impl TrackWriter {
                 codec.clock_rate,
                 u8::try_from(codec.channels).unwrap_or(2),
             )?),
-            "video/vp8" => Self::Ivf(IVFWriter::new(file, &ivf_header(*b"VP80", codec.clock_rate))?),
-            "video/vp9" => Self::Ivf(IVFWriter::new(file, &ivf_header(*b"VP90", codec.clock_rate))?),
+            "video/vp8" => Self::Ivf(IVFWriter::new(
+                file,
+                &ivf_header(*b"VP80", codec.clock_rate),
+            )?),
+            "video/vp9" => Self::Ivf(IVFWriter::new(
+                file,
+                &ivf_header(*b"VP90", codec.clock_rate),
+            )?),
             "video/h264" => Self::H264(H264Writer::new(file)),
             _ => unreachable!(),
         };
@@ -184,7 +190,11 @@ pub fn recording_base_dir() -> PathBuf {
 /// Starts recording every currently published track in the room. Called from
 /// the control API while holding the room lock is NOT required — takes its own.
 /// Returns the recorder so it can be stored on the room.
-pub fn create_recorder(room_id: &str, organisation_id: &str, actor_id: &str) -> Result<Arc<Recorder>> {
+pub fn create_recorder(
+    room_id: &str,
+    organisation_id: &str,
+    actor_id: &str,
+) -> Result<Arc<Recorder>> {
     let dir = recording_base_dir().join(sanitize(room_id));
     std::fs::create_dir_all(&dir)?;
     Ok(Arc::new(Recorder {
@@ -259,7 +269,10 @@ pub fn attach_rtc_track_writer(
                     track_id, publisher
                 );
             }
-            Err(e) => warn!("Failed to create rtc recorder for track {}: {}", track_id, e),
+            Err(e) => warn!(
+                "Failed to create rtc recorder for track {}: {}",
+                track_id, e
+            ),
         }
     } else {
         info!(

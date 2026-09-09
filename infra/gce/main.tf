@@ -64,6 +64,7 @@ locals {
 
   env_content = templatefile("${path.module}/templates/env.tpl", {
     external_ip       = google_compute_address.static.address
+    domain            = var.domain
     postgres_password = random_password.postgres.result
     redis_password    = random_password.redis.result
     nats_password     = random_password.nats.result
@@ -81,7 +82,15 @@ locals {
     smtp_from         = var.smtp_from
   })
 
-  compose_overlay_content = templatefile("${path.module}/templates/docker-compose.gce.yml.tpl", {})
+  caddyfile_content = var.domain != "" ? templatefile("${path.module}/templates/Caddyfile.tpl", {
+    domain     = var.domain
+    acme_email = var.acme_email
+  }) : ""
+
+  compose_overlay_content = templatefile("${path.module}/templates/docker-compose.gce.yml.tpl", {
+    external_ip = google_compute_address.static.address
+    domain      = var.domain
+  })
 }
 
 resource "google_compute_address" "static" {
@@ -102,7 +111,7 @@ resource "google_compute_firewall" "allow" {
 
   allow {
     protocol = "tcp"
-    ports    = ["22", "80", "443", "3000", "3005", "8443", "9000", "9001"]
+    ports    = var.domain != "" ? ["22", "80", "443"] : ["22", "80", "443", "3000", "3005", "8443", "9000", "9001"]
   }
 
   allow {
@@ -147,6 +156,8 @@ resource "google_compute_instance" "vm" {
       repo_ref                = var.repo_ref
       git_auth_header         = local.git_auth_header
       external_ip             = google_compute_address.static.address
+      domain                  = var.domain
+      caddyfile_content       = local.caddyfile_content
       env_content             = local.env_content
       compose_overlay_content = local.compose_overlay_content
     })

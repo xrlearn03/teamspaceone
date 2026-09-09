@@ -11,3 +11,7 @@ repo_ref = "hrms"
 # git_username = ""  # optional, can be left empty for Azure PATs
 
 # openai_api_key = "sk-..."  # required for ai-service
+
+# Domain + SSL (optional but recommended). Caddy will provision Let's Encrypt certs automatically.
+# domain = "teamspaceone.in"
+# acme_email = "admin@teamspaceone.in"

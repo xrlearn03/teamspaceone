@@ -14,7 +14,11 @@ S3_ACCESS_KEY=${s3_access_key}
 S3_SECRET_KEY=${s3_secret_key}
 S3_BUCKET=teamspace-one
 S3_REGION=us-east-1
+%{ if domain != "" }
+S3_PUBLIC_BASE_URL=https://s3.${domain}/teamspace-one
+%{ else }
 S3_PUBLIC_BASE_URL=http://${external_ip}:9000/teamspace-one
+%{ endif }
 SFU_TOKEN_SECRET=${sfu_token_secret}
 SFU_UDP_MUX_PORT=10000
 SFU_NAT_1TO1_IPS=${external_ip}
@@ -28,8 +32,16 @@ AI_MODEL=gpt-4o-mini
 AI_EMBEDDING_MODEL=text-embedding-3-small
 AI_SERVICE_URL=http://ai-service:3012
 FILE_STORAGE_SERVICE_URL=http://file-storage-service:3010
+%{ if domain != "" }
+APP_URL=https://app.${domain}
+%{ else }
 APP_URL=http://${external_ip}:3000
-CORS_ORIGINS=tauri://localhost,http://tauri.localhost,http://localhost:1420,http://${external_ip}:1420,http://${external_ip}:5173
+%{ endif }
+%{ if domain != "" }
+CORS_ORIGINS=tauri://localhost,http://tauri.localhost,http://localhost:1420,http://localhost:5173,https://${domain},https://app.${domain},https://api.${domain},https://realtime.${domain},https://sfu.${domain}
+%{ else }
+CORS_ORIGINS=tauri://localhost,http://tauri.localhost,http://localhost:1420,http://localhost:5173,http://${external_ip}:3000
+%{ endif }
 OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 OTEL_SERVICE_NAME=teamspace-one
 RATE_LIMIT_WINDOW_MS=60000

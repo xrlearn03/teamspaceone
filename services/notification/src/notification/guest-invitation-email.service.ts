@@ -19,7 +19,7 @@ export class GuestInvitationEmailService {
       return;
     }
 
-    const appUrl = this.config.get<string>('APP_URL') ?? 'https://app.teamspace.one';
+    const appUrl = this.config.get<string>('APP_URL') ?? 'https://teamspaceone.in';
     const acceptUrl = `${appUrl}/accept-invite?token=${encodeURIComponent(token)}&email=${encodeURIComponent(to)}`;
 
     const subject = 'You have been invited to join an organisation';

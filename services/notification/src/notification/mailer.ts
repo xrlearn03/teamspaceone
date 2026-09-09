@@ -50,7 +50,7 @@ export async function sendEmail(config: ConfigService, email: OutboundEmail): Pr
       secure,
       auth: smtpAuth(config.get<string>('SMTP_USER'), config.get<string>('SMTP_PASS')),
     });
-    const from = config.get<string>('SMTP_FROM', 'no-reply@teamspace.one');
+    const from = config.get<string>('SMTP_FROM', 'no-reply@teamspaceone.in');
     await transporter.sendMail({ from, to: email.to, subject: email.subject, text: email.body });
     logger.debug({ to: email.to }, 'Email sent via SMTP');
     return;

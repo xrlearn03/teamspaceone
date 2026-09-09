@@ -83,8 +83,10 @@ fi
 
 cd "$REPO_DIR"
 
-# Expose MinIO object storage publicly on the S3 and console ports
+%{ if domain == "" }
+# Expose MinIO object storage publicly on the S3 and console ports when no domain is configured
 sed -i 's/127\.0\.0\.1:9000/0.0.0.0:9000/g; s/127\.0\.0\.1:9001/0.0.0.0:9001/g' docker-compose.yml
+%{ endif }
 
 # Write the generated .env and compose overlay
 cat > .env <<'ENV_EOF'
@@ -94,6 +96,13 @@ ENV_EOF
 cat > docker-compose.gce.yml <<'COMPOSE_EOF'
 ${compose_overlay_content}
 COMPOSE_EOF
+
+%{ if domain != "" }
+# Write Caddyfile for HTTPS reverse proxy
+cat > Caddyfile <<'CADDY_EOF'
+${caddyfile_content}
+CADDY_EOF
+%{ endif }
 
 # Build and start the full stack
 docker compose -f docker-compose.yml -f docker-compose.gce.yml build

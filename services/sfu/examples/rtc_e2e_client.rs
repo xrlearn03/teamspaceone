@@ -22,7 +22,8 @@ use rtc::rtp_transceiver::rtp_sender::{
 };
 use rtc::rtp_transceiver::{RTCRtpReceiverId, RTCRtpSenderId};
 use rtc::sansio::Protocol;
-use rtc::shared::{TaggedBytesMut, TransportContext, TransportProtocol};
+use rtc::shared::{error::Error as SharedError, TaggedBytesMut, TransportContext, TransportProtocol};
+use rtcp::header::{FORMAT_FIR, FORMAT_PLI, PacketType};
 use rtcp::payload_feedbacks::full_intra_request::{FirEntry, FullIntraRequest};
 use rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
 use rtp::header::Header as RtpHeader;
@@ -33,13 +34,104 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::net::UdpSocket;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{info, warn};
 
-use rtc_interceptor::Interceptor;
+use rtc_interceptor::{Interceptor, Packet as IcptPacket, StreamInfo, TaggedPacket};
 
 type HmacSha256 = Hmac<Sha256>;
+
+/// Interceptor that clones incoming RTCP packets and forwards them to a channel
+/// so the E2E client can observe feedback (PLI/FIR) coming back from the SFU.
+/// The `rtc` default `NoopInterceptor` terminates RTCP reads, so without this
+/// layer incoming RTCP would never reach the application.
+struct RtcpForwarder<P> {
+    next: P,
+    rtcp_tx: mpsc::Sender<Vec<Box<dyn rtcp::Packet>>>,
+}
+
+impl<P> RtcpForwarder<P> {
+    fn new(next: P, rtcp_tx: mpsc::Sender<Vec<Box<dyn rtcp::Packet>>>) -> Self {
+        Self { next, rtcp_tx }
+    }
+}
+
+impl<P: Interceptor> Protocol<TaggedPacket, TaggedPacket, ()> for RtcpForwarder<P> {
+    type Rout = TaggedPacket;
+    type Wout = TaggedPacket;
+    type Eout = ();
+    type Error = SharedError;
+    type Time = Instant;
+
+    fn handle_read(&mut self, msg: TaggedPacket) -> Result<(), Self::Error> {
+        if let IcptPacket::Rtcp(rtcp_packets) = &msg.message {
+            let cloned: Vec<Box<dyn rtcp::Packet>> =
+                rtcp_packets.iter().map(|p| p.cloned()).collect();
+            if self.rtcp_tx.try_send(cloned).is_err() {
+                warn!("RtcpForwarder: rtcp_tx channel full or closed, dropping RTCP");
+            }
+        }
+        self.next.handle_read(msg)
+    }
+
+    fn poll_read(&mut self) -> Option<Self::Rout> {
+        self.next.poll_read()
+    }
+
+    fn handle_write(&mut self, msg: TaggedPacket) -> Result<(), Self::Error> {
+        self.next.handle_write(msg)
+    }
+
+    fn poll_write(&mut self) -> Option<Self::Wout> {
+        self.next.poll_write()
+    }
+
+    fn handle_event(&mut self, _evt: ()) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn poll_event(&mut self) -> Option<Self::Eout> {
+        None
+    }
+
+    fn handle_timeout(&mut self, _now: Instant) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn poll_timeout(&mut self) -> Option<Instant> {
+        None
+    }
+
+    fn close(&mut self) -> Result<(), Self::Error> {
+        self.next.close()
+    }
+}
+
+impl<P: Interceptor> Interceptor for RtcpForwarder<P> {
+    fn bind_local_stream(&mut self, info: &StreamInfo) {
+        self.next.bind_local_stream(info);
+    }
+
+    fn unbind_local_stream(&mut self, info: &StreamInfo) {
+        self.next.unbind_local_stream(info);
+    }
+
+    fn bind_remote_stream(&mut self, info: &StreamInfo) {
+        self.next.bind_remote_stream(info);
+    }
+
+    fn unbind_remote_stream(&mut self, info: &StreamInfo) {
+        self.next.unbind_remote_stream(info);
+    }
+}
+
+fn is_feedback(p: &dyn rtcp::Packet) -> bool {
+    matches!(
+        p.header().packet_type,
+        PacketType::PayloadSpecificFeedback if p.header().count == FORMAT_PLI || p.header().count == FORMAT_FIR
+    )
+}
 
 fn now_unix() -> u64 {
     SystemTime::now()
@@ -109,7 +201,12 @@ fn ice_signal(candidate: &str, sdp_m_line_index: u16, sdp_mid: Option<&str>) -> 
     .to_string()
 }
 
-async fn build_pc() -> Result<(RTCPeerConnection<impl Interceptor>, UdpSocket, SocketAddr)> {
+async fn build_pc() -> Result<(
+    RTCPeerConnection<impl Interceptor>,
+    UdpSocket,
+    SocketAddr,
+    mpsc::Receiver<Vec<Box<dyn rtcp::Packet>>>,
+)> {
     let mut media_engine = MediaEngine::default();
     media_engine
         .register_default_codecs()
@@ -117,6 +214,12 @@ async fn build_pc() -> Result<(RTCPeerConnection<impl Interceptor>, UdpSocket, S
     let registry =
         register_default_interceptors(rtc_interceptor::Registry::new(), &mut media_engine)
             .map_err(|e| anyhow!("register_default_interceptors failed: {:?}", e))?;
+
+    // Capture incoming RTCP packets (PLI/FIR) from the SFU. The default chain's
+    // `NoopInterceptor` drops RTCP reads, so this layer clones them before they
+    // are consumed.
+    let (rtcp_tx, rtcp_rx) = mpsc::channel::<Vec<Box<dyn rtcp::Packet>>>(32);
+    let registry = registry.with(|inner| RtcpForwarder::new(inner, rtcp_tx));
 
     // For local E2E runs, force host candidates to 127.0.0.1 so the ICE agent
     // has a usable candidate pair. In real deployments set SFU_NAT_1TO1_IPS.
@@ -174,7 +277,7 @@ async fn build_pc() -> Result<(RTCPeerConnection<impl Interceptor>, UdpSocket, S
     pc.add_local_candidate(candidate_init)
         .map_err(|e| anyhow!("add local candidate failed: {:?}", e))?;
 
-    Ok((pc, socket, local_addr))
+    Ok((pc, socket, local_addr, rtcp_rx))
 }
 
 fn build_audio_track(track_id: &str, ssrc: u32) -> MediaStreamTrack {
@@ -417,7 +520,7 @@ async fn run_client(
 
     // Build the RTC peer after the WebSocket is up; the SFU will send
     // `connected` and then the offer/answer exchange.
-    let (mut pc, socket, local_addr) = build_pc().await?;
+    let (mut pc, socket, local_addr, mut rtcp_rx) = build_pc().await?;
     info!("{} local UDP address: {}", user_id, local_addr);
 
     let test_timeout = tokio::time::sleep(duration);
@@ -434,6 +537,8 @@ async fn run_client(
     let mut connected = false;
     let mut feedback: Option<(RTCRtpReceiverId, u32)> = None;
     let mut feedback_sent = false;
+    let mut rtcp_received = 0usize;
+    let mut rtcp_feedback = 0usize;
     let mut rtp_interval = tokio::time::interval(Duration::from_millis(20));
     rtp_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -638,8 +743,19 @@ async fn run_client(
                 send_rtp(&mut pc, sender_id.unwrap(), &mut seq, &mut ts, ssrc)?;
                 stats.lock().await.sent += 1;
             }
+            rtcp = rtcp_rx.recv() => {
+                if let Some(packets) = rtcp {
+                    for p in &packets {
+                        rtcp_received += 1;
+                        if is_feedback(p.as_ref()) {
+                            rtcp_feedback += 1;
+                        }
+                    }
+                    info!("{} received {} incoming RTCP packet(s), {} feedback", user_id, packets.len(), rtcp_feedback);
+                }
+            }
             _ = test_timeout.as_mut() => {
-                info!("{} test complete", user_id);
+                info!("{} test complete (rtcp_received={}, rtcp_feedback={})", user_id, rtcp_received, rtcp_feedback);
                 break;
             }
         }
@@ -661,6 +777,14 @@ async fn main() -> Result<()> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(15);
+    let duration_a: u64 = std::env::var("DURATION_A")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(duration);
+    let duration_b: u64 = std::env::var("DURATION_B")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(duration);
 
     let stats_a = Arc::new(Mutex::new(Stats {
         sent: 0,
@@ -682,7 +806,7 @@ async fn main() -> Result<()> {
         "Sender".to_string(),
         token_secret.clone(),
         11111111,
-        Duration::from_secs(duration),
+        Duration::from_secs(duration_a),
         stats_a.clone(),
     );
 
@@ -693,7 +817,7 @@ async fn main() -> Result<()> {
         "Receiver".to_string(),
         token_secret,
         22222222,
-        Duration::from_secs(duration),
+        Duration::from_secs(duration_b),
         stats_b.clone(),
     );
 

@@ -11,7 +11,7 @@ const columns = [
     heading: "Company",
     links: [
       { label: "About", href: "#top" },
-      { label: "Contact", href: "mailto:hello@teamspace.one" },
+      { label: "Contact", href: "mailto:hello@teamspaceone.in" },
     ],
   },
   {

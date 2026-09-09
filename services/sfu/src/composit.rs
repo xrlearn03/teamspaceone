@@ -62,16 +62,15 @@ fn xstack_layout(n: usize) -> String {
 ///
 /// Up to four video streams are tiled in a grid, and all audio streams are
 /// mixed together. The result is written as an MP4 with H.264/AAC.
-pub async fn compose_room(
-    room_id: &str,
-    files: &[PathBuf],
-    output: &Path,
-) -> Result<PathBuf> {
+pub async fn compose_room(room_id: &str, files: &[PathBuf], output: &Path) -> Result<PathBuf> {
     if !ffmpeg_available().await {
         return Err(anyhow!("ffmpeg not found in PATH"));
     }
     if files.is_empty() {
-        return Err(anyhow!("no recording files to compose for room {}", room_id));
+        return Err(anyhow!(
+            "no recording files to compose for room {}",
+            room_id
+        ));
     }
 
     let mut video_inputs: Vec<(usize, PathBuf)> = Vec::new();
@@ -146,7 +145,9 @@ pub async fn compose_room(
             .collect();
         filter_parts.extend(formatted);
 
-        let labels: String = (0..audio_inputs.len()).map(|i| format!("[a{}]", i)).collect();
+        let labels: String = (0..audio_inputs.len())
+            .map(|i| format!("[a{}]", i))
+            .collect();
         filter_parts.push(format!(
             "{}amix=inputs={}:duration=longest:dropout_transition=3[aout]",
             labels,
@@ -183,9 +184,10 @@ pub async fn compose_room(
     }
     cmd.arg("-f").arg("mp4").arg(output);
 
-    let out = cmd.output().await.map_err(|e| {
-        anyhow!("failed to run ffmpeg for room {}: {}", room_id, e)
-    })?;
+    let out = cmd
+        .output()
+        .await
+        .map_err(|e| anyhow!("failed to run ffmpeg for room {}: {}", room_id, e))?;
 
     if !out.status.success() {
         return Err(anyhow!(
