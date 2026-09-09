@@ -16,7 +16,6 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 mod desktop;
 mod media;
 mod screen_share;
-mod sfu;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -156,7 +155,6 @@ pub fn run() {
         .manage(media::CameraState::new())
         .manage(media::MicrophoneState::new())
         .manage(screen_share::ScreenShareState::new())
-        .manage(sfu::SfuState::new())
         .invoke_handler(tauri::generate_handler![
             greet,
             desktop::store_secure_token,
@@ -176,8 +174,6 @@ pub fn run() {
             media::get_microphone_chunk,
             screen_share::start_screen_share,
             screen_share::stop_screen_share,
-            sfu::sfu_join,
-            sfu::sfu_leave,
         ])
         .setup(move |app| {
             #[cfg(desktop)]

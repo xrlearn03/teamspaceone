@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Phone, PhoneOff, Video } from "lucide-react";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 import { useRealtime, type RealtimeEventPayloads } from "../../hooks/useRealtime";
@@ -66,6 +66,45 @@ export function IncomingCallOverlay() {
       clearTimeout(timer);
     };
   }, [call]);
+
+  // Capture the caller's camera so they can see themselves while the
+  // outgoing video call is ringing.
+  const isOutgoingVideo = !call && outgoingCall?.kind === "video";
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (!isOutgoingVideo) {
+      setLocalStream(null);
+      return;
+    }
+    let active = true;
+    let stream: MediaStream | null = null;
+    void navigator.mediaDevices
+      .getUserMedia({ video: true })
+      .then((s) => {
+        if (!active) {
+          s.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        stream = s;
+        setLocalStream(s);
+      })
+      .catch(() => {
+        // Camera not available or denied; preview remains off.
+      });
+    return () => {
+      active = false;
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      setLocalStream(null);
+    };
+  }, [isOutgoingVideo]);
+
+  useEffect(() => {
+    if (videoRef.current && localStream) {
+      videoRef.current.srcObject = localStream;
+    }
+  }, [localStream]);
 
   const userIds = call ? [call.callerId] : outgoingCall?.userIds ?? [];
   const { data: callUsers } = useUsers(userIds);
@@ -191,6 +230,15 @@ export function IncomingCallOverlay() {
           </Button>
         </div>
       </div>
+      {localStream && (
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          className="absolute bottom-6 right-6 h-40 w-32 rounded-2xl border-2 border-white/20 object-cover shadow-lg"
+        />
+      )}
     </div>
   );
 }

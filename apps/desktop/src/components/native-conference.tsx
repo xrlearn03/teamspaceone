@@ -120,12 +120,16 @@ export function NativeConference({
     return p?.displayName || "User";
   }
 
+  function participantBaseId(id: string) {
+    return id.replace(/^screen-/, "");
+  }
+
   function remoteDisplayName(id: string) {
-    return participants.find((p) => p.id === id)?.displayName ?? "User";
+    return participants.find((p) => p.id === participantBaseId(id))?.displayName ?? "User";
   }
 
   function remoteUserId(id: string) {
-    return participants.find((p) => p.id === id)?.userId;
+    return participants.find((p) => p.id === participantBaseId(id))?.userId;
   }
 
   function showReaction(emoji: string, userId: string, id: string) {
@@ -358,20 +362,23 @@ export function NativeConference({
               isHandRaised={user?.id ? raisedHands.has(user.id) : false}
               isScreenSharing={user?.id ? screenSharingUsers.has(user.id) : false}
             />
-            {remoteStreams.map(({ participantId, stream }) => {
-              const pUserId = remoteUserId(participantId);
-              return (
-                <ParticipantTile
-                  key={participantId}
-                  name={remoteDisplayName(participantId)}
-                  user={pUserId ? participantUserMap.get(pUserId) : undefined}
-                  stream={stream}
-                  videoEnabled={stream.getVideoTracks().some((t) => t.enabled && !t.muted && t.readyState !== "ended")}
-                  isHandRaised={pUserId ? raisedHands.has(pUserId) : false}
-                  isScreenSharing={pUserId ? screenSharingUsers.has(pUserId) : false}
-                />
-              );
-            })}
+            {[...remoteStreams]
+              .sort((a) => (a.participantId.startsWith("screen-") ? -1 : 1))
+              .map(({ participantId, stream }) => {
+                const pUserId = remoteUserId(participantId);
+                const isScreen = participantId.startsWith("screen-");
+                return (
+                  <ParticipantTile
+                    key={participantId}
+                    name={`${remoteDisplayName(participantId)}${isScreen ? " (screen)" : ""}`}
+                    user={pUserId ? participantUserMap.get(pUserId) : undefined}
+                    stream={stream}
+                    videoEnabled={stream.getVideoTracks().some((t) => t.enabled && !t.muted && t.readyState !== "ended")}
+                    isHandRaised={pUserId ? raisedHands.has(pUserId) : false}
+                    isScreenSharing={pUserId ? screenSharingUsers.has(pUserId) : false}
+                  />
+                );
+              })}
           </div>
         </div>
 

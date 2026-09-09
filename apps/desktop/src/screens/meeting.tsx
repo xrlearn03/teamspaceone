@@ -139,12 +139,7 @@ export function MeetingScreen() {
     await resumeNativeAudio();
 
     try {
-      await sfu.join(
-        activeMeetingId,
-        displayName,
-        { audioEnabled: opts.audioEnabled, videoEnabled: opts.videoEnabled },
-        user?.id,
-      );
+      await sfu.join(activeMeetingId, displayName, opts, user?.id);
       setToken("native");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join SFU");

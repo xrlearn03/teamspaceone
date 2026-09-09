@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::task::JoinHandle;
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{info, warn};
 
@@ -30,6 +31,7 @@ use webrtc::ice_transport::ice_candidate_type::RTCIceCandidateType;
 use webrtc::rtcp::packet::Packet as RtcpPacket;
 use webrtc::rtcp::payload_feedbacks::full_intra_request::FullIntraRequest;
 use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
+use webrtc::rtp::packet::Packet as RtpPacket;
 use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
@@ -127,10 +129,12 @@ struct Peer {
 }
 
 /// A published track forwarded to one subscriber peer. Keeping the
-/// `RTCRtpSender` lets us detach the track (remove + renegotiate) later.
+/// `RTCRtpSender` lets us detach the track (remove + renegotiate) later,
+/// and `tx`/`task` run an independent forwarding loop for that subscriber.
 struct Forwarder {
     sender: Arc<RTCRtpSender>,
-    track: Arc<TrackLocalStaticRTP>,
+    tx: mpsc::UnboundedSender<RtpPacket>,
+    task: JoinHandle<()>,
 }
 
 type Forwarders = Arc<Mutex<HashMap<PeerId, Forwarder>>>;
@@ -142,6 +146,7 @@ struct RoomTrack {
     remote: Arc<TrackRemote>,
     forwarders: Forwarders,
     recorder: recording::SharedTrackWriter,
+    is_screen: bool,
 }
 
 #[derive(Default)]
@@ -421,6 +426,47 @@ fn validate_candidate(candidate: &str) -> Result<()> {
     Ok(())
 }
 
+#[derive(Deserialize)]
+struct IceServerConfig {
+    urls: Vec<String>,
+    username: Option<String>,
+    credential: Option<String>,
+}
+
+fn ice_servers() -> Vec<RTCIceServer> {
+    let default = RTCIceServer {
+        urls: vec!["stun:stun.l.google.com:19302".to_owned()],
+        ..Default::default()
+    };
+
+    let raw = match std::env::var("SFU_ICE_SERVERS") {
+        Ok(v) if !v.is_empty() => v,
+        _ => return vec![default],
+    };
+
+    let configs: Vec<IceServerConfig> = match serde_json::from_str(&raw) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("SFU_ICE_SERVERS is not valid JSON ({}); using default STUN server", e);
+            return vec![default];
+        }
+    };
+
+    if configs.is_empty() {
+        return vec![default];
+    }
+
+    configs
+        .into_iter()
+        .map(|c| RTCIceServer {
+            urls: c.urls,
+            username: c.username.unwrap_or_default(),
+            credential: c.credential.unwrap_or_default(),
+            ..Default::default()
+        })
+        .collect()
+}
+
 async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, token_secret: &str) -> Result<()> {
     match signal {
         Signal::Join { room_id, display_name, user_id, token } => {
@@ -443,10 +489,7 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
             }
 
             let config = RTCConfiguration {
-                ice_servers: vec![RTCIceServer {
-                    urls: vec!["stun:stun.l.google.com:19302".to_owned()],
-                    ..Default::default()
-                }],
+                ice_servers: ice_servers(),
                 ..Default::default()
             };
 
@@ -599,6 +642,28 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
         Signal::Leave => {
             let _ = leave_room(peer_id, state).await;
         }
+        Signal::Offer { target, sdp } if target == SFU_ID => {
+            validate_sdp(&sdp)?;
+            let (tx, pc) = {
+                let s = state.read().await;
+                let peer = s
+                    .peers
+                    .get(peer_id)
+                    .ok_or(anyhow!("peer not found: {}", peer_id))?;
+                (
+                    peer.tx.clone(),
+                    peer.pc.clone().ok_or(anyhow!("peer has no connection: {}", peer_id))?,
+                )
+            };
+            let offer = RTCSessionDescription::offer(sdp)?;
+            pc.set_remote_description(offer).await?;
+            let answer = pc.create_answer(None).await?;
+            pc.set_local_description(answer.clone()).await?;
+            let _ = tx.send(Event::Answer {
+                from: SFU_ID.to_string(),
+                sdp: answer.sdp,
+            });
+        }
         Signal::Offer { target, sdp } => {
             validate_sdp(&sdp)?;
             let s = state.read().await;
@@ -727,15 +792,7 @@ async fn handle_track(
     let track_id = track.id();
     let kind = track.kind();
 
-    let rt = RoomTrack {
-        publisher: publisher.clone(),
-        track_id: track_id.clone(),
-        remote: Arc::clone(&track),
-        forwarders: Arc::new(Mutex::new(HashMap::new())),
-        recorder: recording::new_track_writer_slot(),
-    };
-
-    let (room_id, forwarders, participants, active_recording, publisher_pc) = {
+    let (room_id, forwarders, participants, active_recording, publisher_pc, rt) = {
         let mut s = state.write().await;
         let peer = s
             .peers
@@ -750,10 +807,32 @@ async fn handle_track(
             .rooms
             .get_mut(&room_id)
             .ok_or(anyhow!("room not found: {}", room_id))?;
+        // Treat any second (or later) video track from a publisher as the
+        // screen share stream so the client can render it on a separate tile.
+        let is_screen = kind == RTPCodecType::Video
+            && room
+                .tracks
+                .iter()
+                .any(|t| t.publisher == publisher && t.remote.kind() == RTPCodecType::Video);
+        let rt = RoomTrack {
+            publisher: publisher.clone(),
+            track_id: track_id.clone(),
+            remote: Arc::clone(&track),
+            forwarders: Arc::new(Mutex::new(HashMap::new())),
+            recorder: recording::new_track_writer_slot(),
+            is_screen,
+        };
         room.tracks.push(rt.clone());
         let forwarders = Arc::clone(&rt.forwarders);
         let participants = room.participants.clone();
-        (room_id, forwarders, participants, room.recording.clone(), peer.pc)
+        (
+            room_id,
+            forwarders,
+            participants,
+            room.recording.clone(),
+            peer.pc,
+            rt,
+        )
     };
 
     info!(
@@ -805,17 +884,14 @@ async fn handle_track(
                     if let Some((writer, _)) = track_recorder.lock().await.as_mut() {
                         writer.write_rtp(&pkt);
                     }
-                    let targets: Vec<Arc<TrackLocalStaticRTP>> = {
+                    // Snapshot the sender channels while holding the lock, then
+                    // dispatch to each subscriber's dedicated forwarding task.
+                    let txs: Vec<mpsc::UnboundedSender<RtpPacket>> = {
                         let guard = forwarders.lock().await;
-                        guard.values().map(|f| f.track.clone()).collect()
+                        guard.values().map(|f| f.tx.clone()).collect()
                     };
-                    for t in targets {
-                        if let Err(e) = t.write_rtp(&pkt).await {
-                            warn!(
-                                "write_rtp failed for track {} from {}: {}",
-                                track_id, publisher, e
-                            );
-                        }
+                    for tx in txs {
+                        let _ = tx.send(pkt.clone());
                     }
                 }
                 Err(e) => {
@@ -850,17 +926,38 @@ async fn add_track_forwarder(
     if *subscriber_id == rt.publisher {
         return Ok(());
     }
+    let local_track_id = format!("{}-{}", rt.track_id, rt.publisher);
+    let local_stream_id = if rt.is_screen {
+        format!("screen-{}", rt.publisher)
+    } else {
+        rt.publisher.clone()
+    };
     let local_track = Arc::new(TrackLocalStaticRTP::new(
         rt.remote.codec().capability,
-        format!("{}-{}", rt.track_id, rt.publisher),
-        rt.publisher.clone(),
+        local_track_id,
+        local_stream_id,
     ));
     let sender = subscriber_pc.add_track(local_track.clone()).await?;
+    let (tx, mut rx) = mpsc::unbounded_channel::<RtpPacket>();
+
+    // Spawn a dedicated forwarding task for this subscriber so a slow peer
+    // cannot block the publisher's loop for everyone else.
+    let forwarder_track = Arc::clone(&local_track);
+    let task = tokio::spawn(async move {
+        while let Some(pkt) = rx.recv().await {
+            if let Err(e) = forwarder_track.write_rtp(&pkt).await {
+                warn!("write_rtp failed for subscriber track: {}", e);
+                break;
+            }
+        }
+    });
+
     rt.forwarders.lock().await.insert(
         subscriber_id.to_string(),
         Forwarder {
             sender: sender.clone(),
-            track: local_track,
+            tx,
+            task,
         },
     );
 
@@ -871,8 +968,9 @@ async fn add_track_forwarder(
     if let Some(publisher_pc) = publisher_pc {
         // Relay keyframe requests (PLI/FIR) from this subscriber to the publisher.
         let relay_pc = Arc::clone(&publisher_pc);
+        let relay_sender = Arc::clone(&sender);
         tokio::spawn(async move {
-            while let Ok((pkts, _)) = sender.read_rtcp().await {
+            while let Ok((pkts, _)) = relay_sender.read_rtcp().await {
                 let fwd: Vec<Box<dyn RtcpPacket + Send + Sync>> = pkts
                     .into_iter()
                     .filter(|p| {
@@ -907,7 +1005,7 @@ async fn remove_room_track(
     publisher: &str,
     track_id: &str,
 ) {
-    let removals: Vec<(Arc<RTCPeerConnection>, Arc<RTCRtpSender>)> = {
+    let (removals, tasks) = {
         let mut s = state.write().await;
         let Some(room) = s.rooms.get_mut(room_id) else {
             return;
@@ -920,16 +1018,21 @@ async fn remove_room_track(
             return;
         };
         let rt = room.tracks.remove(idx);
-        let forwarders = rt.forwarders.lock().await;
-        forwarders
-            .iter()
-            .filter_map(|(id, f)| {
-                room.participants
-                    .get(id)
-                    .and_then(|p| p.pc.clone())
-                    .map(|pc| (pc, f.sender.clone()))
-            })
-            .collect()
+        let mut forwarders = rt.forwarders.lock().await;
+        let mut removals = Vec::new();
+        let mut tasks = Vec::new();
+        for (id, f) in forwarders.drain() {
+            f.task.abort();
+            tasks.push(f.task);
+            if let Some(pc) = room
+                .participants
+                .get(&id)
+                .and_then(|p| p.pc.clone())
+            {
+                removals.push((pc, f.sender));
+            }
+        }
+        (removals, tasks)
     };
     for (pc, sender) in removals {
         if let Err(e) = pc.remove_track(&sender).await {
@@ -938,6 +1041,9 @@ async fn remove_room_track(
                 track_id, publisher, e
             );
         }
+    }
+    for t in tasks {
+        let _ = t.await;
     }
 }
 
