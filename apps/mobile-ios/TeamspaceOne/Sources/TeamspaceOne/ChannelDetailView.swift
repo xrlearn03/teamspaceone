@@ -11,36 +11,76 @@ struct ChannelDetailView: View {
     @State private var pendingAttachmentIds: [String] = []
     @StateObject private var realtime = RealtimeManager.shared
 
+    private var groupedMessages: [(String, [Message])] {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .none
+
+        let groups = Dictionary(grouping: messages) { message in
+            if let date = formatter.date(from: message.createdAt) {
+                return dateFormatter.string(from: date)
+            }
+            return message.createdAt
+        }
+
+        return groups.sorted { a, b in
+            guard let dateA = formatter.date(from: a.value.first?.createdAt ?? ""),
+                  let dateB = formatter.date(from: b.value.first?.createdAt ?? "") else { return a.key < b.key }
+            return dateA < dateB
+        }
+        .map { ($0.key, $0.value.sorted { a, b in
+            guard let dateA = formatter.date(from: a.createdAt),
+                  let dateB = formatter.date(from: b.createdAt) else { return a.createdAt < b.createdAt }
+            return dateA < dateB
+        }) }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if isLoading && messages.isEmpty {
                 Spacer()
                 ProgressView()
                 Spacer()
+            } else if !status.isEmpty && messages.isEmpty {
+                Spacer()
+                ContentUnavailableView {
+                    Label("Couldn't load messages", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(status)
+                } actions: {
+                    Button("Try Again") {
+                        Task { await load() }
+                    }
+                }
+                Spacer()
             } else if messages.isEmpty {
                 Spacer()
-                Text("No messages yet")
-                    .foregroundStyle(.secondary)
+                ContentUnavailableView {
+                    Label("No messages yet", systemImage: "bubble.left")
+                } description: {
+                    Text("Be the first to send a message.")
+                }
                 Spacer()
             } else {
-                List(messages) { message in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(message.content)
-                            .strikethrough(message.deletedAt != nil, color: .secondary)
-                        if !message.attachments.isEmpty {
-                            Text("\(message.attachments.count) attachment(s)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                List {
+                    ForEach(groupedMessages, id: \.0) { date, dayMessages in
+                        Section(header: Text(date).font(.caption).foregroundStyle(.secondary)) {
+                            ForEach(dayMessages) { message in
+                                MessageRow(message: message)
+                            }
                         }
-                        Text(message.senderId)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 }
                 .listStyle(.plain)
+                .refreshable {
+                    await load()
+                }
             }
 
-            if !status.isEmpty {
+            if !status.isEmpty && messages.isEmpty == false {
                 Text(status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -93,7 +133,8 @@ struct ChannelDetailView: View {
     }
 
     private func load() async {
-        isLoading = true
+        isLoading = messages.isEmpty
+        status = ""
         do {
             messages = try await AuthManager.shared.messages(channelId: channel.id)
         } catch {
@@ -145,5 +186,27 @@ struct ChannelDetailView: View {
         } catch {
             status = "Attachment upload failed: \(error.localizedDescription)"
         }
+    }
+}
+
+private struct MessageRow: View {
+    let message: Message
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(message.content)
+                .strikethrough(message.deletedAt != nil, color: .secondary)
+
+            if !message.attachments.isEmpty {
+                Text("\(message.attachments.count) attachment(s)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(message.senderId)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
     }
 }
