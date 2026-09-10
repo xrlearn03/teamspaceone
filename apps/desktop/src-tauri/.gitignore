@@ -10,3 +10,7 @@
 target-tauri-*
 /gen/android
 /gen/apple
+
+# Minisign updater keypairs (private key must never be committed)
+*.key
+*.key.pub
