@@ -7,9 +7,12 @@
  *   - src-tauri/Cargo.toml       (crate version, kept in sync)
  *
  * Usage:
- *   node scripts/bump-version.mjs [patch|minor|major|<x.y.z>] [--dry-run]
+ *   node scripts/bump-version.mjs [patch|minor|major|ci|<x.y.z>] [--dry-run] [--build <n>]
  *
- * Default bump is `patch`. Set BUMP_SKIP=1 to leave versions untouched
+ * Default bump is `patch`. `ci` sets the patch segment to the CI build number
+ * (Azure `BUILD_BUILDID`, `GITHUB_RUN_NUMBER`, or `--build <n>`) so every
+ * pipeline build produces a unique, monotonically increasing version without
+ * committing anything back. Set BUMP_SKIP=1 to leave versions untouched
  * (useful for local test builds wired through `tauri:build`).
  */
 
@@ -28,6 +31,11 @@ const files = {
 };
 
 const dryRun = argv.includes('--dry-run');
+function argValue(name) {
+  const i = argv.indexOf(name);
+  return i !== -1 && i + 1 < argv.length ? argv[i + 1] : undefined;
+}
+
 const bumpArg = argv.find(
   (a, i) => i > 1 && !a.startsWith('--')
 ) ?? 'patch';
@@ -55,6 +63,16 @@ function nextVersion(current, bump) {
     case 'major': return `${major + 1}.0.0`;
     case 'minor': return `${major}.${minor + 1}.0`;
     case 'patch': return `${major}.${minor}.${patch + 1}`;
+    case 'ci': {
+      const buildNo =
+        process.env.BUILD_BUILDID ||
+        process.env.GITHUB_RUN_NUMBER ||
+        argValue('--build');
+      if (!buildNo || !/^\d+$/.test(buildNo)) {
+        throw new Error('ci bump needs a numeric build number (BUILD_BUILDID / --build <n>)');
+      }
+      return `${major}.${minor}.${buildNo}`;
+    }
     default:
       throw new Error(`unknown bump "${bump}" (expected patch|minor|major|x.y.z)`);
   }

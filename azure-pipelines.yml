@@ -1,0 +1,263 @@
+# Azure Pipelines build + deploy for the Teamspace One desktop app.
+#
+# Builds macOS (arm64 + x86_64) and Windows (x86_64) Tauri bundles,
+# generates the Tauri updater manifest, and deploys the contents of
+# apps/web/public/downloads/ to the GCE VM that serves the marketing site.
+#
+# Required pipeline variables / variable group (mark secrets as secret):
+#   TAURI_SIGNING_PRIVATE_KEY          # minisign private key content (secret)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  # optional (secret)
+#   APPLE_SIGNING_IDENTITY             # optional, e.g. "Developer ID Application: ..."
+#   APPLE_CERTIFICATE                  # base64 .p12 (optional, secret)
+#   APPLE_CERTIFICATE_PASSWORD         # optional (secret)
+#   APPLE_API_KEY / APPLE_API_ISSUER / APPLE_API_KEY_PATH  # optional notarization
+#   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID                # optional notarization
+#   GCP_SA_KEY_B64                     # base64 service-account JSON (secret)
+#   GCP_PROJECT                        # e.g. teamspace-one
+#   GCE_INSTANCE                       # e.g. teamspace-one
+#   GCE_ZONE                           # e.g. asia-south1-a
+
+trigger:
+  branches:
+    include:
+      - main
+      - master
+      - hrms
+  tags:
+    include:
+      - 'v*'
+
+pr: none
+
+variables:
+  nodeVersion: '20.x'
+  pnpmVersion: '9.15.9'
+
+stages:
+  - stage: BuildDesktop
+    displayName: 'Build desktop bundles'
+    jobs:
+      - job: macOS_arm64
+        displayName: 'macOS aarch64'
+        pool:
+          vmImage: 'macos-latest'
+        variables:
+          TAURI_TARGET: 'aarch64-apple-darwin'
+        steps:
+          - checkout: self
+            clean: true
+
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+
+          - script: |
+              npm install -g pnpm@$(pnpmVersion)
+              rustup target add $(TAURI_TARGET)
+            displayName: 'Install pnpm + Rust target'
+
+          - script: pnpm install --frozen-lockfile
+            displayName: 'Install workspace dependencies'
+
+          - script: pnpm --filter @teamspace-one/authorization build
+            displayName: 'Build authorization package'
+
+          - script: node scripts/bump-version.mjs ci
+            workingDirectory: 'apps/desktop'
+            env:
+              BUILD_BUILDID: $(Build.BuildId)
+            displayName: 'Set CI build version'
+
+          - script: pnpm --filter @teamspace-one/desktop run tauri build --target $(TAURI_TARGET)
+            env:
+              TAURI_SIGNING_PRIVATE_KEY: $(TAURI_SIGNING_PRIVATE_KEY)
+              TAURI_SIGNING_PRIVATE_KEY_PASSWORD: $(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
+              APPLE_SIGNING_IDENTITY: $(APPLE_SIGNING_IDENTITY)
+              APPLE_CERTIFICATE: $(APPLE_CERTIFICATE)
+              APPLE_CERTIFICATE_PASSWORD: $(APPLE_CERTIFICATE_PASSWORD)
+              APPLE_API_KEY: $(APPLE_API_KEY)
+              APPLE_API_ISSUER: $(APPLE_API_ISSUER)
+              APPLE_API_KEY_PATH: $(APPLE_API_KEY_PATH)
+              APPLE_ID: $(APPLE_ID)
+              APPLE_PASSWORD: $(APPLE_PASSWORD)
+              APPLE_TEAM_ID: $(APPLE_TEAM_ID)
+            displayName: 'Build Tauri bundle'
+
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: 'apps/desktop/src-tauri/target/$(TAURI_TARGET)/release/bundle'
+              artifactName: 'bundles-macos-aarch64'
+
+      - job: macOS_intel
+        displayName: 'macOS x86_64'
+        pool:
+          vmImage: 'macos-latest'
+        variables:
+          TAURI_TARGET: 'x86_64-apple-darwin'
+        steps:
+          - checkout: self
+            clean: true
+
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+
+          - script: |
+              npm install -g pnpm@$(pnpmVersion)
+              rustup target add $(TAURI_TARGET)
+            displayName: 'Install pnpm + Rust target'
+
+          - script: pnpm install --frozen-lockfile
+            displayName: 'Install workspace dependencies'
+
+          - script: pnpm --filter @teamspace-one/authorization build
+            displayName: 'Build authorization package'
+
+          - script: node scripts/bump-version.mjs ci
+            workingDirectory: 'apps/desktop'
+            env:
+              BUILD_BUILDID: $(Build.BuildId)
+            displayName: 'Set CI build version'
+
+          - script: pnpm --filter @teamspace-one/desktop run tauri build --target $(TAURI_TARGET)
+            env:
+              TAURI_SIGNING_PRIVATE_KEY: $(TAURI_SIGNING_PRIVATE_KEY)
+              TAURI_SIGNING_PRIVATE_KEY_PASSWORD: $(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
+              APPLE_SIGNING_IDENTITY: $(APPLE_SIGNING_IDENTITY)
+              APPLE_CERTIFICATE: $(APPLE_CERTIFICATE)
+              APPLE_CERTIFICATE_PASSWORD: $(APPLE_CERTIFICATE_PASSWORD)
+              APPLE_API_KEY: $(APPLE_API_KEY)
+              APPLE_API_ISSUER: $(APPLE_API_ISSUER)
+              APPLE_API_KEY_PATH: $(APPLE_API_KEY_PATH)
+              APPLE_ID: $(APPLE_ID)
+              APPLE_PASSWORD: $(APPLE_PASSWORD)
+              APPLE_TEAM_ID: $(APPLE_TEAM_ID)
+            displayName: 'Build Tauri bundle'
+
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: 'apps/desktop/src-tauri/target/$(TAURI_TARGET)/release/bundle'
+              artifactName: 'bundles-macos-x86_64'
+
+      - job: Windows_x86_64
+        displayName: 'Windows x86_64'
+        pool:
+          vmImage: 'windows-latest'
+        variables:
+          TAURI_TARGET: 'x86_64-pc-windows-msvc'
+        steps:
+          - checkout: self
+            clean: true
+
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+
+          - powershell: |
+              npm install -g pnpm@$(pnpmVersion)
+              rustup target add $env:TAURI_TARGET
+            displayName: 'Install pnpm + Rust target'
+
+          - powershell: pnpm install --frozen-lockfile
+            displayName: 'Install workspace dependencies'
+
+          - powershell: pnpm --filter @teamspace-one/authorization build
+            displayName: 'Build authorization package'
+
+          - powershell: node scripts/bump-version.mjs ci
+            workingDirectory: 'apps/desktop'
+            env:
+              BUILD_BUILDID: $(Build.BuildId)
+            displayName: 'Set CI build version'
+
+          - powershell: pnpm --filter @teamspace-one/desktop run tauri build --target $env:TAURI_TARGET
+            env:
+              TAURI_SIGNING_PRIVATE_KEY: $(TAURI_SIGNING_PRIVATE_KEY)
+              TAURI_SIGNING_PRIVATE_KEY_PASSWORD: $(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
+            displayName: 'Build Tauri bundle'
+
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: 'apps/desktop/src-tauri/target/$(TAURI_TARGET)/release/bundle'
+              artifactName: 'bundles-windows-x86_64'
+
+  - stage: PublishDownloads
+    displayName: 'Publish downloads to GCE'
+    dependsOn: BuildDesktop
+    condition: succeeded()
+    jobs:
+      - job: Deploy
+        displayName: 'Stage manifest + upload to GCE'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: self
+            clean: true
+
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+
+          - script: npm install -g pnpm@$(pnpmVersion)
+            displayName: 'Install pnpm'
+
+          - script: pnpm install --frozen-lockfile
+            displayName: 'Install workspace dependencies'
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              source: current
+              path: $(Pipeline.Workspace)/bundles
+
+          - script: |
+              set -e
+              mkdir -p apps/desktop/src-tauri/target/release/bundle
+              for d in $(Pipeline.Workspace)/bundles/*; do
+                [ -d "$d" ] || continue
+                cp -r "$d/"* apps/desktop/src-tauri/target/release/bundle/
+              done
+            displayName: 'Collect bundles'
+
+          - script: |
+              set -e
+              node apps/desktop/scripts/bump-version.mjs ci
+              node apps/desktop/scripts/rename-release.mjs
+              node apps/desktop/scripts/generate-update-manifest.mjs \
+                --base-url https://teamspaceone.in/downloads \
+                --root src-tauri/target \
+                --copy-to ../web/public/downloads \
+                --out ../web/public/downloads/update.json
+            workingDirectory: 'apps/desktop'
+            env:
+              BUILD_BUILDID: $(Build.BuildId)
+            displayName: 'Generate updater manifest + stage downloads'
+
+          - script: |
+              set -e
+              echo "$(GCP_SA_KEY_B64)" | base64 -d > /tmp/gcp-sa.json
+              gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
+              gcloud config set project $(GCP_PROJECT)
+
+              tar -czf downloads.tar.gz -C apps/web/public/downloads .
+              gcloud compute scp --zone=$(GCE_ZONE) downloads.tar.gz $(GCE_INSTANCE):/tmp/
+              gcloud compute ssh --zone=$(GCE_ZONE) $(GCE_INSTANCE) --command '
+                set -e
+                mkdir -p /tmp/downloads
+                tar xzf /tmp/downloads.tar.gz -C /tmp/downloads
+
+                # Persist in the repo for future image rebuilds
+                mkdir -p /opt/teamspace-one/repo/apps/web/public/downloads
+                cp -r /tmp/downloads/. /opt/teamspace-one/repo/apps/web/public/downloads/
+
+                # Live-update the running web container without rebuilding the image
+                docker cp /tmp/downloads/. teamspace-one-web:/usr/share/nginx/html/downloads/
+                docker exec teamspace-one-web nginx -s reload || true
+
+                rm -f /tmp/downloads.tar.gz
+              '
+            displayName: 'Upload to GCE web host'
+            env:
+              GCP_SA_KEY_B64: $(GCP_SA_KEY_B64)
+              GCP_PROJECT: $(GCP_PROJECT)
+              GCE_INSTANCE: $(GCE_INSTANCE)
+              GCE_ZONE: $(GCE_ZONE)
