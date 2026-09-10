@@ -16,8 +16,8 @@ export function AIInterview() {
         <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-20">
           <Reveal direction="left" className="order-2 lg:order-1">
             <img
-              src="/assets/app-AI.png"
-              alt="Teamspace One AI Interview"
+              src="/assets/teamspaceone-AI.jpg"
+              alt="Teamspace One AI Assistant"
               className="mx-auto w-full max-w-4xl aspect-[5/3] object-cover rounded-2xl border border-slate-200 shadow-2xl"
             />
           </Reveal>

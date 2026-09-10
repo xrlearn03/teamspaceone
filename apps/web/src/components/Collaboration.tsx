@@ -11,14 +11,19 @@ const points = [
 
 const slides = [
   {
-    id: "home",
-    src: "/assets/app-home.png",
-    alt: "Teamspace One home screen",
+    id: "chat",
+    src: "/assets/teamspaceone-chat.jpg",
+    alt: "Teamspace One chat",
   },
   {
-    id: "ai",
-    src: "/assets/app-AI.png",
-    alt: "Teamspace One AI Assistant",
+    id: "search",
+    src: "/assets/teamspaceone-search.jpg",
+    alt: "Teamspace One search",
+  },
+  {
+    id: "call",
+    src: "/assets/teamspaceone-call.jpg",
+    alt: "Teamspace One voice call",
   },
 ];
 
