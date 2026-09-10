@@ -31,9 +31,12 @@
  *   --version    Manifest version (default: version from tauri.conf.json).
  *   --notes      Release notes string (default: empty).
  *   --pub-date   RFC 3339 date (default: now).
+ *   --copy-to    Also copy the installer + updater bundles into this dir
+ *                (e.g. ../../web/public/downloads) so one folder can be
+ *                deployed to the web host.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { argv } from 'node:process';
@@ -79,6 +82,9 @@ const pubDate = typeof args['pub-date'] === 'string' ? args['pub-date'] : new Da
 const outPath = args.out
   ? join(__dirname, '..', args.out)
   : join(__dirname, '..', '..', 'web', 'public', 'downloads', 'update.json');
+const copyTo = args['copy-to'] ? join(__dirname, '..', args['copy-to']) : null;
+const installerDmgName = args['dmg-name'] ?? `${productName}.dmg`;
+const installerExeName = args['exe-name'] ?? 'Teamspace-One-Setup.exe';
 
 /** Recursively find every *.sig updater signature under dir. */
 function* findSigFiles(dir) {
@@ -124,6 +130,11 @@ function platformKeysFor(artifactPath) {
 
 const platforms = {};
 let found = 0;
+const copied = new Set();
+
+if (copyTo) {
+  mkdirSync(copyTo, { recursive: true });
+}
 
 for (const sigPath of findSigFiles(rootDir)) {
   const artifactPath = sigPath.slice(0, -'.sig'.length);
@@ -136,6 +147,43 @@ for (const sigPath of findSigFiles(rootDir)) {
     platforms[key] = { signature, url };
     found++;
     console.log(`  ${key} -> ${basename(artifactPath)}`);
+
+    if (copyTo && !copied.has(artifactPath)) {
+      copyFileSync(artifactPath, join(copyTo, basename(artifactPath)));
+      copyFileSync(sigPath, join(copyTo, basename(sigPath)));
+      copied.add(artifactPath);
+    }
+  }
+}
+
+/** Also stage the standalone installers used by the marketing download buttons. */
+function* findInstallerFiles(dir) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      yield* findInstallerFiles(full);
+    } else if (entry.isFile() && (entry.name.endsWith('.dmg') || (entry.name.endsWith('.exe') && !entry.name.endsWith('.sig')))) {
+      yield full;
+    }
+  }
+}
+
+if (copyTo) {
+  for (const installerPath of findInstallerFiles(rootDir)) {
+    const lower = installerPath.replaceAll('\\', '/').toLowerCase();
+    const isDmg = lower.endsWith('.dmg');
+    const isNsisExe = lower.includes('/nsis/') && lower.endsWith('.exe');
+    if (!isDmg && !isNsisExe) continue;
+
+    const destName = isDmg ? installerDmgName : installerExeName;
+    copyFileSync(installerPath, join(copyTo, destName));
+    console.log(`  staged installer -> ${destName}`);
   }
 }
 
