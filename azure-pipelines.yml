@@ -290,9 +290,9 @@ stages:
 
           - script: |
               set -e
-              node apps/desktop/scripts/bump-version.mjs ci
-              node apps/desktop/scripts/rename-release.mjs
-              node apps/desktop/scripts/generate-update-manifest.mjs \
+              node scripts/bump-version.mjs ci
+              node scripts/rename-release.mjs
+              node scripts/generate-update-manifest.mjs \
                 --base-url https://teamspaceone.in/downloads \
                 --root src-tauri/target \
                 --copy-to ../web/public/downloads \
