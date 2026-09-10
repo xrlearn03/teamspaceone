@@ -109,9 +109,11 @@ stages:
                 exit 1
               fi
 
-              # Optional password for the private key (rarely needed); guard against the literal macro.
+              # Optional password for the private key. Keys generated with `tauri signer generate --ci`
+              # use an empty password, but Tauri still needs the env var to be set (even to an empty
+              # string) to avoid an interactive prompt. Guard against the literal Azure macro.
               if [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] || [ "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:0:1}" = '$' ]; then
-                unset TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+                export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=''
               fi
 
               # Only expose macOS signing variables to Tauri when they are actually
@@ -222,8 +224,11 @@ stages:
                 Write-Error "TAURI_SIGNING_PRIVATE_KEY secure file not found at $env:TAURI_SIGNING_PRIVATE_KEY. Upload teamspace-one.key to Azure Pipelines > Library > Secure files."
                 exit 1
               }
+              # Keys generated with `tauri signer generate --ci` use an empty password, but Tauri
+              # still needs the env var to be set (even to an empty string) to avoid an interactive
+              # prompt. Guard against the literal Azure macro.
               if (-not $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -or $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -like '$(*') {
-                Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
+                $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
               }
               pnpm --filter @teamspace-one/desktop run tauri build --target $env:TAURI_TARGET
             env:
