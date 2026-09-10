@@ -34,6 +34,8 @@ pr: none
 variables:
   nodeVersion: '20.x'
   pnpmVersion: '9.15.9'
+  CARGO_HOME: $(Pipeline.Workspace)/.cargo
+  PNPM_STORE_DIR: $(Pipeline.Workspace)/.pnpm-store
 
 stages:
   - stage: BuildDesktop
@@ -53,8 +55,32 @@ stages:
             inputs:
               versionSpec: $(nodeVersion)
 
+          - task: Cache@2
+            inputs:
+              key: 'cargo | "$(Agent.OS)" | "$(TAURI_TARGET)" | $(Build.SourcesDirectory)/apps/desktop/src-tauri/Cargo.lock'
+              restoreKeys: |
+                cargo | "$(Agent.OS)" | "$(TAURI_TARGET)"
+                cargo | "$(Agent.OS)"
+              path: $(CARGO_HOME)
+            displayName: 'Cache Cargo registry'
+
+          - task: Cache@2
+            inputs:
+              key: 'pnpm | "$(Agent.OS)" | $(Build.SourcesDirectory)/pnpm-lock.yaml'
+              restoreKeys: pnpm | "$(Agent.OS)"
+              path: $(PNPM_STORE_DIR)
+            displayName: 'Cache pnpm store'
+
+          - task: Cache@2
+            inputs:
+              key: 'target | "$(Agent.OS)" | "$(TAURI_TARGET)" | $(Build.SourcesDirectory)/apps/desktop/src-tauri/Cargo.lock'
+              restoreKeys: target | "$(Agent.OS)" | "$(TAURI_TARGET)"
+              path: $(Build.SourcesDirectory)/apps/desktop/src-tauri/target
+            displayName: 'Cache Rust target'
+
           - script: |
               npm install -g pnpm@$(pnpmVersion)
+              pnpm config set store-dir $(PNPM_STORE_DIR)
               rustup target add aarch64-apple-darwin x86_64-apple-darwin
             displayName: 'Install pnpm + Rust targets'
 
@@ -144,8 +170,32 @@ stages:
             inputs:
               versionSpec: $(nodeVersion)
 
+          - task: Cache@2
+            inputs:
+              key: 'cargo | "$(Agent.OS)" | "$(TAURI_TARGET)" | $(Build.SourcesDirectory)/apps/desktop/src-tauri/Cargo.lock'
+              restoreKeys: |
+                cargo | "$(Agent.OS)" | "$(TAURI_TARGET)"
+                cargo | "$(Agent.OS)"
+              path: $(CARGO_HOME)
+            displayName: 'Cache Cargo registry'
+
+          - task: Cache@2
+            inputs:
+              key: 'pnpm | "$(Agent.OS)" | $(Build.SourcesDirectory)/pnpm-lock.yaml'
+              restoreKeys: pnpm | "$(Agent.OS)"
+              path: $(PNPM_STORE_DIR)
+            displayName: 'Cache pnpm store'
+
+          - task: Cache@2
+            inputs:
+              key: 'target | "$(Agent.OS)" | "$(TAURI_TARGET)" | $(Build.SourcesDirectory)/apps/desktop/src-tauri/Cargo.lock'
+              restoreKeys: target | "$(Agent.OS)" | "$(TAURI_TARGET)"
+              path: $(Build.SourcesDirectory)/apps/desktop/src-tauri/target
+            displayName: 'Cache Rust target'
+
           - powershell: |
               npm install -g pnpm@$(pnpmVersion)
+              pnpm config set store-dir $env:PNPM_STORE_DIR
               rustup target add $env:TAURI_TARGET
             displayName: 'Install pnpm + Rust target'
 
@@ -203,7 +253,16 @@ stages:
             inputs:
               versionSpec: $(nodeVersion)
 
-          - script: npm install -g pnpm@$(pnpmVersion)
+          - task: Cache@2
+            inputs:
+              key: 'pnpm | "$(Agent.OS)" | $(Build.SourcesDirectory)/pnpm-lock.yaml'
+              restoreKeys: pnpm | "$(Agent.OS)"
+              path: $(PNPM_STORE_DIR)
+            displayName: 'Cache pnpm store'
+
+          - script: |
+              npm install -g pnpm@$(pnpmVersion)
+              pnpm config set store-dir $(PNPM_STORE_DIR)
             displayName: 'Install pnpm'
 
           - script: pnpm install --frozen-lockfile
