@@ -119,7 +119,7 @@ function platformKeysFor(artifactPath) {
 
   if (!os) return [];
 
-  if (file.includes('universal') && os === 'darwin') {
+  if (os === 'darwin' && (file.includes('universal') || lower.includes('universal-apple-darwin'))) {
     return ['darwin-x86_64', 'darwin-aarch64'];
   }
   if (file.includes('aarch64') || file.includes('arm64')) return [`${os}-aarch64`];
