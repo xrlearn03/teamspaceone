@@ -7,6 +7,7 @@ WORKDIR /usr/src/app
 
 COPY services/sfu/Cargo.toml services/sfu/Cargo.lock ./
 COPY services/sfu/src ./src
+COPY services/sfu/examples ./examples
 
 RUN cargo build --release
 

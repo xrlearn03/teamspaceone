@@ -5,15 +5,20 @@ import { useShallow } from "zustand/shallow";
 import { EmptyState } from "../ui/empty-state";
 import { Avatar, AvatarFallback } from "../ui/avatar";
 import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
 import {
+  useAddChannelModerator,
   useChannels,
   useMeeting,
+  useMe,
   useMembers,
+  usePinnedMessages,
   useProjects,
+  useRemoveChannelModerator,
   useTasks,
   useUsers,
 } from "../../hooks/api";
-import type { UserDto } from "../../lib/api";
+import { getUserDisplayName } from "../../lib/utils";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -33,16 +38,15 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function getDisplayName(_member: { userId: string }, user?: UserDto) {
-  if (user) {
-    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (fullName) return fullName;
-    return user.email;
-  }
-  return "Unknown";
-}
-
-function MemberList({ userIds, externalIds }: { userIds: string[]; externalIds?: Set<string> }) {
+function MemberList({
+  userIds,
+  externalIds,
+  renderMeta,
+}: {
+  userIds: string[];
+  externalIds?: Set<string>;
+  renderMeta?: (userId: string) => React.ReactNode;
+}) {
   const { data: users } = useUsers(userIds);
   const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
   if (!userIds.length) return <p className="text-sm text-text-muted">No members.</p>;
@@ -51,10 +55,11 @@ function MemberList({ userIds, externalIds }: { userIds: string[]; externalIds?:
       {userIds.map((id) => (
         <div key={id} className="flex items-center gap-2">
           <Avatar className="h-6 w-6">
-            <AvatarFallback className="text-[10px]">{getDisplayName({ userId: id }, userMap.get(id)).slice(0, 2).toUpperCase()}</AvatarFallback>
+            <AvatarFallback className="text-[10px]">{getUserDisplayName(userMap.get(id)).slice(0, 2).toUpperCase()}</AvatarFallback>
           </Avatar>
-          <span className="flex-1 truncate text-sm text-text">{getDisplayName({ userId: id }, userMap.get(id))}</span>
+          <span className="flex-1 truncate text-sm text-text">{getUserDisplayName(userMap.get(id))}</span>
           {externalIds?.has(id) ? <Badge variant="warning">External</Badge> : null}
+          {renderMeta ? renderMeta(id) : null}
         </div>
       ))}
     </div>
@@ -66,12 +71,48 @@ function ChannelDetails() {
   const organisationId = useUIStore((s) => s.organisationId);
   const { data: channels } = useChannels();
   const { data: members } = useMembers(organisationId ?? undefined);
+  const { data: me } = useMe();
+  const addModerator = useAddChannelModerator();
+  const removeModerator = useRemoveChannelModerator();
   const channel = channels?.find((c) => c.id === activeChannelId) ?? channels?.[0];
   const externalIds = new Set(
     (members ?? []).filter((m) => /client|external/i.test(m.role.name)).map((m) => m.userId),
   );
   if (!channel) return <EmptyState icon={Hash} title="No channel" description="Select a channel to see its details." />;
   const memberIds = channel.members.map((m) => m.userId);
+  const isOwner = me ? channel.members.some((m) => m.userId === me.id && m.role === "owner") : false;
+  const memberMap = useMemo(() => new Map(channel.members.map((m) => [m.userId, m])), [channel.members]);
+  const renderMeta = (userId: string) => {
+    const member = memberMap.get(userId);
+    if (!member) return null;
+    return (
+      <div className="flex items-center gap-1.5">
+        {member.role !== "member" ? <Badge variant={member.role === "owner" ? "default" : "secondary"}>{member.role}</Badge> : null}
+        {isOwner && userId !== me?.id ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-5 px-1.5 text-[10px]"
+            onClick={() =>
+              member.role === "moderator"
+                ? removeModerator.mutate({ channelId: channel.id, userId })
+                : addModerator.mutate({ channelId: channel.id, userId })
+            }
+            disabled={addModerator.isPending || removeModerator.isPending}
+          >
+            {member.role === "moderator" ? "Demote" : "Moderator"}
+          </Button>
+        ) : null}
+      </div>
+    );
+  };
+  const { data: pinned } = usePinnedMessages(channel.id);
+  const pinnedSenderIds = useMemo(
+    () => [...new Set((pinned ?? []).map((m) => m.senderId))],
+    [pinned],
+  );
+  const { data: pinnedUsers } = useUsers(pinnedSenderIds);
+  const pinnedUserMap = useMemo(() => new Map((pinnedUsers ?? []).map((u) => [u.id, u])), [pinnedUsers]);
   return (
     <>
       <Section title="About">
@@ -80,10 +121,25 @@ function ChannelDetails() {
         <Meta label="Created" value={new Date(channel.createdAt).toLocaleDateString()} />
       </Section>
       <Section title={`Members (${memberIds.length})`}>
-        <MemberList userIds={memberIds} externalIds={externalIds} />
+        <MemberList userIds={memberIds} externalIds={externalIds} renderMeta={renderMeta} />
       </Section>
       <Section title="Pinned & shared">
-        <p className="text-sm text-text-muted">Pinned messages and shared files will appear here once supported by the messaging service.</p>
+        {!pinned?.length ? (
+          <p className="text-sm text-text-muted">No pinned messages yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {pinned.map((m) => {
+              const sender = pinnedUserMap.get(m.senderId);
+              const preview = m.content.length > 80 ? `${m.content.slice(0, 80)}…` : m.content;
+              return (
+                <div key={m.id} className="rounded border bg-surface-elevated p-2">
+                  <p className="text-xs text-text-muted">{getUserDisplayName(sender)}</p>
+                  <p className="mt-0.5 text-sm text-text">{preview}</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Section>
     </>
   );

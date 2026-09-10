@@ -25,6 +25,9 @@ model FileRecord {
   etag           String?
   checksumSha256 String?
   status         String   @default("uploaded") // uploaded, processing, processed, failed
+  version        Int      @default(1)
+  versionGroupId String?
+  folderId       String?
   previewUrl     String?
   thumbnailUrl   String?
   metadata       Json?
@@ -33,13 +36,35 @@ model FileRecord {
 
   previews       FilePreview[]
   externalShares ExternalShare[]
+  folder         Folder?    @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
   @@index([organisationId])
   @@index([workspaceId])
   @@index([resourceType, resourceId])
   @@index([category])
   @@index([status])
+  @@index([versionGroupId])
+  @@index([folderId])
   @@map("files")
+}
+
+model Folder {
+  id             String   @id @default(cuid())
+  organisationId String
+  name           String
+  category       String   // e.g. hrms
+  parentId       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  files          FileRecord[]
+  parent         Folder?    @relation("FolderToFolder", fields: [parentId], references: [id], onDelete: Cascade)
+  children       Folder[]   @relation("FolderToFolder")
+
+  @@index([organisationId])
+  @@index([organisationId, category])
+  @@index([parentId])
+  @@map("folders")
 }
 
 model FilePreview {

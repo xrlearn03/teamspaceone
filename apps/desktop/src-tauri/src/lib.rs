@@ -1,20 +1,28 @@
+use tauri::{Url, WebviewUrl};
+#[cfg(desktop)]
+use tauri::WebviewWindowBuilder;
+#[cfg(desktop)]
+use tauri::{AppHandle, Manager};
+#[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem};
+#[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
+#[cfg(desktop)]
 use tauri_plugin_deep_link::DeepLinkExt;
+#[cfg(desktop)]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod desktop;
 mod media;
 mod screen_share;
-mod sfu;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+#[cfg(desktop)]
 fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&quit_i])?;
@@ -35,12 +43,14 @@ fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(desktop)]
 fn setup_global_shortcut(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyR);
     app.global_shortcut().register(shortcut)?;
     Ok(())
 }
 
+#[cfg(desktop)]
 fn setup_deep_link(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(any(windows, target_os = "linux"))]
     {
@@ -97,22 +107,40 @@ pub fn run() {
         },
     ];
 
+    #[cfg(desktop)]
     let mut builder = tauri::Builder::default();
+    #[cfg(not(desktop))]
+    let builder = tauri::Builder::default();
 
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}));
     }
 
-    let port: Option<u16> = if cfg!(not(dev)) {
-        Some(portpicker::pick_unused_port().expect("failed to find unused port"))
-    } else {
-        None
-    };
+    #[cfg(all(not(dev), desktop))]
+    let port = portpicker::pick_unused_port().expect("failed to find unused port");
 
-    #[cfg(not(dev))]
+    #[cfg(all(not(dev), desktop))]
     {
-        builder = builder.plugin(tauri_plugin_localhost::Builder::new(port.unwrap()).build());
+        builder = builder.plugin(tauri_plugin_localhost::Builder::new(port).build());
+    }
+
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|_app, shortcut, event| {
+                    if shortcut == &Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyR) {
+                        match event.state() {
+                            ShortcutState::Pressed => println!("Ctrl+Shift+R Pressed"),
+                            ShortcutState::Released => println!("Ctrl+Shift+R Released"),
+                        }
+                    }
+                })
+                .build(),
+        );
+        builder = builder.plugin(tauri_plugin_process::init());
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
     builder
@@ -124,24 +152,10 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .manage(media::CameraState::new())
         .manage(media::MicrophoneState::new())
         .manage(screen_share::ScreenShareState::new())
-        .manage(sfu::SfuState::new())
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|_app, shortcut, event| {
-                    if shortcut == &Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyR) {
-                        match event.state() {
-                            ShortcutState::Pressed => println!("Ctrl+Shift+R Pressed"),
-                            ShortcutState::Released => println!("Ctrl+Shift+R Released"),
-                        }
-                    }
-                })
-                .build(),
-        )
         .invoke_handler(tauri::generate_handler![
             greet,
             desktop::store_secure_token,
@@ -161,8 +175,6 @@ pub fn run() {
             media::get_microphone_chunk,
             screen_share::start_screen_share,
             screen_share::stop_screen_share,
-            sfu::sfu_join,
-            sfu::sfu_leave,
         ])
         .setup(move |app| {
             #[cfg(desktop)]
@@ -172,24 +184,33 @@ pub fn run() {
                 setup_deep_link(app.app_handle())?;
             }
 
-            let url: WebviewUrl = if cfg!(dev) {
-                WebviewUrl::External("http://localhost:1420".parse::<Url>().unwrap())
-            } else {
-                WebviewUrl::External(format!("http://localhost:{}", port.unwrap()).parse::<Url>().unwrap())
-            };
-
-            let _window = WebviewWindowBuilder::new(app, "main".to_string(), url)
-                .title("Teamspace One")
-                .inner_size(1200.0, 800.0)
-                .min_inner_size(800.0, 600.0)
-                .disable_drag_drop_handler()
-                .devtools(cfg!(debug_assertions))
-                .build()?;
-
-            // Open the web inspector so console errors are visible during testing.
-            #[cfg(all(desktop, debug_assertions))]
+            #[cfg(desktop)]
             {
-                let _ = _window.open_devtools();
+                #[cfg(dev)]
+                let url = WebviewUrl::External("http://localhost:1420".parse::<Url>().unwrap());
+                #[cfg(not(dev))]
+                let url = WebviewUrl::External(format!("http://localhost:{}", port).parse::<Url>().unwrap());
+
+                let _window = WebviewWindowBuilder::new(app, "main".to_string(), url)
+                    .title("Teamspace One")
+                    .inner_size(1200.0, 800.0)
+                    .min_inner_size(800.0, 600.0)
+                    .disable_drag_drop_handler()
+                    .devtools(cfg!(debug_assertions))
+                    .build()?;
+
+                // Open the web inspector so console errors are visible during testing.
+                #[cfg(debug_assertions)]
+                {
+                    let _ = _window.open_devtools();
+                }
+            }
+
+            // On iOS and Android Tauri creates the main webview automatically from
+            // tauri.conf.json / tauri.{ios,android}.conf.json, so we do not build one here.
+            #[cfg(not(desktop))]
+            {
+                let _ = ();
             }
 
             Ok(())
@@ -197,3 +218,4 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

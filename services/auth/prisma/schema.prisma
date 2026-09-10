@@ -18,6 +18,7 @@ model User {
   type          String   @default("member") // member, guest
   active        Boolean  @default(true)
   emailVerified Boolean  @default(false)
+  mustChangePassword Boolean @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

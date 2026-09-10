@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  BriefcaseBusiness,
   ChevronDown,
   ChevronRight,
+  ClipboardCheck,
   FileText,
   Folder,
   Hash,
@@ -12,13 +14,15 @@ import {
   Mic,
   Plus,
   Search,
-  Settings,
+  Sparkles,
   Star,
   Trash2,
   Users,
   Video,
 } from "lucide-react";
 import * as CollapsiblePrimitive from "@radix-ui/react-collapsible";
+import { usePermissionContext } from "@teamspace-one/authorization/react";
+import { hasAnyPermission } from "@teamspace-one/authorization";
 import { useUIStore, type View } from "../../stores/ui";
 import { useShallow } from "zustand/shallow";
 import {
@@ -45,6 +49,8 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Avatar, AvatarFallback } from "../ui/avatar";
 import { Badge } from "../ui/badge";
+import { useRealtime } from "../../hooks/useRealtime";
+import { UserAvatar } from "../user-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,24 +59,15 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
-import { cn } from "../../lib/utils";
+import { cn, getUserDisplayName } from "../../lib/utils";
 
 const Collapsible = CollapsiblePrimitive.Root;
 const CollapsibleTrigger = CollapsiblePrimitive.Trigger;
 const CollapsibleContent = CollapsiblePrimitive.Content;
 
-function getDisplayName(_member: { userId: string }, user?: UserDto) {
-  if (user) {
-    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (fullName) return fullName;
-    return user.email;
-  }
-  return "Unknown";
-}
-
 function getDirectMessageLabel(dm: Channel, meId: string | undefined, userMap: Map<string, UserDto>) {
   const others = dm.members.filter((m) => m.userId !== meId);
-  const names = others.map((m) => getDisplayName({ userId: m.userId }, userMap.get(m.userId)));
+  const names = others.map((m) => getUserDisplayName(userMap.get(m.userId)));
   if (names.length === 0) return dm.name || "Direct message";
   if (names.length <= 2) return names.join(", ");
   return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
@@ -250,6 +247,16 @@ export function WorkspaceSidebar() {
   const { data: users } = useUsers(memberUserIds);
   const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
   const { data: me } = useMe();
+  const meIdRef = useRef(me?.id);
+  useEffect(() => { meIdRef.current = me?.id; }, [me?.id]);
+  const { connected, joinRealtimeChannel, leaveRealtimeChannel, sendPresence, onRealtimeEvent } = useRealtime();
+  const { user: authzUser } = usePermissionContext();
+  const canAny = (permissions: string[]) =>
+    authzUser ? hasAnyPermission(authzUser, permissions) : false;
+  const canCollaborate = canAny(["collaboration.access"]);
+  const canHrms =
+    canAny(["hrms.access"]) ||
+    Boolean(authzUser?.permissions.some((p) => p.startsWith("hrms.")));
   const createChannel = useCreateChannel();
   const createDirectChannel = useCreateDirectChannel();
   const createProject = useCreateProject();
@@ -345,10 +352,6 @@ export function WorkspaceSidebar() {
     }
   }
 
-  if (sidebarCollapsed) {
-    return null;
-  }
-
   const workspaceName = currentWorkspace?.name ?? currentOrganisation?.name ?? "Workspace";
 
   const inWorkspace = (workspaceId?: string | null) =>
@@ -360,8 +363,49 @@ export function WorkspaceSidebar() {
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 10);
   }, [channels]);
+  const directMessagesRef = useRef(directMessages);
+  useEffect(() => { directMessagesRef.current = directMessages; }, [directMessages]);
+
+  const [presenceMap, setPresenceMap] = useState<Record<string, { status: string; at: number }>>({});
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const unsub = onRealtimeEvent("presence", (payload) => {
+      if (!meIdRef.current || payload.userId === meIdRef.current) return;
+      if (!payload.room.startsWith("channel:")) return;
+      const channelId = payload.room.slice("channel:".length);
+      if (!directMessagesRef.current.some((d) => d.id === channelId)) return;
+      setPresenceMap((prev) => ({ ...prev, [payload.userId]: { status: payload.status, at: Date.now() } }));
+    });
+    return () => { unsub(); };
+  }, []);
+
+  useEffect(() => {
+    if (!connected) return;
+    for (const dm of directMessages) {
+      joinRealtimeChannel(dm.id);
+      sendPresence(dm.id, "online");
+    }
+    return () => {
+      for (const dm of directMessages) {
+        leaveRealtimeChannel(dm.id);
+      }
+    };
+  }, [connected, directMessages, joinRealtimeChannel, leaveRealtimeChannel, sendPresence]);
+
   const visibleProjects = projects?.filter((p) => inWorkspace(p.workspaceId)) ?? [];
   const visibleMeetings = meetings?.filter((m) => inWorkspace((m as { workspaceId?: string }).workspaceId)) ?? [];
+
+  // Early return must come after every hook call above (e.g. the
+  // directMessages useMemo) or React throws a hook-order error on collapse.
+  if (sidebarCollapsed) {
+    return null;
+  }
 
   return (
     <>
@@ -394,29 +438,25 @@ export function WorkspaceSidebar() {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
-            {organisations?.map((org) => (
-              <DropdownMenuItem
-                key={org.id}
-                onClick={() => switchOrganisation(org.id)}
-              >
-                <span className="flex flex-1 items-center justify-between">
-                  {org.name}
-                  {org.id === activeOrgId && (
-                    <span className="text-xs text-text-muted">current</span>
-                  )}
-                </span>
-              </DropdownMenuItem>
-            ))}
-            {(!organisations || organisations.length === 0) && (
+            {organisations && organisations.length > 0 ? (
+              <>
+                {organisations.map((org) => (
+                  <DropdownMenuItem
+                    key={org.id}
+                    onClick={() => switchOrganisation(org.id)}
+                  >
+                    <span className="flex flex-1 items-center justify-between">
+                      {org.name}
+                      {org.id === activeOrgId && (
+                        <span className="text-xs text-text-muted">current</span>
+                      )}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </>
+            ) : (
               <DropdownMenuItem disabled>No organisations</DropdownMenuItem>
             )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setOrgDialog("create")}>
-              Create organisation
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setOrgDialog("join")}>
-              Join organisation
-            </DropdownMenuItem>
             {workspaces && workspaces.length > 0 ? (
               <>
                 <DropdownMenuSeparator />
@@ -441,9 +481,22 @@ export function WorkspaceSidebar() {
                 ))}
               </>
             ) : null}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setOrgDialog("create")}>
+              Create organisation
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setOrgDialog("join")}>
+              Join organisation
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
+        {canAny([
+          "collaboration.message.send",
+          "collaboration.channel.create",
+          "collaboration.project.create",
+          "collaboration.meeting.create",
+        ]) ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="secondary" size="icon" aria-label="Quick action">
@@ -451,20 +504,29 @@ export function WorkspaceSidebar() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setCreateMode("direct")}>
-              New message
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setCreateMode("channel")}>
-              Create channel
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setCreateMode("project")}>
-              Create project
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setCreateMode("meeting")}>
-              Schedule meeting
-            </DropdownMenuItem>
+            {canAny(["collaboration.message.send"]) ? (
+              <DropdownMenuItem onClick={() => setCreateMode("direct")}>
+                New message
+              </DropdownMenuItem>
+            ) : null}
+            {canAny(["collaboration.channel.create"]) ? (
+              <DropdownMenuItem onClick={() => setCreateMode("channel")}>
+                Create channel
+              </DropdownMenuItem>
+            ) : null}
+            {canAny(["collaboration.project.create"]) ? (
+              <DropdownMenuItem onClick={() => setCreateMode("project")}>
+                Create project
+              </DropdownMenuItem>
+            ) : null}
+            {canAny(["collaboration.meeting.create"]) ? (
+              <DropdownMenuItem onClick={() => setCreateMode("meeting")}>
+                Schedule meeting
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
+        ) : null}
       </div>
 
       <div className="border-b px-3 py-2">
@@ -480,12 +542,14 @@ export function WorkspaceSidebar() {
 
       <div className="flex-1 overflow-y-auto py-2">
         <SidebarSection title="Overview" defaultOpen>
-          <SidebarItem
-            icon={Home}
-            label="Home"
-            active={activeView === "home"}
-            onClick={() => navigate("home")}
-          />
+          {canAny(["dashboard.view"]) ? (
+            <SidebarItem
+              icon={Home}
+              label="Home"
+              active={activeView === "home"}
+              onClick={() => navigate("home")}
+            />
+          ) : null}
           <SidebarItem
             icon={Inbox}
             label="Inbox"
@@ -493,12 +557,14 @@ export function WorkspaceSidebar() {
             active={activeView === "inbox"}
             onClick={() => navigate("inbox")}
           />
-          <SidebarItem
-            icon={Users}
-            label="Members"
-            active={activeView === "members"}
-            onClick={() => navigate("members")}
-          />
+          {canCollaborate ? (
+            <SidebarItem
+              icon={Users}
+              label="Members"
+              active={activeView === "members"}
+              onClick={() => navigate("members")}
+            />
+          ) : null}
           <SidebarItem
             icon={Menu}
             label="Drafts"
@@ -511,8 +577,36 @@ export function WorkspaceSidebar() {
             active={activeView === "saved"}
             onClick={() => navigate("saved")}
           />
+          {canHrms ? (
+            <SidebarItem
+              icon={BriefcaseBusiness}
+              label="HRMS"
+              active={activeView === "hrms"}
+              onClick={() => navigate("hrms")}
+            />
+          ) : null}
+          {canAny(["interview.access"]) ? (
+            <SidebarItem
+              icon={ClipboardCheck}
+              label="Interview"
+              active={activeView === "interview"}
+              onClick={() => navigate("interview")}
+            />
+          ) : null}
+          <SidebarItem
+            icon={Sparkles}
+            label="AI"
+            active={activeView === "ai"}
+            onClick={() => navigate("ai")}
+          />
+          <SidebarItem
+            icon={Search}
+            label="Search"
+            onClick={() => setSearchOpen(true)}
+          />
         </SidebarSection>
 
+        {canCollaborate ? (
         <SidebarSection title="Channels">
           {publicChannels.length > 0 ? (
             publicChannels.map((ch) => (
@@ -529,17 +623,37 @@ export function WorkspaceSidebar() {
             <div className="px-2 py-1 text-xs text-text-muted">No channels yet</div>
           )}
         </SidebarSection>
+        ) : null}
 
+        {canCollaborate ? (
         <SidebarSection title="Direct messages">
           {directMessages.length > 0 ? (
             directMessages.map((dm) => {
+              const other = dm.members.find((m) => m.userId !== me?.id);
+              const otherUser = other ? userMap.get(other.userId) : undefined;
+              const otherPresence = other ? presenceMap[other.userId] : undefined;
+              const status = (() => {
+                if (!otherPresence) return "offline";
+                if (now - otherPresence.at > 2 * 60 * 60 * 1000) return "offline";
+                if (["online", "away", "busy"].includes(otherPresence.status)) return otherPresence.status;
+                return "offline";
+              })();
               const Icon = ({ className }: { className?: string }) => (
-                <span
-                  className={cn(
-                    "h-2 w-2 rounded-full bg-online",
-                    className,
-                  )}
-                />
+                <span className={cn(className, "relative h-6 w-6 shrink-0")}>
+                  <UserAvatar user={otherUser} className="h-full w-full" />
+                  <span
+                    className={cn(
+                      "absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-surface",
+                      status === "online"
+                        ? "bg-online"
+                        : status === "away"
+                          ? "bg-away"
+                          : status === "busy"
+                            ? "bg-busy"
+                            : "bg-offline",
+                    )}
+                  />
+                </span>
               );
               return (
                 <SidebarItem
@@ -555,7 +669,9 @@ export function WorkspaceSidebar() {
             <div className="px-2 py-1 text-xs text-text-muted">No direct messages yet</div>
           )}
         </SidebarSection>
+        ) : null}
 
+        {canAny(["collaboration.project.view"]) ? (
         <SidebarSection title="Projects">
           {visibleProjects.length > 0 ? (
             visibleProjects.map((p) => (
@@ -573,7 +689,9 @@ export function WorkspaceSidebar() {
             <div className="px-2 py-1 text-xs text-text-muted">No projects yet</div>
           )}
         </SidebarSection>
+        ) : null}
 
+        {canAny(["collaboration.meeting.view"]) ? (
         <SidebarSection title="Meetings">
           {visibleMeetings.length > 0 ? (
             visibleMeetings.map((m) => (
@@ -604,21 +722,18 @@ export function WorkspaceSidebar() {
             </button>
           )}
         </SidebarSection>
+        ) : null}
 
-        <SidebarSection title="Files & apps">
-          <SidebarItem
-            icon={FileText}
-            label="Files"
-            active={activeView === "files"}
-            onClick={() => navigate("files")}
-          />
-          <SidebarItem
-            icon={Settings}
-            label="Settings"
-            active={activeView === "settings"}
-            onClick={() => navigate("settings")}
-          />
-        </SidebarSection>
+        {canAny(["collaboration.file.view"]) ? (
+          <SidebarSection title="Files & apps">
+            <SidebarItem
+              icon={FileText}
+              label="Files"
+              active={activeView === "files"}
+              onClick={() => navigate("files")}
+            />
+          </SidebarSection>
+        ) : null}
       </div>
 
       <button
@@ -664,7 +779,7 @@ export function WorkspaceSidebar() {
               {members?.map((member) => (
                 <label key={member.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-surface-elevated">
                   <input type="checkbox" checked={selectedMembers.includes(member.userId)} onChange={() => toggleMember(member.userId)} />
-                  <span className="flex-1 truncate">{getDisplayName(member, userMap.get(member.userId))}</span>
+                  <span className="flex-1 truncate">{getUserDisplayName(userMap.get(member.userId))}</span>
                   <span className="text-xs text-text-muted">{member.role.name}</span>
                 </label>
               ))}

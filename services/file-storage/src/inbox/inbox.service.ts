@@ -40,23 +40,8 @@ export class InboxService {
 
   private async processEvent(
     envelope: EventEnvelope,
-    tx: PrismaClient | Prisma.TransactionClient,
+    _tx: PrismaClient | Prisma.TransactionClient,
   ): Promise<void> {
     this.logger.log({ eventId: envelope.eventId, eventType: envelope.eventType }, 'Processing event');
-
-    if (envelope.eventType === 'teamspace-one.template.created') {
-      const payload = envelope.payload as { name?: string } | undefined;
-      if (payload?.name) {
-        await tx.templateEntity.upsert({
-          where: { id: envelope.resourceId },
-          update: { name: payload.name },
-          create: {
-            id: envelope.resourceId,
-            organisationId: envelope.organisationId,
-            name: payload.name,
-          },
-        });
-      }
-    }
   }
 }

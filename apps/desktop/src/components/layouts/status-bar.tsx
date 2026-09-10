@@ -13,13 +13,13 @@ export function StatusBar() {
   const workspace = workspaces?.find((w) => w.id === activeWorkspaceId) ?? workspaces?.[0];
 
   return (
-    <div className="flex h-7 shrink-0 items-center justify-between border-t bg-surface px-3 text-xs text-text-muted">
-      <div className="flex items-center gap-3">
-        <span className="font-medium text-text">{workspace?.name ?? organisation?.name ?? "Teamspace One"}</span>
+    <div className="flex h-9 shrink-0 items-center justify-between border-t bg-surface px-4 text-xs text-text-muted">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="truncate font-medium text-text">{workspace?.name ?? organisation?.name ?? "Teamspace One"}</span>
         <span className="text-text-muted">·</span>
-        <span>{organisation?.slug ?? "workspace"}</span>
+        <span className="truncate">{organisation?.slug ?? "workspace"}</span>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         {connection === "connected" && (
           <>
             <Check className="h-3 w-3 text-online" />

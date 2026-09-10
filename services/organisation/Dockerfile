@@ -10,4 +10,4 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/services/organisation ./services/organisation
 EXPOSE 3003
-CMD ["sh", "-c", "node services/organisation/node_modules/prisma/build/index.js migrate deploy --schema services/organisation/prisma/schema.prisma && node services/organisation/dist/main"]
+CMD ["sh", "-c", "node services/organisation/node_modules/prisma/build/index.js migrate deploy --schema services/organisation/prisma/schema.prisma && node services/organisation/dist/seed/seed-rbac.js && node services/organisation/dist/main"]

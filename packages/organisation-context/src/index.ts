@@ -54,6 +54,8 @@ export interface OrganisationContextMiddlewareOptions {
   requireInternalApiKey?: boolean;
   /** Paths that skip the internal-key check. Default: /health and /socket.io. */
   exemptPaths?: (string | RegExp)[];
+  /** Shared secret to compare against `x-internal-api-key`. Defaults to `process.env.INTERNAL_API_KEY`. */
+  internalApiKey?: string;
 }
 
 const DEFAULT_EXEMPT_PATHS: (string | RegExp)[] = ['/health', /^\/socket\.io/];
@@ -75,7 +77,7 @@ export class OrganisationContextMiddleware implements NestMiddleware {
     const isExempt = exemptPaths.some((p) => (typeof p === 'string' ? p === path : p.test(path)));
 
     if (this.options.requireInternalApiKey !== false && !isExempt) {
-      const expected = process.env.INTERNAL_API_KEY;
+      const expected = this.options.internalApiKey ?? process.env.INTERNAL_API_KEY;
       if (!expected) {
         res.status(500).json({ error: 'Service authentication is not configured' });
         return;

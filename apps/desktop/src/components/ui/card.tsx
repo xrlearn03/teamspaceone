@@ -8,7 +8,7 @@ function Card({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-surface p-4 shadow-sm transition-colors",
+        "h-full rounded-lg border bg-surface p-4 shadow-sm transition-colors",
         className,
       )}
       {...props}

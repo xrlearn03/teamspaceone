@@ -1,15 +1,21 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Patch, Post, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Patch, Post, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { OrganisationService } from './organisation.service.js';
+import { OrganisationPermissionGuard, RequirePermissions } from './permission.guard.js';
 import { CreateOrganisationDto } from './dto/create-organisation.dto.js';
 import { CreateMemberDto } from './dto/create-member.dto.js';
+import { InviteMemberDto } from './dto/invite-member.dto.js';
 import { CreateInvitationDto } from './dto/create-invitation.dto.js';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto.js';
 import { CreateClientDto } from './dto/create-client.dto.js';
 import { UpdateClientDto } from './dto/update-client.dto.js';
+import { CreateRoleDto, UpdateRoleDto } from './dto/role.dto.js';
+import { UpdateMemberRoleDto } from './dto/update-member-role.dto.js';
+import { UpdateEmailProviderDto } from './dto/update-email-provider.dto.js';
 
+@UseGuards(OrganisationPermissionGuard)
 @Controller('organisations')
 export class OrganisationController {
   constructor(
@@ -51,6 +57,7 @@ export class OrganisationController {
   }
 
   @Post(':id/members')
+  @RequirePermissions('admin.user.manage')
   async addMember(
     @Param('id') id: string,
     @CurrentOrganisation() ctx: OrganisationContextValue,
@@ -60,7 +67,19 @@ export class OrganisationController {
     return this.organisation.addMember(ctx.organisationId, dto, ctx.actorId as string);
   }
 
+  @Post(':id/members/invite')
+  @RequirePermissions('admin.user.manage')
+  async inviteMember(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: InviteMemberDto,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.inviteMember(ctx.organisationId, dto, ctx.actorId as string);
+  }
+
   @Post(':id/workspaces')
+  @RequirePermissions('collaboration.workspace.create')
   async createWorkspace(
     @Param('id') id: string,
     @CurrentOrganisation() ctx: OrganisationContextValue,
@@ -71,6 +90,7 @@ export class OrganisationController {
   }
 
   @Post(':id/invitations')
+  @RequirePermissions('admin.user.manage')
   async createInvitation(
     @Param('id') id: string,
     @CurrentOrganisation() ctx: OrganisationContextValue,
@@ -162,6 +182,7 @@ export class OrganisationController {
   }
 
   @Delete(':id/invitations/:invitationId')
+  @RequirePermissions('admin.user.manage')
   async revokeInvitation(
     @Param('id') id: string,
     @Param('invitationId') invitationId: string,
@@ -169,6 +190,28 @@ export class OrganisationController {
   ) {
     this.assertOrg(id, ctx);
     await this.organisation.revokeInvitation(ctx.organisationId, invitationId, ctx.actorId as string);
+  }
+
+  @Post(':id/invitations/:invitationId/resend')
+  @RequirePermissions('admin.user.manage')
+  async resendInvitation(
+    @Param('id') id: string,
+    @Param('invitationId') invitationId: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    await this.organisation.resendInvitation(ctx.organisationId, invitationId, ctx.actorId as string);
+  }
+
+  @Delete(':id/members/:membershipId')
+  @RequirePermissions('admin.user.manage')
+  async removeMember(
+    @Param('id') id: string,
+    @Param('membershipId') membershipId: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    await this.organisation.removeMember(ctx.organisationId, membershipId, ctx.actorId as string);
   }
 
   @Get(':id/roles')
@@ -187,6 +230,115 @@ export class OrganisationController {
   ) {
     this.assertOrg(id, ctx);
     return this.organisation.listMembers(ctx.organisationId, ctx.actorId as string);
+  }
+
+  @Get(':id/members/count')
+  async countMembers(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.countMembers(ctx.organisationId, ctx.actorId as string);
+  }
+
+  @Get(':id/members/:userId')
+  async findMembership(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.findMembership(ctx.organisationId, ctx.actorId as string, userId);
+  }
+
+  @Patch(':id/members/:membershipId/role')
+  @RequirePermissions('admin.user.manage')
+  async updateMemberRole(
+    @Param('id') id: string,
+    @Param('membershipId') membershipId: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: UpdateMemberRoleDto,
+  ) {
+    this.assertOrg(id, ctx);
+    await this.organisation.updateMemberRole(ctx.organisationId, membershipId, dto.roleId, ctx.actorId as string);
+  }
+
+  @Get(':id/permissions')
+  @RequirePermissions('admin.role.manage')
+  async listPermissions(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.listPermissions(ctx.organisationId, ctx.actorId as string);
+  }
+
+  @Post(':id/roles')
+  @RequirePermissions('admin.role.manage')
+  async createRole(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: CreateRoleDto,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.createRole(ctx.organisationId, dto, ctx.actorId as string);
+  }
+
+  @Patch(':id/roles/:roleId')
+  @RequirePermissions('admin.role.manage')
+  async updateRole(
+    @Param('id') id: string,
+    @Param('roleId') roleId: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: UpdateRoleDto,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.updateRole(ctx.organisationId, roleId, dto, ctx.actorId as string);
+  }
+
+  @Delete(':id/roles/:roleId')
+  @RequirePermissions('admin.role.manage')
+  async deleteRole(
+    @Param('id') id: string,
+    @Param('roleId') roleId: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    await this.organisation.deleteRole(ctx.organisationId, roleId, ctx.actorId as string);
+  }
+
+  @Get(':id/me/context')
+  async getMeContext(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    const userContext = await this.organisation.getUserContext(ctx.organisationId, ctx.actorId as string);
+    if (!userContext) {
+      throw new ForbiddenException('Not a member of this organisation');
+    }
+    return userContext;
+  }
+
+  @Get(':id/email-provider')
+  @RequirePermissions('admin.organization.settings')
+  async getEmailProvider(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.getEmailProvider(ctx.organisationId, false);
+  }
+
+  @Patch(':id/email-provider')
+  @RequirePermissions('admin.organization.settings')
+  async updateEmailProvider(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: UpdateEmailProviderDto,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.updateEmailProvider(ctx.organisationId, ctx.actorId as string, dto);
   }
 
   private assertOrg(id: string, ctx: OrganisationContextValue): void {

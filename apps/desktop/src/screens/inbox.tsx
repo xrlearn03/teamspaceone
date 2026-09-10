@@ -52,7 +52,7 @@ export function InboxScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center justify-between border-b px-6">
+      <header className="flex h-14 items-center justify-between border-b px-3 sm:px-6">
         <div className="flex items-center gap-3">
           <Bell className="h-5 w-5 text-text" />
           <h1 className="text-lg font-semibold text-text">Inbox</h1>
@@ -74,7 +74,7 @@ export function InboxScreen() {
         </div>
       </header>
 
-      <div className="flex items-center gap-2 border-b px-6 py-2">
+      <div className="flex items-center gap-2 border-b px-3 sm:px-6 py-2">
         {categories.map((c) => (
           <button
             key={c.id}

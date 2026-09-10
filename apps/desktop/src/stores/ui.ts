@@ -1,6 +1,32 @@
 import { create } from "zustand";
 import { getActiveOrganisation } from "../lib/api";
 
+function getSidebarWidthDefault() {
+  if (typeof window === "undefined") return 256;
+  return Math.min(288, Math.round(window.innerWidth * 0.18));
+}
+
+function getRightPanelWidthDefault() {
+  if (typeof window === "undefined") return 320;
+  return Math.min(320, Math.round(window.innerWidth * 0.18));
+}
+
+function clampSidebarWidth(width: number) {
+  const max =
+    typeof window === "undefined"
+      ? 400
+      : Math.min(360, Math.round(window.innerWidth * 0.25));
+  return Math.max(180, Math.min(max, width));
+}
+
+function clampRightPanelWidth(width: number) {
+  const max =
+    typeof window === "undefined"
+      ? 480
+      : Math.min(420, Math.round(window.innerWidth * 0.25));
+  return Math.max(220, Math.min(max, width));
+}
+
 export type View =
   | "home"
   | "inbox"
@@ -14,7 +40,11 @@ export type View =
   | "members"
   | "saved"
   | "drafts"
-  | "settings";
+  | "hrms"
+  | "interview"
+  | "admin"
+  | "settings"
+  | "help";
 
 export interface NotificationToast {
   id: string;
@@ -52,6 +82,7 @@ interface UIState {
   setActiveMeetingId: (meetingId: string | null) => void;
   setPendingActionFilter: (filter: string | null) => void;
   toggleSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   setSidebarWidth: (width: number) => void;
   toggleRightPanel: () => void;
   setRightPanelWidth: (width: number) => void;
@@ -69,9 +100,9 @@ export const useUIStore = create<UIState>((set) => ({
   activeProjectId: null,
   activeMeetingId: null,
   sidebarCollapsed: false,
-  sidebarWidth: 256,
+  sidebarWidth: getSidebarWidthDefault(),
   rightPanelOpen: false,
-  rightPanelWidth: 320,
+  rightPanelWidth: getRightPanelWidthDefault(),
   searchOpen: false,
   connection: "connected",
   pendingCount: 0,
@@ -110,12 +141,13 @@ export const useUIStore = create<UIState>((set) => ({
   setActiveMeetingId: (meetingId) => set({ activeMeetingId: meetingId }),
   setPendingActionFilter: (filter) => set({ pendingActionFilter: filter }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setSidebarWidth: (width) =>
-    set({ sidebarWidth: Math.max(180, Math.min(400, width)) }),
+    set({ sidebarWidth: clampSidebarWidth(width) }),
   toggleRightPanel: () =>
     set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
   setRightPanelWidth: (width) =>
-    set({ rightPanelWidth: Math.max(240, Math.min(480, width)) }),
+    set({ rightPanelWidth: clampRightPanelWidth(width) }),
   setSearchOpen: (open) => set({ searchOpen: open }),
   setConnection: (connection) => set({ connection }),
   addNotificationToast: (toast) =>

@@ -28,8 +28,7 @@
     "src/events/events.module.ts",
     "src/events/nats-client.service.ts",
     "src/outbox/**/*",
-    "src/meeting/**/*",
-    "src/livekit/**/*"
+    "src/meeting/**/*"
   ],
   "exclude": ["dist", "node_modules"]
 }

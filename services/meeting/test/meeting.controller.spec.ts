@@ -12,10 +12,9 @@ describe('MeetingController', () => {
     getById: jest.fn().mockResolvedValue({ id: 'm1' }),
     start: jest.fn().mockResolvedValue({ id: 'm1', status: 'started' }),
     end: jest.fn().mockResolvedValue({ id: 'm1', status: 'ended' }),
-    join: jest.fn().mockResolvedValue({ participant: { id: 'p1' }, token: 'jwt' }),
+    join: jest.fn().mockResolvedValue({ participant: { id: 'p1' } }),
     leave: jest.fn().mockResolvedValue({ id: 'p1', leftAt: new Date() }),
     setScreenShare: jest.fn().mockResolvedValue({ id: 'p1', isScreenSharing: true }),
-    getToken: jest.fn().mockResolvedValue({ token: 'jwt', roomName: 'room' }),
   };
 
   beforeEach(async () => {
@@ -50,13 +49,7 @@ describe('MeetingController', () => {
   it('should join a meeting', async () => {
     const ctx = { organisationId: 'org-1', actorId: 'user-1' } as any;
     const result = await controller.join(ctx, 'm1', { name: 'Alice' });
-    expect(result.token).toBe('jwt');
+    expect(result.participant.id).toBe('p1');
     expect(mockService.join).toHaveBeenCalledWith(ctx, 'm1', { name: 'Alice' });
-  });
-
-  it('should return a LiveKit token', async () => {
-    const ctx = { organisationId: 'org-1', actorId: 'user-1' } as any;
-    const result = await controller.getToken(ctx, 'm1');
-    expect(result.token).toBe('jwt');
   });
 });

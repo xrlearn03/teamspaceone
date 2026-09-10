@@ -15,8 +15,37 @@ import { Readable } from 'node:stream';
 
 export interface StorageKeyInput {
   organisationId: string;
-  category: string;
+  uploaderId: string;
   fileName: string;
+  mimeType?: string;
+}
+
+/**
+ * Top-level folder for an object, derived from its MIME type. Each user's
+ * files are grouped under `users/<id>/<typeFolder>/` inside the org folder.
+ */
+export function fileTypeFolder(mimeType?: string): string {
+  const type = (mimeType ?? '').toLowerCase();
+  if (type.startsWith('image/')) return 'images';
+  if (type.startsWith('video/')) return 'videos';
+  if (type.startsWith('audio/')) return 'audio';
+  if (type.startsWith('text/')) return 'documents';
+  if (
+    type === 'application/pdf' ||
+    type.includes('word') ||
+    type.includes('officedocument') ||
+    type.includes('opendocument') ||
+    type === 'application/rtf' ||
+    type === 'application/epub+zip'
+  ) {
+    return 'documents';
+  }
+  if (type.includes('spreadsheet') || type === 'text/csv' || type.includes('excel')) return 'spreadsheets';
+  if (type.includes('presentation') || type.includes('powerpoint')) return 'presentations';
+  if (type === 'application/zip' || type.includes('compressed') || type.includes('archive') || type.includes('tar')) {
+    return 'archives';
+  }
+  return 'other';
 }
 
 @Injectable()
@@ -62,7 +91,8 @@ export class StorageService implements OnModuleInit {
 
   buildStorageKey(input: StorageKeyInput): string {
     const normalised = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    return `organisations/${input.organisationId}/${input.category}/${Date.now()}-${normalised}`;
+    const userId = input.uploaderId.replace(/[^a-zA-Z0-9._-]/g, '_');
+    return `organisations/${input.organisationId}/users/${userId}/${fileTypeFolder(input.mimeType)}/${Date.now()}-${normalised}`;
   }
 
   async uploadBuffer(key: string, buffer: Buffer, mimeType: string): Promise<{ etag: string }> {

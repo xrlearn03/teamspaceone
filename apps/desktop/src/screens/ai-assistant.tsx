@@ -9,7 +9,7 @@ import { Badge } from "../components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { useAskAI, useConfirmAIAction, useCreateTask, useDeclineAIAction, useMe, useOrganisations, usePendingAIActions, useProjects, useUsers } from "../hooks/api";
 import { useUIStore } from "../stores/ui";
-import { cn } from "../lib/utils";
+import { cn, getUserDisplayName } from "../lib/utils";
 
 const suggestions = [
   "Summarize what changed today.",
@@ -181,17 +181,12 @@ export function AIAssistantScreen() {
     );
   }
 
-  const pendingProject = projects?.find((p) => p.id === pendingAction?.projectId);
-
-  const userName =
-    user?.firstName
-      ? `${user.firstName} ${user.lastName ?? ""}`.trim()
-      : user?.email ?? "You";
+  const userName = getUserDisplayName(user, "You");
   const userInitial = userName.charAt(0).toUpperCase();
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center justify-between gap-3 border-b px-6">
+      <header className="flex h-14 items-center justify-between gap-3 border-b px-3 sm:px-6">
         <div className="flex items-center gap-3">
           <Sparkles className="h-5 w-5 text-primary" />
           <h1 className="text-lg font-semibold text-text">AI Assistant</h1>
@@ -204,7 +199,7 @@ export function AIAssistantScreen() {
         )}
       </header>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
         <div className="mx-auto max-w-3xl space-y-6">
           {messages.length === 0 && !streaming && (
             <div className="text-center text-sm text-text-muted">
@@ -326,9 +321,17 @@ export function AIAssistantScreen() {
                 <span className="text-text-muted">Organisation</span>
                 <span className="font-medium text-text">{organisation?.name ?? "Current organisation"}</span>
               </div>
-              <div className="flex justify-between gap-4 py-1">
+              <div className="flex flex-col gap-1 py-1">
                 <span className="text-text-muted">Project</span>
-                <span className="font-medium text-text">{pendingProject?.name ?? pendingAction?.projectId}</span>
+                <select
+                  className="h-9 w-full rounded-md border bg-background px-2 text-sm text-text"
+                  value={pendingAction?.projectId ?? ""}
+                  onChange={(e) => setPendingAction((prev) => (prev ? { ...prev, projectId: e.target.value } : null))}
+                >
+                  {projects?.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
               </div>
               <div className="flex justify-between gap-4 py-1">
                 <span className="text-text-muted">Status</span>
@@ -391,7 +394,7 @@ export function AIAssistantScreen() {
                           <span className="text-text-muted">From</span>
                           <span className="text-text">
                             {user
-                              ? `${[user.firstName, user.lastName].filter(Boolean).join(" ") || "Host"} <${user.email}>`
+                              ? `${getUserDisplayName(user, "Host")} <${user.email}>`
                               : "Host"}
                           </span>
                         </div>

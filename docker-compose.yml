@@ -148,6 +148,7 @@ services:
       NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
       REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      AUTH_SERVICE_URL: 'http://auth-service:3002'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       OTEL_SERVICE_NAME: 'teamspace-one-organisation-service'
     ports:
@@ -173,6 +174,7 @@ services:
       NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
       REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       OTEL_SERVICE_NAME: 'teamspace-one-messaging-service'
     ports:
@@ -223,6 +225,7 @@ services:
       NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
       REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       OTEL_SERVICE_NAME: 'teamspace-one-projects-service'
     ports:
@@ -247,6 +250,7 @@ services:
       DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/audit_db?schema=public'
       NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       OTEL_SERVICE_NAME: 'teamspace-one-audit-service'
     ports:
@@ -271,14 +275,15 @@ services:
       NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
       REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
       AUTH_SERVICE_URL: 'http://auth-service:3002'
-      APP_URL: ${APP_URL:-https://app.teamspace.one}
+      APP_URL: ${APP_URL:-https://teamspaceone.in}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-no-reply@teamspace.one}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@teamspaceone.in}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       OTEL_SERVICE_NAME: 'teamspace-one-notification-service'
     ports:
@@ -289,25 +294,6 @@ services:
       - redis
       - otel-collector
 
-  livekit:
-    image: 'livekit/livekit-server:v1.7.2'
-    container_name: 'teamspace-one-livekit'
-    restart: unless-stopped
-    environment:
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}
-      LIVEKIT_KEYS: '${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}'
-    command: [ '--bind', '0.0.0.0' ]
-    ports:
-      - '7880:7880'
-      - '7881:7881/udp'
-      - '7882:7882'
-    healthcheck:
-      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:7880' ]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
   sfu:
     build:
       context: .
@@ -317,9 +303,18 @@ services:
     environment:
       SFU_HOST: 0.0.0.0
       SFU_PORT: 8443
+      SFU_CONTROL_PORT: '8445'
       SFU_TOKEN_SECRET: ${SFU_TOKEN_SECRET:?SFU_TOKEN_SECRET is required}
+      SFU_UDP_MUX_PORT: '10000'
+      SFU_NAT_1TO1_IPS: ${SFU_NAT_1TO1_IPS:-127.0.0.1}
+      SFU_RECORDING_DIR: '/data/recordings'
+      FILE_STORAGE_SERVICE_URL: 'http://file-storage-service:3010'
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+    volumes:
+      - sfu-recordings:/data/recordings
     ports:
       - '8443:8443'
+      - '10000:10000/udp'
 
   meeting-service:
     build:
@@ -335,11 +330,10 @@ services:
       DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/meeting_db?schema=public'
       NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
       REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
-      LIVEKIT_URL: 'ws://livekit:7880'
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}
       SFU_TOKEN_SECRET: ${SFU_TOKEN_SECRET:?SFU_TOKEN_SECRET is required}
+      SFU_CONTROL_URL: 'http://sfu:8445'
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       OTEL_SERVICE_NAME: 'teamspace-one-meeting-service'
     ports:
@@ -348,7 +342,6 @@ services:
       - postgres
       - nats
       - redis
-      - livekit
       - otel-collector
 
   file-storage-service:
@@ -372,7 +365,12 @@ services:
       S3_BUCKET: 'teamspace-one'
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
       FILE_HLS_ENABLED: ${FILE_HLS_ENABLED:-false}
+      STORAGE_QUOTA_PER_USER_BYTES: ${STORAGE_QUOTA_PER_USER_BYTES:-2147483648}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
+      MESSAGING_SERVICE_URL: 'http://messaging-service:3004'
+      PROJECTS_SERVICE_URL: 'http://projects-service:3006'
+      MEETING_SERVICE_URL: 'http://meeting-service:3009'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       OTEL_SERVICE_NAME: 'teamspace-one-file-storage-service'
     ports:
@@ -399,6 +397,7 @@ services:
       NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
       REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       OTEL_SERVICE_NAME: 'teamspace-one-search-service'
     ports:
@@ -426,6 +425,7 @@ services:
       PROJECTS_SERVICE_URL: 'http://projects-service:3006'
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       OTEL_SERVICE_NAME: 'teamspace-one-ai-service'
     ports:
@@ -434,6 +434,65 @@ services:
       - postgres
       - nats
       - redis
+      - otel-collector
+
+  hrms-service:
+    build:
+      additional_contexts:
+        teamspace-one-base: 'service:base'
+      context: .
+      dockerfile: 'services/hrms/Dockerfile'
+    container_name: 'teamspace-one-hrms-service'
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3013
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/hrms_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      AUTH_SERVICE_URL: 'http://auth-service:3002'
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-hrms-service'
+    ports:
+      - '127.0.0.1:3013:3013'
+    depends_on:
+      - postgres
+      - nats
+      - redis
+      - organisation-service
+      - otel-collector
+
+  interview-service:
+    build:
+      additional_contexts:
+        teamspace-one-base: 'service:base'
+      context: .
+      dockerfile: 'services/interview/Dockerfile'
+    container_name: 'teamspace-one-interview-service'
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3014
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/interview_db?schema=public'
+      NATS_URL: 'nats://${NATS_USER:?NATS_USER is required}:${NATS_PASSWORD:?NATS_PASSWORD is required}@nats:4222'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379'
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
+      AI_SERVICE_URL: 'http://ai-service:3012'
+      FILE_STORAGE_SERVICE_URL: 'http://file-storage-service:3010'
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
+      OTEL_SERVICE_NAME: 'teamspace-one-interview-service'
+    ports:
+      - '127.0.0.1:3014:3014'
+    depends_on:
+      - postgres
+      - nats
+      - redis
+      - organisation-service
+      - ai-service
+      - file-storage-service
       - otel-collector
 
   api-gateway:
@@ -458,6 +517,8 @@ services:
       FILE_STORAGE_SERVICE_URL: 'http://file-storage-service:3010'
       SEARCH_SERVICE_URL: 'http://search-service:3011'
       AI_SERVICE_URL: 'http://ai-service:3012'
+      HRMS_SERVICE_URL: 'http://hrms-service:3013'
+      INTERVIEW_SERVICE_URL: 'http://interview-service:3014'
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
       RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
@@ -479,9 +540,25 @@ services:
       - file-storage-service
       - search-service
       - ai-service
+      - hrms-service
+      - interview-service
       - otel-collector
+
+  web:
+    build:
+      additional_contexts:
+        teamspace-one-base: 'service:base'
+      context: .
+      dockerfile: 'apps/web/Dockerfile'
+    container_name: 'teamspace-one-web'
+    restart: unless-stopped
+    environment:
+      WEB_DOMAIN: ${WEB_DOMAIN:-teamspaceone.in}
+    ports:
+      - '${WEB_PORT:-8080}:80'
 
 volumes:
   postgres-data:
   nats-data:
   minio-data:
+  sfu-recordings:

@@ -79,6 +79,21 @@ enum DeliveryStatus {
   failed
 }
 
+model DeviceToken {
+  id             String   @id @default(cuid())
+  organisationId String
+  userId         String
+  platform       String
+  token          String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, platform, token])
+  @@index([organisationId])
+  @@index([userId])
+  @@map("device_tokens")
+}
+
 model InboxEvent {
   id             String   @id @default(cuid())
   eventId        String   @unique

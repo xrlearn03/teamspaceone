@@ -27,14 +27,15 @@ import {
   useChangePassword,
   useClients,
   useCreateClient,
-  useCreateInvitation,
   useCreateOrganisation,
   useCreateWorkspace,
   useDeleteClient,
   useInvitations,
+  useInviteMember,
   useMe,
   useNotificationPreference,
   useOrganisations,
+  useResendInvitation,
   useRevokeInvitation,
   useRoles,
   useSetNotificationPreference,
@@ -48,7 +49,7 @@ import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { UserAvatar } from "../components/user-avatar";
 import { Badge } from "../components/ui/badge";
-import { cn } from "../lib/utils";
+import { cn, getUserDisplayName } from "../lib/utils";
 
 const sections = [
   { id: "account", label: "My account", icon: User },
@@ -80,10 +81,10 @@ export function SettingsScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center border-b px-6"><h1 className="text-lg font-semibold text-text">Settings</h1></header>
-      <div className="flex flex-1 overflow-hidden">
-        <div className="w-56 shrink-0 border-r bg-surface p-2">{sections.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => setSection(item.id)} className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors", section === item.id ? "bg-primary-subtle text-primary" : "text-text-secondary hover:bg-surface-elevated hover:text-text")}><Icon className="h-4 w-4" />{item.label}</button>; })}</div>
-        <div className="flex-1 overflow-y-auto p-6">
+      <header className="flex h-14 items-center border-b px-3 sm:px-6"><h1 className="text-lg font-semibold text-text">Settings</h1></header>
+      <div className="flex flex-1 flex-col overflow-hidden sm:flex-row">
+        <div className="h-48 w-full shrink-0 overflow-y-auto border-r bg-surface p-2 sm:h-auto sm:w-56">{sections.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => setSection(item.id)} className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors", section === item.id ? "bg-primary-subtle text-primary" : "text-text-secondary hover:bg-surface-elevated hover:text-text")}><Icon className="h-4 w-4" />{item.label}</button>; })}</div>
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
           {section === "account" ? <AccountSettings user={user} /> : null}
           {section === "appearance" ? <AppearanceSettings theme={theme} setTheme={setTheme} /> : null}
           {section === "notifications" ? <NotificationSettings /> : null}
@@ -112,13 +113,13 @@ function AccountSettings({ user }: { user?: UserDto }) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   useEffect(() => { setFirstName(user?.firstName ?? ""); setLastName(user?.lastName ?? ""); }, [user]);
-  const name = `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() || user?.email || "User";
+  const name = getUserDisplayName(user, "User");
   const avatarBusy = upload.isPending || update.isPending;
 
   function onAvatarSelected(file?: File) {
     if (!file) return;
     if (!file.type.startsWith("image/")) return;
-    upload.mutate(file, {
+    upload.mutate({ file }, {
       onSuccess: (record) => update.mutate({ avatarFileId: record.id }),
     });
   }
@@ -160,9 +161,9 @@ function AccountSettings({ user }: { user?: UserDto }) {
           </div>
         </div>
       </div>
-      <div className="mt-4 grid max-w-lg grid-cols-2 gap-3"><Input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="First name" /><Input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Last name" /></div>
+      <div className="mt-4 grid max-w-lg grid-cols-1 gap-3 sm:grid-cols-2"><Input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="First name" /><Input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Last name" /></div>
       {update.error ? <p className="mt-2 text-sm text-error">{update.error.message}</p> : null}
-      {upload.error ? <p className="mt-2 text-sm text-error">{upload.error.message}</p> : null}
+      {upload.error ? <p className="mt-2 text-sm text-error">{upload.error instanceof Error ? upload.error.message : "Upload failed"}</p> : null}
       <Button className="mt-3" disabled={update.isPending} onClick={() => update.mutate({ firstName, lastName })}>Save profile</Button>
     </SettingsSection>
   );
@@ -304,16 +305,17 @@ function DeveloperSettings() {
 function OrganisationSettings({ organisationId, organisationName, workspaces, roles }: { organisationId: string | null; organisationName?: string; workspaces: { id: string; name: string }[]; roles: { id: string; name: string; isDefault: boolean }[] }) {
   const createWorkspace = useCreateWorkspace();
   const createOrganisation = useCreateOrganisation();
-  const invite = useCreateInvitation();
+  const invite = useInviteMember();
   const [newOrganisationName, setNewOrganisationName] = useState("");
   const { data: invitations } = useInvitations(organisationId ?? undefined);
   const revokeInvitation = useRevokeInvitation();
+  const resendInvitation = useResendInvitation();
   const [workspaceName, setWorkspaceName] = useState("");
   const [email, setEmail] = useState("");
   const [roleId, setRoleId] = useState("");
   useEffect(() => { if (!roleId) setRoleId(roles.find((role) => role.isDefault)?.id ?? roles[0]?.id ?? ""); }, [roleId, roles]);
 
-  return <SettingsSection title={organisationName ?? "Organisation"}><div className="mb-6"><h3 className="mb-2 text-sm font-semibold">Create organisation</h3><div className="flex gap-2"><Input value={newOrganisationName} onChange={(event) => setNewOrganisationName(event.target.value)} placeholder="Organisation name" /><Button disabled={!newOrganisationName.trim() || createOrganisation.isPending} onClick={() => createOrganisation.mutate(newOrganisationName.trim(), { onSuccess: (org) => { setActiveOrganisation(org.id); setNewOrganisationName(""); } })}>Create</Button></div>{createOrganisation.error ? <p className="mt-2 text-sm text-error">{createOrganisation.error.message}</p> : null}</div><div className="grid gap-6 lg:grid-cols-2"><div><h3 className="mb-2 text-sm font-semibold">Workspaces</h3><div className="mb-3 space-y-1">{organisationId ? workspaces.map((workspace) => <div key={workspace.id} className="rounded-md border px-3 py-2 text-sm">{workspace.name}</div>) : <p className="text-sm text-text-muted">No organisation yet. Creating a workspace will create one for you.</p>}</div><div className="flex gap-2"><Input value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="Workspace name" /><Button disabled={!workspaceName.trim() || createWorkspace.isPending} onClick={() => createWorkspace.mutate({ name: workspaceName.trim() }, { onSuccess: () => setWorkspaceName("") })}>Create</Button></div></div><div><h3 className="mb-2 text-sm font-semibold">Invite member</h3><div className="space-y-2"><Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email address" /><select className="h-9 w-full rounded-md border bg-surface px-3 text-sm" value={roleId} onChange={(event) => setRoleId(event.target.value)}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select><Button disabled={!organisationId || !email.trim() || !roleId || invite.isPending} onClick={() => { if (!organisationId) return; invite.mutate({ organisationId, email: email.trim(), roleId }, { onSuccess: () => setEmail("") }); }}>Invite</Button></div>{invitations && invitations.length > 0 ? <div className="mt-4 space-y-2">{invitations.map((invitation) => <div key={invitation.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"><span>{invitation.email}</span><Button variant="ghost" size="sm" className="text-error" onClick={() => revokeInvitation.mutate({ organisationId: organisationId!, invitationId: invitation.id })}>Revoke</Button></div>)}</div> : null}</div></div></SettingsSection>;
+  return <SettingsSection title={organisationName ?? "Organisation"}><div className="mb-6"><h3 className="mb-2 text-sm font-semibold">Create organisation</h3><div className="flex flex-col gap-2 sm:flex-row"><Input value={newOrganisationName} onChange={(event) => setNewOrganisationName(event.target.value)} placeholder="Organisation name" /><Button disabled={!newOrganisationName.trim() || createOrganisation.isPending} onClick={() => createOrganisation.mutate(newOrganisationName.trim(), { onSuccess: (org) => { setActiveOrganisation(org.id); setNewOrganisationName(""); } })}>Create</Button></div>{createOrganisation.error ? <p className="mt-2 text-sm text-error">{createOrganisation.error.message}</p> : null}</div><div className="grid gap-3 sm:p-4 lg:p-6 lg:grid-cols-2"><div><h3 className="mb-2 text-sm font-semibold">Workspaces</h3><div className="mb-3 space-y-1">{organisationId ? workspaces.map((workspace) => <div key={workspace.id} className="rounded-md border px-3 py-2 text-sm">{workspace.name}</div>) : <p className="text-sm text-text-muted">No organisation yet. Creating a workspace will create one for you.</p>}</div><div className="flex flex-col gap-2 sm:flex-row"><Input value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="Workspace name" /><Button disabled={!workspaceName.trim() || createWorkspace.isPending} onClick={() => createWorkspace.mutate({ name: workspaceName.trim() }, { onSuccess: () => setWorkspaceName("") })}>Create</Button></div></div><div><h3 className="mb-2 text-sm font-semibold">Invite member</h3><div className="space-y-2"><Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email address" /><select className="h-9 w-full rounded-md border bg-surface px-3 text-sm" value={roleId} onChange={(event) => setRoleId(event.target.value)}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select><Button disabled={!organisationId || !email.trim() || !roleId || invite.isPending} onClick={() => { if (!organisationId) return; invite.mutate({ organisationId, email: email.trim(), roleId }, { onSuccess: () => setEmail("") }); }}>Invite</Button></div>{invitations && invitations.length > 0 ? <div className="mt-4 space-y-2">{invitations.map((invitation) => <div key={invitation.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"><span>{invitation.email}</span><div className="flex gap-1"><Button variant="ghost" size="sm" onClick={() => resendInvitation.mutate({ organisationId: organisationId!, invitationId: invitation.id })}>Resend</Button><Button variant="ghost" size="sm" className="text-error" onClick={() => revokeInvitation.mutate({ organisationId: organisationId!, invitationId: invitation.id })}>Revoke</Button></div></div>)}</div> : null}</div></div></SettingsSection>;
 }
 
 function ClientSettings({ organisationId }: { organisationId: string | null }) {
@@ -353,7 +355,7 @@ function ShortcutSettings() {
     { shortcut: "↑ ↓", action: "Navigate autocomplete & search results" },
     { shortcut: "Esc", action: "Close menus, dialogs, and panels" },
   ];
-  return <SettingsSection title="Keyboard shortcuts"><div className="grid grid-cols-2 gap-3">{shortcuts.map((item) => <div key={item.action} className="flex items-center justify-between rounded-md border p-3"><span className="text-sm">{item.action}</span><kbd className="rounded bg-surface-elevated px-2 py-0.5 text-xs font-mono">{item.shortcut}</kbd></div>)}</div></SettingsSection>;
+  return <SettingsSection title="Keyboard shortcuts"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{shortcuts.map((item) => <div key={item.action} className="flex items-center justify-between rounded-md border p-3"><span className="text-sm">{item.action}</span><kbd className="rounded bg-surface-elevated px-2 py-0.5 text-xs font-mono">{item.shortcut}</kbd></div>)}</div></SettingsSection>;
 }
 
 function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {

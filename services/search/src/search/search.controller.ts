@@ -1,5 +1,7 @@
-import { BadRequestException, Controller, Get, Param, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
+import { RemotePermissionGuard, RequirePermissions } from '@teamspace-one/authorization/nest';
+import { COLLABORATION_PERMISSIONS, type AuthorizableUser } from '@teamspace-one/authorization';
 import { SearchService } from './search.service.js';
 import { SearchQueryDto } from './dto/search-query.dto.js';
 
@@ -14,6 +16,25 @@ function parseIntParam(value: unknown, name: string): number | undefined {
   return n;
 }
 
+function parseStringParam(value: unknown, name: string, maxLength: number): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') throw new BadRequestException(`${name} must be a string`);
+  const result = value.trim();
+  if (result.length > maxLength) throw new BadRequestException(`${name} must be at most ${maxLength} characters`);
+  return result;
+}
+
+function parseStringArrayParam(value: unknown, name: string, maxItems: number, maxLength: number): string[] | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const values = Array.isArray(value) ? value : [value];
+  if (values.length > maxItems) throw new BadRequestException(`${name} must contain at most ${maxItems} values`);
+  return values.map((item) => {
+    const parsed = parseStringParam(item, name, maxLength);
+    if (!parsed) throw new BadRequestException(`${name} values must not be empty`);
+    return parsed;
+  });
+}
+
 function parseDateParam(value: unknown, name: string): string | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   if (typeof value !== 'string') {
@@ -26,14 +47,17 @@ function parseDateParam(value: unknown, name: string): string | undefined {
   return d.toISOString();
 }
 
+@UseGuards(RemotePermissionGuard)
 @Controller('search')
 export class SearchController {
   constructor(private readonly searchService: SearchService) {}
 
   @Get()
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async search(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Query() query: SearchQueryDto,
+    @Req() req: { user?: AuthorizableUser },
   ) {
     const rawLimit = parseIntParam(query.limit, 'limit');
     const rawOffset = parseIntParam(query.offset, 'offset');
@@ -46,24 +70,28 @@ export class SearchController {
     const limit = rawLimit === undefined ? undefined : Math.min(rawLimit, MAX_LIMIT);
     const from = parseDateParam(query.from, 'from');
     const to = parseDateParam(query.to, 'to');
+    if (from && to && from > to) throw new BadRequestException('from must be before or equal to to');
+    const q = parseStringParam(query.q, 'q', 500) ?? '';
 
-    return this.searchService.search(ctx, query.q ?? '', {
-      resourceType: query.type,
-      workspaceId: query.workspaceId,
-      authorId: query.authorId,
+    return this.searchService.search(ctx, q, {
+      resourceTypes: parseStringArrayParam(query.type, 'type', 20, 100),
+      workspaceId: parseStringParam(query.workspaceId, 'workspaceId', 200),
+      authorId: parseStringParam(query.authorId, 'authorId', 200),
       from,
       to,
       limit,
       offset: rawOffset,
-    });
+    }, req.user);
   }
 
   @Get(':resourceType/:resourceId')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async getByResource(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('resourceType') resourceType: string,
     @Param('resourceId') resourceId: string,
+    @Req() req: { user?: AuthorizableUser },
   ) {
-    return this.searchService.getByResource(ctx, resourceType, resourceId);
+    return this.searchService.getByResource(ctx, resourceType, resourceId, req.user);
   }
 }

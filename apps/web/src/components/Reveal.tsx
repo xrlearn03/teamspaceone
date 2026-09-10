@@ -4,10 +4,16 @@ interface RevealProps {
   children: ReactNode;
   className?: string;
   delay?: number;
+  direction?: "up" | "down" | "left" | "right" | "scale";
 }
 
-/** Fades content in with a slight upward reveal when it enters the viewport. */
-export function Reveal({ children, className = "", delay = 0 }: RevealProps) {
+/** Fades content in with a directional reveal when it enters the viewport. */
+export function Reveal({
+  children,
+  className = "",
+  delay = 0,
+  direction = "up",
+}: RevealProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
 
@@ -21,16 +27,18 @@ export function Reveal({ children, className = "", delay = 0 }: RevealProps) {
           observer.disconnect();
         }
       },
-      { threshold: 0.15 },
+      { threshold: 0.15, rootMargin: "0px 0px -50px 0px" },
     );
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
 
+  const dirClass = `reveal-${direction}`;
+
   return (
     <div
       ref={ref}
-      className={`reveal ${visible ? "is-visible" : ""} ${className}`}
+      className={`reveal ${dirClass} ${visible ? "is-visible" : ""} ${className}`}
       style={delay ? { transitionDelay: `${delay}ms` } : undefined}
     >
       {children}

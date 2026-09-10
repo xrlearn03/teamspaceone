@@ -6,10 +6,12 @@ import { MeetingLobby } from "../components/livekit/lobby";
 import { NativeConference } from "../components/native-conference";
 import { Button } from "../components/ui/button";
 import { useRealtime } from "../hooks/useRealtime";
+import { useNativeMicrophone } from "../hooks/useNativeMicrophone";
 import { endMeeting, getMeeting, joinMeeting, leaveMeeting, setScreenShare, type Meeting } from "../lib/api";
 import { useMe } from "../hooks/api";
 import type { MediaJoinOptions } from "./meeting";
 import { useSfu } from "../hooks/useSfu";
+import { getUserDisplayName } from "../lib/utils";
 
 export function VoiceRoomScreen() {
   const { activeMeetingId, setActiveView } = useUIStore(
@@ -22,10 +24,11 @@ export function VoiceRoomScreen() {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [mediaOptions, setMediaOptions] = useState<MediaJoinOptions | null>(null);
-  const [lobbyAudio, setLobbyAudio] = useState(true);
-  const [lobbyVideo, setLobbyVideo] = useState(false);
+  const [audioOutputId, setAudioOutputId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const nativeMic = useNativeMicrophone();
 
   useEffect(() => {
     if (sfu.error) {
@@ -82,11 +85,10 @@ export function VoiceRoomScreen() {
   async function handleJoin(opts: MediaJoinOptions) {
     if (!activeMeetingId) return;
 
-    const displayName = user
-      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
-      : "Guest";
+    const displayName = getUserDisplayName(user, "Guest");
 
     setMediaOptions(opts);
+    setAudioOutputId(opts.audioOutputId);
     setError(null);
 
     try {
@@ -119,6 +121,7 @@ export function VoiceRoomScreen() {
     setToken(null);
     setMeeting(null);
     setMediaOptions(null);
+    setAudioOutputId(undefined);
     setActiveView("home");
   }
 
@@ -141,7 +144,7 @@ export function VoiceRoomScreen() {
 
   if (!activeMeetingId) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-text-secondary">
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-3 sm:p-4 lg:p-6 text-text-secondary">
         <Mic className="h-12 w-12 text-text-muted" />
         <p className="text-sm">Select a voice room from the sidebar to join.</p>
       </div>
@@ -159,7 +162,7 @@ export function VoiceRoomScreen() {
 
   if (error) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-text-secondary">
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-3 sm:p-4 lg:p-6 text-text-secondary">
         <p className="text-sm text-error">{error}</p>
         <Button variant="secondary" onClick={() => setActiveView("home")}>
           Go back
@@ -177,10 +180,14 @@ export function VoiceRoomScreen() {
         user={user}
         onJoin={handleJoin}
         onCancel={() => setActiveView("home")}
-        nativeAudioEnabled={lobbyAudio}
-        setNativeAudioEnabled={setLobbyAudio}
-        nativeVideoEnabled={lobbyVideo}
-        setNativeVideoEnabled={setLobbyVideo}
+        nativeAudioEnabled={nativeMic.enabled}
+        setNativeAudioEnabled={nativeMic.setEnabled}
+        nativeAudioDevices={nativeMic.devices}
+        nativeAudioIndex={nativeMic.selectedIndex}
+        setNativeAudio={nativeMic.setSelectedIndex}
+        nativeAudioError={nativeMic.error}
+        nativeAudioStream={nativeMic.audioStream}
+        nativeVideoEnabled={false}
       />
     );
   }
@@ -198,6 +205,7 @@ export function VoiceRoomScreen() {
       screenShareEnabled={sfu.screenShareEnabled}
       isRecording={meeting.isRecording}
       isHost={meeting.createdBy === user?.id}
+      audioOutputId={audioOutputId}
       remoteStreams={sfu.remoteStreams}
       participants={sfu.participants}
       onLeave={handleLeave}

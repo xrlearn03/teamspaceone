@@ -1,6 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
 import { OrganisationController } from '../src/organisation/organisation.controller.js';
 import { OrganisationService } from '../src/organisation/organisation.service.js';
+import { OrganisationPermissionGuard } from '../src/organisation/permission.guard.js';
+import { AuthorizationService } from '../src/organisation/authorization.service.js';
+import { PrismaService } from '../src/prisma/prisma.service.js';
 
 describe('OrganisationController', () => {
   let controller: OrganisationController;
@@ -15,7 +20,14 @@ describe('OrganisationController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [OrganisationController],
-      providers: [{ provide: OrganisationService, useValue: mockService }],
+      providers: [
+        { provide: OrganisationService, useValue: mockService },
+        { provide: ConfigService, useValue: { get: jest.fn() } },
+        OrganisationPermissionGuard,
+        AuthorizationService,
+        PrismaService,
+        Reflector,
+      ],
     }).compile();
 
     controller = module.get<OrganisationController>(OrganisationController);

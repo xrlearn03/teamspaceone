@@ -11,6 +11,9 @@
   <dict>
     <key>NSAllowsLocalNetworking</key>
     <true/>
+    <!-- Allow the webview to open insecure ws:// connections to self-hosted SFU/LiveKit servers. -->
+    <key>NSAllowsArbitraryLoadsInWebContent</key>
+    <true/>
     <key>NSExceptionDomains</key>
     <dict>
       <key>localhost</key>

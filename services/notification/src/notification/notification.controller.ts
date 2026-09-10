@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Patch,
   Post,
@@ -8,9 +9,13 @@ import {
   Query,
   ForbiddenException,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
+import { RemotePermissionGuard, RequirePermissions } from '@teamspace-one/authorization/nest';
+import { COLLABORATION_PERMISSIONS } from '@teamspace-one/authorization';
 import { NotificationService, type NotificationPreferenceInput } from './notification.service.js';
+import { PushService, type RegisterDeviceDto } from './push.service.js';
 
 class UpdatePreferenceDto {
   inApp?: boolean;
@@ -19,11 +24,16 @@ class UpdatePreferenceDto {
   push?: boolean;
 }
 
+@UseGuards(RemotePermissionGuard)
 @Controller('notifications')
 export class NotificationController {
-  constructor(private readonly notification: NotificationService) {}
+  constructor(
+    private readonly notification: NotificationService,
+    private readonly push: PushService,
+  ) {}
 
   @Get()
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async list(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Query('unread') unread?: string,
@@ -41,6 +51,7 @@ export class NotificationController {
   }
 
   @Get('count/unread')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async countUnread(@CurrentOrganisation() ctx: OrganisationContextValue) {
     if (!ctx.actorId) {
       throw new ForbiddenException('Missing actor');
@@ -49,6 +60,7 @@ export class NotificationController {
   }
 
   @Patch(':id/read')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async markRead(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
@@ -61,6 +73,7 @@ export class NotificationController {
   }
 
   @Patch('read-all')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async markAllRead(@CurrentOrganisation() ctx: OrganisationContextValue) {
     if (!ctx.actorId) {
       throw new ForbiddenException('Missing actor');
@@ -70,6 +83,7 @@ export class NotificationController {
   }
 
   @Get('preferences/:eventType')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async getPreference(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('eventType') eventType: string,
@@ -81,6 +95,7 @@ export class NotificationController {
   }
 
   @Post('preferences/:eventType')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
   async setPreference(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('eventType') eventType: string,
@@ -101,5 +116,35 @@ export class NotificationController {
     };
 
     return this.notification.setPreferenceForUser(ctx, eventType, input);
+  }
+
+  @Post('devices')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
+  async registerDevice(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: RegisterDeviceDto,
+  ) {
+    if (!ctx.actorId) {
+      throw new ForbiddenException('Missing actor');
+    }
+    if (!dto.platform || !dto.token) {
+      throw new BadRequestException('platform and token are required');
+    }
+    if (dto.platform !== 'android' && dto.platform !== 'ios') {
+      throw new BadRequestException('platform must be android or ios');
+    }
+    return this.push.registerToken(ctx.organisationId, ctx.actorId, dto as RegisterDeviceDto);
+  }
+
+  @Delete('devices')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
+  async unregisterDevice(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: { platform?: string; token?: string },
+  ) {
+    if (!ctx.actorId) {
+      throw new ForbiddenException('Missing actor');
+    }
+    return this.push.unregisterToken(ctx.actorId, dto.platform, dto.token);
   }
 }

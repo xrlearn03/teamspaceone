@@ -1,6 +1,6 @@
 export class SearchQueryDto {
   q?: string;
-  type?: string;
+  type?: string | string[];
   workspaceId?: string;
   authorId?: string;
   /** ISO 8601 date — only return documents created at or after this instant. */

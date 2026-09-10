@@ -1,0 +1,516 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model OutboxEvent {
+  id             String    @id @default(cuid())
+  eventId        String    @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String
+  createdAt      DateTime  @default(now())
+  publishedAt    DateTime?
+
+  @@index([publishedAt])
+  @@index([organisationId])
+}
+
+model InboxEvent {
+  id             String   @id @default(cuid())
+  eventId        String   @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String
+  processedAt    DateTime @default(now())
+
+  @@index([eventId])
+  @@index([organisationId])
+}
+
+model Department {
+  id             String       @id @default(cuid())
+  organisationId String
+  name           String
+  description    String?
+  parentId       String?
+  parent         Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children       Department[] @relation("DepartmentHierarchy")
+  headEmployeeId String?
+  isActive       Boolean      @default(true)
+  employees      Employee[]
+  designations   Designation[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organisationId])
+  @@map("departments")
+}
+
+model Designation {
+  id             String      @id @default(cuid())
+  organisationId String
+  title          String
+  description    String?
+  departmentId   String?
+  department     Department? @relation(fields: [departmentId], references: [id])
+  level          String?
+  isActive       Boolean     @default(true)
+  employees      Employee[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([organisationId])
+  @@map("designations")
+}
+
+model Employee {
+  id                    String               @id @default(cuid())
+  organisationId        String
+  userId                String
+  membershipId          String?
+  employeeNumber        String?
+  firstName             String
+  lastName              String
+  workEmail             String?
+  personalEmail         String?
+  phone                 String?
+  avatarFileId          String?
+  departmentId          String?
+  department            Department?          @relation(fields: [departmentId], references: [id])
+  designationId         String?
+  designation           Designation?         @relation(fields: [designationId], references: [id])
+  managerEmployeeId     String?
+  manager               Employee?            @relation("ManagerHierarchy", fields: [managerEmployeeId], references: [id])
+  subordinates          Employee[]           @relation("ManagerHierarchy")
+  joiningDate           DateTime?
+  employmentType        String               @default("full_time")
+  status                String               @default("active")
+  dateOfBirth           DateTime?
+  address               String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  salary                Json?
+  history               EmployeeHistory[]
+  documents             EmployeeDocument[]
+  attendanceRecords     AttendanceRecord[]
+  onboardingInstances   OnboardingInstance[]
+  offboardingCases      OffboardingCase[]
+  performanceReviews    PerformanceReview[]
+  goals                 Goal[]
+  payslips              Payslip[]
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@unique([organisationId, userId])
+  @@index([organisationId])
+  @@index([departmentId])
+  @@index([managerEmployeeId])
+  @@index([status])
+  @@map("employees")
+}
+
+model EmployeeHistory {
+  id             String   @id @default(cuid())
+  organisationId String
+  employeeId     String
+  employee       Employee @relation(fields: [employeeId], references: [id])
+  changeType     String
+  field          String?
+  oldValue       String?
+  newValue       String?
+  changedBy      String?
+  createdAt      DateTime @default(now())
+
+  @@index([organisationId])
+  @@index([employeeId])
+  @@map("employee_history")
+}
+
+model EmployeeDocument {
+  id             String   @id @default(cuid())
+  organisationId String
+  employeeId     String
+  employee       Employee @relation(fields: [employeeId], references: [id])
+  fileId         String
+  category       String
+  name           String?
+  uploadedBy     String?
+  createdAt      DateTime @default(now())
+
+  @@index([organisationId])
+  @@index([employeeId])
+  @@map("employee_documents")
+}
+
+model AttendanceRecord {
+  id             String    @id @default(cuid())
+  organisationId String
+  employeeId     String
+  employee       Employee  @relation(fields: [employeeId], references: [id])
+  date           DateTime  @db.Date
+  checkInAt      DateTime?
+  checkOutAt     DateTime?
+  status         String    @default("present")
+  presenceStatus String?
+  workMinutes    Int?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([organisationId])
+  @@map("attendance_records")
+}
+
+model AttendanceCorrection {
+  id                  String    @id @default(cuid())
+  organisationId      String
+  attendanceId        String
+  employeeId          String
+  requestedCheckInAt  DateTime?
+  requestedCheckOutAt DateTime?
+  reason              String
+  status              String    @default("pending")
+  reviewedBy          String?
+  reviewedAt          DateTime?
+  reviewNote          String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([organisationId])
+  @@index([employeeId])
+  @@map("attendance_corrections")
+}
+
+model LeaveType {
+  id             String         @id @default(cuid())
+  organisationId String
+  name           String
+  code           String
+  annualQuota    Float          @default(0)
+  isPaid         Boolean        @default(true)
+  isActive       Boolean        @default(true)
+  balances       LeaveBalance[]
+  requests       LeaveRequest[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([organisationId])
+  @@map("leave_types")
+}
+
+model LeaveBalance {
+  id             String    @id @default(cuid())
+  organisationId String
+  employeeId     String
+  leaveTypeId    String
+  leaveType      LeaveType @relation(fields: [leaveTypeId], references: [id])
+  year           Int
+  entitled       Float
+  used           Float     @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@index([organisationId])
+  @@map("leave_balances")
+}
+
+model LeaveRequest {
+  id             String    @id @default(cuid())
+  organisationId String
+  employeeId     String
+  leaveTypeId    String
+  leaveType      LeaveType @relation(fields: [leaveTypeId], references: [id])
+  startDate      DateTime  @db.Date
+  endDate        DateTime  @db.Date
+  days           Float
+  reason         String?
+  status         String    @default("pending")
+  managerId      String?
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  reviewNote     String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([organisationId])
+  @@index([employeeId])
+  @@index([status])
+  @@map("leave_requests")
+}
+
+model Holiday {
+  id             String   @id @default(cuid())
+  organisationId String
+  name           String
+  date           DateTime @db.Date
+  isRecurring    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organisationId])
+  @@map("holidays")
+}
+
+model PayrollPeriod {
+  id             String    @id @default(cuid())
+  organisationId String
+  name           String
+  startDate      DateTime
+  endDate        DateTime
+  status         String    @default("draft")
+  processedBy    String?
+  processedAt    DateTime?
+  approvedBy     String?
+  approvedAt     DateTime?
+  paidBy         String?
+  paidAt         DateTime?
+  payslips       Payslip[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([organisationId])
+  @@map("payroll_periods")
+}
+
+model Payslip {
+  id              String        @id @default(cuid())
+  organisationId  String
+  employeeId      String
+  employee        Employee      @relation(fields: [employeeId], references: [id])
+  payrollPeriodId String
+  payrollPeriod   PayrollPeriod @relation(fields: [payrollPeriodId], references: [id])
+  earnings        Json
+  deductions      Json
+  grossPay        Float?
+  netPay          Float
+  currency        String        @default("USD")
+  status          String        @default("draft")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([employeeId, payrollPeriodId])
+  @@index([organisationId])
+  @@map("payslips")
+}
+
+model CalendarEvent {
+  id             String   @id @default(cuid())
+  organisationId String
+  title          String
+  description    String?
+  type           String   @default("custom")
+  startAt        DateTime
+  endAt          DateTime
+  allDay         Boolean  @default(true)
+  visibility     String   @default("organisation")
+  employeeId     String?
+  sourceType     String?
+  sourceId       String?
+  createdBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([sourceType, sourceId])
+  @@index([organisationId])
+  @@index([organisationId, startAt])
+  @@map("calendar_events")
+}
+
+model OnboardingTemplate {
+  id             String                   @id @default(cuid())
+  organisationId String
+  name           String
+  description    String?
+  isActive       Boolean                  @default(true)
+  tasks          OnboardingTemplateTask[]
+  instances      OnboardingInstance[]
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@index([organisationId])
+  @@map("onboarding_templates")
+}
+
+model OnboardingTemplateTask {
+  id                  String             @id @default(cuid())
+  organisationId      String
+  templateId          String
+  template            OnboardingTemplate @relation(fields: [templateId], references: [id])
+  title               String
+  description         String?
+  category            String?
+  assigneeRole        String?
+  dueDaysOffset       Int                @default(0)
+  sortOrder           Int                @default(0)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([organisationId])
+  @@index([templateId])
+  @@map("onboarding_template_tasks")
+}
+
+model OnboardingInstance {
+  id             String            @id @default(cuid())
+  organisationId String
+  employeeId     String?
+  employee       Employee?         @relation(fields: [employeeId], references: [id])
+  templateId     String?
+  template       OnboardingTemplate? @relation(fields: [templateId], references: [id])
+  candidateName  String?
+  candidateEmail String?
+  sourceType     String?           @default("interview")
+  sourceId       String?
+  status         String            @default("in_progress")
+  startDate      DateTime?
+  completedAt    DateTime?
+  createdBy      String?
+  tasks          OnboardingTask[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([organisationId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([sourceId])
+  @@map("onboarding_instances")
+}
+
+model OnboardingTask {
+  id              String             @id @default(cuid())
+  organisationId  String
+  instanceId      String
+  instance        OnboardingInstance @relation(fields: [instanceId], references: [id])
+  title           String
+  description     String?
+  category        String?
+  assigneeUserId  String?
+  status          String             @default("pending")
+  dueDate         DateTime?
+  completedAt     DateTime?
+  completedBy     String?
+  sortOrder       Int                @default(0)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([organisationId])
+  @@index([instanceId])
+  @@map("onboarding_tasks")
+}
+
+model OffboardingCase {
+  id                  String           @id @default(cuid())
+  organisationId      String
+  employeeId          String
+  employee            Employee         @relation(fields: [employeeId], references: [id])
+  type                String           @default("resignation")
+  reason              String?
+  lastWorkingDate     DateTime?
+  status              String           @default("initiated")
+  exitInterviewNotes  String?
+  settlementNotes     String?
+  initiatedBy         String?
+  completedAt         DateTime?
+  tasks               OffboardingTask[]
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@index([organisationId])
+  @@index([employeeId])
+  @@index([status])
+  @@map("offboarding_cases")
+}
+
+model OffboardingTask {
+  id             String          @id @default(cuid())
+  organisationId String
+  caseId         String
+  case           OffboardingCase @relation(fields: [caseId], references: [id])
+  title          String
+  description    String?
+  category       String?         @default("access")
+  assigneeUserId String?
+  status         String          @default("pending")
+  completedAt    DateTime?
+  completedBy    String?
+  sortOrder      Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([organisationId])
+  @@index([caseId])
+  @@map("offboarding_tasks")
+}
+
+model ReviewCycle {
+  id             String             @id @default(cuid())
+  organisationId String
+  name           String
+  startDate      DateTime?
+  endDate        DateTime?
+  status         String             @default("draft")
+  reviews        PerformanceReview[]
+  goals          Goal[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([organisationId])
+  @@map("review_cycles")
+}
+
+model PerformanceReview {
+  id              String       @id @default(cuid())
+  organisationId  String
+  cycleId         String?
+  cycle           ReviewCycle? @relation(fields: [cycleId], references: [id])
+  employeeId      String
+  employee        Employee     @relation(fields: [employeeId], references: [id])
+  reviewerId      String?
+  status          String       @default("pending")
+  overallRating   Float?
+  ratings         Json?
+  strengths       String?
+  improvements    String?
+  comments        String?
+  submittedAt     DateTime?
+  acknowledgedAt  DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([organisationId])
+  @@index([employeeId])
+  @@index([reviewerId])
+  @@map("performance_reviews")
+}
+
+model Goal {
+  id             String       @id @default(cuid())
+  organisationId String
+  employeeId     String
+  employee       Employee     @relation(fields: [employeeId], references: [id])
+  cycleId        String?
+  cycle          ReviewCycle? @relation(fields: [cycleId], references: [id])
+  title          String
+  description    String?
+  targetDate     DateTime?
+  status         String       @default("on_track")
+  progress       Int          @default(0)
+  createdBy      String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organisationId])
+  @@index([employeeId])
+  @@index([cycleId])
+  @@map("goals")
+}

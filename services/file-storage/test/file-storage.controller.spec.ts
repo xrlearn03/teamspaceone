@@ -37,7 +37,7 @@ describe('FileStorageController', () => {
   });
 
   it('should presign an upload', async () => {
-    const dto = { fileName: 'doc.pdf', mimeType: 'application/pdf', size: 123, category: 'attachments' };
+    const dto = { fileName: 'doc.pdf', mimeType: 'application/pdf', size: 123, category: 'attachments', sha256: 'deadbeef' };
     const result = await controller.presignUpload(ctx, dto);
     expect(result.uploadUrl).toBe('http://signed');
     expect(mockService.presignUpload).toHaveBeenCalledWith(ctx, dto);

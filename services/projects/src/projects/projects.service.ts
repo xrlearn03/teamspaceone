@@ -1,10 +1,12 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { hasPermission } from '@teamspace-one/authorization';
 import { createEventEnvelope, Subjects, type Subject } from '@teamspace-one/event-contracts';
 import { type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
+import { AuthorizationClientService } from './authorization.client.js';
 import { type AddAttachmentDto } from './dto/add-attachment.dto.js';
 import { type CreateApprovalDto } from './dto/create-approval.dto.js';
 import { type CreateCommentDto } from './dto/create-comment.dto.js';
@@ -26,6 +28,7 @@ export class ProjectsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
+    private readonly authorization: AuthorizationClientService,
   ) {}
 
   async createProject(ctx: OrganisationContextValue, dto: CreateProjectDto) {
@@ -59,16 +62,118 @@ export class ProjectsService {
 
   async listProjects(ctx: OrganisationContextValue, clientId?: string) {
     const actorId = this.actor(ctx);
+    const viewAll = await this.hasProjectOrganisationScope(ctx);
     return this.prisma.project.findMany({
-      where: { organisationId: ctx.organisationId, clientId: clientId || undefined, members: { some: { userId: actorId } } },
+      where: {
+        organisationId: ctx.organisationId,
+        clientId: clientId || undefined,
+        ...(viewAll ? {} : { members: { some: { userId: actorId } } }),
+      },
+      include: projectInclude,
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  async listProjectTemplates(ctx: OrganisationContextValue) {
+    const actorId = this.actor(ctx);
+    const viewAll = await this.hasProjectOrganisationScope(ctx);
+    return this.prisma.project.findMany({
+      where: {
+        organisationId: ctx.organisationId,
+        isTemplate: true,
+        ...(viewAll ? {} : { members: { some: { userId: actorId } } }),
+      },
       include: projectInclude,
       orderBy: { updatedAt: 'desc' },
     });
   }
 
   async getProject(ctx: OrganisationContextValue, projectId: string) {
-    await this.memberProject(ctx, projectId);
-    return this.prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: projectInclude });
+    return this.viewableProject(ctx, projectId);
+  }
+
+  async markProjectAsTemplate(ctx: OrganisationContextValue, projectId: string) {
+    const project = await this.ownerProject(ctx, projectId);
+    if (project.isTemplate) return project;
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.project.update({
+        where: { id: projectId },
+        data: { isTemplate: true },
+        include: projectInclude,
+      });
+      await this.activity(tx, ctx, projectId, 'project.templated', 'project', projectId, { name: updated.name });
+      await this.event(tx, ctx, Subjects.PROJECT_UPDATED, 'project', projectId, updated);
+      return updated;
+    });
+  }
+
+  async unmarkProjectAsTemplate(ctx: OrganisationContextValue, projectId: string) {
+    const project = await this.ownerProject(ctx, projectId);
+    if (!project.isTemplate) return project;
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.project.update({
+        where: { id: projectId },
+        data: { isTemplate: false },
+        include: projectInclude,
+      });
+      await this.activity(tx, ctx, projectId, 'project.untemplated', 'project', projectId, { name: updated.name });
+      await this.event(tx, ctx, Subjects.PROJECT_UPDATED, 'project', projectId, updated);
+      return updated;
+    });
+  }
+
+  async createProjectFromTemplate(ctx: OrganisationContextValue, templateId: string, dto: CreateProjectDto) {
+    const actorId = this.actor(ctx);
+    const template = await this.viewableProject(ctx, templateId);
+    if (!template.isTemplate) throw new BadRequestException('Project is not a template');
+    const name = this.required(dto.name, 'Project name', 120);
+    const memberIds = this.ids([actorId, ...(dto.memberIds ?? [])]);
+    const id = randomUUID();
+    const dates = this.projectDates(dto.startDate, dto.targetDate);
+
+    const tasks = await this.prisma.task.findMany({
+      where: { projectId: templateId, organisationId: ctx.organisationId },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const project = await tx.project.create({
+        data: {
+          id,
+          organisationId: ctx.organisationId,
+          workspaceId: dto.workspaceId,
+          clientId: dto.clientId,
+          name,
+          description: this.optional(dto.description, 5000),
+          ownerId: actorId,
+          status: 'active',
+          isTemplate: false,
+          templateId,
+          ...dates,
+          members: { create: memberIds.map((userId) => ({ id: randomUUID(), userId, role: userId === actorId ? 'owner' : 'member' })) },
+        },
+        include: projectInclude,
+      });
+      if (tasks.length) {
+        await tx.task.createMany({
+          data: tasks.map((task, index) => ({
+            id: randomUUID(),
+            organisationId: ctx.organisationId,
+            projectId: id,
+            title: task.title,
+            description: task.description,
+            status: 'todo',
+            priority: task.priority,
+            position: index,
+            startDate: task.startDate,
+            dueDate: task.dueDate,
+          })),
+        });
+      }
+      await this.activity(tx, ctx, id, 'project.created', 'project', id, { name, fromTemplate: templateId });
+      await this.event(tx, ctx, Subjects.PROJECT_CREATED, 'project', id, project);
+      return project;
+    });
   }
 
   async updateProject(ctx: OrganisationContextValue, projectId: string, dto: UpdateProjectDto) {
@@ -145,7 +250,7 @@ export class ProjectsService {
   }
 
   async listTasks(ctx: OrganisationContextValue, projectId: string) {
-    await this.memberProject(ctx, projectId);
+    await this.viewableProject(ctx, projectId);
     return this.prisma.task.findMany({ where: { projectId, organisationId: ctx.organisationId }, orderBy: [{ status: 'asc' }, { position: 'asc' }, { createdAt: 'asc' }] });
   }
 
@@ -347,7 +452,8 @@ export class ProjectsService {
     const approval = await this.prisma.approval.findFirst({ where: { id: approvalId, organisationId: ctx.organisationId } });
     if (!approval) throw new NotFoundException('Approval not found');
     if (approval.status !== 'pending') throw new BadRequestException('Approval has already been resolved');
-    const project = approval.projectId ? await this.memberProject(ctx, approval.projectId) : null;
+    if (approval.requestedBy === actorId) throw new ForbiddenException('Cannot resolve your own approval');
+    const project = approval.projectId ? await this.ownerProject(ctx, approval.projectId) : null;
     const resolvedAt = new Date();
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const updated = await tx.approval.update({ where: { id: approvalId }, data: { status: dto.status, resolvedBy: actorId, resolvedAt, message: dto.message === undefined ? approval.message : this.optional(dto.message, 2000) } });
@@ -449,9 +555,19 @@ export class ProjectsService {
     return false;
   }
 
-  async resolveAccess(projectId: string, actorId: string) {
-    const project = await this.prisma.project.findFirst({ where: { id: projectId, members: { some: { userId: actorId } } } });
+  async resolveAccess(projectId: string, actorId: string, organisationId: string) {
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, organisationId, members: { some: { userId: actorId } } },
+    });
     return project ? { organisationId: project.organisationId, workspaceId: project.workspaceId } : null;
+  }
+
+  async resolveTaskAccess(taskId: string, actorId: string, organisationId: string) {
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, organisationId, project: { members: { some: { userId: actorId } } } },
+      include: { project: { select: { workspaceId: true } } },
+    });
+    return task ? { organisationId: task.organisationId, workspaceId: task.project.workspaceId } : null;
   }
 
   private actor(ctx: OrganisationContextValue) {
@@ -469,6 +585,26 @@ export class ProjectsService {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, organisationId: ctx.organisationId, members: { some: { userId: this.actor(ctx), role: 'owner' } } }, include: projectInclude });
     if (!project) throw new NotFoundException('Project not found or not owned by actor');
     return project;
+  }
+
+  private async hasProjectOrganisationScope(ctx: OrganisationContextValue): Promise<boolean> {
+    const actorId = this.actor(ctx);
+    const user = await this.authorization.getUserContext(ctx.organisationId, actorId, ctx.correlationId);
+    if (!user) return false;
+    if (user.isSuperAdmin) return true;
+    if (!hasPermission(user, 'collaboration.project.view')) return false;
+    return user.dataScopes.some(
+      (s) => (s.module === 'collaboration' || s.module === '*') && s.scope === 'organisation',
+    );
+  }
+
+  private async viewableProject(ctx: OrganisationContextValue, projectId: string) {
+    if (await this.hasProjectOrganisationScope(ctx)) {
+      const project = await this.prisma.project.findFirst({ where: { id: projectId, organisationId: ctx.organisationId }, include: projectInclude });
+      if (!project) throw new NotFoundException('Project not found');
+      return project;
+    }
+    return this.memberProject(ctx, projectId);
   }
 
   private async task(ctx: OrganisationContextValue, taskId: string) {

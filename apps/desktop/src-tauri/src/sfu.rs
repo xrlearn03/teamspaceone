@@ -1,3 +1,5 @@
+#[cfg(desktop)]
+mod desktop {
 use anyhow::Result;
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -286,3 +288,35 @@ pub async fn sfu_leave(state: tauri::State<'_, SfuState>) -> Result<(), String> 
     }
     Ok(())
 }
+}
+#[cfg(desktop)]
+pub use desktop::*;
+
+#[cfg(not(desktop))]
+mod mobile {
+    pub struct SfuState;
+
+    impl SfuState {
+        pub fn new() -> Self {
+            Self
+        }
+    }
+
+    #[tauri::command]
+    pub async fn sfu_join(
+        _app: tauri::AppHandle,
+        _state: tauri::State<'_, SfuState>,
+        _room_id: String,
+        _display_name: String,
+    ) -> Result<(), String> {
+        Err("SFU voice calls are not supported on this platform".into())
+    }
+
+    #[tauri::command]
+    pub async fn sfu_leave(_state: tauri::State<'_, SfuState>) -> Result<(), String> {
+        Err("SFU voice calls are not supported on this platform".into())
+    }
+}
+
+#[cfg(not(desktop))]
+pub use mobile::*;

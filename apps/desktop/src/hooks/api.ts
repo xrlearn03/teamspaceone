@@ -83,6 +83,80 @@ export function useRoles(organisationId?: string) {
   return useQuery({ queryKey: ["roles", organisationId], queryFn: () => api.getRoles(organisationId as string), enabled: Boolean(organisationId) });
 }
 
+export function usePermissionsList(organisationId?: string) {
+  return useQuery({
+    queryKey: ["permissions", organisationId],
+    queryFn: () => api.getPermissions(organisationId as string),
+    enabled: Boolean(organisationId),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useEmailProvider(organisationId?: string) {
+  return useQuery({
+    queryKey: ["email-provider", organisationId],
+    queryFn: () => api.getEmailProvider(organisationId as string),
+    enabled: Boolean(organisationId),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useUpdateEmailProvider() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; body: api.UpdateEmailProvider }) =>
+      api.updateEmailProvider(args.organisationId, args.body),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["email-provider", args.organisationId] }),
+  });
+}
+
+export function useCreateRole() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; name: string; description?: string; roleCategory: api.RoleCategory; permissionIds: string[]; scopes?: api.UserDataScope[] }) =>
+      api.createRole(args.organisationId, args),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["roles", args.organisationId] }),
+  });
+}
+
+export function useUpdateRole() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; roleId: string; name?: string; description?: string; roleCategory?: api.RoleCategory; permissionIds?: string[]; scopes?: api.UserDataScope[] }) =>
+      api.updateRole(args.organisationId, args.roleId, args),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["roles", args.organisationId] }),
+  });
+}
+
+export function useDeleteRole() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; roleId: string }) => api.deleteRole(args.organisationId, args.roleId),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["roles", args.organisationId] }),
+  });
+}
+
+export function useUpdateMemberRole() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; membershipId: string; roleId: string }) =>
+      api.updateMemberRole(args.organisationId, args.membershipId, args.roleId),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["members", args.organisationId] }),
+  });
+}
+
+export function useInviteMember() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; email: string; roleId: string; firstName?: string; lastName?: string }) =>
+      api.inviteMember(args.organisationId, args),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["members", args.organisationId] });
+      client.invalidateQueries({ queryKey: ["invitations", args.organisationId] });
+    },
+  });
+}
+
 export function useCreateWorkspace() {
   const client = useQueryClient();
   return useMutation({
@@ -98,19 +172,33 @@ export function useInvitations(organisationId?: string) {
   return useQuery({ queryKey: ["invitations", organisationId], queryFn: () => api.getInvitations(organisationId as string), enabled: Boolean(organisationId) });
 }
 
-export function useCreateInvitation() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (args: { organisationId: string; email: string; roleId: string }) => api.createInvitation(args.organisationId, args.email, args.roleId),
-    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["invitations", args.organisationId] }),
-  });
-}
-
 export function useRevokeInvitation() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (args: { organisationId: string; invitationId: string }) => api.revokeInvitation(args.organisationId, args.invitationId),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["invitations", args.organisationId] });
+      client.invalidateQueries({ queryKey: ["members", args.organisationId] });
+    },
+  });
+}
+
+export function useResendInvitation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; invitationId: string }) => api.resendInvitation(args.organisationId, args.invitationId),
     onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["invitations", args.organisationId] }),
+  });
+}
+
+export function useRemoveMember() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; membershipId: string }) => api.removeMember(args.organisationId, args.membershipId),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["members", args.organisationId] });
+      client.invalidateQueries({ queryKey: ["invitations", args.organisationId] });
+    },
   });
 }
 
@@ -199,7 +287,23 @@ export function useDeleteChannel() {
   });
 }
 
-export function useMessages(channelId?: string) {
+export function useAddChannelModerator() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { channelId: string; userId: string }) => api.addChannelModerator(args.channelId, args.userId),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["channels", orgId()] }),
+  });
+}
+
+export function useRemoveChannelModerator() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { channelId: string; userId: string }) => api.removeChannelModerator(args.channelId, args.userId),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["channels", orgId()] }),
+  });
+}
+
+export function useMessages(channelId?: string, query?: string) {
   const { joinRealtimeChannel, leaveRealtimeChannel, connected } = useRealtime();
   useEffect(() => {
     if (!channelId || !connected) return;
@@ -208,8 +312,8 @@ export function useMessages(channelId?: string) {
   }, [channelId, connected, joinRealtimeChannel, leaveRealtimeChannel]);
 
   return useInfiniteQuery({
-    queryKey: ["messages", channelId],
-    queryFn: ({ pageParam }) => api.getMessages(channelId as string, pageParam ?? undefined),
+    queryKey: ["messages", channelId, ...(query ? [query] : [])],
+    queryFn: ({ pageParam }) => api.getMessages(channelId as string, pageParam ?? undefined, 50, query),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     select: (data) => data.pages.slice().reverse().flatMap((page) => page.items),
@@ -275,6 +379,38 @@ export function useToggleReaction() {
           : data,
       );
       void client.invalidateQueries({ queryKey: ["thread"] });
+    },
+  });
+}
+
+export function usePinnedMessages(channelId?: string) {
+  return useQuery({
+    queryKey: ["pinned", channelId],
+    queryFn: () => api.getPinnedMessages(channelId as string),
+    enabled: Boolean(channelId),
+    staleTime: 30 * 1000,
+    retry: 2,
+  });
+}
+
+export function usePinMessage() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.pinMessage,
+    onSuccess: (result) => {
+      void client.invalidateQueries({ queryKey: ["pinned", result.channelId] });
+      void client.invalidateQueries({ queryKey: ["messages", result.channelId] });
+    },
+  });
+}
+
+export function useUnpinMessage() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.unpinMessage,
+    onSuccess: (result) => {
+      void client.invalidateQueries({ queryKey: ["pinned", result.channelId] });
+      void client.invalidateQueries({ queryKey: ["messages", result.channelId] });
     },
   });
 }
@@ -366,6 +502,41 @@ export function useDeleteProject() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.deleteProject,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["projects", orgId()] }),
+  });
+}
+
+export function useProjectTemplates() {
+  const orgId = getActiveOrganisation() ?? undefined;
+  return useQuery({
+    queryKey: ["projects", orgId, "templates"],
+    queryFn: () => api.getProjectTemplates(),
+    enabled: Boolean(orgId),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useMarkProjectAsTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.markProjectAsTemplate,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["projects", orgId()] }),
+  });
+}
+
+export function useUnmarkProjectAsTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.unmarkProjectAsTemplate,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["projects", orgId()] }),
+  });
+}
+
+export function useCreateProjectFromTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { templateId: string; body: Parameters<typeof api.createProjectFromTemplate>[1] }) =>
+      api.createProjectFromTemplate(args.templateId, args.body),
     onSuccess: () => client.invalidateQueries({ queryKey: ["projects", orgId()] }),
   });
 }
@@ -517,6 +688,16 @@ export function useMeetings() {
   return useQuery({
     queryKey: ["meetings", orgId()],
     queryFn: api.getMeetings,
+    enabled: getActiveOrganisation() !== null,
+    staleTime: 60 * 1000,
+    retry: 2,
+  });
+}
+
+export function useCalendarEvents(range?: { from?: string; to?: string }) {
+  return useQuery({
+    queryKey: ["calendar-events", orgId(), range?.from ?? null, range?.to ?? null],
+    queryFn: () => api.getCalendarEvents(range),
     enabled: getActiveOrganisation() !== null,
     staleTime: 60 * 1000,
     retry: 2,
@@ -751,8 +932,8 @@ export function useDeleteFile() {
 
 export function useUploadFile() {
   const client = useQueryClient();
-  return useMutation({
-    mutationFn: api.uploadFile,
+  return useMutation<api.FileRecord, unknown, { file: File; resource?: api.UploadResource }>({
+    mutationFn: (args) => api.uploadFile(args.file, args.resource),
     onSuccess: () =>
       client.invalidateQueries({ queryKey: ["files", orgId()] }),
   });
@@ -810,5 +991,913 @@ export function useDeclineAIAction() {
   return useMutation({
     mutationFn: (id: string) => api.declineAIAction(id),
     onSuccess: () => client.invalidateQueries({ queryKey: ["ai-pending-actions"] }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// HRMS (Phase 4)
+// ---------------------------------------------------------------------------
+
+const hrmsEnabled = () => getActiveOrganisation() !== null;
+
+export function useHrmsOverview() {
+  return useQuery({
+    queryKey: ["hrms", "overview", orgId()],
+    queryFn: api.getHrmsOverview,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function useEmployees(params?: api.EmployeeListParams) {
+  return useQuery({
+    queryKey: ["hrms", "employees", orgId(), params ?? {}],
+    queryFn: () => api.getEmployees(params),
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useMyEmployee() {
+  return useQuery({
+    queryKey: ["hrms", "employees", "me", orgId()],
+    queryFn: api.getMyEmployee,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function useEmployee(id?: string) {
+  return useQuery({
+    queryKey: ["hrms", "employees", orgId(), id],
+    queryFn: () => api.getEmployee(id as string),
+    enabled: Boolean(id),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateEmployee() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createEmployee,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "employees", orgId()] });
+      client.invalidateQueries({ queryKey: ["hrms", "employees", "me", orgId()] });
+      client.invalidateQueries({ queryKey: ["users"] });
+      client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+    },
+  });
+}
+
+export function useUpdateEmployee() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateEmployee>[1] }) =>
+      api.updateEmployee(args.id, args.body),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["hrms", "employees", orgId()] });
+      client.invalidateQueries({ queryKey: ["hrms", "employees", "me", orgId()] });
+      client.invalidateQueries({ queryKey: ["hrms", "employees", orgId(), args.id] });
+      client.invalidateQueries({ queryKey: ["users"] });
+      client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+    },
+  });
+}
+
+export function useDepartments() {
+  return useQuery({
+    queryKey: ["hrms", "departments", orgId()],
+    queryFn: api.getDepartments,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateDepartment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createDepartment,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "departments"] }),
+  });
+}
+
+export function useUpdateDepartment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateDepartment>[1] }) =>
+      api.updateDepartment(args.id, args.body),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "departments"] }),
+  });
+}
+
+export function useDeleteDepartment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteDepartment,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "departments"] }),
+  });
+}
+
+export function useDesignations() {
+  return useQuery({
+    queryKey: ["hrms", "designations", orgId()],
+    queryFn: api.getDesignations,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateDesignation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createDesignation,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "designations"] }),
+  });
+}
+
+export function useOrgChart() {
+  return useQuery({
+    queryKey: ["hrms", "org-chart", orgId()],
+    queryFn: api.getOrgChart,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useAttendance(params?: { employeeId?: string; from?: string; to?: string }) {
+  return useQuery({
+    queryKey: ["hrms", "attendance", orgId(), params ?? {}],
+    queryFn: () => api.getAttendance(params),
+    enabled: hrmsEnabled() && Boolean(params?.employeeId),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useAttendanceCheckin() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.attendanceCheckin,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "attendance"] });
+      client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+    },
+  });
+}
+
+export function useAttendanceCheckout() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.attendanceCheckout,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "attendance"] }),
+  });
+}
+
+export function useAttendancePresence() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.attendancePresence,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "attendance"] }),
+  });
+}
+
+export function useAttendanceCorrections(status?: string) {
+  return useQuery({
+    queryKey: ["hrms", "attendance-corrections", orgId(), status ?? "all"],
+    queryFn: () => api.getAttendanceCorrections(status ? { status } : undefined),
+    enabled: hrmsEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useRequestAttendanceCorrection() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.requestAttendanceCorrection,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "attendance-corrections"] }),
+  });
+}
+
+export function useReviewAttendanceCorrection() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; action: "approve" | "reject"; note?: string }) =>
+      api.reviewAttendanceCorrection(args.id, args.action, args.note),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "attendance-corrections"] });
+      client.invalidateQueries({ queryKey: ["hrms", "attendance"] });
+      client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+    },
+  });
+}
+
+export function useLeaveTypes() {
+  return useQuery({
+    queryKey: ["hrms", "leave-types", orgId()],
+    queryFn: api.getLeaveTypes,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useLeaveBalances(employeeId?: string) {
+  return useQuery({
+    queryKey: ["hrms", "leave-balances", orgId(), employeeId ?? "me"],
+    queryFn: () => api.getLeaveBalances(employeeId),
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useLeaveRequests(params?: { status?: string; employeeId?: string; mine?: boolean }) {
+  return useQuery({
+    queryKey: ["hrms", "leave-requests", orgId(), params ?? {}],
+    queryFn: () => api.getLeaveRequests(params),
+    enabled: hrmsEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useApplyLeave() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.applyLeave,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "leave-requests"] });
+      client.invalidateQueries({ queryKey: ["hrms", "leave-balances"] });
+      client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+    },
+  });
+}
+
+export function useReviewLeaveRequest() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; action: "approve" | "reject" | "cancel"; note?: string }) =>
+      api.reviewLeaveRequest(args.id, args.action, args.note),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "leave-requests"] });
+      client.invalidateQueries({ queryKey: ["hrms", "leave-balances"] });
+      client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+    },
+  });
+}
+
+export function useHolidays() {
+  return useQuery({
+    queryKey: ["hrms", "holidays", orgId()],
+    queryFn: api.getHolidays,
+    enabled: hrmsEnabled(),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useHrmsCalendar(range?: { from?: string; to?: string }) {
+  return useQuery({
+    queryKey: ["hrms", "calendar", orgId(), range?.from ?? null, range?.to ?? null],
+    queryFn: () => api.getHrmsCalendar(range),
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function usePayrollPeriods() {
+  return useQuery({
+    queryKey: ["hrms", "payroll-periods", orgId()],
+    queryFn: api.getPayrollPeriods,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function usePayslips(params?: { employeeId?: string; payrollPeriodId?: string }) {
+  return useQuery({
+    queryKey: ["hrms", "payslips", orgId(), params ?? {}],
+    queryFn: () => api.getPayslips(params),
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function usePayslip(id?: string) {
+  return useQuery({
+    queryKey: ["hrms", "payslips", orgId(), id ?? ""],
+    queryFn: () => api.getPayslip(id as string),
+    enabled: hrmsEnabled() && Boolean(id),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useEmployeeDocuments(employeeId?: string) {
+  return useQuery({
+    queryKey: ["hrms", "documents", orgId(), employeeId ?? "me"],
+    queryFn: () => api.getEmployeeDocuments(employeeId),
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useUploadEmployeeDocument() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.uploadEmployeeDocument,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "documents"] }),
+  });
+}
+
+export function useDeleteEmployeeDocument() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteEmployeeDocument,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "documents"] }),
+  });
+}
+
+// Interview / recruitment
+const interviewEnabled = () => getActiveOrganisation() !== null;
+
+export function useInterviewOverview() {
+  return useQuery({
+    queryKey: ["interview", "overview", orgId()],
+    queryFn: api.getInterviewOverview,
+    enabled: interviewEnabled(),
+    staleTime: 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function useJobOpenings(status?: string) {
+  return useQuery({
+    queryKey: ["interview", "jobs", orgId(), status ?? "all"],
+    queryFn: () => api.getJobOpenings(status),
+    enabled: interviewEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateJobOpening() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createJobOpening,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "jobs"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useUpdateJobOpening() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateJobOpening>[1] }) =>
+      api.updateJobOpening(args.id, args.body),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "jobs"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useCandidates(status?: string) {
+  return useQuery({
+    queryKey: ["interview", "candidates", orgId(), status ?? "all"],
+    queryFn: () => api.getCandidates(status),
+    enabled: interviewEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateCandidate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createCandidate,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "candidates"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useUploadCandidateResume() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: { candidateId: string; file: File }) => {
+      const fileRecord = await api.uploadFile(args.file);
+      return api.updateCandidate(args.candidateId, { resumeFileId: fileRecord.id });
+    },
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "candidates"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useHiringDecisions() {
+  return useQuery({
+    queryKey: ["interview", "decisions", orgId()],
+    queryFn: () => api.getHiringDecisions(),
+    enabled: Boolean(getActiveOrganisation()),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useUpdateApplicationStage() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { applicationId: string; stage: string }) =>
+      api.updateApplicationStage(args.applicationId, args.stage),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "candidates"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useInterviewSessions(upcoming?: boolean) {
+  return useQuery({
+    queryKey: ["interview", "sessions", orgId(), upcoming ? "upcoming" : "all"],
+    queryFn: () => api.getInterviewSessions(upcoming),
+    enabled: interviewEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateInterviewSession() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createInterviewSession,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "sessions"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function usePendingEvaluations() {
+  return useQuery({
+    queryKey: ["interview", "evaluations", "pending", orgId()],
+    queryFn: api.getPendingEvaluations,
+    enabled: interviewEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+// ─── Phase 6 — AI screening + AI interview ──────────────────────────────────
+
+export function useApplicationScreening(applicationId?: string) {
+  return useQuery({
+    queryKey: ["interview", "applications", applicationId ?? "none", "screening"],
+    queryFn: () => (applicationId ? api.getApplicationScreening(applicationId) : null),
+    enabled: Boolean(interviewEnabled() && applicationId),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useRunApplicationScreening() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { applicationId: string; resumeText?: string }) =>
+      api.runApplicationScreening(args.applicationId, args.resumeText ? { resumeText: args.resumeText } : {}),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["interview", "applications", args.applicationId, "screening"] });
+      client.invalidateQueries({ queryKey: ["interview", "candidates"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useReviewApplicationScreening() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.reviewApplicationScreening,
+    onSuccess: (_, applicationId) => {
+      client.invalidateQueries({ queryKey: ["interview", "applications", applicationId, "screening"] });
+    },
+  });
+}
+
+export function useStartAiInterview() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { sessionId: string; templateId?: string; config?: Record<string, unknown> }) =>
+      api.startAiInterview(args.sessionId, { templateId: args.templateId, config: args.config }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "sessions"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useSubmitAiAnswer() {
+  return useMutation({
+    mutationFn: (args: { sessionId: string; questionIndex: number; answer: string }) =>
+      api.submitAiAnswer(args.sessionId, { questionIndex: args.questionIndex, answer: args.answer }),
+  });
+}
+
+export function useAiTranscript(sessionId?: string) {
+  return useQuery({
+    queryKey: ["interview", "sessions", sessionId ?? "none", "ai", "transcript"],
+    queryFn: () => (sessionId ? api.getAiTranscript(sessionId) : []),
+    enabled: Boolean(interviewEnabled() && sessionId),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useEvaluateAiInterview() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.evaluateAiInterview,
+    onSuccess: (_, sessionId) => {
+      client.invalidateQueries({ queryKey: ["interview", "sessions", sessionId, "ai", "transcript"] });
+      client.invalidateQueries({ queryKey: ["interview", "sessions", sessionId, "evaluations"] });
+      client.invalidateQueries({ queryKey: ["interview", "evaluations"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useSessionEvaluations(sessionId?: string) {
+  return useQuery({
+    queryKey: ["interview", "sessions", sessionId ?? "none", "evaluations"],
+    queryFn: () => (sessionId ? api.getSessionEvaluations(sessionId) : []),
+    enabled: Boolean(interviewEnabled() && sessionId),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useReviewEvaluation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { evaluationId: string; body: Parameters<typeof api.reviewEvaluation>[1] }) =>
+      api.reviewEvaluation(args.evaluationId, args.body),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "evaluations"] });
+      client.invalidateQueries({ queryKey: ["interview", "sessions"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useMakeHiringDecision() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { applicationId: string; decision: "offer" | "hire" | "reject" | "hold"; rationale?: string }) =>
+      api.makeHiringDecision(args.applicationId, { decision: args.decision, rationale: args.rationale }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["interview", "candidates"] });
+      client.invalidateQueries({ queryKey: ["interview", "overview"] });
+    },
+  });
+}
+
+export function useInterviewTemplates() {
+  return useQuery({
+    queryKey: ["interview", "templates", orgId()],
+    queryFn: api.getInterviewTemplates,
+    enabled: interviewEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateInterviewTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createInterviewTemplate,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["interview", "templates"] }),
+  });
+}
+
+export function useUpdateInterviewTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateInterviewTemplate>[1] }) =>
+      api.updateInterviewTemplate(args.id, args.body),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["interview", "templates"] }),
+  });
+}
+
+export function useDeleteInterviewTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteInterviewTemplate,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["interview", "templates"] }),
+  });
+}
+
+// ─── Phase 7 — Advanced HRMS ────────────────────────────────────────────────
+
+export function useOnboardingTemplates() {
+  return useQuery({
+    queryKey: ["hrms", "onboarding-templates", orgId()],
+    queryFn: api.getOnboardingTemplates,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateOnboardingTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createOnboardingTemplate,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "onboarding-templates"] }),
+  });
+}
+
+export function useUpdateOnboardingTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateOnboardingTemplate>[1] }) =>
+      api.updateOnboardingTemplate(args.id, args.body),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "onboarding-templates"] }),
+  });
+}
+
+export function useDeleteOnboardingTemplate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteOnboardingTemplate,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "onboarding-templates"] }),
+  });
+}
+
+export function useOnboardingInstances(status?: string) {
+  return useQuery({
+    queryKey: ["hrms", "onboarding", orgId(), status ?? "all"],
+    queryFn: () => api.getOnboardingInstances(status),
+    enabled: hrmsEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useOnboardingInstance(id?: string) {
+  return useQuery({
+    queryKey: ["hrms", "onboarding", "detail", orgId(), id],
+    queryFn: () => api.getOnboardingInstance(id as string),
+    enabled: hrmsEnabled() && Boolean(id),
+    staleTime: 30 * 1000,
+  });
+}
+
+function invalidateOnboarding(client: ReturnType<typeof useQueryClient>) {
+  client.invalidateQueries({ queryKey: ["hrms", "onboarding"] });
+  client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+  client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+}
+
+export function useCreateOnboardingInstance() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createOnboardingInstance,
+    onSuccess: () => invalidateOnboarding(client),
+  });
+}
+
+export function useConvertOnboardingInstance() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.convertOnboardingInstance>[1] }) =>
+      api.convertOnboardingInstance(args.id, args.body),
+    onSuccess: () => {
+      invalidateOnboarding(client);
+      client.invalidateQueries({ queryKey: ["hrms", "employees"] });
+    },
+  });
+}
+
+export function useSetOnboardingTaskStatus() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; taskId: string; action: "complete" | "reopen" }) =>
+      api.setOnboardingTaskStatus(args.id, args.taskId, args.action),
+    onSuccess: () => invalidateOnboarding(client),
+  });
+}
+
+export function useCancelOnboardingInstance() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.cancelOnboardingInstance,
+    onSuccess: () => invalidateOnboarding(client),
+  });
+}
+
+// Offboarding
+
+export function useOffboardingCases() {
+  return useQuery({
+    queryKey: ["hrms", "offboarding", orgId()],
+    queryFn: api.getOffboardingCases,
+    enabled: hrmsEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useOffboardingCase(id?: string) {
+  return useQuery({
+    queryKey: ["hrms", "offboarding", "detail", orgId(), id],
+    queryFn: () => api.getOffboardingCase(id as string),
+    enabled: hrmsEnabled() && Boolean(id),
+    staleTime: 30 * 1000,
+  });
+}
+
+function invalidateOffboarding(client: ReturnType<typeof useQueryClient>) {
+  client.invalidateQueries({ queryKey: ["hrms", "offboarding"] });
+  client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+  client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+}
+
+export function useCreateOffboardingCase() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createOffboardingCase,
+    onSuccess: () => invalidateOffboarding(client),
+  });
+}
+
+export function useUpdateOffboardingCase() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateOffboardingCase>[1] }) =>
+      api.updateOffboardingCase(args.id, args.body),
+    onSuccess: () => invalidateOffboarding(client),
+  });
+}
+
+export function useSetOffboardingTaskStatus() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; taskId: string; action: "complete" | "reopen" }) =>
+      api.setOffboardingTaskStatus(args.id, args.taskId, args.action),
+    onSuccess: () => invalidateOffboarding(client),
+  });
+}
+
+export function useTransitionOffboardingCase() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; action: "complete" | "cancel" }) =>
+      api.transitionOffboardingCase(args.id, args.action),
+    onSuccess: () => {
+      invalidateOffboarding(client);
+      client.invalidateQueries({ queryKey: ["hrms", "employees"] });
+    },
+  });
+}
+
+// Performance
+
+export function useReviewCycles() {
+  return useQuery({
+    queryKey: ["hrms", "performance-cycles", orgId()],
+    queryFn: api.getReviewCycles,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateReviewCycle() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createReviewCycle,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "performance-cycles"] }),
+  });
+}
+
+export function useUpdateReviewCycle() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateReviewCycle>[1] }) =>
+      api.updateReviewCycle(args.id, args.body),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "performance-cycles"] });
+      client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+    },
+  });
+}
+
+export function usePerformanceReviews(params?: { cycleId?: string; employeeId?: string }) {
+  return useQuery({
+    queryKey: ["hrms", "performance-reviews", orgId(), params ?? {}],
+    queryFn: () => api.getPerformanceReviews(params),
+    enabled: hrmsEnabled(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreatePerformanceReview() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createPerformanceReview,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "performance-reviews"] }),
+  });
+}
+
+export function useUpdatePerformanceReview() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updatePerformanceReview>[1] }) =>
+      api.updatePerformanceReview(args.id, args.body),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "performance-reviews"] });
+      client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+    },
+  });
+}
+
+export function useAcknowledgePerformanceReview() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.acknowledgePerformanceReview,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "performance-reviews"] }),
+  });
+}
+
+export function useGoals(employeeId?: string) {
+  return useQuery({
+    queryKey: ["hrms", "goals", orgId(), employeeId ?? "all"],
+    queryFn: () => api.getGoals(employeeId),
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateGoal() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createGoal,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "goals"] });
+      client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+    },
+  });
+}
+
+export function useUpdateGoal() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateGoal>[1] }) =>
+      api.updateGoal(args.id, args.body),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "goals"] });
+      client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+    },
+  });
+}
+
+// Analytics
+
+export function useHrmsAnalytics() {
+  return useQuery({
+    queryKey: ["hrms", "analytics", orgId()],
+    queryFn: api.getHrmsAnalytics,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+    retry: 1,
+  });
+}
+
+// Payroll additions
+
+export function usePayrollSummary() {
+  return useQuery({
+    queryKey: ["hrms", "payroll-summary", orgId()],
+    queryFn: api.getPayrollSummary,
+    enabled: hrmsEnabled(),
+    staleTime: 60 * 1000,
+  });
+}
+
+function invalidatePayroll(client: ReturnType<typeof useQueryClient>) {
+  client.invalidateQueries({ queryKey: ["hrms", "payroll-periods"] });
+  client.invalidateQueries({ queryKey: ["hrms", "payroll-summary"] });
+  client.invalidateQueries({ queryKey: ["hrms", "payslips"] });
+  client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+  client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+}
+
+export function useProcessPayrollPeriod() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.processPayrollPeriod,
+    onSuccess: () => invalidatePayroll(client),
+  });
+}
+
+export function useApprovePayrollPeriod() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.approvePayrollPeriod,
+    onSuccess: () => invalidatePayroll(client),
+  });
+}
+
+export function useMarkPayrollPeriodPaid() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.markPayrollPeriodPaid,
+    onSuccess: () => invalidatePayroll(client),
   });
 }

@@ -7,16 +7,7 @@ import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";
 import { MessageContent } from "../components/chat/message-content";
-import type { UserDto } from "../lib/api";
-
-function getDisplayName(_member: { userId: string }, user?: UserDto) {
-  if (user) {
-    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (fullName) return fullName;
-    return user.email;
-  }
-  return "Unknown";
-}
+import { getUserDisplayName } from "../lib/utils";
 
 export function SavedItemsScreen() {
   const setActiveView = useUIStore((s) => s.setActiveView);
@@ -42,11 +33,11 @@ export function SavedItemsScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center gap-3 border-b px-6">
+      <header className="flex h-14 items-center gap-3 border-b px-3 sm:px-6">
         <Bookmark className="h-5 w-5 text-primary" />
         <h1 className="text-lg font-semibold text-text">Saved items</h1>
       </header>
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
         {items.length === 0 ? (
           <EmptyState icon={Bookmark} title="Nothing saved" description="Save messages from any channel or conversation using the bookmark action." />
         ) : (
@@ -56,7 +47,7 @@ export function SavedItemsScreen() {
               return (
                 <div key={item.id} className="group flex items-start gap-3 rounded-lg border bg-surface p-3">
                   <Avatar className="h-7 w-7">
-                    <AvatarFallback className="text-[10px]">{getDisplayName({ userId: item.senderId }, userMap.get(item.senderId)).slice(0, 2).toUpperCase()}</AvatarFallback>
+                    <AvatarFallback className="text-[10px]">{getUserDisplayName(userMap.get(item.senderId)).slice(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
                   <button type="button" onClick={() => open(item)} className="min-w-0 flex-1 text-left">
                     <div className="flex items-center gap-2 text-xs text-text-muted">

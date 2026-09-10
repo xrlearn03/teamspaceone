@@ -1,3 +1,13 @@
+mod composit;
+mod control;
+mod recording;
+
+#[cfg(feature = "rtc")]
+mod rtc_peer;
+
+#[cfg(feature = "rtc")]
+mod rtc_spike;
+
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use futures::{SinkExt, StreamExt};
@@ -8,9 +18,10 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::net::{TcpListener, TcpStream};
+use std::time::{Duration as StdDuration, Instant, SystemTime, UNIX_EPOCH};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::task::JoinHandle;
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{info, warn};
 
@@ -18,16 +29,35 @@ type HmacSha256 = Hmac<Sha256>;
 const MAX_DISPLAY_NAME_CHARS: usize = 128;
 const MAX_SDP_BYTES: usize = 65536;
 const MAX_CANDIDATE_BYTES: usize = 65536;
-use webrtc::api::{API, APIBuilder};
+use interceptor::nack::generator::GeneratorBuilder;
+use interceptor::nack::responder::ResponderBuilder;
+use interceptor::registry::Registry;
+use webrtc::api::setting_engine::SettingEngine;
+use webrtc::api::{APIBuilder, API};
+use webrtc::ice::udp_mux::{UDPMuxDefault, UDPMuxParams};
+use webrtc::ice::udp_network::UDPNetwork;
+#[cfg(not(feature = "rtc"))]
 use webrtc::ice_transport::ice_candidate::{RTCIceCandidate, RTCIceCandidateInit};
+use webrtc::ice_transport::ice_candidate_type::RTCIceCandidateType;
 use webrtc::ice_transport::ice_server::RTCIceServer;
+#[cfg(not(feature = "rtc"))]
 use webrtc::peer_connection::configuration::RTCConfiguration;
+#[cfg(not(feature = "rtc"))]
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use webrtc::peer_connection::RTCPeerConnection;
+use webrtc::rtcp::packet::Packet as RtcpPacket;
+use webrtc::rtcp::payload_feedbacks::full_intra_request::FullIntraRequest;
+use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
+use webrtc::rtp::packet::Packet as RtpPacket;
 use webrtc::rtp_transceiver::rtp_codec::RTPCodecType;
+#[cfg(not(feature = "rtc"))]
 use webrtc::rtp_transceiver::rtp_receiver::RTCRtpReceiver;
+use webrtc::rtp_transceiver::rtp_sender::RTCRtpSender;
+#[cfg(not(feature = "rtc"))]
 use webrtc::rtp_transceiver::rtp_transceiver_direction::RTCRtpTransceiverDirection;
+#[cfg(not(feature = "rtc"))]
 use webrtc::rtp_transceiver::RTCRtpTransceiver;
+#[cfg(not(feature = "rtc"))]
 use webrtc::rtp_transceiver::RTCRtpTransceiverInit;
 use webrtc::track::track_local::track_local_static_rtp::TrackLocalStaticRTP;
 use webrtc::track::track_local::TrackLocalWriter;
@@ -69,6 +99,11 @@ enum Signal {
         candidate: String,
         sdp_m_line_index: u16,
         sdp_mid: Option<String>,
+    },
+    #[serde(rename = "layer")]
+    Layer {
+        track_id: String,
+        rid: Option<String>,
     },
 }
 
@@ -115,24 +150,44 @@ struct Peer {
     pc: Option<Arc<RTCPeerConnection>>,
 }
 
+/// A published track forwarded to one subscriber peer. Keeping the
+/// `RTCRtpSender` lets us detach the track (remove + renegotiate) later,
+/// and `tx`/`task` run an independent forwarding loop for that subscriber.
+struct Forwarder {
+    sender: Arc<RTCRtpSender>,
+    tx: mpsc::Sender<RtpPacket>,
+    task: JoinHandle<()>,
+}
+
+type Forwarders = Arc<Mutex<HashMap<PeerId, Forwarder>>>;
+
 #[derive(Clone)]
 struct RoomTrack {
     publisher: PeerId,
     track_id: String,
     remote: Arc<TrackRemote>,
-    forwarders: Arc<Mutex<HashMap<PeerId, Arc<TrackLocalStaticRTP>>>>,
+    forwarders: Forwarders,
+    recorder: recording::SharedTrackWriter,
+    is_screen: bool,
 }
 
 #[derive(Default)]
 struct Room {
     participants: HashMap<PeerId, Peer>,
     tracks: Vec<RoomTrack>,
+    recording: Option<Arc<recording::Recorder>>,
 }
 
 struct State {
     api: Arc<API>,
     peers: HashMap<PeerId, Peer>,
     rooms: HashMap<RoomId, Room>,
+    #[cfg(feature = "rtc")]
+    rtc_peers: HashMap<PeerId, rtc_peer::RtcPeer>,
+    #[cfg(feature = "rtc")]
+    rtc_tracks: HashMap<String, rtc_peer::RtcRoomTrack>,
+    #[cfg(feature = "rtc")]
+    rtc_metrics: Arc<rtc_peer::RtcMetrics>,
 }
 
 impl State {
@@ -141,6 +196,12 @@ impl State {
             api,
             peers: HashMap::new(),
             rooms: HashMap::new(),
+            #[cfg(feature = "rtc")]
+            rtc_peers: HashMap::new(),
+            #[cfg(feature = "rtc")]
+            rtc_tracks: HashMap::new(),
+            #[cfg(feature = "rtc")]
+            rtc_metrics: Arc::new(rtc_peer::RtcMetrics::default()),
         }
     }
 
@@ -162,17 +223,60 @@ type SharedState = Arc<RwLock<State>>;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let token_secret = std::env::var("SFU_TOKEN_SECRET").map_err(|_| {
-        anyhow!("SFU_TOKEN_SECRET environment variable is required")
-    })?;
+    let token_secret = std::env::var("SFU_TOKEN_SECRET")
+        .map_err(|_| anyhow!("SFU_TOKEN_SECRET environment variable is required"))?;
 
-    let api = Arc::new(APIBuilder::new().build());
+    let mut setting_engine = SettingEngine::default();
+
+    // When the SFU sits behind 1:1 NAT (Docker, cloud VM), advertise the public
+    // IP(s) instead of the local/container address so remote peers can connect.
+    let nat_ips: Vec<String> = std::env::var("SFU_NAT_1TO1_IPS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+    if !nat_ips.is_empty() {
+        info!("Advertising NAT 1:1 IPs: {:?}", nat_ips);
+        setting_engine.set_nat_1to1_ips(nat_ips, RTCIceCandidateType::Host);
+    }
+
+    // Optionally bind all ICE traffic to a single UDP port. This makes the SFU
+    // trivially deployable behind port-forwarding firewalls: publish one UDP
+    // port instead of an ephemeral range.
+    if let Ok(mux_port) = std::env::var("SFU_UDP_MUX_PORT") {
+        let mux_port: u16 = mux_port.parse()?;
+        let socket = UdpSocket::bind(("0.0.0.0", mux_port)).await?;
+        setting_engine.set_udp_network(UDPNetwork::Muxed(UDPMuxDefault::new(UDPMuxParams::new(
+            socket,
+        ))));
+        info!("ICE UDP mux listening on 0.0.0.0:{}", mux_port);
+    }
+
+    let mut interceptor_registry = Registry::new();
+    interceptor_registry.add(Box::new(GeneratorBuilder::default()));
+    interceptor_registry.add(Box::new(ResponderBuilder::default()));
+    let api = Arc::new(
+        APIBuilder::new()
+            .with_setting_engine(setting_engine)
+            .with_interceptor_registry(interceptor_registry)
+            .build(),
+    );
     let state: SharedState = Arc::new(RwLock::new(State::new(api)));
     let host = std::env::var("SFU_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = std::env::var("SFU_PORT").unwrap_or_else(|_| "8443".to_string());
     let addr = format!("{}:{}", host, port).parse::<SocketAddr>()?;
     let listener = TcpListener::bind(&addr).await?;
     info!("Teamspace SFU signaling listening on {}", addr);
+
+    let control_state = state.clone();
+    let control_secret = token_secret.clone();
+    tokio::spawn(async move {
+        if let Err(e) = control::serve(control_state, control_secret).await {
+            warn!("Control API failed: {}", e);
+        }
+    });
 
     while let Ok((stream, _)) = listener.accept().await {
         let state = state.clone();
@@ -218,24 +322,67 @@ async fn handle_peer(stream: TcpStream, state: SharedState, token_secret: String
         participant_id: peer_id.clone(),
     });
 
+    let mut signal_count = 0u32;
+    let mut signal_window_start = Instant::now();
+
     let peer_id_for_send = peer_id.clone();
     let send_task = tokio::spawn(async move {
         let mut ws_tx = ws_tx;
-        while let Some(event) = rx.recv().await {
-            let text = serde_json::to_string(&event).unwrap_or_default();
-            if let Err(e) = ws_tx.send(Message::Text(text)).await {
-                warn!("Send failed for {}: {}", peer_id_for_send, e);
-                break;
+        let mut ping = tokio::time::interval(ws_ping_interval());
+        loop {
+            tokio::select! {
+                _ = ping.tick() => {
+                    if let Err(e) = ws_tx.send(Message::Ping(vec![])).await {
+                        warn!("Ping failed for {}: {}", peer_id_for_send, e);
+                        break;
+                    }
+                }
+                event = rx.recv() => {
+                    match event {
+                        Some(event) => {
+                            let text = serde_json::to_string(&event).unwrap_or_default();
+                            if let Err(e) = ws_tx.send(Message::Text(text)).await {
+                                warn!("Send failed for {}: {}", peer_id_for_send, e);
+                                break;
+                            }
+                        }
+                        None => break,
+                    }
+                }
             }
         }
     });
 
-    while let Some(msg) = ws_rx.next().await {
+    loop {
+        let msg = match tokio::time::timeout(ws_timeout(), ws_rx.next()).await {
+            Ok(Some(msg)) => msg,
+            Ok(None) => break,
+            Err(_) => {
+                warn!("WebSocket timeout for {}", peer_id);
+                break;
+            }
+        };
+
         match msg {
             Ok(Message::Text(text)) => {
+                let now = Instant::now();
+                if now.duration_since(signal_window_start) > StdDuration::from_secs(1) {
+                    signal_count = 0;
+                    signal_window_start = now;
+                }
+                signal_count += 1;
+                if signal_count > max_signals_per_second() {
+                    warn!("Rate limit exceeded for {}", peer_id);
+                    let _ = tx.send(Event::Error {
+                        message: "Rate limit exceeded".to_string(),
+                    });
+                    break;
+                }
                 match serde_json::from_str::<Signal>(&text) {
                     Ok(signal) => {
-                        if let Err(e) = process_signal(&peer_id, signal, &state, &token_secret).await {
+                        if let Err(e) =
+                            process_signal(&peer_id, signal, &state, &token_secret).await
+                        {
                             warn!("Signal processing failed for {}: {}", peer_id, e);
                             let _ = tx.send(Event::Error {
                                 message: e.to_string(),
@@ -263,14 +410,14 @@ async fn handle_peer(stream: TcpStream, state: SharedState, token_secret: String
     let _ = send_task.await;
 }
 
-fn now_unix() -> u64 {
+pub(crate) fn now_unix() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
 }
 
-fn decode_base64url(s: &str) -> Result<String> {
+pub(crate) fn decode_base64url(s: &str) -> Result<String> {
     URL_SAFE_NO_PAD
         .decode(s)
         .ok()
@@ -278,7 +425,7 @@ fn decode_base64url(s: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("invalid base64url encoding"))
 }
 
-fn decode_hex(s: &str) -> Option<Vec<u8>> {
+pub(crate) fn decode_hex(s: &str) -> Option<Vec<u8>> {
     if s.len() % 2 != 0 {
         return None;
     }
@@ -300,7 +447,12 @@ fn hex_value(c: u8) -> Option<u8> {
     }
 }
 
-fn verify_sfu_token(token: &str, expected_room: &str, expected_user: &Option<String>, token_secret: &str) -> Result<()> {
+fn verify_sfu_token(
+    token: &str,
+    expected_room: &str,
+    expected_user: &Option<String>,
+    token_secret: &str,
+) -> Result<()> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 4 {
         return Err(anyhow!("invalid token format"));
@@ -316,7 +468,9 @@ fn verify_sfu_token(token: &str, expected_room: &str, expected_user: &Option<Str
     } else {
         Some(decode_base64url(user_b64)?)
     };
-    let exp: u64 = exp_str.parse().map_err(|_| anyhow!("invalid token expiration"))?;
+    let exp: u64 = exp_str
+        .parse()
+        .map_err(|_| anyhow!("invalid token expiration"))?;
     if exp < now_unix() {
         return Err(anyhow!("token expired"));
     }
@@ -333,7 +487,8 @@ fn verify_sfu_token(token: &str, expected_room: &str, expected_user: &Option<Str
         .map_err(|_| anyhow!("invalid hmac key"))?;
     mac.update(base.as_bytes());
     let expected = decode_hex(sig_hex).ok_or_else(|| anyhow!("invalid signature encoding"))?;
-    mac.verify_slice(&expected).map_err(|_| anyhow!("invalid token signature"))?;
+    mac.verify_slice(&expected)
+        .map_err(|_| anyhow!("invalid token signature"))?;
 
     Ok(())
 }
@@ -359,9 +514,148 @@ fn validate_candidate(candidate: &str) -> Result<()> {
     Ok(())
 }
 
-async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, token_secret: &str) -> Result<()> {
+pub(crate) mod string_or_vec {
+    use serde::Deserializer;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = Vec<String>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string or an array of strings")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(vec![value.to_owned()])
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut out = Vec::new();
+                while let Some(v) = seq.next_element::<String>()? {
+                    out.push(v);
+                }
+                Ok(out)
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct IceServerConfig {
+    #[serde(with = "string_or_vec")]
+    pub(crate) urls: Vec<String>,
+    pub(crate) username: Option<String>,
+    pub(crate) credential: Option<String>,
+}
+
+pub(crate) fn ice_server_configs() -> Vec<IceServerConfig> {
+    let raw = match std::env::var("SFU_ICE_SERVERS") {
+        Ok(v) if !v.is_empty() => v,
+        _ => return Vec::new(),
+    };
+
+    match serde_json::from_str::<Vec<IceServerConfig>>(&raw) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(
+                "SFU_ICE_SERVERS is not valid JSON ({}); using default ICE servers",
+                e
+            );
+            Vec::new()
+        }
+    }
+}
+
+pub(crate) fn max_participants_per_room() -> usize {
+    std::env::var("SFU_MAX_PARTICIPANTS_PER_ROOM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(12)
+}
+
+pub(crate) fn max_rooms() -> usize {
+    std::env::var("SFU_MAX_ROOMS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(100)
+}
+
+fn ws_ping_interval() -> std::time::Duration {
+    let secs = std::env::var("SFU_WS_PING_INTERVAL_SECONDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30);
+    std::time::Duration::from_secs(secs)
+}
+
+fn ws_timeout() -> std::time::Duration {
+    let secs = std::env::var("SFU_WS_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(90);
+    std::time::Duration::from_secs(secs)
+}
+
+fn max_signals_per_second() -> u32 {
+    std::env::var("SFU_MAX_SIGNALS_PER_SECOND")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50)
+}
+
+pub(crate) fn forward_queue_capacity() -> usize {
+    std::env::var("SFU_FORWARD_QUEUE_CAPACITY")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(256)
+}
+
+fn ice_servers() -> Vec<RTCIceServer> {
+    let configs = ice_server_configs();
+    if configs.is_empty() {
+        return vec![RTCIceServer {
+            urls: vec!["stun:stun.l.google.com:19302".to_owned()],
+            ..Default::default()
+        }];
+    }
+
+    configs
+        .into_iter()
+        .map(|c| RTCIceServer {
+            urls: c.urls,
+            username: c.username.unwrap_or_default(),
+            credential: c.credential.unwrap_or_default(),
+            ..Default::default()
+        })
+        .collect()
+}
+
+async fn process_signal(
+    peer_id: &str,
+    signal: Signal,
+    state: &SharedState,
+    token_secret: &str,
+) -> Result<()> {
+    #[cfg(feature = "rtc")]
+    return rtc_peer::process_rtc_signal(peer_id, signal, state, token_secret).await;
+
+    #[cfg(not(feature = "rtc"))]
     match signal {
-        Signal::Join { room_id, display_name, user_id, token } => {
+        Signal::Join {
+            room_id,
+            display_name,
+            user_id,
+            token,
+        } => {
             let _ = leave_room(peer_id, state).await;
             verify_sfu_token(&token, &room_id, &user_id, token_secret)?;
             validate_display_name(&display_name)?;
@@ -381,10 +675,7 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
             }
 
             let config = RTCConfiguration {
-                ice_servers: vec![RTCIceServer {
-                    urls: vec!["stun:stun.l.google.com:19302".to_owned()],
-                    ..Default::default()
-                }],
+                ice_servers: ice_servers(),
                 ..Default::default()
             };
 
@@ -444,19 +735,7 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
                     .unwrap_or_default()
             };
             for rt in existing_tracks {
-                let codec = rt.remote.codec().capability;
-                let track_id = rt.track_id.clone();
-                let publisher = rt.publisher.clone();
-                let local_track = Arc::new(TrackLocalStaticRTP::new(
-                    codec,
-                    format!("{}-{}", track_id, publisher),
-                    publisher,
-                ));
-                pc.add_track(local_track.clone()).await?;
-                rt.forwarders
-                    .lock()
-                    .await
-                    .insert(peer_id.to_string(), local_track);
+                add_track_forwarder(&rt, &peer_id.to_string(), &pc, &state).await?;
             }
 
             pc.add_transceiver_from_kind(
@@ -503,17 +782,31 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
                 })
             }));
 
+            let (tx, joined_peer) = {
+                let s = &mut *state.write().await;
+                let peer = s.peers.get_mut(peer_id).unwrap();
+                peer.display_name = display_name.clone();
+                peer.user_id = user_id.clone();
+                peer.room_id = Some(room_id.clone());
+                peer.pc = Some(pc);
+                (peer.tx.clone(), peer.clone())
+            };
             let mut s = state.write().await;
-            let peer = s.peers.get_mut(peer_id).unwrap();
-            peer.display_name = display_name.clone();
-            peer.user_id = user_id.clone();
-            peer.room_id = Some(room_id.clone());
-            peer.pc = Some(pc);
-            let joined_peer = peer.clone();
-            let tx = peer.tx.clone();
+            if !s.rooms.contains_key(&room_id) && s.rooms.len() >= max_rooms() {
+                let _ = tx.send(Event::Error {
+                    message: "Maximum number of rooms reached".to_string(),
+                });
+                return Err(anyhow!("max rooms reached"));
+            }
             let room = s.rooms.entry(room_id.clone()).or_default();
-            room.participants
-                .insert(peer_id.to_string(), joined_peer);
+            let max = max_participants_per_room();
+            if room.participants.len() >= max {
+                let _ = tx.send(Event::Error {
+                    message: format!("Room is full (max {} participants)", max),
+                });
+                return Err(anyhow!("room is full"));
+            }
+            room.participants.insert(peer_id.to_string(), joined_peer);
 
             let others: Vec<ParticipantInfo> = room
                 .participants
@@ -549,11 +842,41 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
         Signal::Leave => {
             let _ = leave_room(peer_id, state).await;
         }
+        Signal::Offer { target, sdp } if target == SFU_ID => {
+            validate_sdp(&sdp)?;
+            let (tx, pc) = {
+                let s = state.read().await;
+                let peer = s
+                    .peers
+                    .get(peer_id)
+                    .ok_or(anyhow!("peer not found: {}", peer_id))?;
+                (
+                    peer.tx.clone(),
+                    peer.pc
+                        .clone()
+                        .ok_or(anyhow!("peer has no connection: {}", peer_id))?,
+                )
+            };
+            let offer = RTCSessionDescription::offer(sdp)?;
+            pc.set_remote_description(offer).await?;
+            let answer = pc.create_answer(None).await?;
+            pc.set_local_description(answer.clone()).await?;
+            let _ = tx.send(Event::Answer {
+                from: SFU_ID.to_string(),
+                sdp: answer.sdp,
+            });
+        }
         Signal::Offer { target, sdp } => {
             validate_sdp(&sdp)?;
             let s = state.read().await;
-            let sender = s.peers.get(peer_id).ok_or(anyhow!("peer not found: {}", peer_id))?;
-            let sender_room = sender.room_id.as_ref().ok_or(anyhow!("peer not in a room"))?;
+            let sender = s
+                .peers
+                .get(peer_id)
+                .ok_or(anyhow!("peer not found: {}", peer_id))?;
+            let sender_room = sender
+                .room_id
+                .as_ref()
+                .ok_or(anyhow!("peer not in a room"))?;
             if let Some(target_peer) = s.peers.get(&target) {
                 if target_peer.room_id.as_ref() != Some(sender_room) {
                     let _ = sender.tx.send(Event::Error {
@@ -589,8 +912,14 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
         Signal::Answer { target, sdp } => {
             validate_sdp(&sdp)?;
             let s = state.read().await;
-            let sender = s.peers.get(peer_id).ok_or(anyhow!("peer not found: {}", peer_id))?;
-            let sender_room = sender.room_id.as_ref().ok_or(anyhow!("peer not in a room"))?;
+            let sender = s
+                .peers
+                .get(peer_id)
+                .ok_or(anyhow!("peer not found: {}", peer_id))?;
+            let sender_room = sender
+                .room_id
+                .as_ref()
+                .ok_or(anyhow!("peer not in a room"))?;
             if let Some(target_peer) = s.peers.get(&target) {
                 if target_peer.room_id.as_ref() != Some(sender_room) {
                     let _ = sender.tx.send(Event::Error {
@@ -643,8 +972,14 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
         } => {
             validate_candidate(&candidate)?;
             let s = state.read().await;
-            let sender = s.peers.get(peer_id).ok_or(anyhow!("peer not found: {}", peer_id))?;
-            let sender_room = sender.room_id.as_ref().ok_or(anyhow!("peer not in a room"))?;
+            let sender = s
+                .peers
+                .get(peer_id)
+                .ok_or(anyhow!("peer not found: {}", peer_id))?;
+            let sender_room = sender
+                .room_id
+                .as_ref()
+                .ok_or(anyhow!("peer not in a room"))?;
             if let Some(target_peer) = s.peers.get(&target) {
                 if target_peer.room_id.as_ref() != Some(sender_room) {
                     let _ = sender.tx.send(Event::Error {
@@ -664,8 +999,15 @@ async fn process_signal(peer_id: &str, signal: Signal, state: &SharedState, toke
                 });
             }
         }
+        Signal::Layer { track_id, rid } => {
+            return Err(anyhow!(
+                "layer selection for track {track_id} rid {:?} is only supported with the native rtc feature",
+                rid
+            ));
+        }
     }
 
+    #[cfg(not(feature = "rtc"))]
     Ok(())
 }
 
@@ -675,10 +1017,9 @@ async fn handle_track(
     track: Arc<TrackRemote>,
 ) -> Result<()> {
     let track_id = track.id();
-    let codec = track.codec().capability;
     let kind = track.kind();
 
-    let (room_id, forwarders, participants) = {
+    let (room_id, forwarders, participants, active_recording, publisher_pc, rt) = {
         let mut s = state.write().await;
         let peer = s
             .peers
@@ -693,15 +1034,32 @@ async fn handle_track(
             .rooms
             .get_mut(&room_id)
             .ok_or(anyhow!("room not found: {}", room_id))?;
-        let forwarders = Arc::new(Mutex::new(HashMap::new()));
-        room.tracks.push(RoomTrack {
+        // Treat any second (or later) video track from a publisher as the
+        // screen share stream so the client can render it on a separate tile.
+        let is_screen = kind == RTPCodecType::Video
+            && room
+                .tracks
+                .iter()
+                .any(|t| t.publisher == publisher && t.remote.kind() == RTPCodecType::Video);
+        let rt = RoomTrack {
             publisher: publisher.clone(),
             track_id: track_id.clone(),
             remote: Arc::clone(&track),
-            forwarders: Arc::clone(&forwarders),
-        });
+            forwarders: Arc::new(Mutex::new(HashMap::new())),
+            recorder: recording::new_track_writer_slot(),
+            is_screen,
+        };
+        room.tracks.push(rt.clone());
+        let forwarders = Arc::clone(&rt.forwarders);
         let participants = room.participants.clone();
-        (room_id, forwarders, participants)
+        (
+            room_id,
+            forwarders,
+            participants,
+            room.recording.clone(),
+            peer.pc,
+            rt,
+        )
     };
 
     info!(
@@ -715,40 +1073,55 @@ async fn handle_track(
             continue;
         }
         if let Some(pc) = peer.pc.clone() {
-            let local_track = Arc::new(TrackLocalStaticRTP::new(
-                codec.clone(),
-                format!("{}-{}", track_id, publisher),
-                publisher.clone(),
-            ));
-            if let Err(e) = pc.add_track(local_track.clone()).await {
+            if let Err(e) = add_track_forwarder(&rt, subscriber, &pc, &state).await {
                 warn!(
                     "add_track failed for {} <- {} track {}: {}",
                     subscriber, publisher, track_id, e
                 );
-                continue;
             }
-            forwarders
-                .lock()
-                .await
-                .insert(subscriber.clone(), local_track);
+        }
+    }
+
+    // If the room is already recording, attach a writer for this new track and
+    // ask the publisher for a keyframe so the file starts cleanly.
+    if let Some(rec) = active_recording.clone() {
+        recording::attach_track_writer(&rec, &rt.recorder, &room_id, &publisher, &track_id, &track);
+        if kind == RTPCodecType::Video {
+            if let Some(pc) = publisher_pc.clone() {
+                let ssrc = track.ssrc();
+                tokio::spawn(async move {
+                    let _ = pc
+                        .write_rtcp(&[Box::new(PictureLossIndication {
+                            sender_ssrc: 0,
+                            media_ssrc: ssrc,
+                        })])
+                        .await;
+                });
+            }
         }
     }
 
     // Forward RTP packets to all current and future subscribers.
+    let cleanup_state = state.clone();
+    let track_recorder = rt.recorder.clone();
     tokio::spawn(async move {
         loop {
             match track.read_rtp().await {
                 Ok((pkt, _)) => {
-                    let targets: Vec<Arc<TrackLocalStaticRTP>> = {
+                    if let Some((writer, _)) = track_recorder.lock().await.as_mut() {
+                        writer.write_rtp(&pkt);
+                    }
+                    // Snapshot the sender channels while holding the lock, then
+                    // dispatch to each subscriber's dedicated forwarding task.
+                    // Use try_send so a slow subscriber's full queue drops packets
+                    // rather than blocking the publisher's loop.
+                    let txs: Vec<mpsc::Sender<RtpPacket>> = {
                         let guard = forwarders.lock().await;
-                        guard.values().cloned().collect()
+                        guard.values().map(|f| f.tx.clone()).collect()
                     };
-                    for t in targets {
-                        if let Err(e) = t.write_rtp(&pkt).await {
-                            warn!(
-                                "write_rtp failed for track {} from {}: {}",
-                                track_id, publisher, e
-                            );
+                    for tx in txs {
+                        if let Err(e) = tx.try_send(pkt.clone()) {
+                            warn!("forward queue full for subscriber: {}", e);
                         }
                     }
                 }
@@ -758,9 +1131,142 @@ async fn handle_track(
                 }
             }
         }
+        // The publisher's track ended (camera off, screenshare stopped, or the
+        // peer left) — detach it from every subscriber so their clients drop
+        // the stale tile.
+        remove_room_track(&cleanup_state, &room_id, &publisher, &track_id).await;
+        // If recording is still active, finalize just this track's file so it
+        // is flushed and queued for upload without stopping the session.
+        if let Some(rec) = active_recording {
+            recording::finish_track_writer(&rec, &track_recorder).await;
+        }
     });
 
     Ok(())
+}
+
+/// Attaches a published track to a subscriber's peer connection, registers the
+/// forwarder, relays the subscriber's PLI/FIR feedback to the publisher, and
+/// requests a keyframe so the new subscriber gets decodable video quickly.
+async fn add_track_forwarder(
+    rt: &RoomTrack,
+    subscriber_id: &str,
+    subscriber_pc: &Arc<RTCPeerConnection>,
+    state: &SharedState,
+) -> Result<()> {
+    if *subscriber_id == rt.publisher {
+        return Ok(());
+    }
+    let local_track_id = format!("{}-{}", rt.track_id, rt.publisher);
+    let local_stream_id = if rt.is_screen {
+        format!("screen-{}", rt.publisher)
+    } else {
+        rt.publisher.clone()
+    };
+    let local_track = Arc::new(TrackLocalStaticRTP::new(
+        rt.remote.codec().capability,
+        local_track_id,
+        local_stream_id,
+    ));
+    let sender = subscriber_pc.add_track(local_track.clone()).await?;
+    let (tx, mut rx) = mpsc::channel::<RtpPacket>(forward_queue_capacity());
+
+    // Spawn a dedicated forwarding task for this subscriber so a slow peer
+    // cannot block the publisher's loop for everyone else.
+    let forwarder_track = Arc::clone(&local_track);
+    let task = tokio::spawn(async move {
+        while let Some(pkt) = rx.recv().await {
+            if let Err(e) = forwarder_track.write_rtp(&pkt).await {
+                warn!("write_rtp failed for subscriber track: {}", e);
+                break;
+            }
+        }
+    });
+
+    rt.forwarders.lock().await.insert(
+        subscriber_id.to_string(),
+        Forwarder {
+            sender: sender.clone(),
+            tx,
+            task,
+        },
+    );
+
+    let publisher_pc = {
+        let s = state.read().await;
+        s.peers.get(&rt.publisher).and_then(|p| p.pc.clone())
+    };
+    if let Some(publisher_pc) = publisher_pc {
+        // Relay keyframe requests (PLI/FIR) from this subscriber to the publisher.
+        let relay_pc = Arc::clone(&publisher_pc);
+        let relay_sender = Arc::clone(&sender);
+        tokio::spawn(async move {
+            while let Ok((pkts, _)) = relay_sender.read_rtcp().await {
+                let fwd: Vec<Box<dyn RtcpPacket + Send + Sync>> = pkts
+                    .into_iter()
+                    .filter(|p| {
+                        p.as_any().is::<PictureLossIndication>()
+                            || p.as_any().is::<FullIntraRequest>()
+                    })
+                    .collect();
+                if !fwd.is_empty() {
+                    let _ = relay_pc.write_rtcp(&fwd).await;
+                }
+            }
+        });
+
+        // Ask the publisher for an immediate keyframe for the new subscriber.
+        let _ = publisher_pc
+            .write_rtcp(&[Box::new(PictureLossIndication {
+                sender_ssrc: 0,
+                media_ssrc: rt.remote.ssrc(),
+            })])
+            .await;
+    }
+
+    Ok(())
+}
+
+/// Removes a published track from a room and detaches its forwarding senders
+/// from every remaining subscriber (which triggers renegotiation, so clients
+/// drop the removed track).
+async fn remove_room_track(state: &SharedState, room_id: &str, publisher: &str, track_id: &str) {
+    let (removals, tasks) = {
+        let mut s = state.write().await;
+        let Some(room) = s.rooms.get_mut(room_id) else {
+            return;
+        };
+        let Some(idx) = room
+            .tracks
+            .iter()
+            .position(|rt| rt.publisher == publisher && rt.track_id == track_id)
+        else {
+            return;
+        };
+        let rt = room.tracks.remove(idx);
+        let mut forwarders = rt.forwarders.lock().await;
+        let mut removals = Vec::new();
+        let mut tasks = Vec::new();
+        for (id, f) in forwarders.drain() {
+            f.task.abort();
+            tasks.push(f.task);
+            if let Some(pc) = room.participants.get(&id).and_then(|p| p.pc.clone()) {
+                removals.push((pc, f.sender));
+            }
+        }
+        (removals, tasks)
+    };
+    for (pc, sender) in removals {
+        if let Err(e) = pc.remove_track(&sender).await {
+            warn!(
+                "remove_track failed for track {} from {}: {}",
+                track_id, publisher, e
+            );
+        }
+    }
+    for t in tasks {
+        let _ = t.await;
+    }
 }
 
 async fn leave_room(peer_id: &str, state: &SharedState) -> Option<RoomId> {
@@ -770,9 +1276,47 @@ async fn leave_room(peer_id: &str, state: &SharedState) -> Option<RoomId> {
         if let Some(room_id) = room_id.clone() {
             if let Some(room) = s.rooms.get_mut(&room_id) {
                 room.participants.remove(peer_id);
-                room.tracks.retain(|rt| rt.publisher != peer_id);
+                // Drop forwarder entries aimed at the departing peer in the
+                // remaining publishers' tracks.
+                for rt in room.tracks.iter() {
+                    rt.forwarders.lock().await.remove(peer_id);
+                }
+
+                // Detach the departing peer's published tracks from every
+                // remaining subscriber so their clients drop the tiles.
+                let mut removed_tracks = Vec::new();
+                room.tracks.retain(|rt| {
+                    if rt.publisher == peer_id {
+                        removed_tracks.push(rt.clone());
+                        false
+                    } else {
+                        true
+                    }
+                });
+                let mut removals: Vec<(Arc<RTCPeerConnection>, Arc<RTCRtpSender>)> = Vec::new();
+                for rt in removed_tracks {
+                    let forwarders = rt.forwarders.lock().await;
+                    for (id, f) in forwarders.iter() {
+                        if let Some(pc) = room.participants.get(id).and_then(|p| p.pc.clone()) {
+                            removals.push((pc, f.sender.clone()));
+                        }
+                    }
+                }
+                for (pc, sender) in removals {
+                    if let Err(e) = pc.remove_track(&sender).await {
+                        warn!("remove_track failed for leaving peer {}: {}", peer_id, e);
+                    }
+                }
                 if room.participants.is_empty() {
-                    s.rooms.remove(&room_id);
+                    if let Some(room) = s.rooms.remove(&room_id) {
+                        if room.recording.is_some() {
+                            let state = Arc::clone(state);
+                            let room_id = room_id.clone();
+                            tokio::spawn(async move {
+                                control::finalize_recording(state, &room_id).await;
+                            });
+                        }
+                    }
                 } else {
                     s.broadcast(
                         &room_id,
@@ -784,13 +1328,21 @@ async fn leave_room(peer_id: &str, state: &SharedState) -> Option<RoomId> {
                 }
             }
         }
+        #[cfg(feature = "rtc")]
+        {
+            s.rtc_peers.remove(peer_id);
+        }
         return room_id;
     }
     None
 }
 
-async fn cleanup_peer(peer_id: &str, state: &SharedState) {
-    let _ = leave_room(peer_id, state).await;
+pub(crate) async fn cleanup_peer(peer_id: &str, state: &SharedState) {
+    let _room_id = leave_room(peer_id, state).await;
+    #[cfg(feature = "rtc")]
+    if let Some(ref room_id) = _room_id {
+        crate::rtc_peer::cleanup_rtc_peer(peer_id, room_id, state).await;
+    }
     let pc = {
         let mut s = state.write().await;
         s.peers.remove(peer_id).and_then(|p| p.pc)
@@ -801,3 +1353,6 @@ async fn cleanup_peer(peer_id: &str, state: &SharedState) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

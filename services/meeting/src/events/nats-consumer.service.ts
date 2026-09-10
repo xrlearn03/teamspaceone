@@ -14,6 +14,7 @@ const CONSUMERS: ConsumerConfig[] = [
   { stream: 'ORGANISATION', subject: 'teamspace-one.organisation.>', durable: 'meeting-organisation-consumer' },
   { stream: 'ORGANISATION', subject: 'teamspace-one.workspace.>', durable: 'meeting-workspace-consumer' },
   { stream: 'USERS', subject: 'teamspace-one.user.>', durable: 'meeting-user-consumer' },
+  { stream: 'INTERVIEW', subject: 'teamspace-one.interview.session.>', durable: 'meeting-interview-consumer' },
 ];
 
 @Injectable()

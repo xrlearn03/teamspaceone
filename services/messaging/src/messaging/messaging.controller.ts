@@ -1,5 +1,7 @@
-import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
+import { RemotePermissionGuard, RequirePermissions } from '@teamspace-one/authorization/nest';
+import { COLLABORATION_PERMISSIONS } from '@teamspace-one/authorization';
 import { MessagingService } from './messaging.service.js';
 import { type CreateChannelDto } from './dto/create-channel.dto.js';
 import { type CreateDirectChannelDto } from './dto/create-direct-channel.dto.js';
@@ -8,22 +10,29 @@ import { type UpdateChannelDto } from './dto/update-channel.dto.js';
 import { type UpdateChannelMembersDto } from './dto/update-channel-members.dto.js';
 import { type UpdateMessageDto } from './dto/update-message.dto.js';
 
+@UseGuards(RemotePermissionGuard)
 @Controller()
 export class MessagingController {
   constructor(private readonly messaging: MessagingService) {}
 
   @Get('channels/:id/access')
-  resolveAccess(@Param('id') channelId: string, @Headers('x-actor-id') actorId?: string) {
+  resolveAccess(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') channelId: string,
+    @Headers('x-actor-id') actorId?: string,
+  ) {
     if (!actorId) return null;
-    return this.messaging.resolveAccess(channelId, actorId);
+    return this.messaging.resolveAccess(channelId, actorId, ctx.organisationId);
   }
 
   @Get('channels')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.CHANNEL_VIEW)
   listChannels(@CurrentOrganisation() ctx: OrganisationContextValue) {
     return this.messaging.listChannels(ctx);
   }
 
   @Post('channels')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.CHANNEL_CREATE)
   createChannel(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: CreateChannelDto,
@@ -32,6 +41,7 @@ export class MessagingController {
   }
 
   @Post('channels/direct')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MESSAGE_SEND)
   createDirectChannel(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: CreateDirectChannelDto,
@@ -40,6 +50,7 @@ export class MessagingController {
   }
 
   @Patch('channels/:id')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.CHANNEL_MANAGE)
   updateChannel(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') channelId: string,
@@ -49,6 +60,7 @@ export class MessagingController {
   }
 
   @Put('channels/:id/members')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.CHANNEL_MANAGE)
   replaceMembers(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') channelId: string,
@@ -57,7 +69,28 @@ export class MessagingController {
     return this.messaging.replaceMembers(ctx, channelId, dto.memberIds);
   }
 
+  @Post('channels/:id/moderators')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.CHANNEL_MANAGE)
+  addModerator(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') channelId: string,
+    @Body() body: { userId: string },
+  ) {
+    return this.messaging.addModerator(ctx, channelId, body.userId);
+  }
+
+  @Delete('channels/:id/moderators/:userId')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.CHANNEL_MANAGE)
+  removeModerator(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') channelId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.messaging.removeModerator(ctx, channelId, userId);
+  }
+
   @Delete('channels/:id')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.CHANNEL_DELETE)
   async deleteChannel(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') channelId: string,
@@ -66,16 +99,19 @@ export class MessagingController {
   }
 
   @Get('channels/:id/messages')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MESSAGE_VIEW)
   listMessages(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') channelId: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
+    @Query('query') query?: string,
   ) {
-    return this.messaging.listMessages(ctx, channelId, cursor, limit ? Number(limit) : 50);
+    return this.messaging.listMessages(ctx, channelId, cursor, limit ? Number(limit) : 50, query);
   }
 
   @Get('messages/:id/thread')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MESSAGE_VIEW)
   listThreadMessages(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') messageId: string,
@@ -86,6 +122,7 @@ export class MessagingController {
   }
 
   @Post('messages')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MESSAGE_SEND)
   createMessage(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Body() dto: CreateMessageDto,
@@ -94,6 +131,7 @@ export class MessagingController {
   }
 
   @Patch('messages/:id')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MESSAGE_EDIT)
   updateMessage(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') messageId: string,
@@ -103,6 +141,7 @@ export class MessagingController {
   }
 
   @Post('messages/:id/reactions')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MESSAGE_SEND)
   toggleReaction(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') messageId: string,
@@ -112,10 +151,38 @@ export class MessagingController {
   }
 
   @Delete('messages/:id')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MESSAGE_DELETE)
   deleteMessage(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') messageId: string,
   ) {
     return this.messaging.deleteMessage(ctx, messageId);
+  }
+
+  @Post('messages/:id/pin')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MESSAGE_EDIT)
+  pinMessage(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') messageId: string,
+  ) {
+    return this.messaging.pinMessage(ctx, messageId);
+  }
+
+  @Delete('messages/:id/pin')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MESSAGE_EDIT)
+  unpinMessage(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') messageId: string,
+  ) {
+    return this.messaging.unpinMessage(ctx, messageId);
+  }
+
+  @Get('channels/:id/pinned')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MESSAGE_VIEW)
+  listPinnedMessages(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') channelId: string,
+  ) {
+    return this.messaging.listPinnedMessages(ctx, channelId);
   }
 }

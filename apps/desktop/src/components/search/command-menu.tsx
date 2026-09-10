@@ -25,11 +25,11 @@ import {
   useUsers,
   useWorkspaces,
 } from "../../hooks/api";
-import { getActiveOrganisation, type SearchResult as ApiSearchResult, type UserDto } from "../../lib/api";
+import { getActiveOrganisation, type SearchResult as ApiSearchResult } from "../../lib/api";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
-import { cn } from "../../lib/utils";
+import { cn, getUserDisplayName } from "../../lib/utils";
 import type { LucideIcon } from "lucide-react";
 
 interface SearchResult {
@@ -40,8 +40,9 @@ interface SearchResult {
   preview?: string;
   icon: LucideIcon;
   view?: string;
-  params?: { channelId?: string; projectId?: string; meetingId?: string };
+  params?: { channelId?: string; projectId?: string; meetingId?: string; workspaceId?: string };
   userId?: string;
+  sourceKey?: string;
 }
 
 const filters = ["All", "Messages", "Channels", "Files", "Projects", "Meetings", "Members"];
@@ -51,8 +52,21 @@ const TYPE_MAP: Record<string, { icon: LucideIcon; label: string; view: string }
   channel: { icon: Hash, label: "Channel", view: "channel" },
   task: { icon: Folder, label: "Task", view: "project" },
   project: { icon: Folder, label: "Project", view: "project" },
+  "project-comment": { icon: MessageSquare, label: "Project comment", view: "project" },
+  approval: { icon: FileText, label: "Approval", view: "project" },
   file: { icon: FileText, label: "File", view: "files" },
   meeting: { icon: Calendar, label: "Meeting", view: "meeting" },
+  "voice-room": { icon: MessageSquare, label: "Voice room", view: "voice" },
+  "meeting-chat": { icon: MessageSquare, label: "Meeting message", view: "meeting" },
+  "ai-summary": { icon: FileText, label: "AI summary", view: "ai" },
+  workspace: { icon: Hash, label: "Workspace", view: "home" },
+  organisation: { icon: Folder, label: "Organisation", view: "home" },
+  user: { icon: User, label: "Member", view: "members" },
+  employee: { icon: User, label: "Employee", view: "hrms" },
+  "hrms-leave": { icon: Calendar, label: "Leave request", view: "hrms" },
+  "hrms-attendance": { icon: Calendar, label: "Attendance correction", view: "hrms" },
+  candidate: { icon: User, label: "Candidate", view: "interview" },
+  "interview-session": { icon: Calendar, label: "Interview session", view: "interview" },
 };
 
 function recentSearches(): string[] {
@@ -70,15 +84,6 @@ function pushRecentSearch(q: string) {
 }
 
 const selectClass = "h-7 rounded-md border bg-surface px-2 text-xs text-text";
-
-function getDisplayName(_member: { userId: string }, user?: UserDto) {
-  if (user) {
-    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (fullName) return fullName;
-    return user.email;
-  }
-  return "Unknown";
-}
 
 export function CommandMenu({
   open,
@@ -101,8 +106,13 @@ export function CommandMenu({
   const createDirectChannel = useCreateDirectChannel();
   const { data: me } = useMe();
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { setActiveView, setSearchOpen } = useUIStore(
-    useShallow((s) => ({ setActiveView: s.setActiveView, setSearchOpen: s.setSearchOpen })),
+  const searchRequest = useRef(0);
+  const { setActiveView, setActiveWorkspace, setSearchOpen } = useUIStore(
+    useShallow((s) => ({
+      setActiveView: s.setActiveView,
+      setActiveWorkspace: s.setActiveWorkspace,
+      setSearchOpen: s.setSearchOpen,
+    })),
   );
 
   const organisationId = useUIStore((s) => s.organisationId) ?? undefined;
@@ -118,13 +128,20 @@ export function CommandMenu({
 
   useEffect(() => {
     if (open) setRecents(recentSearches());
-  }, [open]);
+  }, [open, organisationId]);
+
+  useEffect(() => {
+    searchRequest.current++;
+    setServerResults([]);
+    setSelected(0);
+  }, [organisationId]);
 
   // Debounced server-side search so messages/tasks content is included.
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
+    const requestId = ++searchRequest.current;
     const q = query.trim();
-    if ((!q && !authorId && !workspaceId && !fromDate && !toDate) || filter === "Members") {
+    if (!open || ((!q && !authorId && !workspaceId && !fromDate && !toDate) || filter === "Members")) {
       setServerResults([]);
       return;
     }
@@ -140,13 +157,20 @@ export function CommandMenu({
             to: toDate ? new Date(`${toDate}T23:59:59`).toISOString() : undefined,
           },
         },
-        { onSuccess: setServerResults, onError: () => setServerResults([]) },
+        {
+          onSuccess: (results) => {
+            if (searchRequest.current === requestId) setServerResults(results);
+          },
+          onError: () => {
+            if (searchRequest.current === requestId) setServerResults([]);
+          },
+        },
       );
     }, 300);
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
-  }, [query, filter, authorId, workspaceId, fromDate, toDate]);
+  }, [open, organisationId, query, filter, authorId, workspaceId, fromDate, toDate]);
 
   const publicChannels = channels?.filter((c) => c.type !== "direct") ?? [];
   const directChannels = channels?.filter((c) => c.type === "direct") ?? [];
@@ -221,7 +245,7 @@ export function CommandMenu({
           return {
             id: m.userId,
             type: "Member",
-            title: getDisplayName(m, user),
+            title: getUserDisplayName(user),
             subtitle: m.role.name,
             icon: User,
             userId: m.userId,
@@ -231,7 +255,7 @@ export function CommandMenu({
 
     const remote: SearchResult[] = serverResults.map((r) => {
       const meta = TYPE_MAP[r.resourceType] ?? { icon: FileText, label: r.resourceType, view: "channel" };
-      const metadata = (r.metadata ?? {}) as { channelId?: string; projectId?: string };
+      const metadata = (r.metadata ?? {}) as { channelId?: string; projectId?: string; meetingId?: string };
       const view = r.resourceType === "message" ? "channel" : meta.view;
       const params =
         r.resourceType === "message"
@@ -240,11 +264,15 @@ export function CommandMenu({
             ? { channelId: r.resourceId }
             : r.resourceType === "project"
               ? { projectId: r.resourceId }
-              : r.resourceType === "task"
+              : ["task", "project-comment", "approval"].includes(r.resourceType)
                 ? { projectId: metadata.projectId }
-                : r.resourceType === "meeting"
+                : r.resourceType === "meeting" || r.resourceType === "voice-room"
                   ? { meetingId: r.resourceId }
-                  : {};
+                  : r.resourceType === "meeting-chat"
+                    ? { meetingId: metadata.meetingId }
+                    : r.resourceType === "workspace"
+                      ? { workspaceId: r.resourceId }
+                      : {};
       return {
         id: `api-${r.id}`,
         type: meta.label,
@@ -254,11 +282,16 @@ export function CommandMenu({
         icon: meta.icon,
         view,
         params,
+        userId: r.resourceType === "user" ? r.resourceId : undefined,
+        sourceKey: `${r.resourceType}:${r.resourceId}`,
       };
     });
 
     const q = query.toLowerCase();
-    const all = [...local, ...remote];
+    const all = [...new Map([...local, ...remote].map((result) => [
+      result.sourceKey ?? `${result.type.toLowerCase()}:${result.id}`,
+      result,
+    ])).values()];
     const singular: Record<string, string> = {
       Channels: "Channel",
       Messages: "Message",
@@ -299,6 +332,7 @@ export function CommandMenu({
       }
       return;
     }
+    if (result.params?.workspaceId) setActiveWorkspace(result.params.workspaceId);
     if (result.view) {
       setActiveView(result.view as View, result.params ?? {});
     }
@@ -386,7 +420,7 @@ export function CommandMenu({
             <select className={selectClass} value={authorId} onChange={(e) => setAuthorId(e.target.value)} aria-label="Author filter">
               <option value="">Any author</option>
               {members?.map((m) => (
-                <option key={m.userId} value={m.userId}>{getDisplayName(m, userMap.get(m.userId))}</option>
+                <option key={m.userId} value={m.userId}>{getUserDisplayName(userMap.get(m.userId))}</option>
               ))}
             </select>
             <label className="flex items-center gap-1 text-xs text-text-muted">

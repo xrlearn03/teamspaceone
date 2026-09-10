@@ -6,7 +6,7 @@ import { Card } from "../components/ui/card";
 import { useAcceptInvitation, useCreateOrganisation, useMe } from "../hooks/api";
 import { useSwitchOrganisation } from "../hooks/useOrganisationSwitch";
 import { ApiError, logout } from "../lib/api";
-import { cn } from "../lib/utils";
+import { cn, getUserDisplayName } from "../lib/utils";
 
 /** Shown after sign-in when the user has no organisation yet. */
 export function OnboardingScreen() {
@@ -23,7 +23,7 @@ export function OnboardingScreen() {
     window.location.reload();
   }
 
-  const firstName = user?.firstName || user?.email || "there";
+  const displayName = getUserDisplayName(user, "there");
 
   function submitCreate() {
     if (!name.trim()) return;
@@ -47,11 +47,11 @@ export function OnboardingScreen() {
       : error?.message;
 
   return (
-    <div className="flex h-full items-center justify-center bg-background p-6">
+    <div className="flex h-full items-center justify-center bg-background p-3 sm:p-4 lg:p-6">
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
           <Sparkles className="mx-auto mb-3 h-8 w-8 text-primary" />
-          <h1 className="text-xl font-semibold text-text">Welcome, {firstName}</h1>
+          <h1 className="text-xl font-semibold text-text">Welcome, {displayName}</h1>
           <p className="mt-1 text-sm text-text-muted">
             To get started, create an organisation or join an existing one with an invitation.
           </p>
@@ -129,7 +129,7 @@ export function OnboardingScreen() {
         )}
 
         <p className="mt-6 text-center text-xs text-text-muted">
-          Signed in as {user?.email ?? "…"} ·{" "}
+          Signed in as {getUserDisplayName(user, "…")} ·{" "}
           <button type="button" className="text-primary hover:underline" onClick={signOut}>
             Sign out
           </button>

@@ -1,0 +1,262 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model OutboxEvent {
+  id             String    @id @default(cuid())
+  eventId        String    @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String
+  createdAt      DateTime  @default(now())
+  publishedAt    DateTime?
+
+  @@index([publishedAt])
+  @@index([organisationId])
+}
+
+model InboxEvent {
+  id             String   @id @default(cuid())
+  eventId        String   @unique
+  eventType      String
+  subject        String
+  payload        Json
+  organisationId String
+  processedAt    DateTime @default(now())
+
+  @@index([eventId])
+  @@index([organisationId])
+}
+
+model JobOpening {
+  id              String   @id @default(cuid())
+  organisationId  String
+  title           String
+  departmentId    String?
+  departmentName  String?
+  hiringManagerId String?
+  recruiterId     String?
+  description     String?
+  requirements    String?
+  status          String   @default("open")
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  applications    CandidateApplication[]
+  sessions        InterviewSession[]
+  templates       InterviewTemplate[]
+
+  @@index([organisationId])
+  @@index([organisationId, status])
+  @@index([organisationId, recruiterId])
+  @@index([organisationId, hiringManagerId])
+}
+
+model Candidate {
+  id             String   @id @default(cuid())
+  organisationId String
+  name           String
+  email          String
+  phone          String?
+  location       String?
+  resumeFileId   String?
+  source         String?
+  status         String   @default("applied")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  applications   CandidateApplication[]
+  sessions       InterviewSession[]
+
+  @@unique([organisationId, email])
+  @@index([organisationId])
+  @@index([organisationId, status])
+}
+
+model CandidateApplication {
+  id             String   @id @default(cuid())
+  organisationId String
+  candidateId    String
+  jobOpeningId   String
+  stage          String   @default("applied")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  candidate      Candidate       @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  jobOpening     JobOpening      @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
+  screeningResult ScreeningResult?
+  hiringDecision  HiringDecision?
+
+  @@unique([candidateId, jobOpeningId])
+  @@index([organisationId])
+  @@index([organisationId, stage])
+}
+
+model InterviewSession {
+  id             String    @id @default(cuid())
+  organisationId String
+  candidateId    String
+  jobOpeningId   String?
+  interviewType  String    @default("video")
+  scheduledAt    DateTime?
+  durationMin    Int       @default(60)
+  status         String    @default("scheduled")
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  candidate      Candidate            @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  jobOpening     JobOpening?          @relation(fields: [jobOpeningId], references: [id], onDelete: SetNull)
+  participants   InterviewParticipant[]
+  evaluations    InterviewEvaluation[]
+  answers        InterviewAnswer[]
+
+  @@index([organisationId])
+  @@index([organisationId, scheduledAt])
+  @@index([organisationId, status])
+}
+
+model InterviewParticipant {
+  id                String   @id @default(cuid())
+  organisationId    String
+  sessionId         String
+  userId            String
+  role              String   @default("interviewer")
+  createdAt         DateTime @default(now())
+
+  session           InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, userId])
+  @@index([organisationId])
+  @@index([organisationId, userId])
+}
+
+model InterviewEvaluation {
+  id                    String   @id @default(cuid())
+  organisationId        String
+  sessionId             String
+  evaluatorId           String
+  technicalScore        Int?
+  communicationScore    Int?
+  problemSolvingScore   Int?
+  cultureFitScore       Int?
+  overallScore          Int?
+  recommendation        String?
+  comments              String?
+  source                String   @default("human")
+  aiMetadata            Json?
+  reviewedBy            String?
+  reviewedAt            DateTime?
+  status                String   @default("pending")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  session               InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, evaluatorId])
+  @@index([organisationId])
+  @@index([organisationId, evaluatorId, status])
+}
+
+model InterviewTemplate {
+  id              String   @id @default(cuid())
+  organisationId  String
+  name            String
+  jobOpeningId    String?
+  description     String?
+  config          Json?
+  status          String   @default("active")
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  questions       InterviewQuestion[]
+  jobOpening      JobOpening? @relation(fields: [jobOpeningId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId])
+  @@index([jobOpeningId])
+  @@map("interview_templates")
+}
+
+model InterviewQuestion {
+  id              String   @id @default(cuid())
+  organisationId  String
+  templateId      String
+  category        String?
+  question        String
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  template        InterviewTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([templateId])
+  @@index([templateId, sortOrder])
+  @@map("interview_questions")
+}
+
+model ScreeningResult {
+  id                  String   @id @default(cuid())
+  organisationId      String
+  applicationId       String   @unique
+  matchScore          Int?
+  skillsFound         Json?
+  missingRequirements Json?
+  summary             String?
+  confidence          String?
+  status              String   @default("ai_generated")
+  reviewedBy          String?
+  reviewedAt          DateTime?
+  model               String?
+  promptVersion       String?
+  createdBy           String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  application         CandidateApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([organisationId, applicationId])
+  @@map("screening_results")
+}
+
+model InterviewAnswer {
+  id              String   @id @default(cuid())
+  organisationId  String
+  sessionId       String
+  question        String
+  answer          String?
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  session         InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([sessionId])
+  @@index([sessionId, sortOrder])
+  @@map("interview_answers")
+}
+
+model HiringDecision {
+  id              String   @id @default(cuid())
+  organisationId  String
+  applicationId   String   @unique
+  decision        String
+  rationale       String?
+  decidedBy       String
+  createdAt       DateTime @default(now())
+
+  application     CandidateApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([applicationId])
+  @@map("hiring_decisions")
+}

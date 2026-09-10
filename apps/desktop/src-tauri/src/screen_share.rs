@@ -1,3 +1,5 @@
+#[cfg(desktop)]
+mod desktop {
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use image::codecs::jpeg::JpegEncoder;
 use scap::capturer::{Capturer, CapturerBuildError, Options, Resolution};
@@ -141,3 +143,45 @@ fn stop_screen_share_state(state: &ScreenShareState) {
         *guard = None;
     }
 }
+}
+#[cfg(desktop)]
+pub use desktop::*;
+
+#[cfg(not(desktop))]
+mod mobile {
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
+    use std::thread::JoinHandle;
+
+    pub struct ScreenShareState {
+        pub latest: Arc<Mutex<Option<Vec<u8>>>>,
+        pub stop: Arc<AtomicBool>,
+        pub handle: Mutex<Option<JoinHandle<()>>>,
+    }
+
+    impl ScreenShareState {
+        pub fn new() -> Self {
+            Self {
+                latest: Arc::new(Mutex::new(None)),
+                stop: Arc::new(AtomicBool::new(true)),
+                handle: Mutex::new(None),
+            }
+        }
+    }
+
+    #[tauri::command(rename = "start-screen-share")]
+    pub fn start_screen_share(
+        _app: tauri::AppHandle,
+        _state: tauri::State<'_, ScreenShareState>,
+    ) -> Result<(), String> {
+        Err("Screen sharing is not supported on this platform".into())
+    }
+
+    #[tauri::command(rename = "stop-screen-share")]
+    pub fn stop_screen_share(_state: tauri::State<'_, ScreenShareState>) -> Result<(), String> {
+        Err("Screen sharing is not supported on this platform".into())
+    }
+}
+
+#[cfg(not(desktop))]
+pub use mobile::*;

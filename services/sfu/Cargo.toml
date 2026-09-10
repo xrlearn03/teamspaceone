@@ -5,9 +5,18 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
+axum = "0.8"
 base64 = "0.22"
+bytes = { version = "1", optional = true }
 futures = "0.3"
 hmac = "0.12"
+interceptor = "0.17.2"
+rand = { version = "0.8", optional = true }
+rtc = { version = "0.9.1", optional = true }
+rtc-interceptor = { version = "0.9.1", optional = true }
+rtp = { version = "0.9.1", package = "rtc-rtp", optional = true }
+rtcp = { version = "0.9.1", package = "rtc-rtcp", optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -16,3 +25,14 @@ tokio-tungstenite = "0.21"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 webrtc = "0.17.1"
+
+[features]
+rtc = ["dep:rtc", "dep:bytes", "dep:rtc-interceptor", "dep:rtp", "dep:rtcp", "dep:rand"]
+
+[[example]]
+name = "ws_probe"
+required-features = ["rtc"]
+
+[[example]]
+name = "rtc_e2e_client"
+required-features = ["rtc"]

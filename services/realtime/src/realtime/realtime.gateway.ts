@@ -167,7 +167,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   ): Promise<void> {
     const userId = client.data.userId as string | undefined;
     if (!userId || !data.meetingId || !Array.isArray(data.userIds)) return;
-    if (!(await this.access.canAccess(userId, 'meeting', data.meetingId))) return;
     if (data.channelId && !(await this.access.canAccess(userId, 'channel', data.channelId))) return;
     const payload = {
       meetingId: data.meetingId,
@@ -380,8 +379,17 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
         }
         break;
       }
-      default:
-        this.logger.debug({ eventType: envelope.eventType }, 'No realtime broadcast configured');
+      default: {
+        const organisationId = envelope.organisationId as string | undefined;
+        if (organisationId) {
+          const tag = envelope.eventType.replace(/^teamspace-one\./, '');
+          this.server
+            .to(`organisation:${organisationId}`)
+            .emit('sync', { tag, resourceId: envelope.resourceId });
+          this.logger.debug({ eventType: envelope.eventType, tag }, 'Broadcasted sync event');
+        }
+        break;
+      }
     }
   }
 }

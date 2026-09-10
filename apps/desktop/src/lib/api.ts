@@ -263,6 +263,7 @@ export interface UserDto {
   avatarFileId?: string | null;
   active: boolean;
   emailVerified: boolean;
+  mustChangePassword?: boolean;
   createdAt: string;
 }
 
@@ -287,12 +288,44 @@ export interface Workspace {
   createdAt: string;
 }
 
+export interface Permission {
+  id: string;
+  module: string;
+  resource: string;
+  action: string;
+  description?: string | null;
+}
+
+export interface RolePermission {
+  id: string;
+  roleId: string;
+  permissionId: string;
+  permission: Permission;
+}
+
+export type RoleCategory =
+  | "administrative"
+  | "managerial"
+  | "employee"
+  | "member"
+  | "external"
+  | "candidate"
+  | "guest";
+
+/** Categories assignable through the administrative role-management UI. */
+export const ADMIN_MANAGED_ROLE_CATEGORIES: RoleCategory[] = ["administrative", "managerial"];
+
 export interface OrganisationRole {
   id: string;
   organisationId: string;
   name: string;
-  permissions: string[];
+  description?: string | null;
+  roleCategory: RoleCategory;
+  isSystem?: boolean;
   isDefault: boolean;
+  rolePermissions: RolePermission[];
+  roleScopes: UserDataScope[];
+  createdAt: string;
 }
 
 export interface Client {
@@ -318,7 +351,7 @@ export interface OrganisationMember {
   id: string;
   userId: string;
   organisationId: string;
-  role: { id: string; name: string };
+  role: { id: string; name: string; roleCategory?: RoleCategory };
   createdAt: string;
 }
 
@@ -371,6 +404,7 @@ export interface Message {
   content: string;
   editedAt?: string | null;
   deletedAt?: string | null;
+  pinnedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   attachments: MessageAttachment[];
@@ -403,6 +437,8 @@ export interface Project {
   description?: string | null;
   ownerId: string;
   status: string;
+  isTemplate: boolean;
+  templateId?: string | null;
   startDate?: string | null;
   targetDate?: string | null;
   archivedAt?: string | null;
@@ -583,12 +619,6 @@ export interface MeetingParticipant {
 
 export interface JoinMeetingResult {
   participant: MeetingParticipant;
-  token: string;
-}
-
-export interface MeetingTokenResult {
-  token: string;
-  roomName: string;
 }
 
 export interface MeetingSfuTokenResult {
@@ -677,6 +707,14 @@ export function changePassword(currentPassword: string, newPassword: string) {
   return apiRequest<void>("/auth/change-password", { method: "POST", body: { currentPassword, newPassword } });
 }
 
+export function requestPasswordReset(email: string) {
+  return apiRequest<{ requested: boolean }>("/auth/forgot-password", { method: "POST", body: { email } });
+}
+
+export function resetPassword(email: string, code: string, newPassword: string) {
+  return apiRequest<{ reset: boolean }>("/auth/reset-password", { method: "POST", body: { email, code, newPassword } });
+}
+
 export async function logout(): Promise<void> {
   const refreshToken = await getRefreshToken();
   if (refreshToken) {
@@ -720,8 +758,85 @@ export function getMembers(organisationId: string) {
   return apiRequest<OrganisationMember[]>(`/organisations/${organisationId}/members`);
 }
 
+export interface UserDataScope {
+  module: string;
+  scope: "own" | "assigned" | "team" | "department" | "organisation";
+  scopeValue?: string | null;
+}
+
+/** Authorisation context for the current user in the active organisation. */
+export interface UserContext {
+  id: string;
+  organisationId: string;
+  permissions: string[];
+  dataScopes: UserDataScope[];
+  isSuperAdmin?: boolean;
+}
+
+export function getMyContext(organisationId: string) {
+  return apiRequest<UserContext>(`/organisations/${organisationId}/me/context`);
+}
+
+export interface EmailProvider {
+  organisationId: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  user?: string | null;
+  from: string;
+  enabled: boolean;
+}
+
+export interface UpdateEmailProvider {
+  host: string;
+  port: number;
+  secure: boolean;
+  user?: string;
+  pass?: string;
+  from?: string;
+  enabled?: boolean;
+}
+
+export function getEmailProvider(organisationId: string) {
+  return apiRequest<EmailProvider | null>(`/organisations/${organisationId}/email-provider`);
+}
+
+export function updateEmailProvider(organisationId: string, body: UpdateEmailProvider) {
+  return apiRequest<EmailProvider>(`/organisations/${organisationId}/email-provider`, { method: "PATCH", body });
+}
+
 export function getRoles(organisationId: string) {
   return apiRequest<OrganisationRole[]>(`/organisations/${organisationId}/roles`);
+}
+
+export function getPermissions(organisationId: string) {
+  return apiRequest<Permission[]>(`/organisations/${organisationId}/permissions`);
+}
+
+export function createRole(organisationId: string, body: { name: string; description?: string; roleCategory: RoleCategory; permissionIds: string[]; scopes?: UserDataScope[] }) {
+  return apiRequest<OrganisationRole>(`/organisations/${organisationId}/roles`, { method: "POST", body });
+}
+
+export function updateRole(organisationId: string, roleId: string, body: { name?: string; description?: string; roleCategory?: RoleCategory; permissionIds?: string[]; scopes?: UserDataScope[] }) {
+  return apiRequest<OrganisationRole>(`/organisations/${organisationId}/roles/${roleId}`, { method: "PATCH", body });
+}
+
+export function deleteRole(organisationId: string, roleId: string) {
+  return apiRequest<void>(`/organisations/${organisationId}/roles/${roleId}`, { method: "DELETE" });
+}
+
+export function updateMemberRole(organisationId: string, membershipId: string, roleId: string) {
+  return apiRequest<void>(`/organisations/${organisationId}/members/${membershipId}/role`, { method: "PATCH", body: { roleId } });
+}
+
+export function inviteMember(
+  organisationId: string,
+  body: { email: string; roleId: string; firstName?: string; lastName?: string },
+) {
+  return apiRequest<{ membership: OrganisationMember; accountCreated: boolean }>(
+    `/organisations/${organisationId}/members/invite`,
+    { method: "POST", body },
+  );
 }
 
 export async function createWorkspace(organisationId: string | null, name: string): Promise<Workspace> {
@@ -748,6 +863,14 @@ export function getInvitations(organisationId: string) {
 
 export function revokeInvitation(organisationId: string, invitationId: string) {
   return apiRequest<void>(`/organisations/${organisationId}/invitations/${invitationId}`, { method: "DELETE" });
+}
+
+export function resendInvitation(organisationId: string, invitationId: string) {
+  return apiRequest<void>(`/organisations/${organisationId}/invitations/${invitationId}/resend`, { method: "POST" });
+}
+
+export function removeMember(organisationId: string, membershipId: string) {
+  return apiRequest<void>(`/organisations/${organisationId}/members/${membershipId}`, { method: "DELETE" });
 }
 
 export function acceptInvitation(token: string) {
@@ -798,9 +921,18 @@ export function deleteChannel(channelId: string) {
   return apiRequest<void>(`/channels/${channelId}`, { method: "DELETE" });
 }
 
-export function getMessages(channelId: string, cursor?: string, limit = 50) {
+export function addChannelModerator(channelId: string, userId: string) {
+  return apiRequest<ChannelMember>(`/channels/${channelId}/moderators`, { method: "POST", body: { userId } });
+}
+
+export function removeChannelModerator(channelId: string, userId: string) {
+  return apiRequest<ChannelMember>(`/channels/${channelId}/moderators/${userId}`, { method: "DELETE" });
+}
+
+export function getMessages(channelId: string, cursor?: string, limit = 50, query?: string) {
   const params = new URLSearchParams({ limit: String(limit) });
   if (cursor) params.set("cursor", cursor);
+  if (query) params.set("query", query);
   return apiRequest<MessagePage>(`/channels/${channelId}/messages?${params.toString()}`);
 }
 
@@ -832,6 +964,18 @@ export function toggleMessageReaction(messageId: string, emoji: string) {
   );
 }
 
+export function getPinnedMessages(channelId: string) {
+  return apiRequest<Message[]>(`/channels/${channelId}/pinned`);
+}
+
+export function pinMessage(messageId: string) {
+  return apiRequest<Message>(`/messages/${messageId}/pin`, { method: "POST" });
+}
+
+export function unpinMessage(messageId: string) {
+  return apiRequest<Message>(`/messages/${messageId}/pin`, { method: "DELETE" });
+}
+
 // Projects
 export function getProjects() {
   return apiRequest<Project[]>("/projects");
@@ -851,6 +995,22 @@ export function updateProject(projectId: string, body: { name?: string; descript
 
 export function deleteProject(projectId: string) {
   return apiRequest<void>(`/projects/${projectId}`, { method: "DELETE" });
+}
+
+export function getProjectTemplates() {
+  return apiRequest<Project[]>("/projects/templates");
+}
+
+export function createProjectFromTemplate(templateId: string, body: { name: string; description?: string; workspaceId?: string; clientId?: string; memberIds?: string[]; startDate?: string; targetDate?: string }) {
+  return apiRequest<Project>(`/projects/from-template/${templateId}`, { method: "POST", body });
+}
+
+export function markProjectAsTemplate(projectId: string) {
+  return apiRequest<Project>(`/projects/${projectId}/template`, { method: "POST" });
+}
+
+export function unmarkProjectAsTemplate(projectId: string) {
+  return apiRequest<Project>(`/projects/${projectId}/template`, { method: "DELETE" });
 }
 
 export function getTasks(projectId: string) {
@@ -976,7 +1136,13 @@ async function sha256Hex(file: File): Promise<string | undefined> {
   }
 }
 
-export async function uploadFile(file: File) {
+export interface UploadResource {
+  resourceType: "channel" | "project" | "task" | "meeting";
+  resourceId: string;
+  workspaceId?: string;
+}
+
+export async function uploadFile(file: File, resource?: UploadResource) {
   const mimeType = file.type || "application/octet-stream";
   const sha256 = await sha256Hex(file);
 
@@ -988,6 +1154,9 @@ export async function uploadFile(file: File) {
         mimeType,
         size: file.size,
         category: "attachment",
+        resourceType: resource?.resourceType,
+        resourceId: resource?.resourceId,
+        workspaceId: resource?.workspaceId,
         sha256,
       },
     });
@@ -1069,9 +1238,31 @@ export function search(query: string, filters?: SearchFilters) {
   return apiRequest<SearchResult[]>(`/search?${params.toString()}`);
 }
 
+export interface CalendarEvent {
+  id: string;
+  type: "meeting";
+  sourceId: string;
+  title: string;
+  description?: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  status: string;
+  meetingType: string;
+  workspaceId?: string | null;
+  participantCount: number;
+}
+
 // Meetings
 export function getMeetings() {
   return apiRequest<Meeting[]>("/meetings");
+}
+
+export function getCalendarEvents(range?: { from?: string; to?: string }) {
+  const params = new URLSearchParams();
+  if (range?.from) params.set("from", range.from);
+  if (range?.to) params.set("to", range.to);
+  const qs = params.toString();
+  return apiRequest<CalendarEvent[]>(`/meetings/calendar/events${qs ? `?${qs}` : ""}`);
 }
 
 export function getMeeting(id: string) {
@@ -1107,11 +1298,6 @@ export function joinMeeting(id: string, name?: string) {
     method: "POST",
     body: { name },
   });
-}
-
-export function getMeetingToken(id: string, name?: string) {
-  const query = name ? `?name=${encodeURIComponent(name)}` : "";
-  return apiRequest<MeetingTokenResult>(`/meetings/${id}/token${query}`);
 }
 
 export function getSfuToken(id: string) {
@@ -1254,4 +1440,1111 @@ export function confirmAIAction(id: string, edits?: Record<string, unknown>) {
 
 export function declineAIAction(id: string) {
   return apiRequest<AIPendingAction>(`/ai/actions/${encodeURIComponent(id)}/decline`, { method: "POST" });
+}
+
+// ---------------------------------------------------------------------------
+// HRMS (Phase 4)
+// ---------------------------------------------------------------------------
+
+export interface Employee {
+  id: string;
+  organisationId: string;
+  userId: string;
+  firstName: string;
+  lastName: string;
+  workEmail?: string | null;
+  phone?: string | null;
+  avatarFileId?: string | null;
+  departmentId?: string | null;
+  designationId?: string | null;
+  managerEmployeeId?: string | null;
+  joiningDate?: string | null;
+  employmentType: string;
+  status: string;
+  employeeNumber?: string | null;
+  departmentName?: string | null;
+  designationName?: string | null;
+  department?: { id: string; name: string } | null;
+  designation?: { id: string; title?: string; name?: string } | null;
+  manager?: { id: string; firstName?: string; lastName?: string } | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface Department {
+  id: string;
+  organisationId: string;
+  name: string;
+  description?: string | null;
+  parentDepartmentId?: string | null;
+  headEmployeeId?: string | null;
+  memberCount?: number;
+  createdAt?: string;
+}
+
+export interface Designation {
+  id: string;
+  organisationId: string;
+  title: string;
+  name?: string;
+  level?: string | null;
+  departmentId?: string | null;
+  createdAt?: string;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  organisationId?: string;
+  employeeId: string;
+  employeeName?: string | null;
+  date: string;
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+  workedMinutes?: number | null;
+  status: string;
+  presenceStatus?: string | null;
+  createdAt?: string;
+}
+
+export interface AttendanceCorrection {
+  id: string;
+  attendanceId?: string;
+  attendanceRecordId?: string;
+  employeeId: string;
+  employeeName?: string | null;
+  date?: string | null;
+  requestedCheckInAt?: string | null;
+  requestedCheckOutAt?: string | null;
+  reason?: string | null;
+  status: string;
+  reviewerNote?: string | null;
+  createdAt?: string;
+}
+
+export interface LeaveType {
+  id: string;
+  organisationId?: string;
+  name: string;
+  code?: string | null;
+  paid?: boolean;
+  annualEntitlement?: number | null;
+  createdAt?: string;
+}
+
+export interface LeaveBalance {
+  id: string;
+  employeeId: string;
+  leaveTypeId: string;
+  leaveTypeName?: string | null;
+  year?: number;
+  entitled: number;
+  used: number;
+  remaining: number;
+}
+
+export interface LeaveRequest {
+  id: string;
+  employeeId: string;
+  employeeName?: string | null;
+  leaveTypeId: string;
+  leaveTypeName?: string | null;
+  startDate: string;
+  endDate: string;
+  days?: number | null;
+  reason?: string | null;
+  status: string;
+  reviewerNote?: string | null;
+  createdAt?: string;
+}
+
+export interface Holiday {
+  id: string;
+  organisationId?: string;
+  name: string;
+  date: string;
+  description?: string | null;
+}
+
+export interface PayrollPeriod {
+  id: string;
+  organisationId?: string;
+  name?: string | null;
+  startDate: string;
+  endDate: string;
+  status: string;
+}
+
+export interface Payslip {
+  id: string;
+  employeeId: string;
+  employeeName?: string | null;
+  payrollPeriodId: string;
+  periodName?: string | null;
+  gross?: number | null;
+  net?: number | null;
+  currency?: string | null;
+  status: string;
+  createdAt?: string;
+}
+
+export interface EmployeeDocument {
+  id: string;
+  employeeId: string;
+  fileId: string;
+  name?: string | null;
+  category?: string | null;
+  uploadedBy?: string | null;
+  createdAt?: string;
+}
+
+export interface HrmsOverview {
+  totalEmployees: number;
+  byDepartment: { name: string; count: number }[];
+  pendingLeaveRequests: number;
+  pendingCorrections: number;
+  presentToday: number;
+}
+
+export interface OrgChartNode {
+  id: string;
+  name: string;
+  designation?: string | null;
+  department?: string | null;
+  children: OrgChartNode[];
+}
+
+export function getHrmsOverview() {
+  return apiRequest<HrmsOverview>("/hrms/overview");
+}
+
+export interface HrmsCalendarEvent {
+  id: string;
+  title: string;
+  description?: string | null;
+  type: string; // leave | holiday | custom
+  startAt: string;
+  endAt: string;
+  allDay: boolean;
+  visibility: string;
+  employeeId?: string | null;
+}
+
+export interface HrmsCalendar {
+  events: HrmsCalendarEvent[];
+  holidays: HrmsCalendarEvent[];
+}
+
+export function getHrmsCalendar(range?: { from?: string; to?: string }) {
+  const params = new URLSearchParams();
+  if (range?.from) params.set("from", range.from);
+  if (range?.to) params.set("to", range.to);
+  const qs = params.toString();
+  return apiRequest<HrmsCalendar>(`/hrms/calendar${qs ? `?${qs}` : ""}`);
+}
+
+export interface EmployeeListParams {
+  departmentId?: string;
+  status?: string;
+  search?: string;
+}
+
+export function getEmployees(params?: EmployeeListParams) {
+  const query = new URLSearchParams();
+  if (params?.departmentId) query.set("departmentId", params.departmentId);
+  if (params?.status) query.set("status", params.status);
+  if (params?.search) query.set("search", params.search);
+  const qs = query.toString();
+  return apiRequest<Employee[]>(`/hrms/employees${qs ? `?${qs}` : ""}`);
+}
+
+export function getMyEmployee() {
+  return apiRequest<Employee>("/hrms/employees/me");
+}
+
+export function getEmployee(id: string) {
+  return apiRequest<Employee>(`/hrms/employees/${encodeURIComponent(id)}`);
+}
+
+export function createEmployee(body: {
+  userId: string;
+  membershipId?: string;
+  firstName: string;
+  lastName: string;
+  workEmail?: string;
+  phone?: string;
+  departmentId?: string;
+  designationId?: string;
+  managerEmployeeId?: string;
+  joiningDate?: string;
+  employmentType?: string;
+  employeeNumber?: string;
+}) {
+  return apiRequest<Employee>("/hrms/employees", { method: "POST", body });
+}
+
+export function updateEmployee(
+  id: string,
+  body: Partial<{
+    firstName: string;
+    lastName: string;
+    workEmail: string | null;
+    phone: string | null;
+    departmentId: string | null;
+    designationId: string | null;
+    managerEmployeeId: string | null;
+    joiningDate: string | null;
+    employmentType: string;
+    status: string;
+    employeeNumber: string | null;
+  }>,
+) {
+  return apiRequest<Employee>(`/hrms/employees/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body,
+  });
+}
+
+export function getDepartments() {
+  return apiRequest<Department[]>("/hrms/departments");
+}
+
+export function createDepartment(body: { name: string; description?: string; parentDepartmentId?: string; headEmployeeId?: string }) {
+  return apiRequest<Department>("/hrms/departments", { method: "POST", body });
+}
+
+export function updateDepartment(id: string, body: { name?: string; description?: string | null; parentDepartmentId?: string | null; headEmployeeId?: string | null }) {
+  return apiRequest<Department>(`/hrms/departments/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function deleteDepartment(id: string) {
+  return apiRequest<void>(`/hrms/departments/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function getDesignations() {
+  return apiRequest<Designation[]>("/hrms/designations");
+}
+
+export function createDesignation(body: { title: string; level?: string; departmentId?: string }) {
+  return apiRequest<Designation>("/hrms/designations", { method: "POST", body });
+}
+
+export function getOrgChart() {
+  return apiRequest<OrgChartNode[]>("/hrms/org-chart");
+}
+
+export function attendanceCheckin() {
+  return apiRequest<AttendanceRecord>("/hrms/attendance/checkin", { method: "POST" });
+}
+
+export function attendanceCheckout() {
+  return apiRequest<AttendanceRecord>("/hrms/attendance/checkout", { method: "POST" });
+}
+
+export function attendancePresence(status: "lunch" | "tea_break" | "out_of_office" | null) {
+  return apiRequest<AttendanceRecord>("/hrms/attendance/presence", {
+    method: "POST",
+    body: { status },
+  });
+}
+
+export function getAttendance(params?: { employeeId?: string; from?: string; to?: string }) {
+  const query = new URLSearchParams();
+  if (params?.employeeId) query.set("employeeId", params.employeeId);
+  if (params?.from) query.set("from", params.from);
+  if (params?.to) query.set("to", params.to);
+  const qs = query.toString();
+  return apiRequest<AttendanceRecord[]>(`/hrms/attendance${qs ? `?${qs}` : ""}`);
+}
+
+export function requestAttendanceCorrection(body: {
+  attendanceId: string;
+  requestedCheckInAt?: string;
+  requestedCheckOutAt?: string;
+  reason?: string;
+}) {
+  return apiRequest<AttendanceCorrection>("/hrms/attendance/corrections", { method: "POST", body });
+}
+
+export function getAttendanceCorrections(params?: { status?: string }) {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  const qs = query.toString();
+  return apiRequest<AttendanceCorrection[]>(`/hrms/attendance/corrections${qs ? `?${qs}` : ""}`);
+}
+
+export function reviewAttendanceCorrection(id: string, action: "approve" | "reject", note?: string) {
+  return apiRequest<AttendanceCorrection>(
+    `/hrms/attendance/corrections/${encodeURIComponent(id)}/${action}`,
+    { method: "POST", body: note ? { note } : {} },
+  );
+}
+
+export function getLeaveTypes() {
+  return apiRequest<LeaveType[]>("/hrms/leave/types");
+}
+
+export function getLeaveBalances(employeeId?: string) {
+  const qs = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : "";
+  return apiRequest<LeaveBalance[]>(`/hrms/leave/balances${qs}`);
+}
+
+export function getLeaveRequests(params?: { status?: string; employeeId?: string; mine?: boolean }) {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.employeeId) query.set("employeeId", params.employeeId);
+  if (params?.mine) query.set("mine", "true");
+  const qs = query.toString();
+  return apiRequest<LeaveRequest[]>(`/hrms/leave/requests${qs ? `?${qs}` : ""}`);
+}
+
+export function applyLeave(body: { leaveTypeId: string; startDate: string; endDate: string; reason?: string }) {
+  return apiRequest<LeaveRequest>("/hrms/leave/requests", { method: "POST", body });
+}
+
+export function reviewLeaveRequest(id: string, action: "approve" | "reject" | "cancel", note?: string) {
+  return apiRequest<LeaveRequest>(
+    `/hrms/leave/requests/${encodeURIComponent(id)}/${action}`,
+    { method: "POST", body: note ? { note } : {} },
+  );
+}
+
+export function getHolidays() {
+  return apiRequest<Holiday[]>("/hrms/holidays");
+}
+
+export function getPayrollPeriods() {
+  return apiRequest<PayrollPeriod[]>("/hrms/payroll/periods");
+}
+
+export function getPayslips(params?: { employeeId?: string; payrollPeriodId?: string }) {
+  const query = new URLSearchParams();
+  if (params?.employeeId) query.set("employeeId", params.employeeId);
+  if (params?.payrollPeriodId) query.set("payrollPeriodId", params.payrollPeriodId);
+  const qs = query.toString();
+  return apiRequest<Payslip[]>(`/hrms/payroll/payslips${qs ? `?${qs}` : ""}`);
+}
+
+export function getPayslip(id: string) {
+  return apiRequest<Payslip>(`/hrms/payroll/payslips/${encodeURIComponent(id)}`);
+}
+
+export function getEmployeeDocuments(employeeId?: string) {
+  const qs = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : "";
+  return apiRequest<EmployeeDocument[]>(`/hrms/documents${qs}`);
+}
+
+export function uploadEmployeeDocument(body: { employeeId?: string; fileId: string; category?: string; name?: string }) {
+  return apiRequest<EmployeeDocument>("/hrms/documents", { method: "POST", body });
+}
+
+export function deleteEmployeeDocument(id: string) {
+  return apiRequest<void>(`/hrms/documents/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// Interview / recruitment
+export interface JobOpening {
+  id: string;
+  organisationId: string;
+  title: string;
+  departmentId?: string | null;
+  departmentName?: string | null;
+  hiringManagerId?: string | null;
+  recruiterId?: string | null;
+  description?: string | null;
+  requirements?: string | null;
+  status: string;
+  createdAt: string;
+}
+
+export interface CandidateApplication {
+  id: string;
+  candidateId: string;
+  jobOpeningId: string;
+  stage: string;
+  jobOpening?: { id: string; title: string } | null;
+  createdAt: string;
+}
+
+export interface Candidate {
+  id: string;
+  organisationId: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  location?: string | null;
+  source?: string | null;
+  status: string;
+  resumeFileId?: string | null;
+  applications?: CandidateApplication[];
+  createdAt: string;
+}
+
+export interface InterviewSession {
+  id: string;
+  organisationId: string;
+  candidateId: string;
+  jobOpeningId?: string | null;
+  interviewType: string;
+  scheduledAt?: string | null;
+  durationMin: number;
+  status: string;
+  candidate?: { id: string; name: string; email?: string } | null;
+  jobOpening?: { id: string; title: string } | null;
+  participants?: { id: string; userId: string; role: string }[];
+  createdAt: string;
+}
+
+export interface InterviewOverview {
+  openJobs: number;
+  totalCandidates: number;
+  candidatesByStage: Record<string, number>;
+  interviewsToday: number;
+  upcomingInterviews: number;
+  pendingEvaluations: number;
+}
+
+export function getInterviewOverview() {
+  return apiRequest<InterviewOverview>("/interview/overview");
+}
+
+export function getJobOpenings(status?: string) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiRequest<JobOpening[]>(`/interview/jobs${qs}`);
+}
+
+export function createJobOpening(body: {
+  title: string;
+  departmentId?: string;
+  departmentName?: string;
+  hiringManagerId?: string;
+  recruiterId?: string;
+  description?: string;
+  requirements?: string;
+}) {
+  return apiRequest<JobOpening>("/interview/jobs", { method: "POST", body });
+}
+
+export function updateJobOpening(id: string, body: Partial<{
+  title: string;
+  departmentId: string | null;
+  hiringManagerId: string | null;
+  recruiterId: string | null;
+  description: string | null;
+  requirements: string | null;
+  status: string;
+}>) {
+  return apiRequest<JobOpening>(`/interview/jobs/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function getCandidates(status?: string) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiRequest<Candidate[]>(`/interview/candidates${qs}`);
+}
+
+export function createCandidate(body: {
+  name: string;
+  email: string;
+  phone?: string;
+  location?: string;
+  source?: string;
+  jobOpeningId?: string;
+}) {
+  return apiRequest<Candidate>("/interview/candidates", { method: "POST", body });
+}
+
+export function updateCandidate(id: string, body: { resumeFileId?: string | null }) {
+  return apiRequest<Candidate>(`/interview/candidates/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function getHiringDecisions() {
+  return apiRequest<HiringDecision[]>("/interview/decisions");
+}
+
+export function updateApplicationStage(applicationId: string, stage: string) {
+  return apiRequest<CandidateApplication>(`/interview/applications/${encodeURIComponent(applicationId)}/stage`, {
+    method: "PATCH",
+    body: { stage },
+  });
+}
+
+export function getInterviewSessions(upcoming?: boolean) {
+  const qs = upcoming ? "?upcoming=true" : "";
+  return apiRequest<InterviewSession[]>(`/interview/sessions${qs}`);
+}
+
+export function createInterviewSession(body: {
+  candidateId: string;
+  jobOpeningId?: string;
+  interviewType?: string;
+  scheduledAt?: string;
+  durationMin?: number;
+  participantIds?: string[];
+}) {
+  return apiRequest<InterviewSession>("/interview/sessions", { method: "POST", body });
+}
+
+export function getPendingEvaluations() {
+  return apiRequest<unknown[]>("/interview/evaluations/pending");
+}
+
+export function submitInterviewEvaluation(sessionId: string, body: {
+  technicalScore?: number;
+  communicationScore?: number;
+  problemSolvingScore?: number;
+  cultureFitScore?: number;
+  overallScore?: number;
+  recommendation?: string;
+  comments?: string;
+}) {
+  return apiRequest<unknown>(`/interview/sessions/${encodeURIComponent(sessionId)}/evaluations`, {
+    method: "POST",
+    body,
+  });
+}
+
+// ─── Phase 6 — AI screening + AI interview ──────────────────────────────────
+
+export interface ScreeningResult {
+  id: string;
+  applicationId: string;
+  matchScore?: number | null;
+  skillsFound: string[];
+  missingRequirements: string[];
+  summary: string;
+  confidence: "low" | "medium" | "high" | (string & {});
+  status: "ai_generated" | "reviewed";
+  model: string;
+  promptVersion: string;
+}
+
+export interface AiQuestion {
+  category?: string | null;
+  question: string;
+  sortOrder: number;
+}
+
+export interface AiStartResult {
+  session: InterviewSession;
+  questions: AiQuestion[];
+}
+
+export interface AiAnswerResponse {
+  done: boolean;
+  next?: { question: string; sortOrder: number } | null;
+}
+
+export interface InterviewAnswer {
+  question: string;
+  answer: string | null;
+  sortOrder: number;
+}
+
+export interface InterviewEvaluation {
+  id: string;
+  sessionId: string;
+  technicalScore?: number;
+  communicationScore?: number;
+  problemSolvingScore?: number;
+  cultureFitScore?: number;
+  overallScore?: number;
+  recommendation?: string;
+  comments?: string;
+  source?: string;
+  status?: string;
+  aiMetadata?: { suggestedFollowUps: string[]; model: string; promptVersion: string } | null;
+  createdAt: string;
+}
+
+export interface HiringDecision {
+  id: string;
+  organisationId?: string;
+  applicationId: string;
+  decision: "offer" | "hire" | "reject" | "hold" | (string & {});
+  rationale?: string | null;
+  decidedBy?: string;
+  createdAt: string;
+  application?: {
+    candidate?: { id: string; name: string } | null;
+    jobOpening?: { id: string; title: string } | null;
+  } | null;
+}
+
+export interface InterviewTemplateQuestion {
+  id?: string;
+  question: string;
+  category?: string;
+  sortOrder?: number;
+}
+
+export interface InterviewTemplate {
+  id: string;
+  organisationId: string;
+  name: string;
+  description?: string | null;
+  config: {
+    difficulty?: string;
+    duration?: number;
+    categories?: string[];
+    [key: string]: unknown;
+  };
+  questions: InterviewTemplateQuestion[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function runApplicationScreening(applicationId: string, body: { resumeText?: string } = {}) {
+  return apiRequest<ScreeningResult>(`/interview/applications/${encodeURIComponent(applicationId)}/screen`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function getApplicationScreening(applicationId: string): Promise<ScreeningResult | null> {
+  try {
+    return await apiRequest<ScreeningResult>(`/interview/applications/${encodeURIComponent(applicationId)}/screening`);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+export function reviewApplicationScreening(applicationId: string) {
+  return apiRequest<ScreeningResult>(`/interview/applications/${encodeURIComponent(applicationId)}/screening/review`, {
+    method: "POST",
+    body: {},
+  });
+}
+
+export function startAiInterview(sessionId: string, body: { templateId?: string; config?: Record<string, unknown> } = {}) {
+  return apiRequest<AiStartResult>(`/interview/sessions/${encodeURIComponent(sessionId)}/ai/start`, {
+    method: "POST",
+    body,
+  });
+}
+
+export function submitAiAnswer(sessionId: string, body: { questionIndex: number; answer: string }) {
+  return apiRequest<AiAnswerResponse>(`/interview/sessions/${encodeURIComponent(sessionId)}/ai/answer`, {
+    method: "POST",
+    body,
+  });
+}
+
+export function getAiTranscript(sessionId: string) {
+  return apiRequest<InterviewAnswer[]>(`/interview/sessions/${encodeURIComponent(sessionId)}/ai/transcript`);
+}
+
+export function evaluateAiInterview(sessionId: string) {
+  return apiRequest<InterviewEvaluation>(`/interview/sessions/${encodeURIComponent(sessionId)}/ai/evaluate`, {
+    method: "POST",
+    body: {},
+  });
+}
+
+export function getSessionEvaluations(sessionId: string) {
+  return apiRequest<InterviewEvaluation[]>(`/interview/sessions/${encodeURIComponent(sessionId)}/evaluations`);
+}
+
+export function reviewEvaluation(evaluationId: string, body: {
+  technicalScore?: number;
+  communicationScore?: number;
+  problemSolvingScore?: number;
+  cultureFitScore?: number;
+  overallScore?: number;
+  recommendation?: string;
+  comments?: string;
+}) {
+  return apiRequest<InterviewEvaluation>(`/interview/evaluations/${encodeURIComponent(evaluationId)}/review`, {
+    method: "POST",
+    body,
+  });
+}
+
+export function makeHiringDecision(applicationId: string, body: { decision: "offer" | "hire" | "reject" | "hold"; rationale?: string }) {
+  return apiRequest<HiringDecision>(`/interview/applications/${encodeURIComponent(applicationId)}/decision`, {
+    method: "POST",
+    body,
+  });
+}
+
+export function getInterviewTemplates() {
+  return apiRequest<InterviewTemplate[]>("/interview/templates");
+}
+
+export function createInterviewTemplate(body: Partial<InterviewTemplate>) {
+  return apiRequest<InterviewTemplate>("/interview/templates", { method: "POST", body });
+}
+
+export function updateInterviewTemplate(id: string, body: Partial<InterviewTemplate>) {
+  return apiRequest<InterviewTemplate>(`/interview/templates/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function deleteInterviewTemplate(id: string) {
+  return apiRequest<void>(`/interview/templates/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// ─── Phase 7 — Advanced HRMS ────────────────────────────────────────────────
+
+export interface OnboardingTemplateTask {
+  id: string;
+  title: string;
+  description?: string | null;
+  category?: string | null;
+  assigneeRole?: string | null;
+  dueDaysOffset?: number | null;
+  sortOrder?: number | null;
+}
+
+export interface OnboardingTemplate {
+  id: string;
+  name: string;
+  description?: string | null;
+  isActive: boolean;
+  tasks: OnboardingTemplateTask[];
+}
+
+export interface OnboardingTask {
+  id: string;
+  title: string;
+  category?: string | null;
+  status: string;
+  dueDate?: string | null;
+  assigneeUserId?: string | null;
+  completedAt?: string | null;
+}
+
+export interface OnboardingInstance {
+  id: string;
+  status: string;
+  sourceType?: string | null;
+  candidateName?: string | null;
+  candidateEmail?: string | null;
+  startDate?: string | null;
+  completedAt?: string | null;
+  employeeId?: string | null;
+  employee?: { id: string; firstName: string; lastName: string } | null;
+  template?: { id: string; name: string } | null;
+  tasks: OnboardingTask[];
+}
+
+export function getOnboardingTemplates() {
+  return apiRequest<OnboardingTemplate[]>("/hrms/onboarding/templates");
+}
+
+export function createOnboardingTemplate(body: {
+  name: string;
+  description?: string;
+  tasks: { title: string; description?: string; category?: string; dueDaysOffset?: number; sortOrder?: number }[];
+}) {
+  return apiRequest<OnboardingTemplate>("/hrms/onboarding/templates", { method: "POST", body });
+}
+
+export function updateOnboardingTemplate(
+  id: string,
+  body: Partial<{
+    name: string;
+    description: string | null;
+    isActive: boolean;
+    tasks: { title: string; description?: string; category?: string; dueDaysOffset?: number; sortOrder?: number }[];
+  }>,
+) {
+  return apiRequest<OnboardingTemplate>(`/hrms/onboarding/templates/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function deleteOnboardingTemplate(id: string) {
+  return apiRequest<void>(`/hrms/onboarding/templates/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function getOnboardingInstances(status?: string) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiRequest<OnboardingInstance[]>(`/hrms/onboarding${qs}`);
+}
+
+export function getOnboardingInstance(id: string) {
+  return apiRequest<OnboardingInstance>(`/hrms/onboarding/${encodeURIComponent(id)}`);
+}
+
+export function createOnboardingInstance(body: {
+  employeeId?: string;
+  candidateName?: string;
+  candidateEmail?: string;
+  templateId?: string;
+  startDate?: string;
+}) {
+  return apiRequest<OnboardingInstance>("/hrms/onboarding", { method: "POST", body });
+}
+
+export function convertOnboardingInstance(
+  id: string,
+  body: {
+    userId: string;
+    firstName: string;
+    lastName: string;
+    workEmail?: string;
+    phone?: string;
+    departmentId?: string;
+    designationId?: string;
+    managerEmployeeId?: string;
+    joiningDate?: string;
+    employmentType?: string;
+    employeeNumber?: string;
+  },
+) {
+  return apiRequest<OnboardingInstance>(`/hrms/onboarding/${encodeURIComponent(id)}/convert`, { method: "POST", body });
+}
+
+export function setOnboardingTaskStatus(id: string, taskId: string, action: "complete" | "reopen") {
+  return apiRequest<OnboardingInstance>(
+    `/hrms/onboarding/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/${action}`,
+    { method: "POST" },
+  );
+}
+
+export function cancelOnboardingInstance(id: string) {
+  return apiRequest<OnboardingInstance>(`/hrms/onboarding/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+}
+
+// Offboarding
+
+export interface OffboardingTask {
+  id: string;
+  title: string;
+  category?: string | null;
+  status: string;
+  completedAt?: string | null;
+}
+
+export interface OffboardingCase {
+  id: string;
+  type: string;
+  reason?: string | null;
+  lastWorkingDate?: string | null;
+  status: string;
+  exitInterviewNotes?: string | null;
+  settlementNotes?: string | null;
+  initiatedBy?: string | null;
+  completedAt?: string | null;
+  employee: { id: string; firstName: string; lastName: string };
+  tasks: OffboardingTask[];
+}
+
+export function getOffboardingCases() {
+  return apiRequest<OffboardingCase[]>("/hrms/offboarding");
+}
+
+export function getOffboardingCase(id: string) {
+  return apiRequest<OffboardingCase>(`/hrms/offboarding/${encodeURIComponent(id)}`);
+}
+
+export function createOffboardingCase(body: {
+  employeeId: string;
+  type?: string;
+  reason?: string;
+  lastWorkingDate?: string;
+}) {
+  return apiRequest<OffboardingCase>("/hrms/offboarding", { method: "POST", body });
+}
+
+export function updateOffboardingCase(
+  id: string,
+  body: Partial<{
+    reason: string | null;
+    lastWorkingDate: string | null;
+    exitInterviewNotes: string | null;
+    settlementNotes: string | null;
+    status: string;
+  }>,
+) {
+  return apiRequest<OffboardingCase>(`/hrms/offboarding/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function setOffboardingTaskStatus(id: string, taskId: string, action: "complete" | "reopen") {
+  return apiRequest<OffboardingCase>(
+    `/hrms/offboarding/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/${action}`,
+    { method: "POST" },
+  );
+}
+
+export function transitionOffboardingCase(id: string, action: "complete" | "cancel") {
+  return apiRequest<OffboardingCase>(`/hrms/offboarding/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+}
+
+// Performance
+
+export interface ReviewCycle {
+  id: string;
+  name: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  status: string;
+}
+
+export function getReviewCycles() {
+  return apiRequest<ReviewCycle[]>("/hrms/performance/cycles");
+}
+
+export function createReviewCycle(body: { name: string; startDate?: string; endDate?: string }) {
+  return apiRequest<ReviewCycle>("/hrms/performance/cycles", { method: "POST", body });
+}
+
+export function updateReviewCycle(
+  id: string,
+  body: Partial<{ name: string; startDate: string | null; endDate: string | null; status: string }>,
+) {
+  return apiRequest<ReviewCycle>(`/hrms/performance/cycles/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export interface PerformanceReview {
+  id: string;
+  status: string;
+  overallRating?: number | null;
+  ratings?: Record<string, number> | null;
+  strengths?: string | null;
+  improvements?: string | null;
+  comments?: string | null;
+  submittedAt?: string | null;
+  employee: { id: string; firstName: string; lastName: string };
+  reviewerId?: string | null;
+  cycle?: { id: string; name: string } | null;
+}
+
+export function getPerformanceReviews(params?: { cycleId?: string; employeeId?: string }) {
+  const query = new URLSearchParams();
+  if (params?.cycleId) query.set("cycleId", params.cycleId);
+  if (params?.employeeId) query.set("employeeId", params.employeeId);
+  const qs = query.toString();
+  return apiRequest<PerformanceReview[]>(`/hrms/performance/reviews${qs ? `?${qs}` : ""}`);
+}
+
+export function createPerformanceReview(body: { cycleId: string; employeeId: string; reviewerId?: string }) {
+  return apiRequest<PerformanceReview>("/hrms/performance/reviews", { method: "POST", body });
+}
+
+export function updatePerformanceReview(
+  id: string,
+  body: Partial<{
+    overallRating: number | null;
+    ratings: Record<string, number> | null;
+    strengths: string | null;
+    improvements: string | null;
+    comments: string | null;
+  }>,
+) {
+  return apiRequest<PerformanceReview>(`/hrms/performance/reviews/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function acknowledgePerformanceReview(id: string) {
+  return apiRequest<PerformanceReview>(`/hrms/performance/reviews/${encodeURIComponent(id)}/acknowledge`, { method: "POST" });
+}
+
+export interface Goal {
+  id: string;
+  title: string;
+  description?: string | null;
+  targetDate?: string | null;
+  status: string;
+  progress: number;
+  employee: { id: string; firstName: string; lastName: string };
+}
+
+export function getGoals(employeeId?: string) {
+  const qs = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : "";
+  return apiRequest<Goal[]>(`/hrms/goals${qs}`);
+}
+
+export function createGoal(body: {
+  employeeId?: string;
+  cycleId?: string;
+  title: string;
+  description?: string;
+  targetDate?: string;
+}) {
+  return apiRequest<Goal>("/hrms/goals", { method: "POST", body });
+}
+
+export function updateGoal(
+  id: string,
+  body: Partial<{ title: string; status: string; progress: number; targetDate: string | null }>,
+) {
+  return apiRequest<Goal>(`/hrms/goals/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+// Analytics
+
+export interface HrmsAnalytics {
+  headcount: number;
+  byDepartment: { id: string; name: string; count: number }[];
+  byStatus: Record<string, number>;
+  recentHires: number;
+  terminations: number;
+  attendance: {
+    presentToday: number;
+    avgWorkMinutes30d?: number | null;
+    pendingCorrections: number;
+  };
+  leave: {
+    pendingRequests: number;
+    approvedThisMonth: number;
+    usageByType: { name: string; used: number; entitled: number }[];
+  };
+  payroll?: {
+    lastPeriodStatus?: string | null;
+    totalNetLastPeriod?: number | null;
+  } | null;
+  lifecycle: {
+    activeOnboarding: number;
+    pendingOnboarding: number;
+    activeOffboarding: number;
+    upcomingReviews: number;
+  };
+  goals: {
+    onTrack: number;
+    atRisk: number;
+  };
+}
+
+export function getHrmsAnalytics() {
+  return apiRequest<HrmsAnalytics>("/hrms/analytics");
+}
+
+// Payroll additions
+
+export function processPayrollPeriod(id: string) {
+  return apiRequest<PayrollPeriod>(`/hrms/payroll/periods/${encodeURIComponent(id)}/process`, { method: "POST" });
+}
+
+export function approvePayrollPeriod(id: string) {
+  return apiRequest<PayrollPeriod>(`/hrms/payroll/periods/${encodeURIComponent(id)}/approve`, { method: "POST" });
+}
+
+export function markPayrollPeriodPaid(id: string) {
+  return apiRequest<PayrollPeriod>(`/hrms/payroll/periods/${encodeURIComponent(id)}/mark-paid`, { method: "POST" });
+}
+
+export interface PayrollSummaryRow {
+  periodId: string;
+  name?: string | null;
+  status: string;
+  headcount: number;
+  grossTotal?: number | null;
+  netTotal?: number | null;
+}
+
+export function getPayrollSummary() {
+  return apiRequest<PayrollSummaryRow[]>("/hrms/payroll/summary");
+}
+
+/**
+ * Downloads the payroll period CSV. `apiRequest` is JSON-only, so this uses
+ * the same fetch/auth-header pattern as `downloadFile`.
+ */
+export async function exportPayrollPeriodCsv(periodId: string): Promise<Blob> {
+  const response = await fetch(`${GATEWAY_URL}/hrms/payroll/periods/${encodeURIComponent(periodId)}/export`, {
+    method: "GET",
+    headers: { ...(await authHeaders()), Accept: "text/csv" },
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Export error ${response.status}: ${text}`);
+  }
+  return response.blob();
 }

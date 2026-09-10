@@ -3,4 +3,5 @@ export class CompleteUploadDto {
   resourceType?: string;
   resourceId?: string;
   sha256?: string;
+  versionOf?: string;
 }

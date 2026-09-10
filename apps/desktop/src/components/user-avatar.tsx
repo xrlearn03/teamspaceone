@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { User } from "lucide-react";
 import { downloadFile, type UserDto } from "../lib/api";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
-import { cn } from "../lib/utils";
+import { cn, getUserDisplayName } from "../lib/utils";
 
 export function useFileObjectUrl(fileId?: string | null): string | null {
   const [url, setUrl] = useState<string | null>(null);
@@ -35,13 +36,12 @@ interface UserAvatarProps {
 
 export function UserAvatar({ user, className, fallbackClassName }: UserAvatarProps) {
   const imageUrl = useFileObjectUrl(user?.avatarFileId);
-  const name =
-    `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() || user?.email || "User";
+  const name = getUserDisplayName(user, "User");
   return (
     <Avatar className={className}>
       {imageUrl ? <AvatarImage src={imageUrl} alt={name} /> : null}
       <AvatarFallback className={cn(fallbackClassName)}>
-        {name.charAt(0).toUpperCase()}
+        <User className="h-1/2 w-1/2" />
       </AvatarFallback>
     </Avatar>
   );

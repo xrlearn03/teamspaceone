@@ -22,7 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { cn } from "../lib/utils";
+import { cn, getUserDisplayName } from "../lib/utils";
 import { useRealtime } from "../hooks/useRealtime";
 import { useUIStore } from "../stores/ui";
 import { useMembers, useUsers } from "../hooks/api";
@@ -39,6 +39,13 @@ import {
   type UserDto,
 } from "../lib/api";
 
+interface QualityStats {
+  audio: { packetsLost: number; jitter: number; bitrate: number };
+  video: { packetsLost: number; jitter: number; bitrate: number };
+  rtt?: number;
+  timestamp: number;
+}
+
 interface NativeConferenceProps {
   user?: UserDto | null;
   title?: string;
@@ -46,15 +53,17 @@ interface NativeConferenceProps {
   meetingId: string;
   kind?: "audio" | "video";
   localStream?: MediaStream | null;
-  recordingStream?: MediaStream | null;
   nativeFrame?: string | null;
   localVideoEnabled?: boolean;
   localAudioEnabled?: boolean;
   remoteStreams?: { participantId: string; stream: MediaStream }[];
   participants?: { id: string; displayName: string; userId?: string }[];
+  activeSpeakerId?: string | null;
+  qualityStats?: QualityStats | null;
   screenShareEnabled?: boolean;
   isRecording?: boolean;
   isHost?: boolean;
+  audioOutputId?: string;
   onLeave: () => void;
   onEnd?: () => void;
   onToggleAudio?: () => void;
@@ -69,12 +78,13 @@ export function NativeConference({
   meetingId,
   kind = "video",
   localStream,
-  recordingStream,
   nativeFrame,
   localVideoEnabled = false,
   localAudioEnabled = false,
   remoteStreams = [],
   participants = [],
+  activeSpeakerId = null,
+  qualityStats = null,
   screenShareEnabled = false,
   isRecording: initialRecording = false,
   isHost = false,
@@ -83,6 +93,7 @@ export function NativeConference({
   onToggleAudio,
   onToggleVideo,
   onToggleScreenShare,
+  audioOutputId,
 }: NativeConferenceProps) {
   const realtime = useRealtime();
   const [activePanel, setActivePanel] = useState<"chat" | "participants" | null>(null);
@@ -91,16 +102,12 @@ export function NativeConference({
   const [chatInput, setChatInput] = useState("");
   const [reactions, setReactions] = useState<{ id: string; emoji: string; name: string }[]>([]);
   const [isRecording, setIsRecording] = useState(initialRecording);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [screenSharingUsers, setScreenSharingUsers] = useState<Set<string>>(new Set());
   const processedReactionIds = useRef<Set<string>>(new Set());
 
-  const displayName = user
-    ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
-    : "Guest";
+  const displayName = getUserDisplayName(user, "Guest");
 
   const participantCount = connected ? 1 + remoteStreams.length : 0;
-  const streamToRecord = recordingStream || localStream;
 
   const participantUserIds = useMemo(() => {
     const ids = new Set<string>();
@@ -122,12 +129,16 @@ export function NativeConference({
     return p?.displayName || "User";
   }
 
+  function participantBaseId(id: string) {
+    return id.replace(/^screen-/, "");
+  }
+
   function remoteDisplayName(id: string) {
-    return participants.find((p) => p.id === id)?.displayName ?? "User";
+    return participants.find((p) => p.id === participantBaseId(id))?.displayName ?? "User";
   }
 
   function remoteUserId(id: string) {
-    return participants.find((p) => p.id === id)?.userId;
+    return participants.find((p) => p.id === participantBaseId(id))?.userId;
   }
 
   function showReaction(emoji: string, userId: string, id: string) {
@@ -241,40 +252,11 @@ export function NativeConference({
   }
 
   async function toggleRecording() {
-    if (!streamToRecord || !isHost) return;
-    if (isRecording) {
-      mediaRecorder?.stop();
-      try {
-        await setMeetingRecording(meetingId, false);
-      } catch (err) {
-        console.error("Failed to update recording state", err);
-      }
-      setIsRecording(false);
-      setMediaRecorder(null);
-      return;
-    }
-
+    if (!isHost) return;
     try {
-      const recorder = new MediaRecorder(streamToRecord);
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size) chunks.push(e.data);
-      };
-      recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: recorder.mimeType });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `recording-${Date.now()}.webm`;
-        a.click();
-        URL.revokeObjectURL(url);
-      };
-      recorder.start();
-      setMediaRecorder(recorder);
-      setIsRecording(true);
-      await setMeetingRecording(meetingId, true);
+      await setMeetingRecording(meetingId, !isRecording);
     } catch (err) {
-      console.error("Failed to start recording", err);
+      console.error("Failed to update recording state", err);
     }
   }
 
@@ -302,6 +284,36 @@ export function NativeConference({
                 <span className="flex items-center gap-1 text-error">
                   <CircleDot className="h-2 w-2 animate-pulse" />
                   Recording
+                </span>
+              </>
+            ) : null}
+            {qualityStats ? (
+              <>
+                <span className="text-text-muted">•</span>
+                <span
+                  className={cn(
+                    "flex items-center gap-1",
+                    (qualityStats.audio.packetsLost ?? 0) +
+                      (qualityStats.video.packetsLost ?? 0) >
+                      50
+                      ? "text-error"
+                      : (qualityStats.audio.packetsLost ?? 0) +
+                            (qualityStats.video.packetsLost ?? 0) >
+                          10
+                        ? "text-warning"
+                        : "text-success",
+                  )}
+                >
+                  <CircleDot className="h-2 w-2" />
+                  {(qualityStats.audio.packetsLost ?? 0) +
+                    (qualityStats.video.packetsLost ?? 0) >
+                    50
+                    ? "Poor"
+                    : (qualityStats.audio.packetsLost ?? 0) +
+                          (qualityStats.video.packetsLost ?? 0) >
+                        10
+                      ? "Fair"
+                      : "Good"}
                 </span>
               </>
             ) : null}
@@ -348,33 +360,72 @@ export function NativeConference({
 
       {/* Main area */}
       <div className="relative flex flex-1 overflow-hidden">
-        <div className="flex flex-1 items-center justify-center overflow-y-auto p-4">
-          <div className="grid w-full max-w-6xl auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <ParticipantTile
-              name={displayName}
-              user={user}
-              isLocal
-              stream={localStream}
-              nativeFrame={nativeFrame}
-              videoEnabled={localVideoEnabled}
-              isHandRaised={user?.id ? raisedHands.has(user.id) : false}
-              isScreenSharing={user?.id ? screenSharingUsers.has(user.id) : false}
-            />
-            {remoteStreams.map(({ participantId, stream }) => {
-              const pUserId = remoteUserId(participantId);
-              return (
-                <ParticipantTile
-                  key={participantId}
-                  name={remoteDisplayName(participantId)}
-                  user={pUserId ? participantUserMap.get(pUserId) : undefined}
-                  stream={stream}
-                  videoEnabled={stream.getVideoTracks().some((t) => t.enabled && !t.muted && t.readyState !== "ended")}
-                  isHandRaised={pUserId ? raisedHands.has(pUserId) : false}
-                  isScreenSharing={pUserId ? screenSharingUsers.has(pUserId) : false}
-                />
-              );
-            })}
-          </div>
+        <div className="flex flex-1 flex-col items-center overflow-y-auto p-4">
+          {(() => {
+            const sortedRemote = [...remoteStreams].sort((a, b) => {
+              const aScreen = a.participantId.startsWith("screen-") ? 1 : 0;
+              const bScreen = b.participantId.startsWith("screen-") ? 1 : 0;
+              if (aScreen !== bScreen) return bScreen - aScreen;
+              const aActive = participantBaseId(a.participantId) === activeSpeakerId ? 1 : 0;
+              const bActive = participantBaseId(b.participantId) === activeSpeakerId ? 1 : 0;
+              return bActive - aActive;
+            });
+            const screenStreams = sortedRemote.filter((s) => s.participantId.startsWith("screen-"));
+            const cameraStreams = sortedRemote.filter((s) => !s.participantId.startsWith("screen-"));
+
+            return (
+              <div className="flex w-full max-w-6xl flex-col gap-4">
+                {screenStreams.length > 0 && (
+                  <div className="grid w-full grid-cols-1 gap-4">
+                    {screenStreams.map(({ participantId, stream }) => {
+                      const pUserId = remoteUserId(participantId);
+                      return (
+                        <ParticipantTile
+                          key={participantId}
+                          name={`${remoteDisplayName(participantId)} (screen)`}
+                          user={pUserId ? participantUserMap.get(pUserId) : undefined}
+                          stream={stream}
+                          audioOutputId={audioOutputId}
+                          className="aspect-video h-80 w-full"
+                          videoEnabled={stream.getVideoTracks().some((t) => t.enabled && !t.muted && t.readyState !== "ended")}
+                          isHandRaised={pUserId ? raisedHands.has(pUserId) : false}
+                          isScreenSharing={pUserId ? screenSharingUsers.has(pUserId) : false}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="grid w-full auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <ParticipantTile
+                    name={displayName}
+                    user={user}
+                    isLocal
+                    stream={localStream}
+                    nativeFrame={nativeFrame}
+                    audioOutputId={audioOutputId}
+                    videoEnabled={localVideoEnabled}
+                    isHandRaised={user?.id ? raisedHands.has(user.id) : false}
+                    isScreenSharing={user?.id ? screenSharingUsers.has(user.id) : false}
+                  />
+                  {cameraStreams.map(({ participantId, stream }) => {
+                    const pUserId = remoteUserId(participantId);
+                    return (
+                      <ParticipantTile
+                        key={participantId}
+                        name={remoteDisplayName(participantId)}
+                        user={pUserId ? participantUserMap.get(pUserId) : undefined}
+                        stream={stream}
+                        audioOutputId={audioOutputId}
+                        videoEnabled={stream.getVideoTracks().some((t) => t.enabled && !t.muted && t.readyState !== "ended")}
+                        isHandRaised={pUserId ? raisedHands.has(pUserId) : false}
+                        isScreenSharing={pUserId ? screenSharingUsers.has(pUserId) : false}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {activePanel && (
@@ -458,7 +509,7 @@ export function NativeConference({
             onIcon={<CircleDot className="h-5 w-5" />}
             offIcon={<CircleDot className="h-5 w-5" />}
             variant="danger"
-            disabled={!streamToRecord || !isHost}
+            disabled={!isHost}
             title={isRecording ? "Stop recording" : "Record"}
           />
           <DropdownMenu>
@@ -552,6 +603,8 @@ function ParticipantTile({
   videoEnabled,
   isHandRaised,
   isScreenSharing,
+  audioOutputId,
+  className,
 }: {
   name: string;
   user?: Pick<UserDto, "firstName" | "lastName" | "email" | "avatarFileId"> | null;
@@ -561,6 +614,8 @@ function ParticipantTile({
   videoEnabled?: boolean;
   isHandRaised?: boolean;
   isScreenSharing?: boolean;
+  audioOutputId?: string;
+  className?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -577,6 +632,16 @@ function ParticipantTile({
     }
   }, [stream]);
 
+  useEffect(() => {
+    const el = videoRef.current || audioRef.current;
+    if (!el || !audioOutputId || !("setSinkId" in el)) return;
+    try {
+      (el as HTMLMediaElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(audioOutputId).catch(() => {});
+    } catch {
+      // setSinkId is best-effort and not supported everywhere.
+    }
+  }, [audioOutputId, stream]);
+
   const hasVideo =
     videoEnabled &&
     (stream
@@ -584,7 +649,7 @@ function ParticipantTile({
       : nativeFrame != null && nativeFrame !== "");
 
   return (
-    <div className="relative aspect-square overflow-hidden rounded-2xl border border-border bg-surface-elevated">
+    <div className={cn("relative overflow-hidden rounded-2xl border border-border bg-surface-elevated aspect-square", className)}>
       {hasVideo ? (
         stream ? (
           <video
@@ -833,12 +898,7 @@ function ParticipantsPanel({
 }
 
 function getMemberName(_member: OrganisationMember, user?: UserDto) {
-  if (user) {
-    const full = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (full) return full;
-    return user.email;
-  }
-  return "Unknown";
+  return getUserDisplayName(user);
 }
 
 

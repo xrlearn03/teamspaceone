@@ -69,9 +69,17 @@ export interface RealtimeEventPayloads {
 
 export type RealtimeEvent = keyof RealtimeEventPayloads;
 
+export interface OutgoingCall {
+  meetingId: string;
+  kind: "audio" | "video";
+  title?: string;
+  userIds: string[];
+}
+
 interface RealtimeContextValue {
   socket: Socket | null;
   connected: boolean;
+  outgoingCall: OutgoingCall | null;
   joinRealtimeChannel: (channelId: string) => void;
   leaveRealtimeChannel: (channelId: string) => void;
   joinRealtimeProject: (projectId: string) => void;
@@ -105,7 +113,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
+  const [outgoingCall, setOutgoingCall] = useState<OutgoingCall | null>(null);
   const handlersRef = useRef<Map<string, Set<(payload: unknown) => void>>>(new Map());
+  const userIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -121,6 +131,14 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
     async function connect() {
       const token = await getAccessToken();
+      if (token) {
+        try {
+          const jwtPayload = JSON.parse(atob(token.split('.')[1] ?? '')) as { sub?: string } | undefined;
+          userIdRef.current = jwtPayload?.sub ?? null;
+        } catch {
+          userIdRef.current = null;
+        }
+      }
       const socket = io(`${REALTIME_URL}/realtime`, {
         transports: ["websocket", "polling"],
         auth: token ? { token } : undefined,
@@ -224,6 +242,22 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           }
           if (event === "message.created") {
             const message = payload as Message;
+            if (message.senderId !== userIdRef.current) {
+              playSound(SOUNDS.notification);
+              const activeChannelId = useUIStore.getState().activeChannelId;
+              if (activeChannelId !== message.channelId) {
+                useUIStore.getState().addNotificationToast({
+                  title: "New message",
+                  body: message.content
+                    ? message.content.length > 60
+                      ? `${message.content.slice(0, 60)}…`
+                      : message.content
+                    : "Attachment",
+                  resourceType: "channel",
+                  link: `/channels/${message.channelId}/messages/${message.id}`,
+                });
+              }
+            }
             if (!message.parentMessageId) {
               queryClient.setQueryData<InfiniteData<MessagePage, string | null>>(["messages", message.channelId], (data) => {
                 if (!data || data.pages.some((page) => page.items.some((item) => item.id === message.id))) return data;
@@ -301,6 +335,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
                 clearTimeout(outgoing.timer);
                 outgoing.stopRingback();
                 outgoingCallsRef.current.delete(r.meetingId);
+                setOutgoingCall((call) => call?.meetingId === r.meetingId ? null : call);
               } else {
                 outgoing.declined.add(r.userId);
                 if (outgoing.declined.size >= outgoing.userIds.length) {
@@ -308,6 +343,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
                   clearTimeout(outgoing.timer);
                   outgoing.stopRingback();
                   outgoingCallsRef.current.delete(r.meetingId);
+                  setOutgoingCall((call) => call?.meetingId === r.meetingId ? null : call);
                   dropOutgoingCall(r.meetingId, outgoing.userIds);
                 }
               }
@@ -345,6 +381,56 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           }
         });
       }
+
+      socket.on("sync", (payload: unknown) => {
+        const sync = payload as { tag?: string; resourceId?: string } | undefined;
+        const tag = sync?.tag ?? "";
+        const resourceId = sync?.resourceId;
+        const organisationId = getActiveOrganisation() ?? "none";
+        const domain = tag.split(".")[0] ?? tag;
+        const keys: unknown[][] = [];
+        switch (domain) {
+          case "hrms":
+            keys.push(["hrms"]);
+            break;
+          case "interview":
+            keys.push(["interview"]);
+            break;
+          case "file":
+            keys.push(["files", organisationId]);
+            if (resourceId) keys.push(["file", resourceId]);
+            break;
+          case "user":
+            keys.push(["me"], ["users"]);
+            break;
+          case "organisation":
+            keys.push(
+              ["organisations"],
+              ["members", organisationId],
+              ["invitations", organisationId],
+              ["roles", organisationId],
+              ["workspaces", organisationId],
+              ["permissions", organisationId],
+            );
+            break;
+          case "workspace":
+            keys.push(["workspaces", organisationId]);
+            break;
+          case "client":
+          case "guest":
+            keys.push(["clients", organisationId]);
+            break;
+          case "ai":
+            keys.push(["ai-pending-actions"]);
+            break;
+          default:
+            keys.push([domain]);
+        }
+        for (const key of keys) {
+          void queryClient.invalidateQueries({ queryKey: key, exact: false });
+        }
+      });
+
     }
 
     void connect();
@@ -433,6 +519,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         const outgoing = outgoingCallsRef.current.get(ring.meetingId);
         if (outgoing && outgoingCallsRef.current.delete(ring.meetingId)) {
           outgoing.stopRingback();
+          setOutgoingCall((call) => call?.meetingId === ring.meetingId ? null : call);
           dropOutgoingCall(ring.meetingId, ring.userIds);
         }
       }, CALL_RING_TIMEOUT_MS);
@@ -442,6 +529,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         timer,
         stopRingback,
       });
+      setOutgoingCall({ meetingId: ring.meetingId, kind: ring.kind, title: ring.title, userIds: ring.userIds });
       socketRef.current?.emit("call.ring", ring);
     },
     [],
@@ -453,6 +541,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     clearTimeout(outgoing.timer);
     outgoing.stopRingback();
     outgoingCallsRef.current.delete(meetingId);
+    setOutgoingCall((call) => call?.meetingId === meetingId ? null : call);
     socketRef.current?.emit("call.cancel", { meetingId, userIds: outgoing.userIds });
   }, []);
 
@@ -481,7 +570,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
   return (
     <RealtimeContext.Provider
-      value={{ socket: socketRef.current, connected, joinRealtimeChannel, leaveRealtimeChannel, joinRealtimeProject, leaveRealtimeProject, joinRealtimeMeeting, leaveRealtimeMeeting, sendTyping, sendPresence, sendReadReceipt, sendCallRing, sendCallCancel, sendCallResponse, onRealtimeEvent }}
+      value={{ socket: socketRef.current, connected, outgoingCall, joinRealtimeChannel, leaveRealtimeChannel, joinRealtimeProject, leaveRealtimeProject, joinRealtimeMeeting, leaveRealtimeMeeting, sendTyping, sendPresence, sendReadReceipt, sendCallRing, sendCallCancel, sendCallResponse, onRealtimeEvent }}
     >
       {children}
     </RealtimeContext.Provider>

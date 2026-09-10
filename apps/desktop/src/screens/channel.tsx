@@ -18,8 +18,10 @@ import {
   useMe,
   useMembers,
   useMessages,
+  usePinMessage,
   useReplaceChannelMembers,
   useSendMessageOrQueue,
+  useUnpinMessage,
   useUpdateChannel,
   useUpdateMessage,
   useUploadFile,
@@ -33,16 +35,10 @@ import { Composer } from "../components/chat/composer";
 import { ThreadPanel } from "../components/chat/thread-panel";
 import { getActiveOrganisation } from "../lib/api";
 import { useRealtime } from "../hooks/useRealtime";
-import type { Message, UserDto } from "../lib/api";
-
-function getDisplayName(_member: { userId: string }, user?: UserDto) {
-  if (user) {
-    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-    if (fullName) return fullName;
-    return user.email;
-  }
-  return "Unknown";
-}
+import { usePermissionContext } from "@teamspace-one/authorization/react";
+import { hasPermission } from "@teamspace-one/authorization";
+import type { Message } from "../lib/api";
+import { getUserDisplayName } from "../lib/utils";
 
 export function ChannelScreen() {
   const { activeChannelId, toggleRightPanel, setActiveView } = useUIStore(
@@ -61,18 +57,21 @@ export function ChannelScreen() {
   const userMap = useMemo(() => new Map((channelUsers ?? []).map((u) => [u.id, u])), [channelUsers]);
   const channel =
     channels?.find((c) => c.id === activeChannelId) ?? channels?.[0];
-  const { data: messages, fetchNextPage, hasNextPage, isFetchingNextPage } = useMessages(channel?.id);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const search = searchQuery.trim() || undefined;
+  const { data: messages, fetchNextPage, hasNextPage, isFetchingNextPage } = useMessages(channel?.id, search);
   const { sendOrQueue, isPending: sending } = useSendMessageOrQueue();
   const updateMessage = useUpdateMessage();
   const deleteMessage = useDeleteMessage();
+  const pinMessage = usePinMessage();
+  const unpinMessage = useUnpinMessage();
   const uploadFile = useUploadFile();
   const createMeeting = useCreateMeeting();
   const createVoiceRoom = useCreateVoiceRoom();
   const updateChannel = useUpdateChannel();
   const replaceMembers = useReplaceChannelMembers();
   const deleteChannel = useDeleteChannel();
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [channelName, setChannelName] = useState("");
   const [privateChannel, setPrivateChannel] = useState(false);
@@ -80,6 +79,13 @@ export function ChannelScreen() {
   const [threadMessage, setThreadMessage] = useState<Message | null>(null);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const { onRealtimeEvent, sendPresence, sendCallRing } = useRealtime();
+  const { user: authzUser } = usePermissionContext();
+  const canSendMessage = authzUser ? hasPermission(authzUser, "collaboration.message.send") : false;
+  const canUploadFile = authzUser ? hasPermission(authzUser, "collaboration.file.upload") : false;
+  const canManageChannel = authzUser ? hasPermission(authzUser, "collaboration.channel.manage") : false;
+  const canDeleteChannel = authzUser ? hasPermission(authzUser, "collaboration.channel.delete") : false;
+  const canCreateMeeting = authzUser ? hasPermission(authzUser, "collaboration.meeting.create") : false;
+  const canPinMessage = authzUser ? hasPermission(authzUser, "collaboration.message.edit") : false;
 
   useEffect(() => {
     if (!channel) return;
@@ -102,18 +108,19 @@ export function ChannelScreen() {
 
   function attach(file?: File) {
     if (!file || !channel) return;
-    uploadFile.mutate(file, {
-      onSuccess: (uploaded) => void sendOrQueue({ channelId: channel.id, content: "", attachmentIds: [uploaded.id], senderId: user?.id }),
-    });
+    uploadFile.mutate(
+      { file, resource: { resourceType: "channel", resourceId: channel.id, workspaceId: channel.workspaceId ?? undefined } },
+      {
+        onSuccess: (uploaded) => void sendOrQueue({ channelId: channel.id, content: "", attachmentIds: [uploaded.id], senderId: user?.id }),
+      },
+    );
   }
 
   function ringChannelMembers(meetingId: string, kind: "audio" | "video", title: string) {
     if (!channel) return;
     const userIds = channel.members.map((m) => m.userId).filter((id) => id !== user?.id);
     if (userIds.length === 0) return;
-    const callerName = user
-      ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
-      : undefined;
+    const callerName = user ? getUserDisplayName(user) : undefined;
     sendCallRing({ meetingId, kind, title, channelId: channel.id, callerName, userIds });
   }
 
@@ -129,7 +136,7 @@ export function ChannelScreen() {
     createMeeting.mutate({ title }, { onSuccess: (meeting) => { ringChannelMembers(meeting.id, "video", title); setActiveView("meeting", { meetingId: meeting.id }); } });
   }
 
-  const visibleMessages = searchQuery.trim() ? messages?.filter((message) => message.content.toLowerCase().includes(searchQuery.trim().toLowerCase())) : messages;
+  const visibleMessages = messages;
 
   function handleEdit(messageId: string, content: string) {
     if (!channel) return;
@@ -141,14 +148,23 @@ export function ChannelScreen() {
     deleteMessage.mutate({ messageId, channelId: channel.id });
   }
 
+  function handlePin(message: Message) {
+    if (!channel) return;
+    if (message.pinnedAt) {
+      unpinMessage.mutate(message.id);
+    } else {
+      pinMessage.mutate(message.id);
+    }
+  }
+
   return (
     <>
     <div className="flex h-full flex-col">
       <header className="flex h-14 items-center justify-between border-b px-4">
-        <div className="flex items-center gap-2">
-          <Hash className="h-5 w-5 text-text-muted" />
-          <div>
-            <h1 className="text-base font-semibold text-text">
+        <div className="flex min-w-0 items-center gap-2">
+          <Hash className="h-5 w-5 shrink-0 text-text-muted" />
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-semibold text-text">
               {channel?.name ?? "Channel"}
             </h1>
             <p className="text-xs text-text-muted capitalize">
@@ -156,27 +172,33 @@ export function ChannelScreen() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <Button variant={searchOpen ? "secondary" : "ghost"} size="icon" onClick={() => setSearchOpen((open) => !open)}>
             <Search className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" disabled={createVoiceRoom.isPending} onClick={startVoiceCall}>
-            <Phone className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" disabled={createMeeting.isPending} onClick={startVideoCall}>
-            <Video className="h-4 w-4" />
-          </Button>
+          {canCreateMeeting ? (
+            <>
+              <Button variant="ghost" size="icon" disabled={createVoiceRoom.isPending} onClick={startVoiceCall}>
+                <Phone className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" disabled={createMeeting.isPending} onClick={startVideoCall}>
+                <Video className="h-4 w-4" />
+              </Button>
+            </>
+          ) : null}
           <Button variant="ghost" size="icon" onClick={toggleRightPanel}>
             <Info className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => { setChannelName(channel?.name ?? ""); setPrivateChannel(channel?.type === "private"); setChannelMemberIds(channel?.members.map((member) => member.userId) ?? []); setSettingsOpen(true); }}>
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
+          {canManageChannel || canDeleteChannel ? (
+            <Button variant="ghost" size="icon" onClick={() => { setChannelName(channel?.name ?? ""); setPrivateChannel(channel?.type === "private"); setChannelMemberIds(channel?.members.map((member) => member.userId) ?? []); setSettingsOpen(true); }}>
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          ) : null}
         </div>
       </header>
       {searchOpen ? <div className="border-b p-2"><Input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search messages in this channel" /></div> : null}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <div className="flex flex-1 flex-col">
           <div className="flex-1 overflow-y-auto px-4 py-4">
             {hasNextPage ? (
@@ -208,6 +230,7 @@ export function ChannelScreen() {
                       onReply={() => setThreadMessage(m)}
                       onEdit={handleEdit}
                       onDelete={handleDelete}
+                      onPin={canPinMessage ? handlePin : undefined}
                     />
                   );
                 })
@@ -222,18 +245,18 @@ export function ChannelScreen() {
           <div className="border-t p-3">
             {typingUsers.length > 0 ? (
               <p className="px-1 pb-1 text-xs italic text-text-muted">
-                {typingUsers.map((id) => getDisplayName({ userId: id }, userMap.get(id))).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing…
+                {typingUsers.map((id) => getUserDisplayName(userMap.get(id))).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing…
               </p>
             ) : null}
             <Composer
               placeholder={`Message #${channel?.name ?? "channel"}`}
               draftKey={channel ? `channel:${channel.id}` : undefined}
               channelId={channel?.id}
-              members={(members ?? []).map((m) => ({ id: m.userId, name: getDisplayName(m, userMap.get(m.userId)) }))}
+              members={(members ?? []).map((m) => ({ id: m.userId, name: getUserDisplayName(userMap.get(m.userId)) }))}
               sending={sending}
-              disabled={!channel}
+              disabled={!channel || !canSendMessage}
               onSend={send}
-              onAttach={attach}
+              onAttach={canUploadFile ? attach : undefined}
             />
           </div>
         </div>
@@ -255,9 +278,9 @@ export function ChannelScreen() {
           <DialogDescription>Rename the channel, change its visibility, or permanently remove it.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 px-4 pb-4">
-          <Input value={channelName} onChange={(e) => setChannelName(e.target.value)} />
+          <Input value={channelName} onChange={(e) => setChannelName(e.target.value)} disabled={!canManageChannel} />
           <label className="flex items-center gap-2 text-sm text-text-secondary">
-            <input type="checkbox" checked={privateChannel} onChange={(e) => setPrivateChannel(e.target.checked)} />
+            <input type="checkbox" checked={privateChannel} onChange={(e) => setPrivateChannel(e.target.checked)} disabled={!canManageChannel} />
             Private channel
           </label>
           <div>
@@ -268,10 +291,10 @@ export function ChannelScreen() {
                   <input
                     type="checkbox"
                     checked={channelMemberIds.includes(member.userId)}
-                    disabled={member.userId === channel?.createdBy}
+                    disabled={!canManageChannel || member.userId === channel?.createdBy}
                     onChange={() => setChannelMemberIds((ids) => ids.includes(member.userId) ? ids.filter((id) => id !== member.userId) : [...ids, member.userId])}
                   />
-                  <span className="flex-1 truncate">{getDisplayName(member, userMap.get(member.userId))}</span>
+                  <span className="flex-1 truncate">{getUserDisplayName(userMap.get(member.userId))}</span>
                   {/client|external/i.test(member.role.name) ? (
                     <span className="rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">External</span>
                   ) : (
@@ -283,18 +306,20 @@ export function ChannelScreen() {
           </div>
           {(updateChannel.error || replaceMembers.error) ? <p className="text-sm text-error">{(updateChannel.error ?? replaceMembers.error)?.message}</p> : null}
           <div className="flex justify-between gap-2">
-            <Button
-              variant="ghost"
-              className="text-error"
-              disabled={!channel || deleteChannel.isPending}
-              onClick={() => channel && deleteChannel.mutate(channel.id, { onSuccess: () => { setSettingsOpen(false); useUIStore.getState().setActiveView("home"); } })}
-            >
-              Delete channel
-            </Button>
+            {canDeleteChannel ? (
+              <Button
+                variant="ghost"
+                className="text-error"
+                disabled={!channel || deleteChannel.isPending}
+                onClick={() => channel && deleteChannel.mutate(channel.id, { onSuccess: () => { setSettingsOpen(false); useUIStore.getState().setActiveView("home"); } })}
+              >
+                Delete channel
+              </Button>
+            ) : <span />}
             <div className="flex gap-2">
               <Button variant="ghost" onClick={() => setSettingsOpen(false)}>Cancel</Button>
               <Button
-                disabled={!channel || !channelName.trim() || updateChannel.isPending || replaceMembers.isPending}
+                disabled={!canManageChannel || !channel || !channelName.trim() || updateChannel.isPending || replaceMembers.isPending}
                 onClick={() => {
                   if (!channel) return;
                   void updateChannel.mutateAsync({ channelId: channel.id, body: { name: channelName.trim(), type: privateChannel ? "private" : "public" } })

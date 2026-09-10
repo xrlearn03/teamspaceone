@@ -1,14 +1,16 @@
 import { BadRequestException, Injectable, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'node:crypto';
+import Redis from 'ioredis';
+import { randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
-import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
+import { createEventEnvelope, Subjects, type PasswordResetRequestedPayload } from '@teamspace-one/event-contracts';
 import { OrganisationContext } from '@teamspace-one/organisation-context';
 import { Prisma, type User } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { TokenService, type TokenPair } from './token.service.js';
 import { type RegisterDto } from './dto/register.dto.js';
+import { type ProvisionUserDto } from './dto/provision-user.dto.js';
 import { type LoginDto } from './dto/login.dto.js';
 import { type RedeemInvitationDto } from './dto/redeem-invitation.dto.js';
 import { type UserDto } from './dto/user.dto.js';
@@ -24,12 +26,17 @@ export interface UserProfileDto {
 
 @Injectable()
 export class AuthService {
+  private readonly redis: Redis;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
     private readonly tokens: TokenService,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    const redisUrl = this.config.get<string>('REDIS_URL');
+    this.redis = redisUrl ? new Redis(redisUrl, { maxRetriesPerRequest: 3 }) : new Redis({ maxRetriesPerRequest: 3 });
+  }
 
   private assertPasswordPolicy(password: string): void {
     if (!password || password.length < 12) {
@@ -105,6 +112,165 @@ export class AuthService {
 
     const tokens = await this.tokens.issuePair(user);
     return { user: this.toDto(user), tokens };
+  }
+
+  /**
+   * Service-to-service provisioning: an admin invite creates the user account
+   * up-front with a generated temporary password. The user must replace it on
+   * first login (mustChangePassword). Existing accounts are returned as-is —
+   * their password is never reset by this path.
+   */
+  async provisionUser(
+    input: ProvisionUserDto,
+    correlationId?: string,
+  ): Promise<{ user: UserDto; temporaryPassword: string | null; accountCreated: boolean }> {
+    if (!input?.email) {
+      throw new BadRequestException('Email is required');
+    }
+    const email = input.email.toLowerCase().trim();
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return { user: this.toDto(existing), temporaryPassword: null, accountCreated: false };
+    }
+
+    const temporaryPassword = randomBytes(12).toString('base64url');
+    const passwordHash = await hash(temporaryPassword, 12);
+    const id = randomUUID();
+
+    const envelope = createEventEnvelope({
+      eventType: Subjects.USER_CREATED,
+      organisationId: 'global',
+      actorId: id,
+      resourceType: 'user',
+      resourceId: id,
+      correlationId,
+      payload: {
+        id,
+        email,
+        firstName: input.firstName ?? null,
+        lastName: input.lastName ?? null,
+      },
+    });
+
+    const user = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const created = await tx.user.create({
+        data: {
+          id,
+          email,
+          passwordHash,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          mustChangePassword: true,
+        },
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.USER_CREATED);
+      return created;
+    });
+
+    return { user: this.toDto(user), temporaryPassword, accountCreated: true };
+  }
+
+  /**
+   * Service-to-service: regenerate a temporary password for an invited account
+   * that has not yet activated (mustChangePassword still true). Used when an
+   * admin resends an invitation. Activated accounts are never reset here.
+   */
+  async resetTemporaryPassword(userId: string): Promise<{ user: UserDto; temporaryPassword: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!user.mustChangePassword) {
+      throw new ConflictException('Account is already activated');
+    }
+
+    const temporaryPassword = randomBytes(12).toString('base64url');
+    const passwordHash = await hash(temporaryPassword, 12);
+    const updated = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const u = await tx.user.update({ where: { id: userId }, data: { passwordHash } });
+      await tx.refreshToken.deleteMany({ where: { userId } });
+      return u;
+    });
+    return { user: this.toDto(updated), temporaryPassword };
+  }
+
+  /**
+   * Service-to-service: delete an invited account that never activated
+   * (mustChangePassword still true). Activated accounts are refused so an
+   * admin revoke can never delete a real user account.
+   */
+  async deleteUnactivatedUser(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return;
+    }
+    if (!user.mustChangePassword) {
+      throw new ConflictException('Account is already activated');
+    }
+    await this.prisma.$transaction([
+      this.prisma.refreshToken.deleteMany({ where: { userId } }),
+      this.prisma.user.delete({ where: { id: userId } }),
+    ]);
+  }
+
+  async requestPasswordReset(email: string, correlationId?: string): Promise<{ requested: boolean }> {
+    const normalized = email.toLowerCase().trim();
+    const user = await this.prisma.user.findUnique({ where: { email: normalized } });
+    if (!user) {
+      return { requested: true };
+    }
+
+    const code = randomInt(100000, 999999).toString();
+    await this.redis.setex(`password-reset:${user.id}`, 600, code);
+
+    const envelope = createEventEnvelope<PasswordResetRequestedPayload>({
+      eventType: Subjects.PASSWORD_RESET_REQUESTED,
+      organisationId: 'global',
+      actorId: user.id,
+      resourceType: 'user',
+      resourceId: user.id,
+      correlationId,
+      payload: { email: normalized, code },
+    });
+
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await this.outbox.createEvent(tx, envelope, Subjects.PASSWORD_RESET_REQUESTED);
+    });
+
+    return { requested: true };
+  }
+
+  async resetPassword(email: string, code: string, newPassword: string): Promise<{ reset: boolean }> {
+    this.assertPasswordPolicy(newPassword);
+
+    const normalized = email.toLowerCase().trim();
+    const user = await this.prisma.user.findUnique({ where: { email: normalized } });
+    if (!user || !user.active) {
+      throw new UnauthorizedException('Invalid or expired reset code');
+    }
+
+    const stored = await this.redis.get(`password-reset:${user.id}`);
+    if (!stored || stored.length !== code.length) {
+      throw new UnauthorizedException('Invalid or expired reset code');
+    }
+
+    const a = Buffer.from(stored);
+    const b = Buffer.from(code);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      throw new UnauthorizedException('Invalid or expired reset code');
+    }
+
+    const passwordHash = await hash(newPassword, 12);
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { passwordHash, mustChangePassword: false },
+      });
+      await tx.refreshToken.deleteMany({ where: { userId: user.id } });
+    });
+
+    await this.redis.del(`password-reset:${user.id}`);
+    return { reset: true };
   }
 
   async redeemInvitation(input: RedeemInvitationDto, correlationId?: string): Promise<{ user: UserDto; tokens: TokenPair }> {
@@ -243,6 +409,10 @@ export class AuthService {
     return this.toDto(user);
   }
 
+  async updateProfileInternal(userId: string, input: UpdateProfileDto): Promise<UserDto> {
+    return this.updateProfile(userId, input);
+  }
+
   async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
     if (newPassword.length < 12) throw new BadRequestException('New password must contain at least 12 characters');
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -250,10 +420,21 @@ export class AuthService {
       throw new UnauthorizedException('Current password is incorrect');
     }
     const passwordHash = await hash(newPassword, 12);
-    await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
-      this.prisma.refreshToken.deleteMany({ where: { userId } }),
-    ]);
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false } });
+      await tx.refreshToken.deleteMany({ where: { userId } });
+      if (user.mustChangePassword) {
+        const envelope = createEventEnvelope({
+          eventType: Subjects.USER_UPDATED,
+          organisationId: 'global',
+          actorId: userId,
+          resourceType: 'user',
+          resourceId: userId,
+          payload: { id: userId, email: user.email, activated: true },
+        });
+        await this.outbox.createEvent(tx, envelope, Subjects.USER_UPDATED);
+      }
+    });
   }
 
   async me(userId: string): Promise<UserDto> {
@@ -270,6 +451,12 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
     return this.toProfileDto(user);
+  }
+
+  async findByIdInternal(id: string): Promise<UserDto | null> {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) return null;
+    return this.toDto(user);
   }
 
   async findMany(ids: string[]): Promise<UserDto[]> {
@@ -295,6 +482,7 @@ export class AuthService {
       avatarFileId: user.avatarFileId,
       active: user.active,
       emailVerified: user.emailVerified,
+      mustChangePassword: user.mustChangePassword,
       createdAt: user.createdAt.toISOString(),
     };
   }
