@@ -138,7 +138,7 @@ stages:
               exportVars APPLE_PASSWORD "$_APPLE_PASSWORD"
               exportVars APPLE_TEAM_ID "$_APPLE_TEAM_ID"
 
-              pnpm --filter @teamspace-one/desktop run tauri build --target $(TAURI_TARGET)
+              pnpm --filter @teamspace-one/desktop run tauri build --target $(TAURI_TARGET) --ci
             env:
               TAURI_SIGNING_PRIVATE_KEY: $(tauriKey.secureFilePath)
               TAURI_SIGNING_PRIVATE_KEY_PASSWORD: $(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
@@ -230,7 +230,7 @@ stages:
               if (-not $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -or $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -like '$(*') {
                 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
               }
-              pnpm --filter @teamspace-one/desktop run tauri build --target $env:TAURI_TARGET
+              pnpm --filter @teamspace-one/desktop run tauri build --target $env:TAURI_TARGET --ci
             env:
               TAURI_SIGNING_PRIVATE_KEY: $(tauriKey.secureFilePath)
               TAURI_SIGNING_PRIVATE_KEY_PASSWORD: $(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)

@@ -5,6 +5,8 @@ import { Intro } from "./components/Intro";
 import { Stats } from "./components/Stats";
 import { Features } from "./components/Features";
 import { Collaboration } from "./components/Collaboration";
+import { HRMS } from "./components/HRMS";
+import { AIInterview } from "./components/AIInterview";
 import { WhyTeamspace } from "./components/WhyTeamspace";
 import { Testimonials } from "./components/Testimonials";
 import { FAQ } from "./components/FAQ";
@@ -22,6 +24,8 @@ export default function App() {
         <Stats />
         <Features />
         <Collaboration />
+        <HRMS />
+        <AIInterview />
         <WhyTeamspace />
         <Testimonials />
         <FAQ />

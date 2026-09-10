@@ -1,11 +1,11 @@
 import {
   ArrowRight,
-  Building2,
+  Bot,
+  Briefcase,
   Folder,
   MessagesSquare,
   Users,
   Video,
-  LayoutGrid,
 } from "lucide-react";
 import { Reveal } from "./Reveal";
 import { SectionBadge } from "./SectionBadge";
@@ -36,16 +36,16 @@ const features = [
       "Connect with your team through seamless voice and video communication.",
   },
   {
-    icon: LayoutGrid,
-    title: "Organized Collaboration",
+    icon: Briefcase,
+    title: "HRMS",
     description:
-      "Keep projects, conversations, and shared work easy to find.",
+      "Manage the full employee lifecycle from onboarding to payroll.",
   },
   {
-    icon: Building2,
-    title: "Built for Organizations",
+    icon: Bot,
+    title: "AI Interviews",
     description:
-      "Support multiple teams and organizations with a workspace designed to scale.",
+      "Screen and evaluate candidates at scale with AI-powered interviews.",
   },
 ];
 

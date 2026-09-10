@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ArrowRight, Check } from "lucide-react";
 import { Reveal } from "./Reveal";
 import { SectionBadge } from "./SectionBadge";
@@ -9,13 +10,69 @@ const highlights = [
   "HRMS, projects, and calendar connected by default",
 ];
 
-function AppVisual() {
+const slides = [
+  {
+    id: "collaboration",
+    label: "Collaboration",
+    src: "/assets/app-home.png",
+    alt: "Teamspace One home screen",
+  },
+  {
+    id: "hrms",
+    label: "HRMS",
+    src: "/assets/app-hrms.png",
+    alt: "Teamspace One HRMS",
+  },
+  {
+    id: "ai-interview",
+    label: "AI Interview",
+    src: "/assets/app-AI.png",
+    alt: "Teamspace One AI Assistant",
+  },
+];
+
+function ImageCarousel() {
+  const [active, setActive] = useState(0);
+  const [errored, setErrored] = useState<Record<string, boolean>>({});
+
+  const current = slides[active];
+  const isError = errored[current.id] || !current.src;
+
   return (
-    <img
-      src="/assets/app-home.png"
-      alt="Teamspace One home screen"
-      className="mx-auto w-full max-w-2xl rounded-2xl border border-slate-200 shadow-2xl"
-    />
+    <div className="mx-auto w-full max-w-2xl">
+      {isError ? (
+        <div className="flex aspect-[5/3] w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 text-slate-500 shadow-2xl">
+          <span className="text-lg font-semibold">{current.alt}</span>
+        </div>
+      ) : (
+        <img
+          src={current.src}
+          alt={current.alt}
+          onError={() =>
+            setErrored((prev) => ({ ...prev, [current.id]: true }))
+          }
+          className="w-full aspect-[5/3] object-cover rounded-2xl border border-slate-200 shadow-2xl"
+        />
+      )}
+
+      <div className="mt-4 flex flex-wrap justify-center gap-2">
+        {slides.map((slide, i) => (
+          <button
+            key={slide.id}
+            type="button"
+            onClick={() => setActive(i)}
+            aria-pressed={i === active}
+            className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
+              i === active
+                ? "bg-brand-600 text-white"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            {slide.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -59,14 +116,14 @@ export function Intro() {
                 href="#features"
                 className="group mt-8 inline-flex items-center gap-2 rounded-lg text-base font-semibold text-brand-600 transition-colors hover:text-brand-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
               >
-                Explore what's inside
+                Explore what&apos;s inside
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </a>
             </div>
           </Reveal>
 
           <Reveal direction="right" delay={150}>
-            <AppVisual />
+            <ImageCarousel />
           </Reveal>
         </div>
       </div>

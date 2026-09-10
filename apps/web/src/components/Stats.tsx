@@ -1,12 +1,28 @@
-import { Globe2, Headphones, Users, Zap } from "lucide-react";
+import { ArrowLeftRight, TrendingUp, UserPlus, Zap } from "lucide-react";
 import { Reveal } from "./Reveal";
 import { SectionBadge } from "./SectionBadge";
 
 const stats = [
-  { value: "10k+", label: "Active teams", icon: Users },
-  { value: "99.9%", label: "Uptime SLA", icon: Zap },
-  { value: "50+", label: "Countries", icon: Globe2 },
-  { value: "24/7", label: "Support", icon: Headphones },
+  {
+    value: "30%",
+    label: "More output per week",
+    icon: TrendingUp,
+  },
+  {
+    value: "40%",
+    label: "Less time switching apps",
+    icon: ArrowLeftRight,
+  },
+  {
+    value: "50%",
+    label: "Faster employee onboarding",
+    icon: UserPlus,
+  },
+  {
+    value: "35%",
+    label: "Faster decisions with AI",
+    icon: Zap,
+  },
 ];
 
 export function Stats() {
@@ -20,7 +36,7 @@ export function Stats() {
         <Reveal className="text-center" direction="up">
           <SectionBadge>By the numbers</SectionBadge>
           <h2 className="mx-auto mt-4 max-w-2xl text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
-            Built for teams that move fast.
+            Built to help your team get more done.
           </h2>
         </Reveal>
 
