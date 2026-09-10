@@ -68,19 +68,51 @@ stages:
               BUILD_BUILDID: $(Build.BuildId)
             displayName: 'Set CI build version'
 
-          - script: pnpm --filter @teamspace-one/desktop run tauri build --target $(TAURI_TARGET)
+          - script: |
+              set -e
+              if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ] || [ "${TAURI_SIGNING_PRIVATE_KEY:0:1}" = '$' ]; then
+                echo "TAURI_SIGNING_PRIVATE_KEY is not set (or is the literal macro). It is required to sign updater artifacts." >&2
+                exit 1
+              fi
+              if [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] || [ "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:0:1}" = '$' ]; then
+                unset TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+              fi
+
+              # Only expose macOS signing variables to Tauri when they are actually
+              # defined. Azure leaves the macro literal (e.g. $(APPLE_CERTIFICATE)) when
+              # a variable is missing, and Tauri then tries to base64-decode that literal
+              # and fails with "Invalid symbol 36".
+              exportVars() {
+                local name=$1 raw=$2
+                # A valid base64 cert/identity never starts with "$". Azure leaves the
+                # macro literal "$(VAR)" when a variable is undefined, so skip those.
+                if [ -n "$raw" ] && [ "${raw:0:1}" != '$' ]; then
+                  export "$name=$raw"
+                fi
+              }
+              exportVars APPLE_SIGNING_IDENTITY "$_APPLE_SIGNING_IDENTITY"
+              exportVars APPLE_CERTIFICATE "$_APPLE_CERTIFICATE"
+              exportVars APPLE_CERTIFICATE_PASSWORD "$_APPLE_CERTIFICATE_PASSWORD"
+              exportVars APPLE_API_KEY "$_APPLE_API_KEY"
+              exportVars APPLE_API_ISSUER "$_APPLE_API_ISSUER"
+              exportVars APPLE_API_KEY_PATH "$_APPLE_API_KEY_PATH"
+              exportVars APPLE_ID "$_APPLE_ID"
+              exportVars APPLE_PASSWORD "$_APPLE_PASSWORD"
+              exportVars APPLE_TEAM_ID "$_APPLE_TEAM_ID"
+
+              pnpm --filter @teamspace-one/desktop run tauri build --target $(TAURI_TARGET)
             env:
               TAURI_SIGNING_PRIVATE_KEY: $(TAURI_SIGNING_PRIVATE_KEY)
               TAURI_SIGNING_PRIVATE_KEY_PASSWORD: $(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
-              APPLE_SIGNING_IDENTITY: $(APPLE_SIGNING_IDENTITY)
-              APPLE_CERTIFICATE: $(APPLE_CERTIFICATE)
-              APPLE_CERTIFICATE_PASSWORD: $(APPLE_CERTIFICATE_PASSWORD)
-              APPLE_API_KEY: $(APPLE_API_KEY)
-              APPLE_API_ISSUER: $(APPLE_API_ISSUER)
-              APPLE_API_KEY_PATH: $(APPLE_API_KEY_PATH)
-              APPLE_ID: $(APPLE_ID)
-              APPLE_PASSWORD: $(APPLE_PASSWORD)
-              APPLE_TEAM_ID: $(APPLE_TEAM_ID)
+              _APPLE_SIGNING_IDENTITY: $(APPLE_SIGNING_IDENTITY)
+              _APPLE_CERTIFICATE: $(APPLE_CERTIFICATE)
+              _APPLE_CERTIFICATE_PASSWORD: $(APPLE_CERTIFICATE_PASSWORD)
+              _APPLE_API_KEY: $(APPLE_API_KEY)
+              _APPLE_API_ISSUER: $(APPLE_API_ISSUER)
+              _APPLE_API_KEY_PATH: $(APPLE_API_KEY_PATH)
+              _APPLE_ID: $(APPLE_ID)
+              _APPLE_PASSWORD: $(APPLE_PASSWORD)
+              _APPLE_TEAM_ID: $(APPLE_TEAM_ID)
             displayName: 'Build Tauri bundle'
 
           - task: PublishPipelineArtifact@1
@@ -119,7 +151,15 @@ stages:
               BUILD_BUILDID: $(Build.BuildId)
             displayName: 'Set CI build version'
 
-          - powershell: pnpm --filter @teamspace-one/desktop run tauri build --target $env:TAURI_TARGET
+          - powershell: |
+              if (-not $env:TAURI_SIGNING_PRIVATE_KEY -or $env:TAURI_SIGNING_PRIVATE_KEY -like '$(*') {
+                Write-Error "TAURI_SIGNING_PRIVATE_KEY is not set (or is the literal macro). It is required to sign updater artifacts."
+                exit 1
+              }
+              if (-not $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -or $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -like '$(*') {
+                Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
+              }
+              pnpm --filter @teamspace-one/desktop run tauri build --target $env:TAURI_TARGET
             env:
               TAURI_SIGNING_PRIVATE_KEY: $(TAURI_SIGNING_PRIVATE_KEY)
               TAURI_SIGNING_PRIVATE_KEY_PASSWORD: $(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
