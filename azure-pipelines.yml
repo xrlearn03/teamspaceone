@@ -32,10 +32,15 @@ trigger:
 pr: none
 
 variables:
-  nodeVersion: '20.x'
-  pnpmVersion: '9.15.9'
-  CARGO_HOME: $(Pipeline.Workspace)/.cargo
-  PNPM_STORE_DIR: $(Pipeline.Workspace)/.pnpm-store
+- group: teamspace-one
+- name: nodeVersion
+  value: '20.x'
+- name: pnpmVersion
+  value: '9.15.9'
+- name: CARGO_HOME
+  value: '$(Pipeline.Workspace)/.cargo'
+- name: PNPM_STORE_DIR
+  value: '$(Pipeline.Workspace)/.pnpm-store'
 
 stages:
   - stage: BuildDesktop
