@@ -1,21 +1,23 @@
 # Azure Pipelines build + deploy for the Teamspace One desktop app.
 #
-# Builds macOS (arm64 + x86_64) and Windows (x86_64) Tauri bundles,
-# generates the Tauri updater manifest, and deploys the contents of
-# apps/web/public/downloads/ to the GCE VM that serves the marketing site.
+# Builds macOS universal and Windows (x86_64) Tauri bundles, generates the
+# Tauri updater manifest, and deploys the contents of apps/web/public/downloads/
+# to the GCE VM that serves the marketing site.
 #
-# Required pipeline variables / variable group (mark secrets as secret):
-#   TAURI_SIGNING_PRIVATE_KEY          # minisign private key content (secret)
-#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  # optional (secret)
-#   APPLE_SIGNING_IDENTITY             # optional, e.g. "Developer ID Application: ..."
-#   APPLE_CERTIFICATE                  # base64 .p12 (optional, secret)
-#   APPLE_CERTIFICATE_PASSWORD         # optional (secret)
-#   APPLE_API_KEY / APPLE_API_ISSUER / APPLE_API_KEY_PATH  # optional notarization
-#   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID                # optional notarization
-#   GCP_SA_KEY_B64                     # base64 service-account JSON (secret)
-#   GCP_PROJECT                        # e.g. teamspace-one
-#   GCE_INSTANCE                       # e.g. teamspace-one
-#   GCE_ZONE                           # e.g. asia-south1-a
+# Required secure files / pipeline variables:
+#   Secure file: teamspace-one.key     # minisign private key (upload in
+#                                      # Azure Pipelines > Library > Secure files)
+#   Optional variables:
+#     TAURI_SIGNING_PRIVATE_KEY_PASSWORD  # only if the key is password-protected
+#     APPLE_SIGNING_IDENTITY             # e.g. "Developer ID Application: ..."
+#     APPLE_CERTIFICATE                  # base64 .p12 (optional)
+#     APPLE_CERTIFICATE_PASSWORD
+#     APPLE_API_KEY / APPLE_API_ISSUER / APPLE_API_KEY_PATH
+#     APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID
+#     GCP_SA_KEY_B64                     # base64 service-account JSON
+#     GCP_PROJECT                        # e.g. teamspace-one
+#     GCE_INSTANCE                       # e.g. teamspace-one
+#     GCE_ZONE                           # e.g. asia-south1-a
 
 trigger:
   branches:
@@ -68,12 +70,20 @@ stages:
               BUILD_BUILDID: $(Build.BuildId)
             displayName: 'Set CI build version'
 
+          - task: DownloadSecureFile@1
+            name: tauriKey
+            inputs:
+              secureFile: 'teamspace-one.key'
+            displayName: 'Download updater signing key'
+
           - script: |
               set -e
-              if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ] || [ "${TAURI_SIGNING_PRIVATE_KEY:0:1}" = '$' ]; then
-                echo "TAURI_SIGNING_PRIVATE_KEY is not set (or is the literal macro). It is required to sign updater artifacts." >&2
+              if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ] || [ ! -f "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+                echo "TAURI_SIGNING_PRIVATE_KEY secure file not found at $TAURI_SIGNING_PRIVATE_KEY. Upload teamspace-one.key to Azure Pipelines > Library > Secure files." >&2
                 exit 1
               fi
+
+              # Optional password for the private key (rarely needed); guard against the literal macro.
               if [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] || [ "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:0:1}" = '$' ]; then
                 unset TAURI_SIGNING_PRIVATE_KEY_PASSWORD
               fi
@@ -102,7 +112,7 @@ stages:
 
               pnpm --filter @teamspace-one/desktop run tauri build --target $(TAURI_TARGET)
             env:
-              TAURI_SIGNING_PRIVATE_KEY: $(TAURI_SIGNING_PRIVATE_KEY)
+              TAURI_SIGNING_PRIVATE_KEY: $(tauriKey.secureFilePath)
               TAURI_SIGNING_PRIVATE_KEY_PASSWORD: $(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
               _APPLE_SIGNING_IDENTITY: $(APPLE_SIGNING_IDENTITY)
               _APPLE_CERTIFICATE: $(APPLE_CERTIFICATE)
@@ -151,9 +161,15 @@ stages:
               BUILD_BUILDID: $(Build.BuildId)
             displayName: 'Set CI build version'
 
+          - task: DownloadSecureFile@1
+            name: tauriKey
+            inputs:
+              secureFile: 'teamspace-one.key'
+            displayName: 'Download updater signing key'
+
           - powershell: |
-              if (-not $env:TAURI_SIGNING_PRIVATE_KEY -or $env:TAURI_SIGNING_PRIVATE_KEY -like '$(*') {
-                Write-Error "TAURI_SIGNING_PRIVATE_KEY is not set (or is the literal macro). It is required to sign updater artifacts."
+              if (-not $env:TAURI_SIGNING_PRIVATE_KEY -or -not (Test-Path $env:TAURI_SIGNING_PRIVATE_KEY)) {
+                Write-Error "TAURI_SIGNING_PRIVATE_KEY secure file not found at $env:TAURI_SIGNING_PRIVATE_KEY. Upload teamspace-one.key to Azure Pipelines > Library > Secure files."
                 exit 1
               }
               if (-not $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -or $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -like '$(*') {
@@ -161,7 +177,7 @@ stages:
               }
               pnpm --filter @teamspace-one/desktop run tauri build --target $env:TAURI_TARGET
             env:
-              TAURI_SIGNING_PRIVATE_KEY: $(TAURI_SIGNING_PRIVATE_KEY)
+              TAURI_SIGNING_PRIVATE_KEY: $(tauriKey.secureFilePath)
               TAURI_SIGNING_PRIVATE_KEY_PASSWORD: $(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
             displayName: 'Build Tauri bundle'
 
