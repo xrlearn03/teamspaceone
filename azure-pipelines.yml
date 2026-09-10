@@ -1,4 +1,4 @@
-# Azure Pipelines build + deploy for the Teamspace One desktop app.
+Apple could not verify “Teamspace One” is free of malware that may harm your Mac or compromise your privacy.# Azure Pipelines build + deploy for the Teamspace One desktop app.
 #
 # Builds macOS universal and Windows (x86_64) Tauri bundles, generates the
 # Tauri updater manifest, and deploys the contents of apps/web/public/downloads/
@@ -32,10 +32,15 @@ trigger:
 pr: none
 
 variables:
-  nodeVersion: '20.x'
-  pnpmVersion: '9.15.9'
-  CARGO_HOME: '$(Pipeline.Workspace)/.cargo'
-  PNPM_STORE_DIR: '$(Pipeline.Workspace)/.pnpm-store'
+- group: teamspace-one
+- name: nodeVersion
+  value: '20.x'
+- name: pnpmVersion
+  value: '9.15.9'
+- name: CARGO_HOME
+  value: '$(Pipeline.Workspace)/.cargo'
+- name: PNPM_STORE_DIR
+  value: '$(Pipeline.Workspace)/.pnpm-store'
 
 stages:
   - stage: BuildDesktop
