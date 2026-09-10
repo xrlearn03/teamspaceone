@@ -107,6 +107,12 @@ stages:
               secureFile: 'teamspace-one.key'
             displayName: 'Download updater signing key'
 
+          - task: DownloadSecureFile@1
+            name: appleApiKey
+            inputs:
+              secureFile: 'AuthKey_M2U388NVSS.p8'
+            displayName: 'Download Apple notarization API key'
+
           - script: |
               set -e
               if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ] || [ ! -f "$TAURI_SIGNING_PRIVATE_KEY" ]; then
@@ -152,7 +158,7 @@ stages:
               _APPLE_CERTIFICATE_PASSWORD: $(APPLE_CERTIFICATE_PASSWORD)
               _APPLE_API_KEY: $(APPLE_API_KEY)
               _APPLE_API_ISSUER: $(APPLE_API_ISSUER)
-              _APPLE_API_KEY_PATH: $(APPLE_API_KEY_PATH)
+              _APPLE_API_KEY_PATH: $(appleApiKey.secureFilePath)
               _APPLE_ID: $(APPLE_ID)
               _APPLE_PASSWORD: $(APPLE_PASSWORD)
               _APPLE_TEAM_ID: $(APPLE_TEAM_ID)
