@@ -138,6 +138,21 @@ Semantic tokens live in `apps/desktop/src/styles/index.css`:
 - Updater signing needs `TAURI_SIGNING_PRIVATE_KEY` (path or content) and optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The public key is already in `tauri.conf.json > plugins.updater.pubkey`.
 - For CI, set these as repository secrets and pass them in `.github/workflows/release.yml`.
 
+## Desktop (Tauri) auto-updater
+
+- The in-app updater is implemented in `apps/desktop/src/components/update/update-checker.tsx` and mounted from `App.tsx`.
+- It calls `check()` from `@tauri-apps/plugin-updater` on launch and every 30 minutes, prompts the user to install, then asks to `relaunch()` via `@tauri-apps/plugin-process`.
+- `tauri.conf.json > bundle.createUpdaterArtifacts` must be `true` so `tauri build` produces `.sig` files.
+- `tauri:build` runs `scripts/bump-version.mjs` first to auto-increment the desktop version (patch by default). Use `BUMP_SKIP=1` to disable the auto-bump (e.g. local test builds). Manual bumps: `pnpm --filter @teamspace-one/desktop version:bump [patch|minor|major|x.y.z]`.
+- The updater endpoint is configured to the marketing site so the same `public/downloads/` folder serves both the download buttons and the updater: `https://teamspaceone.in/downloads/update.json`.
+- Generate a Tauri updater manifest with:
+  ```
+  pnpm --filter @teamspace-one/desktop updater:manifest --base-url https://teamspaceone.in/downloads
+  ```
+  or set `UPDATER_BASE_URL=https://teamspaceone.in/downloads` and run `pnpm --filter @teamspace-one/desktop tauri:build`.
+- `tauri:build` now runs `scripts/generate-update-manifest.mjs` after bundling when `UPDATER_BASE_URL` is set.
+- The manifest (`update.json`) is written to `apps/web/public/downloads/update.json` by default and served at the configured endpoint.
+
 ## Mobile push credentials still needed
 
 - Android FCM: place `google-services.json` in `apps/mobile-android/app/` and configure the backend `GOOGLE_APPLICATION_CREDENTIALS` + `FIREBASE_PROJECT_ID`.

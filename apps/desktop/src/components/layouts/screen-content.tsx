@@ -20,6 +20,7 @@ import { AccessDeniedScreen } from "../../screens/access-denied";
 import { HrmsScreen } from "../../screens/hrms";
 import { InterviewScreen } from "../../screens/interview";
 import { AdminScreen } from "../../screens/admin";
+import { HelpScreen } from "../../screens/help";
 
 const screens: Record<View, React.ComponentType> = {
   home: HomeScreen,
@@ -38,6 +39,7 @@ const screens: Record<View, React.ComponentType> = {
   interview: InterviewScreen,
   admin: AdminScreen,
   settings: SettingsScreen,
+  help: HelpScreen,
 };
 
 export function ScreenContent() {

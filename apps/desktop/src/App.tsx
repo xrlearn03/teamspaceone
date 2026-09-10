@@ -12,6 +12,7 @@ import { ForcePasswordChangeDialog } from "./components/auth/force-password-chan
 import { getAccessToken, getMe, getMyContext, getOrganisations, getActiveOrganisation, setActiveOrganisation, setOnSessionCleared } from "./lib/api";
 import { Button } from "./components/ui/button";
 import { useUIStore } from "./stores/ui";
+import { UpdateChecker } from "./components/update/update-checker";
 
 const MIN_SPLASH_DURATION_MS = 4000;
 
@@ -230,7 +231,12 @@ function PermissionBoundary({ organisationId }: { organisationId: string | null 
 }
 
 function App() {
-  return <AuthGate />;
+  return (
+    <>
+      <AuthGate />
+      <UpdateChecker />
+    </>
+  );
 }
 
 export default App;

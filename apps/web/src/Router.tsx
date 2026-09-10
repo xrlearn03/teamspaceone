@@ -1,11 +1,18 @@
 import App from "./App";
 import { CandidateApplyPage } from "./pages/CandidateApplyPage";
+import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 
 export function Router() {
   const path = window.location.pathname;
-  const match = /^\/apply\/([^/]+)\/([^/]+)\/?$/.exec(path);
-  if (match) {
-    return <CandidateApplyPage organisationId={match[1]} jobOpeningId={match[2]} />;
+
+  const applyMatch = /^\/apply\/([^/]+)\/([^/]+)\/?$/.exec(path);
+  if (applyMatch) {
+    return <CandidateApplyPage organisationId={applyMatch[1]} jobOpeningId={applyMatch[2]} />;
   }
+
+  if (path === "/accept-invite" || path === "/accept-invite/") {
+    return <AcceptInvitePage />;
+  }
+
   return <App />;
 }

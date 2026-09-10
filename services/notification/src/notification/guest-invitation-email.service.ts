@@ -2,12 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { type EventEnvelope, type GuestInvitedPayload } from '@teamspace-one/event-contracts';
 import { sendEmail } from './mailer.js';
+import { OrganisationEmailProviderClient } from './organisation-email-provider.client.js';
 
 @Injectable()
 export class GuestInvitationEmailService {
   private readonly logger = new Logger(GuestInvitationEmailService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly emailProvider: OrganisationEmailProviderClient,
+  ) {}
 
   async send(envelope: EventEnvelope): Promise<void> {
     const payload = (envelope.payload ?? {}) as GuestInvitedPayload;
@@ -31,6 +35,7 @@ export class GuestInvitationEmailService {
       `Or use this link:\n${acceptUrl}\n\n` +
       `This invitation will expire on ${new Date(payload.expiresAt).toLocaleString()}.\n`;
 
-    await sendEmail(this.config, { to, subject, body });
+    const provider = payload.organisationId ? await this.emailProvider.getProvider(payload.organisationId) : null;
+    await sendEmail(this.config, { to, subject, body }, provider);
   }
 }

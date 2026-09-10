@@ -101,7 +101,7 @@ export function AppRail() {
       permissions: ["admin.user.manage", "admin.role.manage", "admin.organization.settings"],
     },
     { id: "settings", icon: Settings, label: "Settings", onClick: () => navigate("settings") },
-    { id: "help", icon: HelpCircle, label: "Help", onClick: () => navigate("home") },
+    { id: "help", icon: HelpCircle, label: "Help", onClick: () => navigate("help") },
   ].filter((item) => canAny(item.permissions));
 
   const displayName = getUserDisplayName(user, "User");

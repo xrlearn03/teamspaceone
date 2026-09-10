@@ -139,6 +139,7 @@ pub fn run() {
                 })
                 .build(),
         );
+        builder = builder.plugin(tauri_plugin_process::init());
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 

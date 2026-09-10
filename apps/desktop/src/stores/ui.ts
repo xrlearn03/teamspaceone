@@ -43,7 +43,8 @@ export type View =
   | "hrms"
   | "interview"
   | "admin"
-  | "settings";
+  | "settings"
+  | "help";
 
 export interface NotificationToast {
   id: string;

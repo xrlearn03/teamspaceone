@@ -45,6 +45,7 @@ export function MobileHeader({ onOpenDrawer }: MobileHeaderProps) {
     interview: "Interview",
     admin: "Admin",
     settings: "Settings",
+    help: "Help",
   };
 
   function goBack() {

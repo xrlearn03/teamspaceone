@@ -777,6 +777,34 @@ export function getMyContext(organisationId: string) {
   return apiRequest<UserContext>(`/organisations/${organisationId}/me/context`);
 }
 
+export interface EmailProvider {
+  organisationId: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  user?: string | null;
+  from: string;
+  enabled: boolean;
+}
+
+export interface UpdateEmailProvider {
+  host: string;
+  port: number;
+  secure: boolean;
+  user?: string;
+  pass?: string;
+  from?: string;
+  enabled?: boolean;
+}
+
+export function getEmailProvider(organisationId: string) {
+  return apiRequest<EmailProvider | null>(`/organisations/${organisationId}/email-provider`);
+}
+
+export function updateEmailProvider(organisationId: string, body: UpdateEmailProvider) {
+  return apiRequest<EmailProvider>(`/organisations/${organisationId}/email-provider`, { method: "PATCH", body });
+}
+
 export function getRoles(organisationId: string) {
   return apiRequest<OrganisationRole[]>(`/organisations/${organisationId}/roles`);
 }

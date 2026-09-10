@@ -16,13 +16,31 @@ model Organisation {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  memberships OrganisationMembership[]
-  invitations Invitation[]
-  roles       Role[]
-  workspaces  Workspace[]
+  memberships   OrganisationMembership[]
+  invitations   Invitation[]
+  roles         Role[]
+  workspaces    Workspace[]
+  emailProvider OrganisationEmailProvider?
 
   @@index([ownerId])
   @@map("organisations")
+}
+
+model OrganisationEmailProvider {
+  id             String       @id @default(cuid())
+  organisationId String       @unique
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  host           String
+  port           Int
+  secure         Boolean      @default(false)
+  user           String?
+  encryptedPass  String?      @map("encrypted_pass")
+  from           String       @default("no-reply@teamspaceone.in")
+  enabled        Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@map("organisation_email_providers")
 }
 
 model Role {

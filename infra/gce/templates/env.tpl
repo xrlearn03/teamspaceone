@@ -33,7 +33,7 @@ AI_EMBEDDING_MODEL=text-embedding-3-small
 AI_SERVICE_URL=http://ai-service:3012
 FILE_STORAGE_SERVICE_URL=http://file-storage-service:3010
 %{ if domain != "" }
-APP_URL=https://app.${domain}
+APP_URL=https://${domain}
 %{ else }
 APP_URL=http://${external_ip}:3000
 %{ endif }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
+import { Mail, Pencil, Plus, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
 import { PermissionGate } from "@teamspace-one/authorization/react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
@@ -8,8 +8,21 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { EmptyState } from "../components/ui/empty-state";
 import { Input } from "../components/ui/input";
 import { Skeleton } from "../components/ui/skeleton";
-import { useMembers, usePermissionsList, useRoles, useUpdateMemberRole, useRemoveMember, useCreateRole, useUpdateRole, useDeleteRole, useUsers, useInviteMember } from "../hooks/api";
-import { getActiveOrganisation, ADMIN_MANAGED_ROLE_CATEGORIES, type OrganisationRole, type Permission, type RoleCategory, type UserDataScope } from "../lib/api";
+import {
+  useMembers,
+  usePermissionsList,
+  useRoles,
+  useUpdateMemberRole,
+  useRemoveMember,
+  useCreateRole,
+  useUpdateRole,
+  useDeleteRole,
+  useUsers,
+  useInviteMember,
+  useEmailProvider,
+  useUpdateEmailProvider,
+} from "../hooks/api";
+import { getActiveOrganisation, ADMIN_MANAGED_ROLE_CATEGORIES, type OrganisationRole, type Permission, type RoleCategory, type UserDataScope, type UpdateEmailProvider } from "../lib/api";
 import { getUserDisplayName } from "../lib/utils";
 
 const SCOPES: UserDataScope["scope"][] = ["own", "assigned", "team", "department", "organisation"];
@@ -573,6 +586,144 @@ function RolesPanel() {
   );
 }
 
+function EmailSettingsPanel() {
+  const organisationId = getActiveOrganisation() ?? undefined;
+  const { data: provider, isLoading } = useEmailProvider(organisationId);
+  const update = useUpdateEmailProvider();
+  const [form, setForm] = useState<Partial<UpdateEmailProvider>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (provider) {
+      setForm({
+        host: provider.host,
+        port: provider.port,
+        secure: provider.secure,
+        user: provider.user ?? "",
+        from: provider.from,
+        enabled: provider.enabled,
+        pass: "",
+      });
+    }
+  }, [provider]);
+
+  function updateField<K extends keyof UpdateEmailProvider>(key: K, value: UpdateEmailProvider[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function submit() {
+    if (!organisationId || !form.host || form.port === undefined || !form.from) return;
+    const body: UpdateEmailProvider = {
+      host: form.host.trim(),
+      port: Number.isNaN(form.port) ? 0 : Number(form.port),
+      secure: Boolean(form.secure),
+      from: form.from.trim(),
+      enabled: form.enabled ?? true,
+      user: form.user?.trim() || undefined,
+      pass: form.pass ? form.pass : undefined,
+    };
+    setError(null);
+    update.mutate(
+      { organisationId, body },
+      {
+        onSuccess: () => setForm((prev) => ({ ...prev, pass: "" })),
+        onError: (err) => setError(err instanceof Error ? err.message : "Failed to save email settings"),
+      },
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Mail className="h-4 w-4 text-text-muted" />
+          <CardTitle className="text-sm">Email provider</CardTitle>
+        </div>
+        {provider ? (
+          <Badge variant="secondary">{provider.enabled ? "Enabled" : "Disabled"}</Badge>
+        ) : null}
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-text-muted">
+              Configure an organisation-specific SMTP server. When set, all emails from this
+              organisation (notifications, AI summaries, invitations) are sent through it. Leave it
+              unset to use the platform default gateway.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-text-secondary">SMTP host</span>
+                <Input value={form.host ?? ""} onChange={(e) => updateField("host", e.target.value)} placeholder="smtp.example.com" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-text-secondary">Port</span>
+                <Input
+                  type="number"
+                  value={form.port === undefined || Number.isNaN(form.port) ? "" : form.port}
+                  onChange={(e) => updateField("port", e.target.value === "" ? Number.NaN : Number(e.target.value))}
+                  placeholder="587"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-text-secondary">Username</span>
+                <Input value={form.user ?? ""} onChange={(e) => updateField("user", e.target.value)} placeholder="no-reply@example.com" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-text-secondary">Password</span>
+                <Input
+                  type="password"
+                  value={form.pass ?? ""}
+                  onChange={(e) => updateField("pass", e.target.value)}
+                  placeholder={provider ? "Leave blank to keep existing" : "Optional"}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-text-secondary">From address</span>
+                <Input value={form.from ?? ""} onChange={(e) => updateField("from", e.target.value)} placeholder="no-reply@example.com" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-text-secondary">Secure</span>
+                <select
+                  className="h-9 rounded-md border bg-background px-2 text-sm text-text"
+                  value={String(form.secure ?? false)}
+                  onChange={(e) => updateField("secure", e.target.value === "true")}
+                >
+                  <option value="true">True</option>
+                  <option value="false">False</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 sm:col-span-2">
+                <span className="text-xs font-medium text-text-secondary">Enabled</span>
+                <select
+                  className="h-9 rounded-md border bg-background px-2 text-sm text-text"
+                  value={String(form.enabled ?? true)}
+                  onChange={(e) => updateField("enabled", e.target.value === "true")}
+                >
+                  <option value="true">Enabled</option>
+                  <option value="false">Disabled</option>
+                </select>
+              </label>
+            </div>
+            {error ? <p className="text-sm text-error">{error}</p> : null}
+            <div className="flex justify-end">
+              <Button onClick={submit} disabled={update.isPending || !form.host || form.port === undefined || Number.isNaN(form.port) || !form.from}>
+                {update.isPending ? "Saving…" : "Save email settings"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function AdminScreen() {
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -589,6 +740,9 @@ export function AdminScreen() {
         </PermissionGate>
         <PermissionGate permission="admin.role.manage">
           <RolesPanel />
+        </PermissionGate>
+        <PermissionGate permission="admin.organization.settings">
+          <EmailSettingsPanel />
         </PermissionGate>
       </div>
     </div>

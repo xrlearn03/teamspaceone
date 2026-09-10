@@ -3,10 +3,22 @@ import { ConfigService } from '@nestjs/config';
 
 const logger = new Logger('Mailer');
 
+export interface EmailProvider {
+  host: string;
+  port: number;
+  secure: boolean;
+  user?: string | null;
+  pass?: string | null;
+  from?: string | null;
+  enabled?: boolean;
+}
+
 export interface OutboundEmail {
   to: string;
   subject: string;
   body: string;
+  html?: string;
+  from?: string;
 }
 
 function envBool(value: unknown, fallback = false): boolean {
@@ -20,17 +32,52 @@ function smtpAuth(user: string | undefined, pass: string | undefined) {
   return { user: user ?? '', pass: pass ?? '' };
 }
 
+function defaultFrom(config: ConfigService): string {
+  return config.get<string>('SMTP_FROM', 'no-reply@teamspaceone.in');
+}
+
+async function sendViaSmtp(provider: EmailProvider, email: OutboundEmail, fallbackFrom: string): Promise<void> {
+  const nodemailer = require('nodemailer') as any;
+  const transporter = nodemailer.createTransport({
+    host: provider.host,
+    port: provider.port,
+    secure: provider.secure,
+    auth: smtpAuth(provider.user ?? undefined, provider.pass ?? undefined),
+  });
+  const from = email.from ?? provider.from ?? fallbackFrom;
+  await transporter.sendMail({
+    from,
+    to: email.to,
+    subject: email.subject,
+    text: email.body,
+    ...(email.html ? { html: email.html } : {}),
+  });
+  logger.debug({ to: email.to }, 'Email sent via organisation SMTP');
+}
+
 /**
- * Delivers email via EMAIL_WEBHOOK_URL or SMTP when configured; otherwise
- * logs without exposing message content.
+ * Delivers email via an organisation-level SMTP provider, a global
+ * EMAIL_WEBHOOK_URL, or global SMTP_* env vars; otherwise logs without
+ * exposing message content.
  */
-export async function sendEmail(config: ConfigService, email: OutboundEmail): Promise<void> {
+export async function sendEmail(config: ConfigService, email: OutboundEmail, provider?: EmailProvider | null): Promise<void> {
+  if (provider && provider.enabled !== false && provider.host) {
+    await sendViaSmtp(provider, email, defaultFrom(config));
+    return;
+  }
+
   const webhookUrl = config.get<string>('EMAIL_WEBHOOK_URL');
   if (webhookUrl) {
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(email),
+      body: JSON.stringify({
+        to: email.to,
+        subject: email.subject,
+        body: email.body,
+        html: email.html,
+        from: email.from,
+      }),
     });
     if (!response.ok) {
       throw new Error(`Email webhook returned ${response.status}`);
@@ -50,8 +97,14 @@ export async function sendEmail(config: ConfigService, email: OutboundEmail): Pr
       secure,
       auth: smtpAuth(config.get<string>('SMTP_USER'), config.get<string>('SMTP_PASS')),
     });
-    const from = config.get<string>('SMTP_FROM', 'no-reply@teamspaceone.in');
-    await transporter.sendMail({ from, to: email.to, subject: email.subject, text: email.body });
+    const from = email.from ?? defaultFrom(config);
+    await transporter.sendMail({
+      from,
+      to: email.to,
+      subject: email.subject,
+      text: email.body,
+      ...(email.html ? { html: email.html } : {}),
+    });
     logger.debug({ to: email.to }, 'Email sent via SMTP');
     return;
   }

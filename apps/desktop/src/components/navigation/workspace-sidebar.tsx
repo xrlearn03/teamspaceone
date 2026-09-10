@@ -438,30 +438,24 @@ export function WorkspaceSidebar() {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
-            {organisations?.map((org) => (
-              <DropdownMenuItem
-                key={org.id}
-                onClick={() => switchOrganisation(org.id)}
-              >
-                <span className="flex flex-1 items-center justify-between">
-                  {org.name}
-                  {org.id === activeOrgId && (
-                    <span className="text-xs text-text-muted">current</span>
-                  )}
-                </span>
-              </DropdownMenuItem>
-            ))}
-            {(!organisations || organisations.length === 0) && (
+            {organisations && organisations.length > 0 ? (
               <>
-                <DropdownMenuItem disabled>No organisations</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setOrgDialog("create")}>
-                  Create organisation
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setOrgDialog("join")}>
-                  Join organisation
-                </DropdownMenuItem>
+                {organisations.map((org) => (
+                  <DropdownMenuItem
+                    key={org.id}
+                    onClick={() => switchOrganisation(org.id)}
+                  >
+                    <span className="flex flex-1 items-center justify-between">
+                      {org.name}
+                      {org.id === activeOrgId && (
+                        <span className="text-xs text-text-muted">current</span>
+                      )}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
               </>
+            ) : (
+              <DropdownMenuItem disabled>No organisations</DropdownMenuItem>
             )}
             {workspaces && workspaces.length > 0 ? (
               <>
@@ -487,6 +481,13 @@ export function WorkspaceSidebar() {
                 ))}
               </>
             ) : null}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setOrgDialog("create")}>
+              Create organisation
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setOrgDialog("join")}>
+              Join organisation
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 

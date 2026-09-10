@@ -13,6 +13,7 @@ import { CreateClientDto } from './dto/create-client.dto.js';
 import { UpdateClientDto } from './dto/update-client.dto.js';
 import { CreateRoleDto, UpdateRoleDto } from './dto/role.dto.js';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto.js';
+import { UpdateEmailProviderDto } from './dto/update-email-provider.dto.js';
 
 @UseGuards(OrganisationPermissionGuard)
 @Controller('organisations')
@@ -317,6 +318,27 @@ export class OrganisationController {
       throw new ForbiddenException('Not a member of this organisation');
     }
     return userContext;
+  }
+
+  @Get(':id/email-provider')
+  @RequirePermissions('admin.organization.settings')
+  async getEmailProvider(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.getEmailProvider(ctx.organisationId, false);
+  }
+
+  @Patch(':id/email-provider')
+  @RequirePermissions('admin.organization.settings')
+  async updateEmailProvider(
+    @Param('id') id: string,
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Body() dto: UpdateEmailProviderDto,
+  ) {
+    this.assertOrg(id, ctx);
+    return this.organisation.updateEmailProvider(ctx.organisationId, ctx.actorId as string, dto);
   }
 
   private assertOrg(id: string, ctx: OrganisationContextValue): void {

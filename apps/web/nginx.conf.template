@@ -28,6 +28,27 @@ server {
         return 301 https://${WEB_DOMAIN}$request_uri;
     }
 
+    # Public gateway endpoints exposed on the marketing domain.
+    # The desktop client uses app.${WEB_DOMAIN}; these paths let the public
+    # web pages (candidate apply, accept invite, etc.) talk to the API.
+    location /interview/public {
+        proxy_pass http://api-gateway:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /auth/redeem {
+        proxy_pass http://api-gateway:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }

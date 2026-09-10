@@ -2,12 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { type EventEnvelope, type MemberInvitedPayload } from '@teamspace-one/event-contracts';
 import { sendEmail } from './mailer.js';
+import { OrganisationEmailProviderClient } from './organisation-email-provider.client.js';
 
 @Injectable()
 export class MemberInvitationEmailService {
   private readonly logger = new Logger(MemberInvitationEmailService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly emailProvider: OrganisationEmailProviderClient,
+  ) {}
 
   async send(envelope: EventEnvelope): Promise<void> {
     const payload = (envelope.payload ?? {}) as MemberInvitedPayload;
@@ -36,7 +40,8 @@ export class MemberInvitationEmailService {
       credentialBlock +
       `\nIf you were not expecting this, you can ignore this email.\n`;
 
+    const provider = payload.organisationId ? await this.emailProvider.getProvider(payload.organisationId) : null;
     this.logger.log({ eventId: envelope.eventId, to, accountCreated: payload.accountCreated, hasTemporaryPassword: !!payload.temporaryPassword }, 'Sending member invitation email');
-    await sendEmail(this.config, { to, subject, body });
+    await sendEmail(this.config, { to, subject, body }, provider);
   }
 }

@@ -92,6 +92,24 @@ export function usePermissionsList(organisationId?: string) {
   });
 }
 
+export function useEmailProvider(organisationId?: string) {
+  return useQuery({
+    queryKey: ["email-provider", organisationId],
+    queryFn: () => api.getEmailProvider(organisationId as string),
+    enabled: Boolean(organisationId),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useUpdateEmailProvider() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; body: api.UpdateEmailProvider }) =>
+      api.updateEmailProvider(args.organisationId, args.body),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["email-provider", args.organisationId] }),
+  });
+}
+
 export function useCreateRole() {
   const client = useQueryClient();
   return useMutation({

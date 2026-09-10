@@ -5,6 +5,7 @@ import { InboxService } from '../inbox/inbox.service.js';
 import { NotificationService, type CreatedNotification } from '../notification/notification.service.js';
 import { GuestInvitationEmailService } from '../notification/guest-invitation-email.service.js';
 import { MemberInvitationEmailService } from '../notification/member-invitation-email.service.js';
+import { InterviewCandidateInvitationEmailService } from '../notification/interview-candidate-invitation-email.service.js';
 import { PasswordResetEmailService } from '../notification/password-reset-email.service.js';
 import { NatsClientService } from './nats-client.service.js';
 
@@ -26,6 +27,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
     private readonly notification: NotificationService,
     private readonly guestInvitation: GuestInvitationEmailService,
     private readonly memberInvitation: MemberInvitationEmailService,
+    private readonly interviewCandidateInvitation: InterviewCandidateInvitationEmailService,
     private readonly passwordReset: PasswordResetEmailService,
   ) {}
 
@@ -131,6 +133,21 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
           await this.inbox.handle(data, (_tx, envelope) =>
             this.passwordReset.send(envelope),
           );
+          jsMsg.ack();
+          continue;
+        }
+
+        if (data.eventType === Subjects.INTERVIEW_SESSION_SCHEDULED) {
+          await this.inbox.handle(data, async (tx, envelope) => {
+            await this.interviewCandidateInvitation.send(envelope);
+            const created = await this.notification.createFromEvent(tx, envelope);
+            for (const n of created) {
+              if (n?.deliveryIds?.length && n.enqueue !== false) {
+                await this.notification.enqueueDeliveries(n.deliveryIds);
+              }
+            }
+            return created;
+          });
           jsMsg.ack();
           continue;
         }

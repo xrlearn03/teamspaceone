@@ -2,7 +2,7 @@ import { BadGatewayException, BadRequestException, Injectable, NotFoundException
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
-import { Prisma, type Organisation } from '#prisma';
+import { Prisma, type Organisation, type OrganisationEmailProvider } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { AuthorizationService, assertAdminManagedCategory, assertInvitableCategory } from './authorization.service.js';
@@ -13,6 +13,19 @@ import { type CreateInvitationDto } from './dto/create-invitation.dto.js';
 import { type CreateWorkspaceDto } from './dto/create-workspace.dto.js';
 import { type CreateClientDto } from './dto/create-client.dto.js';
 import { type UpdateClientDto } from './dto/update-client.dto.js';
+import { UpdateEmailProviderDto } from './dto/update-email-provider.dto.js';
+import { decryptString, encryptString } from './email-crypto.js';
+
+export interface EmailProvider {
+  organisationId: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  user?: string | null;
+  pass?: string | null;
+  from: string;
+  enabled: boolean;
+}
 
 function hoursFromNow(hours: number): Date {
   return new Date(Date.now() + hours * 60 * 60 * 1000);
@@ -1005,5 +1018,101 @@ export class OrganisationService {
       return;
     }
     throw new ForbiddenException('Not authorized to manage members');
+  }
+
+  async getEmailProvider(organisationId: string, includePass = false): Promise<EmailProvider | null> {
+    const record = await this.prisma.organisationEmailProvider.findUnique({
+      where: { organisationId },
+    });
+    if (!record) return null;
+    return this.mapEmailProvider(record, includePass);
+  }
+
+  async updateEmailProvider(organisationId: string, actorId: string, dto: UpdateEmailProviderDto): Promise<EmailProvider> {
+    const key = this.requireEmailEncryptionKey();
+    const existing = await this.prisma.organisationEmailProvider.findUnique({
+      where: { organisationId },
+    });
+
+    let encryptedPass: string | null | undefined = existing?.encryptedPass;
+    if (dto.pass !== undefined) {
+      if (dto.pass) {
+        encryptedPass = encryptString(dto.pass, key);
+      } else {
+        encryptedPass = null;
+      }
+    }
+
+    const from = dto.from?.trim() || 'no-reply@teamspaceone.in';
+    const provider = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const record = await tx.organisationEmailProvider.upsert({
+        where: { organisationId },
+        create: {
+          id: randomUUID(),
+          organisationId,
+          host: dto.host,
+          port: dto.port,
+          secure: dto.secure,
+          user: dto.user ?? null,
+          encryptedPass,
+          from,
+          enabled: dto.enabled ?? true,
+        },
+        update: {
+          host: dto.host,
+          port: dto.port,
+          secure: dto.secure,
+          user: dto.user ?? null,
+          encryptedPass,
+          from,
+          enabled: dto.enabled ?? true,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          id: randomUUID(),
+          organisationId,
+          userId: actorId,
+          action: 'email_provider.updated',
+          resourceType: 'organisation-email-provider',
+          resourceId: record.id,
+          metadata: { host: dto.host, port: dto.port, secure: dto.secure, from, enabled: dto.enabled ?? true },
+        },
+      });
+
+      return record;
+    });
+
+    return this.mapEmailProvider(provider, false);
+  }
+
+  private requireEmailEncryptionKey(): string {
+    const key = this.config.get<string>('ORGANISATION_EMAIL_ENCRYPTION_KEY');
+    if (!key) {
+      throw new Error('ORGANISATION_EMAIL_ENCRYPTION_KEY is not configured');
+    }
+    return key;
+  }
+
+  private mapEmailProvider(record: OrganisationEmailProvider, includePass: boolean): EmailProvider {
+    const key = this.requireEmailEncryptionKey();
+    let pass: string | null = null;
+    if (includePass && record.encryptedPass) {
+      pass = decryptString(record.encryptedPass, key);
+      if (pass === null) {
+        throw new BadGatewayException('Failed to decrypt email provider password');
+      }
+    }
+    return {
+      organisationId: record.organisationId,
+      host: record.host,
+      port: record.port,
+      secure: record.secure,
+      user: record.user,
+      from: record.from,
+      enabled: record.enabled,
+      ...(includePass ? { pass } : {}),
+    };
   }
 }

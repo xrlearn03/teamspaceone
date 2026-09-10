@@ -8,12 +8,13 @@ import { HrmsOffboardingConsumer } from '../events/hrms-offboarding.consumer.js'
 import { UserActivationConsumer } from '../events/user-activation.consumer.js';
 import { OrganisationService } from './organisation.service.js';
 import { OrganisationController } from './organisation.controller.js';
+import { InternalOrganisationController } from './internal-organisation.controller.js';
 import { AuthorizationService } from './authorization.service.js';
 import { OrganisationPermissionGuard } from './permission.guard.js';
 
 @Module({
   imports: [PrismaModule, OutboxModule, EventsModule, InboxModule],
-  controllers: [OrganisationController],
+  controllers: [OrganisationController, InternalOrganisationController],
   providers: [OrganisationService, AuthorizationService, OrganisationPermissionGuard, HrmsProvisioningConsumer, HrmsOffboardingConsumer, UserActivationConsumer],
   exports: [OrganisationService, AuthorizationService],
 })

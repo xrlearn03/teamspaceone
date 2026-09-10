@@ -14,7 +14,9 @@ import { NotificationDeliveryWorker } from './notification.worker.js';
 import { PushService } from './push.service.js';
 import { GuestInvitationEmailService } from './guest-invitation-email.service.js';
 import { MemberInvitationEmailService } from './member-invitation-email.service.js';
+import { InterviewCandidateInvitationEmailService } from './interview-candidate-invitation-email.service.js';
 import { PasswordResetEmailService } from './password-reset-email.service.js';
+import { OrganisationEmailProviderClient } from './organisation-email-provider.client.js';
 
 @Module({
   imports: [
@@ -39,8 +41,10 @@ import { PasswordResetEmailService } from './password-reset-email.service.js';
     PushService,
     GuestInvitationEmailService,
     MemberInvitationEmailService,
+    InterviewCandidateInvitationEmailService,
     PasswordResetEmailService,
+    OrganisationEmailProviderClient,
   ],
-  exports: [NotificationService, PushService, GuestInvitationEmailService, MemberInvitationEmailService, PasswordResetEmailService],
+  exports: [NotificationService, PushService, GuestInvitationEmailService, MemberInvitationEmailService, InterviewCandidateInvitationEmailService, PasswordResetEmailService, OrganisationEmailProviderClient],
 })
 export class NotificationModule {}
