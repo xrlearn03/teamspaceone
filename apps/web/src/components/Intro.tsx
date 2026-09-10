@@ -14,19 +14,19 @@ const slides = [
   {
     id: "collaboration",
     label: "Collaboration",
-    src: "/assets/teamspaceone-home.jpg",
+    src: "/assets/teamspaceone-home.png",
     alt: "Teamspace One home screen",
   },
   {
     id: "hrms",
     label: "HRMS",
-    src: "/assets/teamspaceone-hrms-employee.jpg",
+    src: "/assets/teamspaceone-hrms-employee.png",
     alt: "Teamspace One HRMS",
   },
   {
     id: "ai-interview",
     label: "AI Interview",
-    src: "/assets/teamspaceone-AI.jpg",
+    src: "/assets/teamspaceone-AI.png",
     alt: "Teamspace One AI Assistant",
   },
 ];
@@ -41,7 +41,7 @@ function ImageCarousel() {
   return (
     <div className="mx-auto w-full max-w-2xl">
       {isError ? (
-        <div className="flex aspect-[5/3] w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 text-slate-500 shadow-2xl">
+        <div className="flex aspect-[5/3] w-full items-center justify-center text-slate-500">
           <span className="text-lg font-semibold">{current.alt}</span>
         </div>
       ) : (
@@ -51,7 +51,8 @@ function ImageCarousel() {
           onError={() =>
             setErrored((prev) => ({ ...prev, [current.id]: true }))
           }
-          className="w-full aspect-[5/3] object-cover rounded-2xl border border-slate-200 shadow-2xl"
+          decoding="async"
+          className="w-full aspect-[5/3] object-cover"
         />
       )}
 
