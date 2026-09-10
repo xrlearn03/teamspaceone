@@ -74,9 +74,9 @@ export function Hero() {
 
           <Reveal direction="scale" delay={300}>
             <img
-              src="/assets/hero-banner.jpg"
+              src="/assets/teamspaceone-splash.png"
               alt="Teamspace One workspace overview"
-              className="mt-16 w-full rounded-2xl shadow-2xl ring-1 ring-white/10"
+              className="mt-16 w-full"
             />
           </Reveal>
         </div>
