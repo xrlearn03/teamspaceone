@@ -108,6 +108,12 @@ stages:
             displayName: 'Download updater signing key'
 
           - task: DownloadSecureFile@1
+            name: appleCertificate
+            inputs:
+              secureFile: 'Certificates.p12'
+            displayName: 'Download Apple signing certificate'
+
+          - task: DownloadSecureFile@1
             name: appleApiKey
             inputs:
               secureFile: 'AuthKey_M2U388NVSS.p8'
@@ -140,7 +146,16 @@ stages:
                 fi
               }
               exportVars APPLE_SIGNING_IDENTITY "$_APPLE_SIGNING_IDENTITY"
-              exportVars APPLE_CERTIFICATE "$_APPLE_CERTIFICATE"
+
+              # The .p12 is too large for an Azure variable group, so we download it
+              # as a secure file and base64 it on the agent.
+              if [ -n "$_APPLE_CERTIFICATE_FILE" ] && [ -f "$_APPLE_CERTIFICATE_FILE" ]; then
+                apple_cert_b64=$(base64 -i "$_APPLE_CERTIFICATE_FILE" | tr -d '\n')
+                exportVars APPLE_CERTIFICATE "$apple_cert_b64"
+              else
+                exportVars APPLE_CERTIFICATE "$_APPLE_CERTIFICATE"
+              fi
+
               exportVars APPLE_CERTIFICATE_PASSWORD "$_APPLE_CERTIFICATE_PASSWORD"
               exportVars APPLE_API_KEY "$_APPLE_API_KEY"
               exportVars APPLE_API_ISSUER "$_APPLE_API_ISSUER"
@@ -154,7 +169,7 @@ stages:
               TAURI_SIGNING_PRIVATE_KEY: $(tauriKey.secureFilePath)
               TAURI_SIGNING_PRIVATE_KEY_PASSWORD: $(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
               _APPLE_SIGNING_IDENTITY: $(APPLE_SIGNING_IDENTITY)
-              _APPLE_CERTIFICATE: $(APPLE_CERTIFICATE)
+              _APPLE_CERTIFICATE_FILE: $(appleCertificate.secureFilePath)
               _APPLE_CERTIFICATE_PASSWORD: $(APPLE_CERTIFICATE_PASSWORD)
               _APPLE_API_KEY: $(APPLE_API_KEY)
               _APPLE_API_ISSUER: $(APPLE_API_ISSUER)
