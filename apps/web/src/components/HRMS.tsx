@@ -13,17 +13,17 @@ const points = [
 const slides = [
   {
     id: "analytics",
-    src: "/assets/teamspaceone-hrms-analytics.jpg",
+    src: "/assets/teamspaceone-hrms-analytics.png",
     alt: "Teamspace One HRMS analytics",
   },
   {
     id: "departments",
-    src: "/assets/teamspaceone-hrms-department.jpg",
+    src: "/assets/teamspaceone-hrms-department.png",
     alt: "Teamspace One HRMS departments",
   },
   {
     id: "employees",
-    src: "/assets/teamspaceone-hrms-employee.jpg",
+    src: "/assets/teamspaceone-hrms-employee.png",
     alt: "Teamspace One HRMS employees",
   },
 ];
@@ -43,7 +43,7 @@ function AutoImageCarousel() {
   const isError = errored[current.id] || !current.src;
 
   return (
-    <div className="mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-2xl">
+    <div className="mx-auto w-full max-w-4xl overflow-hidden">
       {isError ? (
         <div className="flex aspect-[5/3] w-full items-center justify-center text-slate-500">
           <span className="text-lg font-semibold">{current.alt}</span>
@@ -55,6 +55,7 @@ function AutoImageCarousel() {
           onError={() =>
             setErrored((prev) => ({ ...prev, [current.id]: true }))
           }
+          decoding="async"
           className="w-full aspect-[5/3] object-cover"
         />
       )}
