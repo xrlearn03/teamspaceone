@@ -37,12 +37,12 @@ stages:
   - stage: BuildDesktop
     displayName: 'Build desktop bundles'
     jobs:
-      - job: macOS_arm64
-        displayName: 'macOS aarch64'
+      - job: macOS_universal
+        displayName: 'macOS universal'
         pool:
           vmImage: 'macos-latest'
         variables:
-          TAURI_TARGET: 'aarch64-apple-darwin'
+          TAURI_TARGET: 'universal-apple-darwin'
         steps:
           - checkout: self
             clean: true
@@ -53,8 +53,8 @@ stages:
 
           - script: |
               npm install -g pnpm@$(pnpmVersion)
-              rustup target add $(TAURI_TARGET)
-            displayName: 'Install pnpm + Rust target'
+              rustup target add aarch64-apple-darwin x86_64-apple-darwin
+            displayName: 'Install pnpm + Rust targets'
 
           - script: pnpm install --frozen-lockfile
             displayName: 'Install workspace dependencies'
@@ -86,58 +86,7 @@ stages:
           - task: PublishPipelineArtifact@1
             inputs:
               targetPath: 'apps/desktop/src-tauri/target/$(TAURI_TARGET)/release/bundle'
-              artifactName: 'bundles-macos-aarch64'
-
-      - job: macOS_intel
-        displayName: 'macOS x86_64'
-        pool:
-          vmImage: 'macos-latest'
-        variables:
-          TAURI_TARGET: 'x86_64-apple-darwin'
-        steps:
-          - checkout: self
-            clean: true
-
-          - task: NodeTool@0
-            inputs:
-              versionSpec: $(nodeVersion)
-
-          - script: |
-              npm install -g pnpm@$(pnpmVersion)
-              rustup target add $(TAURI_TARGET)
-            displayName: 'Install pnpm + Rust target'
-
-          - script: pnpm install --frozen-lockfile
-            displayName: 'Install workspace dependencies'
-
-          - script: pnpm --filter @teamspace-one/authorization build
-            displayName: 'Build authorization package'
-
-          - script: node scripts/bump-version.mjs ci
-            workingDirectory: 'apps/desktop'
-            env:
-              BUILD_BUILDID: $(Build.BuildId)
-            displayName: 'Set CI build version'
-
-          - script: pnpm --filter @teamspace-one/desktop run tauri build --target $(TAURI_TARGET)
-            env:
-              TAURI_SIGNING_PRIVATE_KEY: $(TAURI_SIGNING_PRIVATE_KEY)
-              TAURI_SIGNING_PRIVATE_KEY_PASSWORD: $(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
-              APPLE_SIGNING_IDENTITY: $(APPLE_SIGNING_IDENTITY)
-              APPLE_CERTIFICATE: $(APPLE_CERTIFICATE)
-              APPLE_CERTIFICATE_PASSWORD: $(APPLE_CERTIFICATE_PASSWORD)
-              APPLE_API_KEY: $(APPLE_API_KEY)
-              APPLE_API_ISSUER: $(APPLE_API_ISSUER)
-              APPLE_API_KEY_PATH: $(APPLE_API_KEY_PATH)
-              APPLE_ID: $(APPLE_ID)
-              APPLE_PASSWORD: $(APPLE_PASSWORD)
-              APPLE_TEAM_ID: $(APPLE_TEAM_ID)
-            displayName: 'Build Tauri bundle'
-
-          - task: PublishPipelineArtifact@1
-            inputs:
-              targetPath: 'apps/desktop/src-tauri/target/$(TAURI_TARGET)/release/bundle'
-              artifactName: 'bundles-macos-x86_64'
+              artifactName: 'bundles-universal-apple-darwin'
 
       - job: Windows_x86_64
         displayName: 'Windows x86_64'
@@ -179,7 +128,7 @@ stages:
           - task: PublishPipelineArtifact@1
             inputs:
               targetPath: 'apps/desktop/src-tauri/target/$(TAURI_TARGET)/release/bundle'
-              artifactName: 'bundles-windows-x86_64'
+              artifactName: 'bundles-x86_64-pc-windows-msvc'
 
   - stage: PublishDownloads
     displayName: 'Publish downloads to GCE'
@@ -211,10 +160,11 @@ stages:
 
           - script: |
               set -e
-              mkdir -p apps/desktop/src-tauri/target/release/bundle
-              for d in $(Pipeline.Workspace)/bundles/*; do
+              for d in $(Pipeline.Workspace)/bundles/bundles-*; do
                 [ -d "$d" ] || continue
-                cp -r "$d/"* apps/desktop/src-tauri/target/release/bundle/
+                triple=${d##*bundles-}
+                mkdir -p "apps/desktop/src-tauri/target/$triple/release/bundle"
+                cp -r "$d/"* "apps/desktop/src-tauri/target/$triple/release/bundle/"
               done
             displayName: 'Collect bundles'
 
