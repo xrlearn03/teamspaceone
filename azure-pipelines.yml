@@ -304,13 +304,30 @@ stages:
 
           - script: |
               set -e
-              echo "$(GCP_SA_KEY_B64)" | base64 -d > /tmp/gcp-sa.json
+              if [ -z "$GCP_SA_KEY_B64" ] || [ "${GCP_SA_KEY_B64:0:1}" = '$' ]; then
+                echo "GCP_SA_KEY_B64 is not set. Add the base64-encoded GCP service account JSON as an Azure secret." >&2
+                exit 1
+              fi
+              if [ -z "$GCP_PROJECT" ] || [ "${GCP_PROJECT:0:1}" = '$' ]; then
+                echo "GCP_PROJECT is not set." >&2
+                exit 1
+              fi
+              if [ -z "$GCE_ZONE" ] || [ "${GCE_ZONE:0:1}" = '$' ]; then
+                echo "GCE_ZONE is not set." >&2
+                exit 1
+              fi
+              if [ -z "$GCE_INSTANCE" ] || [ "${GCE_INSTANCE:0:1}" = '$' ]; then
+                echo "GCE_INSTANCE is not set." >&2
+                exit 1
+              fi
+
+              printf '%s' "$GCP_SA_KEY_B64" | base64 -d > /tmp/gcp-sa.json
               gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
-              gcloud config set project $(GCP_PROJECT)
+              gcloud config set project "$GCP_PROJECT"
 
               tar -czf downloads.tar.gz -C apps/web/public/downloads .
-              gcloud compute scp --zone=$(GCE_ZONE) downloads.tar.gz $(GCE_INSTANCE):/tmp/
-              gcloud compute ssh --zone=$(GCE_ZONE) $(GCE_INSTANCE) --command '
+              gcloud compute scp --zone="$GCE_ZONE" downloads.tar.gz "$GCE_INSTANCE":/tmp/
+              gcloud compute ssh --zone="$GCE_ZONE" "$GCE_INSTANCE" --command '
                 set -e
                 mkdir -p /tmp/downloads
                 tar xzf /tmp/downloads.tar.gz -C /tmp/downloads
