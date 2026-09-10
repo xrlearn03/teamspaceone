@@ -1,10 +1,10 @@
-
 const columns = [
   {
     heading: "Product",
     links: [
       { label: "Features", href: "#features" },
       { label: "Download", href: "#download" },
+      { label: "Pricing", href: "#download" },
     ],
   },
   {
@@ -27,7 +27,7 @@ export function Footer() {
   return (
     <footer className="border-t border-white/10 bg-ink-950">
       <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-        <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
+        <div className="grid gap-10 md:grid-cols-[1.5fr_repeat(3,1fr)]">
           {/* Brand */}
           <div>
             <a href="#top" className="flex items-center gap-2.5">
