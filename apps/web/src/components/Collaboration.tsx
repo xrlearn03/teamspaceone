@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { Reveal } from "./Reveal";
 import { SectionBadge } from "./SectionBadge";
@@ -8,13 +9,50 @@ const points = [
   "Presence, status, and real-time notifications",
 ];
 
-function AppVisual() {
+const slides = [
+  {
+    id: "home",
+    src: "/assets/app-home.png",
+    alt: "Teamspace One home screen",
+  },
+  {
+    id: "ai",
+    src: "/assets/app-AI.png",
+    alt: "Teamspace One AI Assistant",
+  },
+];
+
+function AutoImageCarousel() {
+  const [active, setActive] = useState(0);
+  const [errored, setErrored] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setActive((prev) => (prev + 1) % slides.length);
+    }, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  const current = slides[active];
+  const isError = errored[current.id] || !current.src;
+
   return (
-    <img
-      src="/assets/app-AI.png"
-      alt="Teamspace One AI Assistant"
-      className="mx-auto w-full max-w-4xl rounded-2xl border border-slate-200 shadow-2xl"
-    />
+    <div className="mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-2xl">
+      {isError ? (
+        <div className="flex aspect-[5/3] w-full items-center justify-center text-slate-500">
+          <span className="text-lg font-semibold">{current.alt}</span>
+        </div>
+      ) : (
+        <img
+          src={current.src}
+          alt={current.alt}
+          onError={() =>
+            setErrored((prev) => ({ ...prev, [current.id]: true }))
+          }
+          className="w-full aspect-[5/3] object-cover"
+        />
+      )}
+    </div>
   );
 }
 
@@ -24,7 +62,7 @@ export function Collaboration() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-20">
           <Reveal direction="left" className="order-2 lg:order-1">
-            <AppVisual />
+            <AutoImageCarousel />
           </Reveal>
 
           <Reveal direction="right" delay={150} className="order-1 lg:order-2">
@@ -34,9 +72,9 @@ export function Collaboration() {
                 Your team, connected in one place.
               </h2>
               <p className="mt-5 max-w-xl text-lg leading-relaxed text-slate-600">
-                Whether you're working across departments, managing projects, or
-                staying connected with your organization, Teamspace One keeps
-                everyone aligned.
+                Whether you&apos;re working across departments, managing
+                projects, or staying connected with your organization, Teamspace
+                One keeps everyone aligned.
               </p>
 
               <ul className="mt-8 space-y-4">
