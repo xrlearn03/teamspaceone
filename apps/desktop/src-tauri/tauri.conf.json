@@ -25,7 +25,7 @@
       }
     },
     "updater": {
-      "pubkey": "ZFc1MGNuVnpkR1ZrSUdOdmJXMWxiblE2SUcxcGJtbHphV2R1SUhCMVlteHBZeUJyWlhrNklFUTFNa1ZGUVVSR016WTRNREpHUXpZS1VsZFVSMHcwUVRJeksyOTFNVmhLVEUxdmIwOUZkbXhrZERRNFRFZ3dRMDlUVDJNNWVsQTRhWGxFV21WU1JUaGFXbnBXVTBRMU16TUs=",
+      "pubkey": "ZFc1MGNuVnpkR1ZrSUdOdmJXMWxiblE2SUcxcGJtbHphV2R1SUhCMVlteHBZeUJyWlhrNklESkVOVGhCTWtZME1FSkNRa0V6TWpnS1VsZFJiMjgzYzB3NVMwcFpURlEyT1dSSWNUVnBhMjl3WkdvNFluQlFiVmR1YUhkcFFWZFNRMkV6Y0ZWTU5YQlRRamxRUXpFMFkzRUs=",
       "endpoints": [
         "https://teamspaceone.in/downloads/update.json"
       ],
