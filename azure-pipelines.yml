@@ -246,8 +246,8 @@ stages:
     dependsOn: BuildDesktop
     condition: succeeded()
     jobs:
-      - job: Deploy
-        displayName: 'Stage manifest + upload to GCE'
+      - job: Stage
+        displayName: 'Generate manifest + stage downloads'
         pool:
           vmImage: 'ubuntu-latest'
         steps:
@@ -257,21 +257,6 @@ stages:
           - task: NodeTool@0
             inputs:
               versionSpec: $(nodeVersion)
-
-          - task: Cache@2
-            inputs:
-              key: 'pnpm | "$(Agent.OS)" | $(Build.SourcesDirectory)/pnpm-lock.yaml'
-              restoreKeys: pnpm | "$(Agent.OS)"
-              path: $(PNPM_STORE_DIR)
-            displayName: 'Cache pnpm store'
-
-          - script: |
-              npm install -g pnpm@$(pnpmVersion)
-              pnpm config set store-dir $(PNPM_STORE_DIR)
-            displayName: 'Install pnpm'
-
-          - script: pnpm install --frozen-lockfile
-            displayName: 'Install workspace dependencies'
 
           - task: DownloadPipelineArtifact@2
             inputs:
@@ -302,49 +287,37 @@ stages:
               BUILD_BUILDID: $(Build.BuildId)
             displayName: 'Generate updater manifest + stage downloads'
 
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: 'apps/web/public/downloads'
+              artifactName: 'downloads'
+
+      - job: Deploy
+        displayName: 'Deploy to GCE web host'
+        dependsOn: Stage
+        condition: succeeded()
+        pool:
+          name: gce
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              source: current
+              artifactName: 'downloads'
+              path: $(Pipeline.Workspace)/downloads
+
           - script: |
               set -e
-              if [ -z "$GCP_SA_KEY_B64" ] || [ "${GCP_SA_KEY_B64:0:1}" = '$' ]; then
-                echo "GCP_SA_KEY_B64 is not set. Add the base64-encoded GCP service account JSON as an Azure secret." >&2
-                exit 1
-              fi
-              if [ -z "$GCP_PROJECT" ] || [ "${GCP_PROJECT:0:1}" = '$' ]; then
-                echo "GCP_PROJECT is not set." >&2
-                exit 1
-              fi
-              if [ -z "$GCE_ZONE" ] || [ "${GCE_ZONE:0:1}" = '$' ]; then
-                echo "GCE_ZONE is not set." >&2
-                exit 1
-              fi
-              if [ -z "$GCE_INSTANCE" ] || [ "${GCE_INSTANCE:0:1}" = '$' ]; then
-                echo "GCE_INSTANCE is not set." >&2
-                exit 1
-              fi
+              rm -rf /tmp/downloads
+              mkdir -p /tmp/downloads
+              cp -r $(Pipeline.Workspace)/downloads/. /tmp/downloads/
 
-              printf '%s' "$GCP_SA_KEY_B64" | base64 -d > /tmp/gcp-sa.json
-              gcloud auth activate-service-account --key-file=/tmp/gcp-sa.json
-              gcloud config set project "$GCP_PROJECT"
+              # Persist in the repo for future image rebuilds
+              mkdir -p /opt/teamspace-one/repo/apps/web/public/downloads
+              cp -r /tmp/downloads/. /opt/teamspace-one/repo/apps/web/public/downloads/
 
-              tar -czf downloads.tar.gz -C apps/web/public/downloads .
-              gcloud compute scp --zone="$GCE_ZONE" downloads.tar.gz "$GCE_INSTANCE":/tmp/
-              gcloud compute ssh --zone="$GCE_ZONE" "$GCE_INSTANCE" --command '
-                set -e
-                mkdir -p /tmp/downloads
-                tar xzf /tmp/downloads.tar.gz -C /tmp/downloads
+              # Live-update the running web container without rebuilding the image
+              docker cp /tmp/downloads/. teamspace-one-web:/usr/share/nginx/html/downloads/
+              docker exec teamspace-one-web nginx -s reload || true
 
-                # Persist in the repo for future image rebuilds
-                mkdir -p /opt/teamspace-one/repo/apps/web/public/downloads
-                cp -r /tmp/downloads/. /opt/teamspace-one/repo/apps/web/public/downloads/
-
-                # Live-update the running web container without rebuilding the image
-                docker cp /tmp/downloads/. teamspace-one-web:/usr/share/nginx/html/downloads/
-                docker exec teamspace-one-web nginx -s reload || true
-
-                rm -f /tmp/downloads.tar.gz
-              '
-            displayName: 'Upload to GCE web host'
-            env:
-              GCP_SA_KEY_B64: $(GCP_SA_KEY_B64)
-              GCP_PROJECT: $(GCP_PROJECT)
-              GCE_INSTANCE: $(GCE_INSTANCE)
-              GCE_ZONE: $(GCE_ZONE)
+              rm -rf /tmp/downloads
+            displayName: 'Deploy to GCE web host'
