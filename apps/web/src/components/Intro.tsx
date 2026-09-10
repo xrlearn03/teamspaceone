@@ -14,19 +14,19 @@ const slides = [
   {
     id: "collaboration",
     label: "Collaboration",
-    src: "/assets/app-home.png",
+    src: "/assets/teamspaceone-home.jpg",
     alt: "Teamspace One home screen",
   },
   {
     id: "hrms",
     label: "HRMS",
-    src: "/assets/app-hrms.png",
+    src: "/assets/teamspaceone-hrms-employee.jpg",
     alt: "Teamspace One HRMS",
   },
   {
     id: "ai-interview",
     label: "AI Interview",
-    src: "/assets/app-AI.png",
+    src: "/assets/teamspaceone-AI.jpg",
     alt: "Teamspace One AI Assistant",
   },
 ];

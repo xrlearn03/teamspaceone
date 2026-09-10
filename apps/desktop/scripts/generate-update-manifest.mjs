@@ -72,6 +72,7 @@ if (!baseUrl) {
 }
 
 const rootDir = args.root ? join(__dirname, '..', args.root) : join(tauriDir, 'target');
+const productName = config.productName ?? 'Teamspace One';
 const version = (args.version ?? config.version ?? '').replace(/^v/, '');
 if (!version) {
   console.error('Missing --version and no version found in tauri.conf.json');

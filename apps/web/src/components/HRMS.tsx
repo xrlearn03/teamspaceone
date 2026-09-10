@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { Reveal } from "./Reveal";
 import { SectionBadge } from "./SectionBadge";
@@ -10,24 +10,55 @@ const points = [
   "Direct sync with workspace roles and permissions",
 ];
 
-function HRMSScreenshot() {
-  const [errored, setErrored] = useState(false);
+const slides = [
+  {
+    id: "analytics",
+    src: "/assets/teamspaceone-hrms-analytics.jpg",
+    alt: "Teamspace One HRMS analytics",
+  },
+  {
+    id: "departments",
+    src: "/assets/teamspaceone-hrms-department.jpg",
+    alt: "Teamspace One HRMS departments",
+  },
+  {
+    id: "employees",
+    src: "/assets/teamspaceone-hrms-employee.jpg",
+    alt: "Teamspace One HRMS employees",
+  },
+];
 
-  if (errored) {
-    return (
-      <div className="mx-auto flex aspect-[5/3] w-full max-w-4xl items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 text-slate-500 shadow-2xl">
-        <span className="text-lg font-semibold">Teamspace One HRMS</span>
-      </div>
-    );
-  }
+function AutoImageCarousel() {
+  const [active, setActive] = useState(0);
+  const [errored, setErrored] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setActive((prev) => (prev + 1) % slides.length);
+    }, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  const current = slides[active];
+  const isError = errored[current.id] || !current.src;
 
   return (
-    <img
-      src="/assets/app-hrms.png"
-      alt="Teamspace One HRMS"
-      onError={() => setErrored(true)}
-      className="mx-auto w-full max-w-4xl aspect-[5/3] object-cover rounded-2xl border border-slate-200 shadow-2xl"
-    />
+    <div className="mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-2xl">
+      {isError ? (
+        <div className="flex aspect-[5/3] w-full items-center justify-center text-slate-500">
+          <span className="text-lg font-semibold">{current.alt}</span>
+        </div>
+      ) : (
+        <img
+          src={current.src}
+          alt={current.alt}
+          onError={() =>
+            setErrored((prev) => ({ ...prev, [current.id]: true }))
+          }
+          className="w-full aspect-[5/3] object-cover"
+        />
+      )}
+    </div>
   );
 }
 
@@ -37,7 +68,7 @@ export function HRMS() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-20">
           <Reveal direction="right" className="order-2">
-            <HRMSScreenshot />
+            <AutoImageCarousel />
           </Reveal>
 
           <Reveal direction="left" delay={150} className="order-1">
