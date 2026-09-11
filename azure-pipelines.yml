@@ -201,6 +201,7 @@ stages:
                     compose=(docker compose -p repo -f docker-compose.yml -f docker-compose.gce.yml)
                     "${compose[@]}" config --quiet
                     "${compose[@]}" build --pull base desktop-next
+                    docker rm -f teamspace-one-desktop-next 2>/dev/null || true
                     "${compose[@]}" up -d desktop-next
                     if "${compose[@]}" config --services | grep -qx caddy; then
                       "${compose[@]}" up -d caddy
