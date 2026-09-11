@@ -30,13 +30,13 @@ variable "machine_type" {
 variable "boot_disk_size" {
   description = "Boot disk size in GB"
   type        = number
-  default     = 50
+  default     = 100
 }
 
 variable "data_disk_size" {
   description = "Persistent data disk size in GB"
   type        = number
-  default     = 200
+  default     = 150
 }
 
 variable "repo_url" {
