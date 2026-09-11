@@ -152,7 +152,7 @@ Semantic tokens live in `apps/desktop/src/styles/index.css`:
   or set `UPDATER_BASE_URL=https://teamspaceone.in/downloads` and run `pnpm --filter @teamspace-one/desktop tauri:build`.
 - `tauri:build` now runs `scripts/generate-update-manifest.mjs` after bundling when `UPDATER_BASE_URL` is set.
 - The manifest (`update.json`) is written to `apps/web/public/downloads/update.json` by default and served at the configured endpoint.
-- CI: `azure-pipelines.yml` deploys `main` sequentially: build/start/health-check backend containers on the self-hosted `gce` agent, rebuild/verify web without `apps/web/public/downloads`, build macOS + Windows desktop bundles, then publish signed installers and the updater manifest. The `teamspace-one-production` Azure Environment needs an Exclusive lock check.
+- CI: `azure-pipelines.yml` deploys `main` sequentially: build/start/health-check backend containers on the self-hosted `gce` agent, rebuild/verify web without `apps/web/public/downloads`, run `infra/gce/update-desktop.sh` once and share its generated production configuration with both desktop builders, build macOS + Windows bundles, then publish signed installers and the updater manifest. The `teamspace-one-production` Azure Environment needs an Exclusive lock check.
 - Terraform startup provisions Azure Pipelines agent `5.279.0` as host systemd service `azure-pipelines-agent.service`; it reads the registration PAT from GCP Secret Manager secret `azure-devops-agent-pat` using the VM service account. The agent is intentionally outside Docker Compose so deployments cannot terminate their own agent.
 - Azure pipeline variables needed: `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and `APPLE_*` (optional notarization).
 

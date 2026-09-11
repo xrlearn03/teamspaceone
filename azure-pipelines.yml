@@ -33,6 +33,8 @@ variables:
   value: '$(Pipeline.Workspace)/.cargo'
 - name: PNPM_STORE_DIR
   value: '$(Pipeline.Workspace)/.pnpm-store'
+- name: deploymentDomain
+  value: 'teamspaceone.in'
 
 stages:
   - stage: DeployBackend
@@ -150,9 +152,40 @@ stages:
                     tar --exclude=.git --exclude=.env --exclude=docker-compose.gce.yml --exclude=Caddyfile --exclude=apps/web/public/downloads -cf - . | tar -xf - -C /opt/teamspace-one/repo
                   displayName: 'Deploy and verify website'
 
+  - stage: ConfigureDesktop
+    displayName: 'Configure desktop endpoints'
+    dependsOn: DeployWeb
+    condition: succeeded()
+    jobs:
+      - job: Configure
+        displayName: 'Generate production desktop configuration'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: self
+            clean: true
+
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+
+          - script: |
+              set -euo pipefail
+              ./infra/gce/update-desktop.sh "$(deploymentDomain)" ""
+              destination="$(Build.ArtifactStagingDirectory)/desktop-config"
+              mkdir -p "$destination/apps/desktop/src-tauri/capabilities"
+              cp apps/desktop/.env.production "$destination/apps/desktop/.env.production"
+              cp apps/desktop/src-tauri/capabilities/default.json "$destination/apps/desktop/src-tauri/capabilities/default.json"
+            displayName: 'Wire desktop to production'
+
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: '$(Build.ArtifactStagingDirectory)/desktop-config'
+              artifactName: 'desktop-config'
+
   - stage: BuildDesktop
     displayName: 'Build desktop bundles'
-    dependsOn: DeployWeb
+    dependsOn: ConfigureDesktop
     condition: succeeded()
     jobs:
       - job: macOS_universal
@@ -164,6 +197,18 @@ stages:
         steps:
           - checkout: self
             clean: true
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              source: current
+              artifactName: 'desktop-config'
+              path: $(Pipeline.Workspace)/desktop-config
+
+          - script: |
+              set -euo pipefail
+              cp "$(Pipeline.Workspace)/desktop-config/apps/desktop/.env.production" apps/desktop/.env.production
+              cp "$(Pipeline.Workspace)/desktop-config/apps/desktop/src-tauri/capabilities/default.json" apps/desktop/src-tauri/capabilities/default.json
+            displayName: 'Apply desktop configuration'
 
           - task: NodeTool@0
             inputs:
@@ -302,6 +347,17 @@ stages:
         steps:
           - checkout: self
             clean: true
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              source: current
+              artifactName: 'desktop-config'
+              path: $(Pipeline.Workspace)/desktop-config
+
+          - powershell: |
+              Copy-Item "$(Pipeline.Workspace)/desktop-config/apps/desktop/.env.production" "apps/desktop/.env.production" -Force
+              Copy-Item "$(Pipeline.Workspace)/desktop-config/apps/desktop/src-tauri/capabilities/default.json" "apps/desktop/src-tauri/capabilities/default.json" -Force
+            displayName: 'Apply desktop configuration'
 
           - task: NodeTool@0
             inputs:
