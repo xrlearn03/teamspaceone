@@ -12,6 +12,9 @@ repo_ref = "hrms"
 
 # openai_api_key = "sk-..."  # required for ai-service
 
+# Email provider encryption key (generate with: openssl rand -base64 32)
+# organisation_email_encryption_key = "..."
+
 # Domain + SSL (optional but recommended). Caddy will provision Let's Encrypt certs automatically.
 # domain = "teamspaceone.in"
 # acme_email = "admin@teamspaceone.in"
