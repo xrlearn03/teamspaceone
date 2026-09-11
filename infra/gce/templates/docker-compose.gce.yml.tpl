@@ -51,9 +51,6 @@ services:
         NEXT_PUBLIC_REALTIME_URL: ${domain != "" ? "wss://realtime.${domain}" : "ws://${external_ip}:3005"}
         NEXT_PUBLIC_SFU_URL: ${domain != "" ? "wss://sfu.${domain}" : "ws://${external_ip}:8443"}
         NEXT_PUBLIC_ICE_SERVERS:
-%{ if domain != "" }
-    ports: !override []
-%{ endif }
 
 %{ if domain != "" }
   sfu:
