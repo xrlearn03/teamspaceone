@@ -12,6 +12,10 @@ www.${domain} {
   reverse_proxy web:80
 }
 
+webapp.${domain} {
+  reverse_proxy desktop-next:3002
+}
+
 app.${domain} {
   reverse_proxy api-gateway:3000
 }

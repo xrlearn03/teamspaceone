@@ -14,14 +14,14 @@ import {
   Video,
   VideoOff,
 } from "lucide-react";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
+} from "@teamspace-one/ui/dropdown-menu";
 import { cn, getUserDisplayName } from "../lib/utils";
 import { useRealtime } from "../hooks/useRealtime";
 import { useUIStore } from "../stores/ui";

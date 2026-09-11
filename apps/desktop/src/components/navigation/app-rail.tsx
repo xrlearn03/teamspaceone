@@ -22,14 +22,14 @@ import { useShallow } from "zustand/shallow";
 import { useMe, useOrganisations, useUnreadCount } from "../../hooks/api";
 import { useSwitchOrganisation } from "../../hooks/useOrganisationSwitch";
 import { logout } from "../../lib/api";
-import { Avatar, AvatarFallback } from "../ui/avatar";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
+import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@teamspace-one/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
+} from "@teamspace-one/ui/dropdown-menu";
 import { cn, getUserDisplayName } from "../../lib/utils";
 
 export function AppRail() {

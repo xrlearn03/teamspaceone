@@ -4,7 +4,7 @@ import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
 import { MeetingLobby } from "../components/livekit/lobby";
 import { NativeConference } from "../components/native-conference";
-import { Button } from "../components/ui/button";
+import { Button } from "@teamspace-one/ui/button";
 import { useRealtime } from "../hooks/useRealtime";
 import { useNativeCamera } from "../hooks/useNativeCamera";
 import { useNativeMicrophone } from "../hooks/useNativeMicrophone";

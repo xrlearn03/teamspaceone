@@ -3,9 +3,9 @@ import { Bookmark, Hash, Trash2 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useChannels, useUsers } from "../hooks/api";
 import { getSavedMessages, toggleSavedMessage, type SavedMessage } from "../lib/message-local";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
-import { Button } from "../components/ui/button";
-import { EmptyState } from "../components/ui/empty-state";
+import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
+import { Button } from "@teamspace-one/ui/button";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { MessageContent } from "../components/chat/message-content";
 import { getUserDisplayName } from "../lib/utils";
 

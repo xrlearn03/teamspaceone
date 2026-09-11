@@ -10,11 +10,11 @@ import {
 } from "lucide-react";
 import { usePermissions } from "../hooks/usePermissions";
 import { cn } from "../lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
-import { EmptyState } from "../components/ui/empty-state";
-import { Skeleton } from "../components/ui/skeleton";
+import { Card, CardContent, CardHeader, CardTitle } from "@teamspace-one/ui/card";
+import { Badge } from "@teamspace-one/ui/badge";
+import { Button } from "@teamspace-one/ui/button";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
+import { Skeleton } from "@teamspace-one/ui/skeleton";
 import {
   useCandidates,
   useInterviewOverview,

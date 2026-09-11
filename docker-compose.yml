@@ -558,6 +558,25 @@ services:
     ports:
       - '${WEB_PORT:-8080}:80'
 
+  desktop-next:
+    build:
+      additional_contexts:
+        teamspace-one-base: 'service:base'
+      context: .
+      dockerfile: 'apps/desktop-next/Dockerfile'
+      args:
+        NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-https://app.teamspaceone.in}
+        NEXT_PUBLIC_REALTIME_URL: ${NEXT_PUBLIC_REALTIME_URL:-wss://realtime.teamspaceone.in}
+        NEXT_PUBLIC_SFU_URL: ${NEXT_PUBLIC_SFU_URL:-wss://sfu.teamspaceone.in}
+        NEXT_PUBLIC_ICE_SERVERS: ${NEXT_PUBLIC_ICE_SERVERS:-}
+    container_name: 'teamspace-one-desktop-next'
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+    ports:
+      - '${DESKTOP_NEXT_PORT:-3002}:3002'
+
 volumes:
   postgres-data:
   nats-data:

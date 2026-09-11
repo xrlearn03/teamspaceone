@@ -26,9 +26,9 @@ import {
   useWorkspaces,
 } from "../../hooks/api";
 import { getActiveOrganisation, type SearchResult as ApiSearchResult } from "../../lib/api";
-import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
-import { Input } from "../ui/input";
-import { Badge } from "../ui/badge";
+import { Dialog, DialogContent, DialogTitle } from "@teamspace-one/ui/dialog";
+import { Input } from "@teamspace-one/ui/input";
+import { Badge } from "@teamspace-one/ui/badge";
 import { cn, getUserDisplayName } from "../../lib/utils";
 import type { LucideIcon } from "lucide-react";
 

@@ -171,6 +171,52 @@ stages:
                     tar --exclude=.git --exclude=.env --exclude=docker-compose.gce.yml --exclude=Caddyfile --exclude=apps/web/public/downloads -cf - . | tar -xf - -C /opt/teamspace-one/repo
                   displayName: 'Deploy and verify website'
 
+  - stage: DeployDesktopNext
+    displayName: 'Build and deploy desktop web app'
+    dependsOn: DeployBackend
+    condition: succeeded()
+    lockBehavior: sequential
+    jobs:
+      - deployment: DesktopNext
+        displayName: 'Build and start desktop-next container'
+        environment: 'teamspace-one-production'
+        pool:
+          name: gce
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  clean: true
+
+                - script: |
+                    set -euo pipefail
+                    exec 9>/var/lock/teamspace-one-deploy.lock
+                    flock -w 3600 9
+                    cp /opt/teamspace-one/repo/.env .env
+                    cp /opt/teamspace-one/repo/docker-compose.gce.yml docker-compose.gce.yml
+                    if [ -f /opt/teamspace-one/repo/Caddyfile ]; then
+                      cp /opt/teamspace-one/repo/Caddyfile Caddyfile
+                    fi
+                    compose=(docker compose -p repo -f docker-compose.yml -f docker-compose.gce.yml)
+                    "${compose[@]}" config --quiet
+                    "${compose[@]}" build --pull base desktop-next
+                    "${compose[@]}" up -d desktop-next
+                    if "${compose[@]}" config --services | grep -qx caddy; then
+                      "${compose[@]}" up -d caddy
+                    fi
+                    deadline=$((SECONDS + 300))
+                    until docker run --rm --network repo_default alpine:latest wget -qO- http://desktop-next:3002/ >/dev/null; do
+                      if [ "$SECONDS" -ge "$deadline" ]; then
+                        "${compose[@]}" ps desktop-next
+                        "${compose[@]}" logs --tail=100 desktop-next
+                        exit 1
+                      fi
+                      sleep 5
+                    done
+                    tar --exclude=.git --exclude=.env --exclude=docker-compose.gce.yml --exclude=Caddyfile --exclude=apps/web/public/downloads -cf - . | tar -xf - -C /opt/teamspace-one/repo
+                  displayName: 'Deploy and verify desktop web app'
+
   - stage: ConfigureDesktop
     displayName: 'Configure desktop endpoints'
     dependsOn: DeployWeb

@@ -12,10 +12,10 @@ import {
 import { usePermissions } from "../../hooks/usePermissions";
 import { exportPayrollPeriodCsv } from "../../lib/api";
 import type { PayrollPeriod } from "../../lib/api";
-import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
-import { EmptyState } from "../../components/ui/empty-state";
+import { Button } from "@teamspace-one/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@teamspace-one/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { SectionError, SectionSkeleton, StatusBadge, formatDate } from "./common";
 
 function money(value?: number | null, currency?: string | null) {

@@ -10,17 +10,17 @@ import {
 } from "../../hooks/api";
 import { usePermissions } from "../../hooks/usePermissions";
 import type { Department } from "../../lib/api";
-import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Button } from "@teamspace-one/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@teamspace-one/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "../../components/ui/dialog";
-import { EmptyState } from "../../components/ui/empty-state";
-import { Input } from "../../components/ui/input";
+} from "@teamspace-one/ui/dialog";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
+import { Input } from "@teamspace-one/ui/input";
 import { SectionError, SectionSkeleton } from "./common";
 
 function DepartmentDialog({

@@ -1,5 +1,5 @@
 import { Mic, MicOff, Video, VideoOff } from "lucide-react";
-import { Button } from "../ui/button";
+import { Button } from "@teamspace-one/ui/button";
 import { useMediaDevices } from "../../hooks/useMediaDevices";
 import type { Meeting, UserDto } from "../../lib/api";
 import { getUserDisplayName } from "../../lib/utils";

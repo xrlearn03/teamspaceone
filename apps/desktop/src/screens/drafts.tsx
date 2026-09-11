@@ -3,8 +3,8 @@ import { FileEdit, Hash, Trash2 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useChannels } from "../hooks/api";
 import { listDrafts, setDraft } from "../lib/message-local";
-import { Button } from "../components/ui/button";
-import { EmptyState } from "../components/ui/empty-state";
+import { Button } from "@teamspace-one/ui/button";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
 
 interface DraftRow {
   key: string;

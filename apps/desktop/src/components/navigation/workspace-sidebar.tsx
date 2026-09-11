@@ -45,10 +45,10 @@ import {
 } from "../../hooks/api";
 import { type Channel, type Meeting, type UserDto } from "../../lib/api";
 import { useSwitchOrganisation } from "../../hooks/useOrganisationSwitch";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Avatar, AvatarFallback } from "../ui/avatar";
-import { Badge } from "../ui/badge";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
+import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
+import { Badge } from "@teamspace-one/ui/badge";
 import { useRealtime } from "../../hooks/useRealtime";
 import { UserAvatar } from "../user-avatar";
 import {
@@ -57,8 +57,8 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+} from "@teamspace-one/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
 import { cn, getUserDisplayName } from "../../lib/utils";
 
 const Collapsible = CollapsiblePrimitive.Root;

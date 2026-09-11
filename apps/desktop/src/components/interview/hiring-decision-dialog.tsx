@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { Gavel, Loader2, CheckCircle } from "lucide-react";
-import { Button } from "../ui/button";
-import { Badge } from "../ui/badge";
+import { Button } from "@teamspace-one/ui/button";
+import { Badge } from "@teamspace-one/ui/badge";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "../ui/dialog";
+} from "@teamspace-one/ui/dialog";
 import { useMakeHiringDecision } from "../../hooks/api";
 import { cn } from "../../lib/utils";
 

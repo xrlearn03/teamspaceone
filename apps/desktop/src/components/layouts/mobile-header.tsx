@@ -1,7 +1,7 @@
 import { Menu, ChevronDown, ChevronLeft } from "lucide-react";
 import { useUIStore } from "../../stores/ui";
 import { useOrganisations, useWorkspaces, useMe } from "../../hooks/api";
-import { Avatar, AvatarFallback } from "../ui/avatar";
+import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
 
 interface MobileHeaderProps {
   onOpenDrawer: () => void;

@@ -1,18 +1,18 @@
 import { useState } from "react";
 import { FileText, Plus, Pencil, Trash2, Loader2, CheckCircle, X } from "lucide-react";
-import { Button } from "../ui/button";
-import { Badge } from "../ui/badge";
-import { Input } from "../ui/input";
-import { Skeleton } from "../ui/skeleton";
-import { EmptyState } from "../ui/empty-state";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Button } from "@teamspace-one/ui/button";
+import { Badge } from "@teamspace-one/ui/badge";
+import { Input } from "@teamspace-one/ui/input";
+import { Skeleton } from "@teamspace-one/ui/skeleton";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
+import { Card, CardContent, CardHeader, CardTitle } from "@teamspace-one/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "../ui/dialog";
+} from "@teamspace-one/ui/dialog";
 import { usePermissions } from "../../hooks/usePermissions";
 import {
   useInterviewTemplates,

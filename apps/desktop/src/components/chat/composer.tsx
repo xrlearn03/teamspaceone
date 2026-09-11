@@ -13,7 +13,7 @@ import {
   Strikethrough,
   Clock,
 } from "lucide-react";
-import { Button } from "../ui/button";
+import { Button } from "@teamspace-one/ui/button";
 import { getDraft, setDraft } from "../../lib/message-local";
 import { useRealtime } from "../../hooks/useRealtime";
 import { cn } from "../../lib/utils";

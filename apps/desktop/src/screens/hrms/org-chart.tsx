@@ -1,9 +1,9 @@
 import { TrendingUp } from "lucide-react";
 import { useOrgChart } from "../../hooks/api";
 import type { OrgChartNode } from "../../lib/api";
-import { Avatar, AvatarFallback } from "../../components/ui/avatar";
-import { Card, CardContent } from "../../components/ui/card";
-import { EmptyState } from "../../components/ui/empty-state";
+import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
+import { Card, CardContent } from "@teamspace-one/ui/card";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { cn } from "../../lib/utils";
 import { SectionError, SectionSkeleton } from "./common";
 

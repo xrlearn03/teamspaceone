@@ -145,7 +145,7 @@ async function bootstrap() {
   app.enableCors({
     origin: corsOrigins.length
       ? corsOrigins
-      : ['http://localhost:1420', 'http://localhost:5173', 'http://tauri.localhost', 'tauri://localhost'],
+      : ['http://localhost:1420', 'http://localhost:3002', 'http://localhost:5173', 'http://tauri.localhost', 'tauri://localhost'],
     credentials: true,
   });
 

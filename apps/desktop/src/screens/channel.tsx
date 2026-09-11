@@ -27,9 +27,9 @@ import {
   useUploadFile,
   useUsers,
 } from "../hooks/api";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
 import { MessageItem } from "../components/chat/message";
 import { Composer } from "../components/chat/composer";
 import { ThreadPanel } from "../components/chat/thread-panel";

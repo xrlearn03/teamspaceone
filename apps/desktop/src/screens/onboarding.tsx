@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Building2, Mail, Sparkles } from "lucide-react";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Card } from "../components/ui/card";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
+import { Card } from "@teamspace-one/ui/card";
 import { useAcceptInvitation, useCreateOrganisation, useMe } from "../hooks/api";
 import { useSwitchOrganisation } from "../hooks/useOrganisationSwitch";
 import { ApiError, logout } from "../lib/api";

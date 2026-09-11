@@ -34,12 +34,12 @@ import {
   useWorkspaces,
 } from "../hooks/api";
 import { downloadFile, fetchFilePreview, getActiveOrganisation, type FileRecord, type Project, type ProjectActivity, type ProjectComment, type Task, type UserDto } from "../lib/api";
-import { Card } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { Card } from "@teamspace-one/ui/card";
+import { Badge } from "@teamspace-one/ui/badge";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
+import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
 import { MessageAttachment } from "../components/ui/message-attachment";
 import { usePermissionContext } from "@teamspace-one/authorization/react";
 import { hasPermission } from "@teamspace-one/authorization";

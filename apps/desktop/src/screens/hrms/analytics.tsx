@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 import { useHrmsAnalytics } from "../../hooks/api";
 import { usePermissions } from "../../hooks/usePermissions";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { EmptyState } from "../../components/ui/empty-state";
+import { Card, CardContent, CardHeader, CardTitle } from "@teamspace-one/ui/card";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { SectionError, SectionSkeleton, StatusBadge, formatMinutes } from "./common";
 
 function money(value?: number | null) {

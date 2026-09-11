@@ -1,17 +1,23 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, KeyRound } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { changePassword } from "../../lib/api";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
+import { changePassword, login, type UserDto } from "../../lib/api";
+
+interface ForcePasswordChangeDialogProps {
+  me: UserDto | undefined;
+}
 
 /**
  * Non-dismissable dialog shown when the signed-in user was provisioned with a
  * temporary password (mustChangePassword). Blocks the app until a new
  * password is set.
  */
-export function ForcePasswordChangeDialog() {
+export function ForcePasswordChangeDialog({ me }: ForcePasswordChangeDialogProps) {
+  if (!me) return null;
+  const user = me;
   const queryClient = useQueryClient();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -39,7 +45,8 @@ export function ForcePasswordChangeDialog() {
     setSaving(true);
     try {
       await changePassword(currentPassword, newPassword);
-      await queryClient.invalidateQueries({ queryKey: ["me"] });
+      const result = await login(user.email, newPassword);
+      queryClient.setQueryData(["me"], result.user);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update password");
     } finally {

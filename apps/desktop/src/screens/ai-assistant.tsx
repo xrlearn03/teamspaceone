@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useShallow } from "zustand/shallow";
 import { AlertCircle, Sparkles, Send, ThumbsUp, RotateCcw, Save, CheckSquare, Copy, Check, BookOpen } from "lucide-react";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Card } from "../components/ui/card";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
-import { Badge } from "../components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
+import { Card } from "@teamspace-one/ui/card";
+import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
+import { Badge } from "@teamspace-one/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
 import { useAskAI, useConfirmAIAction, useCreateTask, useDeclineAIAction, useMe, useOrganisations, usePendingAIActions, useProjects, useUsers } from "../hooks/api";
 import { useUIStore } from "../stores/ui";
 import { cn, getUserDisplayName } from "../lib/utils";

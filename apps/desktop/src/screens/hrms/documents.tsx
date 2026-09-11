@@ -8,9 +8,9 @@ import {
   useUploadEmployeeDocument,
 } from "../../hooks/api";
 import { usePermissions } from "../../hooks/usePermissions";
-import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { EmptyState } from "../../components/ui/empty-state";
+import { Button } from "@teamspace-one/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@teamspace-one/ui/card";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
 import {
   SectionError,
   SectionSkeleton,

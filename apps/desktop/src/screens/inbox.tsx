@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import { Bell, Check, Filter } from "lucide-react";
 import { useMarkAllRead, useMarkRead, useNotifications, useNotificationCounts, useUsers } from "../hooks/api";
 import type { UserDto } from "../lib/api";
-import { Button } from "../components/ui/button";
-import { Badge } from "../components/ui/badge";
-import { EmptyState } from "../components/ui/empty-state";
+import { Button } from "@teamspace-one/ui/button";
+import { Badge } from "@teamspace-one/ui/badge";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { cn } from "../lib/utils";
 
 const categories = [

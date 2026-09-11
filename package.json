@@ -10,6 +10,8 @@
     "build:mobile:android": "pnpm --filter @teamspace-one/authorization build && pnpm --filter @teamspace-one/desktop tauri:android:build",
     "dev:web": "pnpm --filter @teamspace-one/web dev",
     "build:web": "pnpm --filter @teamspace-one/web build",
+    "dev:desktop-next": "pnpm --filter @teamspace-one/desktop-next dev",
+    "build:desktop-next": "pnpm --filter @teamspace-one/desktop-next build",
     "dev:desktop": "pnpm --filter @teamspace-one/desktop tauri dev",
     "dev:mobile:ios": "pnpm --filter @teamspace-one/desktop tauri:ios:dev",
     "dev:mobile:android": "pnpm --filter @teamspace-one/desktop tauri:android:dev",

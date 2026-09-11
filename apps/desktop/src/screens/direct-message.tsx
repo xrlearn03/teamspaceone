@@ -8,9 +8,9 @@ import {
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
 import { useChannels, useCreateMeeting, useCreateVoiceRoom, useDeleteMessage, useMe, useMembers, useMessages, useSendMessageOrQueue, useUpdateMessage, useUploadFile, useUsers } from "../hooks/api";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
+import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
 import { MessageItem } from "../components/chat/message";
 import { Composer } from "../components/chat/composer";
 import { ThreadPanel } from "../components/chat/thread-panel";
