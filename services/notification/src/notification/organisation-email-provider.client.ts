@@ -16,7 +16,22 @@ export class OrganisationEmailProviderClient {
   constructor(private readonly config: ConfigService) {}
 
   async getProvider(organisationId: string): Promise<EmailProvider | null> {
-    const cached = this.cache.get(organisationId);
+    return this.fetchProvider(
+      `organisation:${organisationId}`,
+      `/internal/organisations/${encodeURIComponent(organisationId)}/email-provider`,
+      organisationId,
+    );
+  }
+
+  async getProviderForUser(userId: string): Promise<EmailProvider | null> {
+    return this.fetchProvider(
+      `user:${userId}`,
+      `/internal/organisations/users/${encodeURIComponent(userId)}/email-provider`,
+    );
+  }
+
+  private async fetchProvider(cacheKey: string, path: string, organisationId?: string): Promise<EmailProvider | null> {
+    const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.provider;
     }
@@ -29,16 +44,16 @@ export class OrganisationEmailProviderClient {
     }
 
     try {
-      const response = await fetch(`${orgUrl}/internal/organisations/${encodeURIComponent(organisationId)}/email-provider`, {
+      const response = await fetch(`${orgUrl}${path}`, {
         headers: {
           'x-internal-api-key': internalKey,
           'x-internal-caller': 'notification-service',
-          'x-organisation-id': organisationId,
+          ...(organisationId ? { 'x-organisation-id': organisationId } : {}),
         },
       });
 
       if (response.status === 404) {
-        this.cache.set(organisationId, { provider: null, expiresAt: Date.now() + this.ttlMs });
+        this.cache.set(cacheKey, { provider: null, expiresAt: Date.now() + this.ttlMs });
         return null;
       }
 
@@ -47,11 +62,11 @@ export class OrganisationEmailProviderClient {
         throw new Error(`Failed to fetch email provider: ${response.status} ${body}`);
       }
 
-      const provider = (await response.json()) as EmailProvider;
-      this.cache.set(organisationId, { provider, expiresAt: Date.now() + this.ttlMs });
+      const provider = (await response.json()) as EmailProvider | null;
+      this.cache.set(cacheKey, { provider, expiresAt: Date.now() + this.ttlMs });
       return provider;
     } catch (err) {
-      this.logger.error({ organisationId, error: (err as Error).message }, 'Failed to load organisation email provider');
+      this.logger.error({ cacheKey, error: (err as Error).message }, 'Failed to load organisation email provider');
       return null;
     }
   }

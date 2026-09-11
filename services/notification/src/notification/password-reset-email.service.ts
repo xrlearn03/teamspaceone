@@ -2,12 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { type EventEnvelope, type PasswordResetRequestedPayload } from '@teamspace-one/event-contracts';
 import { sendEmail } from './mailer.js';
+import { OrganisationEmailProviderClient } from './organisation-email-provider.client.js';
 
 @Injectable()
 export class PasswordResetEmailService {
   private readonly logger = new Logger(PasswordResetEmailService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly emailProvider: OrganisationEmailProviderClient,
+  ) {}
 
   async send(envelope: EventEnvelope): Promise<void> {
     const payload = (envelope.payload ?? {}) as PasswordResetRequestedPayload;
@@ -26,6 +30,9 @@ export class PasswordResetEmailService {
       'This code expires in 10 minutes.\n\n' +
       'If you did not request this, you can ignore this email.\n';
 
-    await sendEmail(this.config, { to: email, subject, body });
+    const provider = envelope.actorId
+      ? await this.emailProvider.getProviderForUser(envelope.actorId)
+      : null;
+    await sendEmail(this.config, { to: email, subject, body }, provider);
   }
 }

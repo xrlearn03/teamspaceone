@@ -1028,6 +1028,27 @@ export class OrganisationService {
     return this.mapEmailProvider(record, includePass);
   }
 
+  async getEmailProviderForUser(userId: string): Promise<EmailProvider | null> {
+    const membership = await this.prisma.organisationMembership.findFirst({
+      where: {
+        userId,
+        organisation: { emailProvider: { is: { enabled: true } } },
+      },
+      orderBy: [{ createdAt: 'asc' }, { organisationId: 'asc' }],
+      select: { organisationId: true },
+    });
+    if (membership) {
+      return this.getEmailProvider(membership.organisationId, true);
+    }
+
+    const owned = await this.prisma.organisation.findFirst({
+      where: { ownerId: userId, emailProvider: { is: { enabled: true } } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { id: true },
+    });
+    return owned ? this.getEmailProvider(owned.id, true) : null;
+  }
+
   async updateEmailProvider(organisationId: string, actorId: string, dto: UpdateEmailProviderDto): Promise<EmailProvider> {
     const key = this.requireEmailEncryptionKey();
     const existing = await this.prisma.organisationEmailProvider.findUnique({

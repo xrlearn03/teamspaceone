@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NotificationController } from '../src/notification/notification.controller.js';
 import { NotificationService } from '../src/notification/notification.service.js';
+import { PushService } from '../src/notification/push.service.js';
 import { OutboxService } from '../src/outbox/outbox.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { Subjects, createEventEnvelope } from '@teamspace-one/event-contracts';
@@ -21,7 +22,10 @@ describe('NotificationController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [NotificationController],
-      providers: [{ provide: NotificationService, useValue: mockService }],
+      providers: [
+        { provide: NotificationService, useValue: mockService },
+        { provide: PushService, useValue: {} },
+      ],
     }).compile();
 
     controller = module.get<NotificationController>(NotificationController);
