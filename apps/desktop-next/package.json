@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@radix-ui/react-collapsible": "^1.1.3",
     "@tanstack/react-query": "^5.69.0",
     "@teamspace-one/authorization": "workspace:^",
     "@teamspace-one/ui": "workspace:^",
