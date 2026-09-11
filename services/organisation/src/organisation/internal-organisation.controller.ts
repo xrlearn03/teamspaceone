@@ -16,6 +16,21 @@ export class InternalOrganisationController {
     @Headers('x-internal-api-key') internalApiKey?: string,
     @Headers('x-internal-caller') internalCaller?: string,
   ) {
+    this.assertNotificationCaller(internalApiKey, internalCaller);
+    return this.organisation.getEmailProvider(organisationId, true);
+  }
+
+  @Get('users/:userId/email-provider')
+  async getEmailProviderForUser(
+    @Param('userId') userId: string,
+    @Headers('x-internal-api-key') internalApiKey?: string,
+    @Headers('x-internal-caller') internalCaller?: string,
+  ) {
+    this.assertNotificationCaller(internalApiKey, internalCaller);
+    return this.organisation.getEmailProviderForUser(userId);
+  }
+
+  private assertNotificationCaller(internalApiKey?: string, internalCaller?: string): void {
     if (!internalApiKey || !internalCaller) {
       throw new UnauthorizedException('Unauthorized');
     }
@@ -31,6 +46,5 @@ export class InternalOrganisationController {
     if (internalCaller !== 'notification-service') {
       throw new ForbiddenException('Forbidden caller');
     }
-    return this.organisation.getEmailProvider(organisationId, true);
   }
 }

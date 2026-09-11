@@ -72,7 +72,9 @@ export class NotificationDeliveryWorker extends WorkerHost {
   }
 
   private async sendEmailMessage(notification: { id: string; title: string; body: string; userId: string; eventType: string; link?: string | null; organisationId?: string; actorId?: string | null }): Promise<void> {
-    const provider = notification.organisationId ? await this.emailProvider.getProvider(notification.organisationId) : null;
+    const provider = notification.organisationId
+      ? await this.emailProvider.getProvider(notification.organisationId)
+      : await this.emailProvider.getProviderForUser(notification.userId);
 
     const to = await this.resolveRecipientEmail(notification);
     if (!to) {

@@ -540,6 +540,8 @@ stages:
                     cp -a "$staging"/. /data/downloads/
                     cp -a "$staging"/. /opt/teamspace-one/repo/apps/web/public/downloads/
                     docker inspect teamspace-one-web >/dev/null
+                    docker exec teamspace-one-web mkdir -p /usr/share/nginx/html/downloads
+                    docker cp "$staging"/. teamspace-one-web:/usr/share/nginx/html/downloads/
                     docker exec teamspace-one-web nginx -s reload
                     docker run --rm --network repo_default alpine:latest wget -qO- http://web/downloads/update.json >/dev/null
                     printf '%s\n' "$build_id" > "$marker"
