@@ -78,6 +78,7 @@ stages:
                       fi
                     done
                     "${compose[@]}" up -d "${infrastructure[@]}" "${backend[@]}"
+                    docker builder prune -af 2>/dev/null || true
                     deadline=$((SECONDS + 900))
                     while true; do
                       failed=0

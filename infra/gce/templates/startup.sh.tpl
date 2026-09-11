@@ -58,6 +58,7 @@ if [ -f "$MARKER" ]; then
   install_azure_agent
   systemctl start docker || true
   cleanup_broken_containers
+  docker builder prune -af 2>/dev/null || true
   cd "$REPO_DIR"
   docker compose -f docker-compose.yml -f docker-compose.gce.yml up -d
   systemctl start "$AGENT_SERVICE"
