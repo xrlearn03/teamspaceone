@@ -1,8 +1,8 @@
-# Azure Pipelines build + deploy for the Teamspace One desktop app.
+# Azure Pipelines sequential production deployment for Teamspace One.
 #
-# Builds macOS universal and Windows (x86_64) Tauri bundles, generates the
-# Tauri updater manifest, and deploys the contents of apps/web/public/downloads/
-# to the GCE VM that serves the marketing site.
+# Builds and verifies backend containers, rebuilds the website without bundled
+# downloads, builds signed macOS and Windows desktop releases, then publishes
+# the installers and updater manifest to the running website.
 #
 # Required secure files / pipeline variables:
 #   Secure file: teamspace-one.key     # minisign private key (upload in
@@ -14,20 +14,12 @@
 #     APPLE_CERTIFICATE_PASSWORD
 #     APPLE_API_KEY / APPLE_API_ISSUER / APPLE_API_KEY_PATH
 #     APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID
-#     GCP_SA_KEY_B64                     # base64 service-account JSON
-#     GCP_PROJECT                        # e.g. teamspace-one
-#     GCE_INSTANCE                       # e.g. teamspace-one
-#     GCE_ZONE                           # e.g. asia-south1-a
 
 trigger:
+  batch: true
   branches:
     include:
       - main
-      - master
-      - hrms
-  tags:
-    include:
-      - 'v*'
 
 pr: none
 
@@ -43,8 +35,125 @@ variables:
   value: '$(Pipeline.Workspace)/.pnpm-store'
 
 stages:
+  - stage: DeployBackend
+    displayName: 'Deploy backend services'
+    lockBehavior: sequential
+    jobs:
+      - deployment: Backend
+        displayName: 'Build and start backend containers'
+        environment: 'teamspace-one-production'
+        pool:
+          name: gce
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  clean: true
+
+                - script: |
+                    set -euo pipefail
+                    exec 9>/var/lock/teamspace-one-deploy.lock
+                    flock -w 3600 9
+                    cp /opt/teamspace-one/repo/.env .env
+                    cp /opt/teamspace-one/repo/docker-compose.gce.yml docker-compose.gce.yml
+                    if [ -f /opt/teamspace-one/repo/Caddyfile ]; then
+                      cp /opt/teamspace-one/repo/Caddyfile Caddyfile
+                    fi
+                    compose=(docker compose -p repo -f docker-compose.yml -f docker-compose.gce.yml)
+                    infrastructure=(postgres redis nats minio jaeger otel-collector)
+                    backend=(auth-service organisation-service messaging-service realtime-service projects-service audit-service notification-service sfu meeting-service file-storage-service search-service ai-service hrms-service interview-service api-gateway)
+                    health_urls=(http://auth-service:3002/health http://organisation-service:3003/health http://messaging-service:3004/health http://realtime-service:3005/health http://projects-service:3006/health http://audit-service:3007/health http://notification-service:3008/health http://meeting-service:3009/health http://file-storage-service:3010/health http://search-service:3011/health http://ai-service:3012/health http://hrms-service:3013/health http://interview-service:3014/health http://api-gateway:3000/health)
+                    "${compose[@]}" config --quiet
+                    "${compose[@]}" build --pull base "${backend[@]}"
+                    "${compose[@]}" up -d "${infrastructure[@]}" "${backend[@]}"
+                    deadline=$((SECONDS + 900))
+                    while true; do
+                      failed=0
+                      pending=0
+                      for service in "${infrastructure[@]}" "${backend[@]}"; do
+                        container_id=$("${compose[@]}" ps -q "$service")
+                        if [ -z "$container_id" ]; then
+                          failed=1
+                          break
+                        fi
+                        state=$(docker inspect --format '{{.State.Status}}' "$container_id")
+                        health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id")
+                        if [ "$state" = exited ] || [ "$state" = dead ] || [ "$health" = unhealthy ]; then
+                          failed=1
+                          break
+                        fi
+                        if [ "$state" != running ] || [ "$health" = starting ]; then
+                          pending=1
+                        fi
+                      done
+                      if [ "$failed" -eq 1 ]; then
+                        "${compose[@]}" ps
+                        "${compose[@]}" logs --tail=100
+                        exit 1
+                      fi
+                      if [ "$pending" -eq 0 ] && docker run --rm --network repo_default alpine:latest sh -c 'for url; do wget -qO- "$url" >/dev/null || exit 1; done' sh "${health_urls[@]}"; then
+                        break
+                      fi
+                      if [ "$SECONDS" -ge "$deadline" ]; then
+                        "${compose[@]}" ps
+                        "${compose[@]}" logs --tail=100
+                        exit 1
+                      fi
+                      sleep 10
+                    done
+                  displayName: 'Deploy and verify backend'
+
+  - stage: DeployWeb
+    displayName: 'Build and deploy website'
+    dependsOn: DeployBackend
+    condition: succeeded()
+    lockBehavior: sequential
+    jobs:
+      - deployment: Web
+        displayName: 'Build and start web container'
+        environment: 'teamspace-one-production'
+        pool:
+          name: gce
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  clean: true
+
+                - script: |
+                    set -euo pipefail
+                    exec 9>/var/lock/teamspace-one-deploy.lock
+                    flock -w 3600 9
+                    cp /opt/teamspace-one/repo/.env .env
+                    cp /opt/teamspace-one/repo/docker-compose.gce.yml docker-compose.gce.yml
+                    if [ -f /opt/teamspace-one/repo/Caddyfile ]; then
+                      cp /opt/teamspace-one/repo/Caddyfile Caddyfile
+                    fi
+                    compose=(docker compose -p repo -f docker-compose.yml -f docker-compose.gce.yml)
+                    "${compose[@]}" config --quiet
+                    "${compose[@]}" build --pull web
+                    "${compose[@]}" up -d web
+                    if "${compose[@]}" config --services | grep -qx caddy; then
+                      "${compose[@]}" up -d caddy
+                    fi
+                    deadline=$((SECONDS + 300))
+                    until docker run --rm --network repo_default alpine:latest wget -qO- http://web/ >/dev/null; do
+                      if [ "$SECONDS" -ge "$deadline" ]; then
+                        "${compose[@]}" ps web
+                        "${compose[@]}" logs --tail=100 web
+                        exit 1
+                      fi
+                      sleep 5
+                    done
+                    tar --exclude=.git --exclude=.env --exclude=docker-compose.gce.yml --exclude=Caddyfile --exclude=apps/web/public/downloads -cf - . | tar -xf - -C /opt/teamspace-one/repo
+                  displayName: 'Deploy and verify website'
+
   - stage: BuildDesktop
     displayName: 'Build desktop bundles'
+    dependsOn: DeployWeb
+    condition: succeeded()
     jobs:
       - job: macOS_universal
         displayName: 'macOS universal'
@@ -271,6 +380,7 @@ stages:
     displayName: 'Publish downloads to GCE'
     dependsOn: BuildDesktop
     condition: succeeded()
+    lockBehavior: sequential
     jobs:
       - job: Stage
         displayName: 'Generate manifest + stage downloads'
@@ -318,32 +428,44 @@ stages:
               targetPath: 'apps/web/public/downloads'
               artifactName: 'downloads'
 
-      - job: Deploy
+      - deployment: Deploy
         displayName: 'Deploy to GCE web host'
         dependsOn: Stage
         condition: succeeded()
+        environment: 'teamspace-one-production'
         pool:
           name: gce
-        steps:
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              source: current
-              artifactName: 'downloads'
-              path: $(Pipeline.Workspace)/downloads
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadPipelineArtifact@2
+                  inputs:
+                    source: current
+                    artifactName: 'downloads'
+                    path: $(Pipeline.Workspace)/downloads
 
-          - script: |
-              set -e
-              rm -rf /tmp/downloads
-              mkdir -p /tmp/downloads
-              cp -r $(Pipeline.Workspace)/downloads/. /tmp/downloads/
-
-              # Persist in the repo for future image rebuilds
-              mkdir -p /opt/teamspace-one/repo/apps/web/public/downloads
-              cp -r /tmp/downloads/. /opt/teamspace-one/repo/apps/web/public/downloads/
-
-              # Live-update the running web container without rebuilding the image
-              docker cp /tmp/downloads/. teamspace-one-web:/usr/share/nginx/html/downloads/
-              docker exec teamspace-one-web nginx -s reload || true
-
-              rm -rf /tmp/downloads
-            displayName: 'Deploy to GCE web host'
+                - script: |
+                    set -euo pipefail
+                    exec 9>/var/lock/teamspace-one-deploy.lock
+                    flock -w 3600 9
+                    build_id=$(Build.BuildId)
+                    marker=/opt/teamspace-one/.last-download-build
+                    staging=$(mktemp -d)
+                    trap 'rm -rf "$staging"' EXIT
+                    previous_build=0
+                    if [ -f "$marker" ]; then
+                      previous_build=$(cat "$marker")
+                    fi
+                    if [ "$build_id" -le "$previous_build" ]; then
+                      exit 0
+                    fi
+                    cp -a "$(Pipeline.Workspace)/downloads"/. "$staging"/
+                    install -d /data/downloads /opt/teamspace-one/repo/apps/web/public/downloads
+                    cp -a "$staging"/. /data/downloads/
+                    cp -a "$staging"/. /opt/teamspace-one/repo/apps/web/public/downloads/
+                    docker inspect teamspace-one-web >/dev/null
+                    docker exec teamspace-one-web nginx -s reload
+                    docker run --rm --network repo_default alpine:latest wget -qO- http://web/downloads/update.json >/dev/null
+                    printf '%s\n' "$build_id" > "$marker"
+                  displayName: 'Deploy to GCE web host'

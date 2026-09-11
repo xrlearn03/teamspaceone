@@ -29,6 +29,18 @@ services:
     ports: !override []
 %{ endif }
 
+  web:
+    extends:
+      file: ./docker-compose.yml
+      service: web
+    environment:
+      WEB_DOMAIN: ${domain != "" ? domain : external_ip}
+    volumes:
+      - /data/downloads:/usr/share/nginx/html/downloads
+%{ if domain != "" }
+    ports: !override []
+%{ endif }
+
 %{ if domain != "" }
   sfu:
     extends:
@@ -41,14 +53,6 @@ services:
     extends:
       file: ./docker-compose.yml
       service: minio
-    ports: !override []
-
-  web:
-    extends:
-      file: ./docker-compose.yml
-      service: web
-    environment:
-      WEB_DOMAIN: ${domain}
     ports: !override []
 
   caddy:

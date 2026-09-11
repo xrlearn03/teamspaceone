@@ -19,6 +19,20 @@ provider "google" {
 
 data "google_compute_default_service_account" "default" {}
 
+resource "google_project_service" "secret_manager" {
+  service            = "secretmanager.googleapis.com"
+  disable_on_destroy = false
+}
+
+resource "google_secret_manager_secret_iam_member" "azure_agent" {
+  project   = var.project_id
+  secret_id = var.azure_agent_pat_secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${data.google_compute_default_service_account.default.email}"
+
+  depends_on = [google_project_service.secret_manager]
+}
+
 resource "random_password" "postgres" {
   length  = 24
   special = false
@@ -63,23 +77,23 @@ locals {
   git_auth_header = var.git_token != "" ? "Authorization: Basic ${base64encode("${var.git_username}:${var.git_token}")}" : ""
 
   env_content = templatefile("${path.module}/templates/env.tpl", {
-    external_ip       = google_compute_address.static.address
-    domain            = var.domain
-    postgres_password = random_password.postgres.result
-    redis_password    = random_password.redis.result
-    nats_password     = random_password.nats.result
-    s3_access_key     = random_password.s3_access_key.result
-    s3_secret_key     = random_password.s3_secret_key.result
-    sfu_token_secret  = random_password.sfu_token_secret.result
-    internal_api_key  = random_password.internal_api_key.result
-    jwt_secret                       = random_password.jwt_secret.result
-    openai_api_key                   = var.openai_api_key
-    smtp_host                        = var.smtp_host
-    smtp_port                        = var.smtp_port
-    smtp_secure                      = var.smtp_secure
-    smtp_user                        = var.smtp_user
-    smtp_pass                        = var.smtp_pass
-    smtp_from                        = var.smtp_from
+    external_ip                       = google_compute_address.static.address
+    domain                            = var.domain
+    postgres_password                 = random_password.postgres.result
+    redis_password                    = random_password.redis.result
+    nats_password                     = random_password.nats.result
+    s3_access_key                     = random_password.s3_access_key.result
+    s3_secret_key                     = random_password.s3_secret_key.result
+    sfu_token_secret                  = random_password.sfu_token_secret.result
+    internal_api_key                  = random_password.internal_api_key.result
+    jwt_secret                        = random_password.jwt_secret.result
+    openai_api_key                    = var.openai_api_key
+    smtp_host                         = var.smtp_host
+    smtp_port                         = var.smtp_port
+    smtp_secure                       = var.smtp_secure
+    smtp_user                         = var.smtp_user
+    smtp_pass                         = var.smtp_pass
+    smtp_from                         = var.smtp_from
     organisation_email_encryption_key = var.organisation_email_encryption_key
   })
 
@@ -153,14 +167,20 @@ resource "google_compute_instance" "vm" {
 
   metadata = {
     startup-script = templatefile("${path.module}/templates/startup.sh.tpl", {
-      repo_url                = var.repo_url
-      repo_ref                = var.repo_ref
-      git_auth_header         = local.git_auth_header
-      external_ip             = google_compute_address.static.address
-      domain                  = var.domain
-      caddyfile_content       = local.caddyfile_content
-      env_content             = local.env_content
-      compose_overlay_content = local.compose_overlay_content
+      repo_url                  = var.repo_url
+      repo_ref                  = var.repo_ref
+      git_auth_header           = local.git_auth_header
+      external_ip               = google_compute_address.static.address
+      domain                    = var.domain
+      caddyfile_content         = local.caddyfile_content
+      env_content               = local.env_content
+      compose_overlay_content   = local.compose_overlay_content
+      project_id                = var.project_id
+      instance_name             = var.instance_name
+      azure_devops_url          = var.azure_devops_url
+      azure_agent_pool          = var.azure_agent_pool
+      azure_agent_version       = var.azure_agent_version
+      azure_agent_pat_secret_id = var.azure_agent_pat_secret_id
     })
   }
 
@@ -170,6 +190,8 @@ resource "google_compute_instance" "vm" {
   }
 
   allow_stopping_for_update = true
+
+  depends_on = [google_secret_manager_secret_iam_member.azure_agent]
 
   lifecycle {
     ignore_changes = [metadata["ssh-keys"]]

@@ -3,11 +3,53 @@ set -e
 
 MARKER="/data/.teamspace-initialized"
 REPO_DIR="/opt/teamspace-one/repo"
+DEPLOY_LOCK="/var/lock/teamspace-one-deploy.lock"
+AGENT_DIR="/opt/azure-agent"
+AGENT_SERVICE="azure-pipelines-agent.service"
+
+install_azure_agent() {
+  mkdir -p "$AGENT_DIR"
+  if [ ! -f "$AGENT_DIR/.agent" ]; then
+    token=$(curl -fsS -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+    pat=$(curl -fsS -H "Authorization: Bearer $token" "https://secretmanager.googleapis.com/v1/projects/${project_id}/secrets/${azure_agent_pat_secret_id}/versions/latest:access" | python3 -c 'import base64,json,sys; print(base64.b64decode(json.load(sys.stdin)["payload"]["data"]).decode())')
+    curl -fsSL "https://download.agent.dev.azure.com/agent/${azure_agent_version}/vsts-agent-linux-x64-${azure_agent_version}.tar.gz" | tar -xz -C "$AGENT_DIR"
+    (
+      cd "$AGENT_DIR"
+      ./bin/installdependencies.sh
+      AGENT_ALLOW_RUNASROOT=1 ./config.sh --unattended --replace --acceptTeeEula --url "${azure_devops_url}" --auth pat --token "$pat" --pool "${azure_agent_pool}" --agent "${instance_name}"
+    )
+    unset pat token
+  fi
+  cat > "/etc/systemd/system/$AGENT_SERVICE" <<'AGENT_SERVICE_EOF'
+[Unit]
+Description=Azure Pipelines Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/azure-agent
+ExecStart=/opt/azure-agent/bin/runsvc.sh
+User=root
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+AGENT_SERVICE_EOF
+  systemctl daemon-reload
+  systemctl enable "$AGENT_SERVICE"
+}
+
+exec 9>"$DEPLOY_LOCK"
+flock 9
 
 if [ -f "$MARKER" ]; then
+  install_azure_agent
   systemctl start docker || true
   cd "$REPO_DIR"
   docker compose -f docker-compose.yml -f docker-compose.gce.yml up -d
+  systemctl start "$AGENT_SERVICE"
   exit 0
 fi
 
@@ -22,7 +64,11 @@ apt-get install -y -qq \
   curl \
   gnupg \
   lsb-release \
-  git
+  git \
+  python3 \
+  tar
+
+install_azure_agent
 
 # Add Docker repository and install Docker
 install -m 0755 -d /etc/apt/keyrings
@@ -57,7 +103,7 @@ if [ -b "$DATA_DISK" ]; then
   mount -a
 fi
 
-mkdir -p /data/docker
+mkdir -p /data/docker /data/downloads
 
 # Point Docker data root at the persistent disk
 if ! grep -q '"data-root"' /etc/docker/daemon.json 2>/dev/null; then
@@ -106,8 +152,12 @@ ${caddyfile_content}
 CADDY_EOF
 %{ endif }
 
+# Clear any stale/corrupted BuildKit cache before first build
+docker builder prune -af 2>/dev/null || true
+
 # Build and start the full stack
 docker compose -f docker-compose.yml -f docker-compose.gce.yml build
 docker compose -f docker-compose.yml -f docker-compose.gce.yml up -d
 
 touch "$MARKER"
+systemctl start "$AGENT_SERVICE"

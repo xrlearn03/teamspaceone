@@ -9,6 +9,9 @@ coverage
 .env.local
 .env.*.local
 infra/gce/terraform.tfvars
+*.tfstate
+*.tfstate.*
+*.tfplan
 *.tsbuildinfo
 .tauri
 *.db
