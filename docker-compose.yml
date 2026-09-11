@@ -574,8 +574,6 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3002
-    ports:
-      - '${DESKTOP_NEXT_PORT:-3002}:3002'
 
 volumes:
   postgres-data:
