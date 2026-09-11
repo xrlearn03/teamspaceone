@@ -17,17 +17,31 @@ Deploys the full backend stack to a single Google Compute Engine VM with Docker 
 - Terraform >= 1.0.
 - (Optional) pnpm/Node if you want to rebuild the desktop client locally.
 - An Azure DevOps clone URL. If the repo is private, create a Personal Access Token (PAT) with **Code (Read)** scope.
+- An Azure DevOps agent registration PAT with **Agent Pools (Read & manage)** stored in GCP Secret Manager as `azure-devops-agent-pat`.
 - A domain with DNS access (optional, only if you want HTTPS).
 
 ## Deploy
 
 ```bash
+gcloud services enable secretmanager.googleapis.com --project=<project>
+printf 'Azure agent PAT: '; stty -echo; IFS= read -r AZP_PAT; stty echo; printf '\n'
+if gcloud secrets describe azure-devops-agent-pat --project=<project> >/dev/null 2>&1; then
+  printf '%s' "$AZP_PAT" | gcloud secrets versions add azure-devops-agent-pat --project=<project> --data-file=-
+else
+  printf '%s' "$AZP_PAT" | gcloud secrets create azure-devops-agent-pat --project=<project> --data-file=-
+fi
+unset AZP_PAT
+
 cd infra/gce
 cp terraform.tfvars.example terraform.tfvars
 # edit terraform.tfvars: set repo_url, git_token if private, openai_api_key, and optionally domain + acme_email
 terraform init
-terraform apply
+terraform apply -lock-timeout=30m
 ```
+
+Always keep the Terraform state in one shared, access-controlled location and retain locking. Do not copy the state or run with `-lock=false`. Because the deployment agent runs on this VM, never approve a Terraform plan that stops or replaces the VM while a pipeline is running. Startup and all deployment stages use `/var/lock/teamspace-one-deploy.lock` to prevent concurrent Docker or file updates when the VM remains online.
+
+In Azure DevOps, create the `teamspace-one-production` Environment and add an **Exclusive lock** check. Terraform registers the VM in the self-hosted `gce` pool and runs the agent as a root systemd service outside Docker Compose. The pipeline deploys `main` sequentially: backend build and health checks, web rebuild and health check, desktop builds, then installer publication. `/data/downloads` is mounted into the web container; each newer web deployment clears old installers before the desktop stages publish the replacement set. Azure build IDs prevent an older run from overwriting newer downloads.
 
 First boot installs Docker and builds all images on the VM. This typically takes 20–30 minutes.
 
@@ -96,7 +110,7 @@ gcloud compute ssh --project=<project> --zone=<zone> teamspace-one -- \
   'cd /opt/teamspace-one/repo && docker compose -f docker-compose.yml -f docker-compose.gce.yml logs -f caddy'
 
 # Manually re-run the startup script
-gcloud compute ssh --project=<project> --zone=<zone> teamspace-one -- sudo bash /var/log/startupscript.log
+gcloud compute ssh --project=<project> --zone=<zone> teamspace-one -- sudo google_metadata_script_runner startup
 ```
 
 ## Important defaults

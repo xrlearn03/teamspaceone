@@ -47,6 +47,7 @@ coverage
 **/*.tsbuildinfo
 
 # Desktop app artifacts
+apps/web/public/downloads
 apps/desktop/dist
 apps/desktop/src
 apps/desktop/src-tauri

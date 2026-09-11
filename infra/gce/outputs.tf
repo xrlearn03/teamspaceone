@@ -53,13 +53,11 @@ output "next_steps" {
     2. Wait a few minutes for the startup script to install Docker and build the stack.
     3. Caddy will automatically provision Let's Encrypt SSL certs once DNS resolves.
     4. SSH in and tail logs if needed: gcloud compute ssh --project=${var.project_id} --zone=${var.zone} ${var.instance_name} -- 'cd /opt/teamspace-one/repo && docker compose logs -f caddy api-gateway'
-    5. Run ./infra/gce/update-desktop.sh from your local repo to wire the desktop client to the new domain.
-    6. Build/push a new desktop release so users get the updated endpoints.
+    5. Run the main Azure pipeline; it configures desktop endpoints, builds installers, and publishes downloads sequentially.
 %{else}
     1. Wait a few minutes for the startup script to install Docker and build the stack.
     2. SSH in and tail logs if needed: gcloud compute ssh --project=${var.project_id} --zone=${var.zone} ${var.instance_name} -- 'cd /opt/teamspace-one/repo && docker compose logs -f api-gateway'
-    3. Run ./infra/gce/update-desktop.sh from your local repo to wire the desktop client to the new IP.
-    4. Build/push a new desktop release so users get the updated endpoints.
+    3. Set the pipeline deployment endpoint to this IP, then run the main Azure pipeline.
 %{endif}
   EOF
 }

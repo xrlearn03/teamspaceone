@@ -124,3 +124,27 @@ variable "acme_email" {
   type        = string
   default     = ""
 }
+
+variable "azure_devops_url" {
+  description = "Azure DevOps organisation URL used to register the deployment agent"
+  type        = string
+  default     = "https://dev.azure.com/xrlearn"
+}
+
+variable "azure_agent_pool" {
+  description = "Azure Pipelines self-hosted agent pool"
+  type        = string
+  default     = "gce"
+}
+
+variable "azure_agent_version" {
+  description = "Pinned Azure Pipelines agent version"
+  type        = string
+  default     = "5.279.0"
+}
+
+variable "azure_agent_pat_secret_id" {
+  description = "GCP Secret Manager secret containing the Azure agent registration PAT"
+  type        = string
+  default     = "azure-devops-agent-pat"
+}
