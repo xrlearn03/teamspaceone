@@ -10,7 +10,7 @@ import { AuthScreen } from "./screens/auth";
 import { OnboardingScreen } from "./screens/onboarding";
 import { ForcePasswordChangeDialog } from "./components/auth/force-password-change-dialog";
 import { getAccessToken, getMe, getMyContext, getOrganisations, getActiveOrganisation, setActiveOrganisation, setOnSessionCleared } from "./lib/api";
-import { Button } from "./components/ui/button";
+import { Button } from "@teamspace-one/ui/button";
 import { useUIStore } from "./stores/ui";
 import { UpdateChecker } from "./components/update/update-checker";
 
@@ -145,7 +145,7 @@ function AuthGateInner({ onAuthenticated }: { onAuthenticated: () => void }) {
     return (
       <>
         <OnboardingScreen />
-        {forcePasswordChange ? <ForcePasswordChangeDialog /> : null}
+        {forcePasswordChange ? <ForcePasswordChangeDialog me={me} /> : null}
       </>
     );
   }
@@ -156,7 +156,7 @@ function AuthGateInner({ onAuthenticated }: { onAuthenticated: () => void }) {
   return (
     <RealtimeProvider key={organisationId ?? "none"}>
       <PermissionBoundary organisationId={organisationId} />
-      {forcePasswordChange ? <ForcePasswordChangeDialog /> : null}
+      {forcePasswordChange ? <ForcePasswordChangeDialog me={me} /> : null}
     </RealtimeProvider>
   );
 }

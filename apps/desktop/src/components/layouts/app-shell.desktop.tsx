@@ -9,7 +9,7 @@ import { RightPanel } from "./right-panel";
 import { CommandMenu } from "../search/command-menu";
 import { IncomingCallOverlay } from "../call/incoming-call";
 import { NotificationToasts } from "../ui/notification-toasts";
-import { TooltipProvider } from "../ui/tooltip";
+import { TooltipProvider } from "@teamspace-one/ui/tooltip";
 import { ScreenContent } from "./screen-content";
 
 export function AppShellDesktop() {

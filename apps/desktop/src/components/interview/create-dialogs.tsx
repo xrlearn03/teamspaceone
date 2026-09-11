@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { Briefcase, Plus, UserPlus, CalendarClock } from "lucide-react";
-import { Button } from "../ui/button";
+import { Button } from "@teamspace-one/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "../ui/dialog";
-import { Input } from "../ui/input";
+} from "@teamspace-one/ui/dialog";
+import { Input } from "@teamspace-one/ui/input";
 import { cn } from "../../lib/utils";
 import type { Candidate, JobOpening } from "../../lib/api";
 import {

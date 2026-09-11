@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { X, Hash, Folder, Info, Calendar, Users, Mic } from "lucide-react";
 import { useUIStore } from "../../stores/ui";
 import { useShallow } from "zustand/shallow";
-import { EmptyState } from "../ui/empty-state";
-import { Avatar, AvatarFallback } from "../ui/avatar";
-import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
+import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
+import { Badge } from "@teamspace-one/ui/badge";
+import { Button } from "@teamspace-one/ui/button";
 import {
   useAddChannelModerator,
   useChannels,

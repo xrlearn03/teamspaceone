@@ -1,7 +1,7 @@
 import { CalendarCheck, CalendarClock, Clock, Users } from "lucide-react";
 import { useHrmsOverview, useLeaveRequests, useAttendanceCorrections } from "../../hooks/api";
 import { usePermissions } from "../../hooks/usePermissions";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@teamspace-one/ui/card";
 import { SectionError, SectionSkeleton, StatusBadge, formatDate } from "./common";
 
 function StatCard({

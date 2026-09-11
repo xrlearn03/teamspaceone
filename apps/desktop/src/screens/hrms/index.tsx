@@ -15,7 +15,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { usePermissions } from "../../hooks/usePermissions";
-import { EmptyState } from "../../components/ui/empty-state";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { cn } from "../../lib/utils";
 import { HrmsOverviewSection } from "./overview";
 import { EmployeesSection } from "./employees";

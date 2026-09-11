@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Bookmark, Check, MessageCircle, Pencil, Pin, Smile, Trash2, X } from "lucide-react";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Avatar, AvatarFallback } from "../ui/avatar";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
+import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
 import { MessageAttachment } from "../ui/message-attachment";
 import { MessageContent } from "./message-content";
 import { isSaved, toggleSavedMessage } from "../../lib/message-local";

@@ -44,11 +44,11 @@ import {
   useWorkspaces,
 } from "../hooks/api";
 import { getActiveOrganisation, setActiveOrganisation, type UserDto } from "../lib/api";
-import { Button } from "../components/ui/button";
-import { Card } from "../components/ui/card";
-import { Input } from "../components/ui/input";
+import { Button } from "@teamspace-one/ui/button";
+import { Card } from "@teamspace-one/ui/card";
+import { Input } from "@teamspace-one/ui/input";
 import { UserAvatar } from "../components/user-avatar";
-import { Badge } from "../components/ui/badge";
+import { Badge } from "@teamspace-one/ui/badge";
 import { cn, getUserDisplayName } from "../lib/utils";
 
 const sections = [

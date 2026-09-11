@@ -1,10 +1,10 @@
-import { cn } from "../../lib/utils";
+import type * as React from "react";
+import { cn } from "../lib/utils";
 
-function Card({
-  className,
-  children,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
+export type CardProps = React.HTMLAttributes<HTMLDivElement>;
+export type CardTitleProps = React.HTMLAttributes<HTMLHeadingElement>;
+
+function Card({ className, children, ...props }: CardProps) {
   return (
     <div
       className={cn(
@@ -18,11 +18,7 @@ function Card({
   );
 }
 
-function CardHeader({
-  className,
-  children,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
+function CardHeader({ className, children, ...props }: CardProps) {
   return (
     <div className={cn("mb-3 flex items-center justify-between", className)} {...props}>
       {children}
@@ -30,11 +26,7 @@ function CardHeader({
   );
 }
 
-function CardTitle({
-  className,
-  children,
-  ...props
-}: React.HTMLAttributes<HTMLHeadingElement>) {
+function CardTitle({ className, children, ...props }: CardTitleProps) {
   return (
     <h3 className={cn("text-sm font-semibold text-text", className)} {...props}>
       {children}
@@ -42,11 +34,7 @@ function CardTitle({
   );
 }
 
-function CardContent({
-  className,
-  children,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
+function CardContent({ className, children, ...props }: CardProps) {
   return (
     <div className={cn("text-sm text-text-secondary", className)} {...props}>
       {children}

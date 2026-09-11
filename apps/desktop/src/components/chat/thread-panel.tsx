@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckSquare, Link2, MoreHorizontal, X } from "lucide-react";
 import { useThreadMessages, useSendMessageOrQueue, useMe, useProjects, useCreateTask } from "../../hooks/api";
-import { Button } from "../ui/button";
+import { Button } from "@teamspace-one/ui/button";
 import { MessageItem } from "./message";
 import { Composer } from "./composer";
 import {
@@ -9,8 +9,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+} from "@teamspace-one/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
 import type { Message, UserDto } from "../../lib/api";
 
 interface ThreadPanelProps {

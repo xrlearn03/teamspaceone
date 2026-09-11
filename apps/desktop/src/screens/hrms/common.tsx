@@ -1,7 +1,7 @@
 import { AlertCircle } from "lucide-react";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { Skeleton } from "../../components/ui/skeleton";
+import { Badge } from "@teamspace-one/ui/badge";
+import { Button } from "@teamspace-one/ui/button";
+import { Skeleton } from "@teamspace-one/ui/skeleton";
 
 export function formatDate(iso?: string | null) {
   if (!iso) return "—";

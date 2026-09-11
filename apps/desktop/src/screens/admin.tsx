@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Mail, Pencil, Plus, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
 import { PermissionGate } from "@teamspace-one/authorization/react";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { EmptyState } from "../components/ui/empty-state";
-import { Input } from "../components/ui/input";
-import { Skeleton } from "../components/ui/skeleton";
+import { Card, CardContent, CardHeader, CardTitle } from "@teamspace-one/ui/card";
+import { Badge } from "@teamspace-one/ui/badge";
+import { Button } from "@teamspace-one/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
+import { Input } from "@teamspace-one/ui/input";
+import { Skeleton } from "@teamspace-one/ui/skeleton";
 import {
   useMembers,
   usePermissionsList,

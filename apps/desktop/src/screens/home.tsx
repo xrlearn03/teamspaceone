@@ -1,7 +1,7 @@
 import { usePermissionContext } from "@teamspace-one/authorization/react";
 import { LayoutDashboard } from "lucide-react";
 import { useMe } from "../hooks/api";
-import { EmptyState } from "../components/ui/empty-state";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { cn, getUserDisplayName } from "../lib/utils";
 import { filterDashboardWidgets } from "../features/dashboard/registry";
 

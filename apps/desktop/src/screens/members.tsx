@@ -2,12 +2,12 @@ import { useMemo, useState } from "react";
 import { MailPlus, Trash2, UserPlus, Users, XCircle } from "lucide-react";
 import { useMembers, useRoles, useInviteMember, useInvitations, useOrganisations, useRemoveMember, useResendInvitation, useRevokeInvitation, useUsers } from "../hooks/api";
 import { useUIStore } from "../stores/ui";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { EmptyState } from "../components/ui/empty-state";
+import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
+import { Badge } from "@teamspace-one/ui/badge";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
 import type { OrganisationMember, UserDto } from "../lib/api";
 import { getUserDisplayName } from "../lib/utils";
 

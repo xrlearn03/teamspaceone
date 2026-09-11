@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useUIStore } from "../../stores/ui";
 import { useShallow } from "zustand/shallow";
 import { useTheme } from "../../hooks/useTheme";
-import { TooltipProvider } from "../ui/tooltip";
+import { TooltipProvider } from "@teamspace-one/ui/tooltip";
 import { CommandMenu } from "../search/command-menu";
 import { IncomingCallOverlay } from "../call/incoming-call";
 import { NotificationToasts } from "../ui/notification-toasts";

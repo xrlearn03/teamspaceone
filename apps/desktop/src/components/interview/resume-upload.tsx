@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { Upload, FileText, Loader2 } from "lucide-react";
-import { Button } from "../ui/button";
+import { Button } from "@teamspace-one/ui/button";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useUploadCandidateResume } from "../../hooks/api";
 

@@ -1,7 +1,7 @@
 import { Download, File, FileArchive, FileAudio, FileText, FileVideo, Image as ImageIcon } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useFile } from "../../hooks/api";
-import { Button } from "./button";
+import { Button } from "@teamspace-one/ui/button";
 
 function attachmentIcon(mimeType: string | undefined) {
   if (!mimeType) return File;

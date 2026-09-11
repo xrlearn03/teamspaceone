@@ -19,11 +19,11 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { FileRecord } from "../lib/api";
 import { downloadFile, fetchFilePreview } from "../lib/api";
 import { useCreateExternalShare, useDeleteFile, useFiles, useUploadFile } from "../hooks/api";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Badge } from "../components/ui/badge";
-import { EmptyState } from "../components/ui/empty-state";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
+import { Badge } from "@teamspace-one/ui/badge";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
 import { cn } from "../lib/utils";
 
 const filters = ["All", "PDF", "Images", "Video", "Audio", "Design", "Docs", "Archives"];

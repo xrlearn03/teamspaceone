@@ -56,12 +56,12 @@ import {
 } from "../../hooks/api";
 import { getActiveOrganisation } from "../../lib/api";
 import { PermissionGate } from "@teamspace-one/authorization/react";
-import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/card";
-import { Button } from "../../components/ui/button";
-import { Badge } from "../../components/ui/badge";
-import { EmptyState } from "../../components/ui/empty-state";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
-import { Input } from "../../components/ui/input";
+import { Card, CardHeader, CardTitle, CardContent } from "@teamspace-one/ui/card";
+import { Button } from "@teamspace-one/ui/button";
+import { Badge } from "@teamspace-one/ui/badge";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
+import { Input } from "@teamspace-one/ui/input";
 import { UserAvatar } from "../../components/user-avatar";
 import { getUserDisplayName } from "../../lib/utils";
 

@@ -1,5 +1,5 @@
 import { ShieldAlert } from "lucide-react";
-import { Button } from "../components/ui/button";
+import { Button } from "@teamspace-one/ui/button";
 import { useUIStore } from "../stores/ui";
 
 export function AccessDeniedScreen() {

@@ -5,7 +5,7 @@ import { useRealtime, type RealtimeEventPayloads } from "../../hooks/useRealtime
 import { useUIStore } from "../../stores/ui";
 import { useMe, useUsers } from "../../hooks/api";
 import { UserAvatar } from "../user-avatar";
-import { Button } from "../ui/button";
+import { Button } from "@teamspace-one/ui/button";
 import { SOUNDS, loopSound } from "../../lib/sounds";
 import { getUserDisplayName } from "../../lib/utils";
 

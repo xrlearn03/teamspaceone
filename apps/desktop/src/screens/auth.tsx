@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Eye, EyeOff } from "lucide-react";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
 import { login, register, setActiveOrganisation, requestPasswordReset, resetPassword } from "../lib/api";
 
 export interface AuthScreenProps {

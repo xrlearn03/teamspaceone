@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { User } from "lucide-react";
 import { downloadFile, type UserDto } from "../lib/api";
-import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@teamspace-one/ui/avatar";
 import { cn, getUserDisplayName } from "../lib/utils";
 
 export function useFileObjectUrl(fileId?: string | null): string | null {

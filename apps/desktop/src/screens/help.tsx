@@ -13,9 +13,9 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { usePermissionContext } from "@teamspace-one/authorization/react";
 import { hasAnyPermission, ADMIN_PERMISSIONS } from "@teamspace-one/authorization";
-import { Button } from "../components/ui/button";
-import { Card } from "../components/ui/card";
-import { Input } from "../components/ui/input";
+import { Button } from "@teamspace-one/ui/button";
+import { Card } from "@teamspace-one/ui/card";
+import { Input } from "@teamspace-one/ui/input";
 import { UserAvatar } from "../components/user-avatar";
 import { useMe } from "../hooks/api";
 import { useUIStore } from "../stores/ui";

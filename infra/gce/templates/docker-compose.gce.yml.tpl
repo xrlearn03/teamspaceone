@@ -7,7 +7,7 @@ services:
       service: api-gateway
     environment:
 %{ if domain != "" }
-      CORS_ORIGINS: "$${CORS_ORIGINS:-tauri://localhost,http://tauri.localhost,http://localhost:1420,http://localhost:5173,https://${domain},https://app.${domain},https://api.${domain},https://realtime.${domain},https://sfu.${domain}}"
+      CORS_ORIGINS: "$${CORS_ORIGINS:-tauri://localhost,http://tauri.localhost,http://localhost:1420,http://localhost:3002,http://localhost:5173,https://${domain},https://webapp.${domain},https://app.${domain},https://api.${domain},https://realtime.${domain},https://sfu.${domain}}"
 %{ else }
       CORS_ORIGINS: "$${CORS_ORIGINS:-tauri://localhost,http://tauri.localhost,http://localhost:1420,http://localhost:5173,http://${external_ip}:3000}"
 %{ endif }
@@ -21,7 +21,7 @@ services:
       service: realtime-service
     environment:
 %{ if domain != "" }
-      CORS_ORIGINS: "$${CORS_ORIGINS:-tauri://localhost,http://tauri.localhost,http://localhost:1420,http://localhost:5173,https://${domain},https://app.${domain},https://api.${domain},https://realtime.${domain},https://sfu.${domain}}"
+      CORS_ORIGINS: "$${CORS_ORIGINS:-tauri://localhost,http://tauri.localhost,http://localhost:1420,http://localhost:3002,http://localhost:5173,https://${domain},https://webapp.${domain},https://app.${domain},https://api.${domain},https://realtime.${domain},https://sfu.${domain}}"
 %{ else }
       CORS_ORIGINS: "$${CORS_ORIGINS:-tauri://localhost,http://tauri.localhost,http://localhost:1420,http://localhost:5173,http://${external_ip}:3000}"
 %{ endif }
@@ -37,6 +37,20 @@ services:
       WEB_DOMAIN: ${domain != "" ? domain : external_ip}
     volumes:
       - /data/downloads:/usr/share/nginx/html/downloads
+%{ if domain != "" }
+    ports: !override []
+%{ endif }
+
+  desktop-next:
+    extends:
+      file: ./docker-compose.yml
+      service: desktop-next
+    build:
+      args:
+        NEXT_PUBLIC_GATEWAY_URL: ${domain != "" ? "https://app.${domain}" : "http://${external_ip}:3000"}
+        NEXT_PUBLIC_REALTIME_URL: ${domain != "" ? "wss://realtime.${domain}" : "ws://${external_ip}:3005"}
+        NEXT_PUBLIC_SFU_URL: ${domain != "" ? "wss://sfu.${domain}" : "ws://${external_ip}:8443"}
+        NEXT_PUBLIC_ICE_SERVERS:
 %{ if domain != "" }
     ports: !override []
 %{ endif }

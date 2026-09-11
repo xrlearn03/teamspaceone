@@ -15,7 +15,7 @@ import { hasAnyPermission } from "@teamspace-one/authorization";
 import { useUIStore, type View } from "../../stores/ui";
 import { useMe, useUnreadCount } from "../../hooks/api";
 import { logout } from "../../lib/api";
-import { Avatar, AvatarFallback } from "../ui/avatar";
+import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
 import { cn } from "../../lib/utils";
 
 export function TabletNav() {
