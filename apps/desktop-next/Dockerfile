@@ -17,13 +17,13 @@ RUN pnpm --filter @teamspace-one/authorization build \
   && pnpm --filter @teamspace-one/desktop-next build
 
 FROM node:20-alpine AS runner
-WORKDIR /app/apps/desktop-next
+WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3002
 
-COPY --from=builder /app/apps/desktop-next/.next/standalone/apps/desktop-next ./
-COPY --from=builder /app/apps/desktop-next/.next/static ./.next/static
-COPY --from=builder /app/apps/desktop-next/public ./public
+COPY --from=builder /app/apps/desktop-next/.next/standalone ./
+COPY --from=builder /app/apps/desktop-next/.next/static ./apps/desktop-next/.next/static
+COPY --from=builder /app/apps/desktop-next/public ./apps/desktop-next/public
 
 EXPOSE 3002
-CMD ["node", "server.js"]
+CMD ["node", "apps/desktop-next/server.js"]
