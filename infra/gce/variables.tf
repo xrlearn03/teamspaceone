@@ -107,6 +107,12 @@ variable "smtp_from" {
   default     = "no-reply@teamspaceone.in"
 }
 
+variable "organisation_email_encryption_key" {
+  description = "AES-256-GCM encryption key for organisation-level email provider passwords"
+  type        = string
+  sensitive   = true
+}
+
 variable "domain" {
   description = "Public domain to use for HTTPS endpoints (e.g. teamspaceone.in). If empty, the deployment uses the external IP over HTTP."
   type        = string

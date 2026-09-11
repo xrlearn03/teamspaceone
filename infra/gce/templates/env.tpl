@@ -55,3 +55,4 @@ SMTP_SECURE=${smtp_secure}
 SMTP_USER=${smtp_user}
 SMTP_PASS=${smtp_pass}
 SMTP_FROM=${smtp_from}
+ORGANISATION_EMAIL_ENCRYPTION_KEY=${organisation_email_encryption_key}

@@ -72,14 +72,15 @@ locals {
     s3_secret_key     = random_password.s3_secret_key.result
     sfu_token_secret  = random_password.sfu_token_secret.result
     internal_api_key  = random_password.internal_api_key.result
-    jwt_secret        = random_password.jwt_secret.result
-    openai_api_key    = var.openai_api_key
-    smtp_host         = var.smtp_host
-    smtp_port         = var.smtp_port
-    smtp_secure       = var.smtp_secure
-    smtp_user         = var.smtp_user
-    smtp_pass         = var.smtp_pass
-    smtp_from         = var.smtp_from
+    jwt_secret                       = random_password.jwt_secret.result
+    openai_api_key                   = var.openai_api_key
+    smtp_host                        = var.smtp_host
+    smtp_port                        = var.smtp_port
+    smtp_secure                      = var.smtp_secure
+    smtp_user                        = var.smtp_user
+    smtp_pass                        = var.smtp_pass
+    smtp_from                        = var.smtp_from
+    organisation_email_encryption_key = var.organisation_email_encryption_key
   })
 
   caddyfile_content = var.domain != "" ? templatefile("${path.module}/templates/Caddyfile.tpl", {
