@@ -68,6 +68,15 @@ stages:
                     health_urls=(http://auth-service:3002/health http://organisation-service:3003/health http://messaging-service:3004/health http://realtime-service:3005/health http://projects-service:3006/health http://audit-service:3007/health http://notification-service:3008/health http://meeting-service:3009/health http://file-storage-service:3010/health http://search-service:3011/health http://ai-service:3012/health http://hrms-service:3013/health http://interview-service:3014/health http://api-gateway:3000/health)
                     "${compose[@]}" config --quiet
                     "${compose[@]}" build --pull base "${backend[@]}"
+                    for service in "${infrastructure[@]}" "${backend[@]}"; do
+                      container_id=$("${compose[@]}" ps -aq "$service")
+                      if [ -n "$container_id" ]; then
+                        error=$(docker inspect --format '{{.State.Error}}' "$container_id")
+                        if [[ "$error" == *'RWLayer of container'*'is unexpectedly nil'* ]]; then
+                          docker rm -f "$container_id"
+                        fi
+                      fi
+                    done
                     "${compose[@]}" up -d "${infrastructure[@]}" "${backend[@]}"
                     deadline=$((SECONDS + 900))
                     while true; do
@@ -134,6 +143,16 @@ stages:
                       cp /opt/teamspace-one/repo/Caddyfile Caddyfile
                     fi
                     compose=(docker compose -p repo -f docker-compose.yml -f docker-compose.gce.yml)
+                    marker=/opt/teamspace-one/.last-download-build
+                    previous_build=0
+                    if [ -f "$marker" ]; then
+                      previous_build=$(cat "$marker")
+                    fi
+                    if [ "$(Build.BuildId)" -gt "$previous_build" ]; then
+                      install -d /data/downloads /opt/teamspace-one/repo/apps/web/public/downloads
+                      find /data/downloads -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+                      find /opt/teamspace-one/repo/apps/web/public/downloads -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+                    fi
                     "${compose[@]}" config --quiet
                     "${compose[@]}" build --pull web
                     "${compose[@]}" up -d web

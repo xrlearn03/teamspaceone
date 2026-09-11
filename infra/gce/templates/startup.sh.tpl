@@ -41,12 +41,23 @@ AGENT_SERVICE_EOF
   systemctl enable "$AGENT_SERVICE"
 }
 
+cleanup_broken_containers() {
+  while read -r container_id; do
+    [ -n "$container_id" ] || continue
+    error=$(docker inspect --format '{{.State.Error}}' "$container_id")
+    if [[ "$error" == *'RWLayer of container'*'is unexpectedly nil'* ]]; then
+      docker rm -f "$container_id"
+    fi
+  done < <(docker ps -aq)
+}
+
 exec 9>"$DEPLOY_LOCK"
 flock 9
 
 if [ -f "$MARKER" ]; then
   install_azure_agent
   systemctl start docker || true
+  cleanup_broken_containers
   cd "$REPO_DIR"
   docker compose -f docker-compose.yml -f docker-compose.gce.yml up -d
   systemctl start "$AGENT_SERVICE"
@@ -118,6 +129,7 @@ fi
 
 systemctl enable docker
 systemctl start docker
+cleanup_broken_containers
 
 # Clone the application repo
 mkdir -p "$REPO_DIR"

@@ -24,8 +24,12 @@ Deploys the full backend stack to a single Google Compute Engine VM with Docker 
 
 ```bash
 gcloud services enable secretmanager.googleapis.com --project=<project>
-read -rsp 'Azure agent PAT: ' AZP_PAT; echo
-printf '%s' "$AZP_PAT" | gcloud secrets create azure-devops-agent-pat --project=<project> --data-file=-
+printf 'Azure agent PAT: '; stty -echo; IFS= read -r AZP_PAT; stty echo; printf '\n'
+if gcloud secrets describe azure-devops-agent-pat --project=<project> >/dev/null 2>&1; then
+  printf '%s' "$AZP_PAT" | gcloud secrets versions add azure-devops-agent-pat --project=<project> --data-file=-
+else
+  printf '%s' "$AZP_PAT" | gcloud secrets create azure-devops-agent-pat --project=<project> --data-file=-
+fi
 unset AZP_PAT
 
 cd infra/gce
@@ -37,7 +41,7 @@ terraform apply -lock-timeout=30m
 
 Always keep the Terraform state in one shared, access-controlled location and retain locking. Do not copy the state or run with `-lock=false`. Because the deployment agent runs on this VM, never approve a Terraform plan that stops or replaces the VM while a pipeline is running. Startup and all deployment stages use `/var/lock/teamspace-one-deploy.lock` to prevent concurrent Docker or file updates when the VM remains online.
 
-In Azure DevOps, create the `teamspace-one-production` Environment and add an **Exclusive lock** check. Terraform registers the VM in the self-hosted `gce` pool and runs the agent as a root systemd service outside Docker Compose. The pipeline deploys `main` sequentially: backend build and health checks, web rebuild and health check, desktop builds, then installer publication. `/data/downloads` is mounted into the web container, so rebuilding the web image never bundles or deletes published installers. Azure build IDs prevent an older run from overwriting newer downloads.
+In Azure DevOps, create the `teamspace-one-production` Environment and add an **Exclusive lock** check. Terraform registers the VM in the self-hosted `gce` pool and runs the agent as a root systemd service outside Docker Compose. The pipeline deploys `main` sequentially: backend build and health checks, web rebuild and health check, desktop builds, then installer publication. `/data/downloads` is mounted into the web container; each newer web deployment clears old installers before the desktop stages publish the replacement set. Azure build IDs prevent an older run from overwriting newer downloads.
 
 First boot installs Docker and builds all images on the VM. This typically takes 20–30 minutes.
 
