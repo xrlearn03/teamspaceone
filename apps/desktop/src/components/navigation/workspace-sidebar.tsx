@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
-  ChevronDown,
   ChevronRight,
   ClipboardCheck,
   FileText,
@@ -14,7 +13,6 @@ import {
   Mic,
   Plus,
   Search,
-  Sparkles,
   Star,
   Trash2,
   Users,
@@ -55,7 +53,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@teamspace-one/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
@@ -229,7 +226,6 @@ export function WorkspaceSidebar() {
 
   const activeOrgId = useUIStore((s) => s.organisationId);
   const activeWorkspaceId = useUIStore((s) => s.activeWorkspaceId);
-  const setActiveWorkspace = useUIStore((s) => s.setActiveWorkspace);
   const switchOrganisation = useSwitchOrganisation();
   const { data: organisations } = useOrganisations();
   const { data: workspaces } = useWorkspaces(activeOrgId ?? undefined);
@@ -415,81 +411,21 @@ export function WorkspaceSidebar() {
       style={{ width: sidebarWidth }}
     >
       <div className="flex h-14 items-center gap-2 border-b px-3">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="flex flex-1 items-center gap-2 overflow-hidden rounded-md px-1 py-1 text-left hover:bg-surface-elevated"
-            >
-              <Avatar className="h-6 w-6">
-                <AvatarFallback className="text-[10px]">
-                  {workspaceName.slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold text-text">
-                  {workspaceName}
-                </div>
-                <div className="text-xs text-text-muted capitalize">
-                  {currentOrganisation?.slug ?? "workspace"}
-                </div>
-              </div>
-              <ChevronDown className="h-4 w-4 shrink-0 text-text-muted" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            {organisations && organisations.length > 0 ? (
-              <>
-                {organisations.map((org) => (
-                  <DropdownMenuItem
-                    key={org.id}
-                    onClick={() => switchOrganisation(org.id)}
-                  >
-                    <span className="flex flex-1 items-center justify-between">
-                      {org.name}
-                      {org.id === activeOrgId && (
-                        <span className="text-xs text-text-muted">current</span>
-                      )}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </>
-            ) : (
-              <DropdownMenuItem disabled>No organisations</DropdownMenuItem>
-            )}
-            {workspaces && workspaces.length > 0 ? (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem disabled className="text-xs uppercase tracking-wide text-text-muted">
-                  Workspaces
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setActiveWorkspace(null)}>
-                  <span className="flex flex-1 items-center justify-between">
-                    All workspaces
-                    {!activeWorkspaceId && <span className="text-xs text-text-muted">current</span>}
-                  </span>
-                </DropdownMenuItem>
-                {workspaces.map((workspace) => (
-                  <DropdownMenuItem key={workspace.id} onClick={() => setActiveWorkspace(workspace.id)}>
-                    <span className="flex flex-1 items-center justify-between">
-                      {workspace.name}
-                      {workspace.id === currentWorkspace?.id && activeWorkspaceId ? (
-                        <span className="text-xs text-text-muted">current</span>
-                      ) : null}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </>
-            ) : null}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setOrgDialog("create")}>
-              Create organisation
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setOrgDialog("join")}>
-              Join organisation
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex flex-1 items-center gap-2 overflow-hidden rounded-md px-1 py-1">
+          <Avatar className="h-6 w-6">
+            <AvatarFallback className="text-[10px]">
+              {workspaceName.slice(0, 2).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold text-text">
+              {workspaceName}
+            </div>
+            <div className="text-xs text-text-muted capitalize">
+              {currentOrganisation?.slug ?? "workspace"}
+            </div>
+          </div>
+        </div>
 
         {canAny([
           "collaboration.message.send",
@@ -593,12 +529,6 @@ export function WorkspaceSidebar() {
               onClick={() => navigate("interview")}
             />
           ) : null}
-          <SidebarItem
-            icon={Sparkles}
-            label="AI"
-            active={activeView === "ai"}
-            onClick={() => navigate("ai")}
-          />
           <SidebarItem
             icon={Search}
             label="Search"
