@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PermissionProvider } from "@teamspace-one/authorization/react";
 import type { AuthorizableUser } from "@teamspace-one/authorization";
 import { Button } from "@teamspace-one/ui/button";
-import { AppShell } from "@/components/app-shell";
+import { AppShell } from "@/components/layouts/app-shell";
 import { SplashScreen } from "@/components/splash/splash-screen";
 import { AuthScreen } from "@/screens/auth";
 import { OnboardingScreen } from "@/screens/onboarding";
@@ -232,7 +232,7 @@ function PermissionBoundary({
   return (
     <PermissionProvider user={user}>
       <RealtimeProvider>
-        <AppShell user={me} />
+        <AppShell />
       </RealtimeProvider>
     </PermissionProvider>
   );
