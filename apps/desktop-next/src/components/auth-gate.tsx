@@ -22,6 +22,7 @@ import {
   setOnSessionCleared,
 } from "@/lib/api";
 import { useUIStore } from "@/stores/ui";
+import { RealtimeProvider } from "@/hooks/useRealtime";
 
 const MIN_SPLASH_DURATION_MS = 4000;
 
@@ -230,7 +231,9 @@ function PermissionBoundary({
 
   return (
     <PermissionProvider user={user}>
-      <AppShell user={me} />
+      <RealtimeProvider>
+        <AppShell user={me} />
+      </RealtimeProvider>
     </PermissionProvider>
   );
 }

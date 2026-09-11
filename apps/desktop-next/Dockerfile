@@ -11,7 +11,7 @@ ENV NEXT_PUBLIC_REALTIME_URL=${NEXT_PUBLIC_REALTIME_URL}
 ENV NEXT_PUBLIC_SFU_URL=${NEXT_PUBLIC_SFU_URL}
 ENV NEXT_PUBLIC_ICE_SERVERS=${NEXT_PUBLIC_ICE_SERVERS}
 
-RUN pnpm --filter @teamspace-one/desktop-next build
+RUN pnpm --filter @teamspace-one/authorization build && pnpm --filter @teamspace-one/desktop-next build
 
 FROM node:20-alpine AS runner
 WORKDIR /app/apps/desktop-next

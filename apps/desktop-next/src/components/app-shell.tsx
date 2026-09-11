@@ -2,8 +2,8 @@
 
 import { Button } from "@teamspace-one/ui";
 import { Hexagon, LogOut } from "lucide-react";
-import { logout } from "../lib/api";
-import type { UserDto } from "../lib/api";
+import { logout } from "@/lib/api";
+import type { UserDto } from "@/lib/api";
 
 export function AppShell({ user }: { user: UserDto }) {
   const handleLogout = async () => {
