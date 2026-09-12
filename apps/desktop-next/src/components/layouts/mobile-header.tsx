@@ -84,6 +84,16 @@ export function MobileHeader({ onOpenDrawer }: MobileHeaderProps) {
         type="button"
         className="flex flex-1 items-center justify-center gap-1 overflow-hidden px-2 text-base font-medium text-text"
       >
+        <img
+          src="/Teamspace%20One_light.svg"
+          alt="Teamspace One"
+          className="h-5 w-auto dark:hidden"
+        />
+        <img
+          src="/Teamspace%20One_dark.svg"
+          alt="Teamspace One"
+          className="hidden h-5 w-auto dark:block"
+        />
         <span className="truncate">
           {isSubView ? (viewTitle[activeView] ?? "Teamspace One") : (workspace?.name ?? organisation?.name ?? "Teamspace One")}
         </span>
