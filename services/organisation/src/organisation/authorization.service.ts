@@ -579,6 +579,9 @@ export class AuthorizationService {
         organisationId,
         permissions: ['*'],
         dataScopes: [{ module: '*', scope: 'organisation' }],
+        isSuperAdmin: true,
+        roleName: 'Organisation Super Admin',
+        roleCategory: 'administrative',
       };
     }
 
@@ -619,6 +622,9 @@ export class AuthorizationService {
       organisationId,
       permissions: Array.from(permissionSet),
       dataScopes: Array.from(dataScopeSet),
+      isSuperAdmin: permissionSet.has('*'),
+      roleName: membership.role?.name,
+      roleCategory: membership.role?.roleCategory,
     };
   }
 

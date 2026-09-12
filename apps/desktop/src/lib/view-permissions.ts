@@ -19,6 +19,8 @@ export const VIEW_PERMISSIONS: Partial<Record<View, string[]>> = {
   hrms: ["hrms.access"],
   interview: ["interview.access"],
   admin: ["admin.user.manage", "admin.role.manage", "admin.organization.settings"],
+  assets: ["admin.user.manage", "admin.role.manage", "admin.organization.settings"],
+  tickets: ["admin.user.manage", "admin.role.manage", "admin.organization.settings"],
 };
 
 export function canAccessView(user: AuthorizableUser | null, view: View): boolean {

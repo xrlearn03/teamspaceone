@@ -20,6 +20,21 @@ export function useMyContext() {
   });
 }
 
+/**
+ * True when the caller is an organisation admin or super admin — they get the
+ * Figma admin shell (sidebar + header) instead of the collaboration shell.
+ */
+export function useIsAdminUser() {
+  const { data } = useMyContext();
+  const { user } = usePermissionContext();
+  if (data?.isSuperAdmin || data?.roleCategory === "administrative") return true;
+  // Fallback for backends that don't return role info yet: anyone who can
+  // reach the admin area is treated as an admin.
+  return user
+    ? hasAnyPermission(user, ["admin.user.manage", "admin.role.manage", "admin.organization.settings"])
+    : false;
+}
+
 export function usePermissions() {
   const { user, isReady } = usePermissionContext();
   const check = (permission: string) => (user ? can(user, permission) : false);

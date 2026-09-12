@@ -778,6 +778,8 @@ export interface UserContext {
   permissions: string[];
   dataScopes: UserDataScope[];
   isSuperAdmin?: boolean;
+  roleName?: string;
+  roleCategory?: RoleCategory;
 }
 
 export function getMyContext(organisationId: string) {

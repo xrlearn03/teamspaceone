@@ -20,6 +20,8 @@ import { AccessDeniedScreen } from "../../screens/access-denied";
 import { HrmsScreen } from "../../screens/hrms";
 import { InterviewScreen } from "../../screens/interview";
 import { AdminScreen } from "../../screens/admin";
+import { AssetsScreen } from "../../screens/assets";
+import { TicketsScreen } from "../../screens/tickets";
 import { HelpScreen } from "../../screens/help";
 
 const screens: Record<View, React.ComponentType> = {
@@ -38,6 +40,8 @@ const screens: Record<View, React.ComponentType> = {
   hrms: HrmsScreen,
   interview: InterviewScreen,
   admin: AdminScreen,
+  assets: AssetsScreen,
+  tickets: TicketsScreen,
   settings: SettingsScreen,
   help: HelpScreen,
 };

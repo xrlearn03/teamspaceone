@@ -225,6 +225,8 @@ function PermissionBoundary({ organisationId }: { organisationId: string | null 
     permissions: context.permissions,
     dataScopes: context.dataScopes,
     isSuperAdmin: context.isSuperAdmin,
+    roleName: context.roleName,
+    roleCategory: context.roleCategory,
   };
 
   return (

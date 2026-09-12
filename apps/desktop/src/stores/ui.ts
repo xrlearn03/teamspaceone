@@ -43,6 +43,8 @@ export type View =
   | "hrms"
   | "interview"
   | "admin"
+  | "assets"
+  | "tickets"
   | "settings"
   | "help";
 

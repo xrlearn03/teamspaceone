@@ -12,6 +12,9 @@ import { ScheduledMeetingPrompt } from "../call/scheduled-meeting-prompt";
 import { NotificationToasts } from "../ui/notification-toasts";
 import { TooltipProvider } from "@teamspace-one/ui/tooltip";
 import { ScreenContent } from "./screen-content";
+import { useIsAdminUser } from "../../hooks/usePermissions";
+import { AdminSidebar } from "../admin/admin-sidebar";
+import { AdminHeader } from "../admin/admin-header";
 
 export function AppShellDesktop() {
   useTheme();
@@ -82,6 +85,8 @@ export function AppShellDesktop() {
     return () => window.removeEventListener("resize", onResize);
   }, [setSidebarWidth, setRightPanelWidth, sidebarWidth, rightPanelWidth]);
 
+  const isAdmin = useIsAdminUser();
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-full flex-col">
@@ -96,14 +101,35 @@ export function AppShellDesktop() {
           </div>
         ) : null}
         <div className="flex flex-1 overflow-hidden">
-          <AppRail />
-          <WorkspaceSidebar />
-          <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
-            <ScreenContent />
-          </main>
-          {rightPanelOpen && <RightPanel />}
+          {isAdmin ? (
+            <>
+              <AdminSidebar />
+              <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white font-archivo">
+                <AdminHeader />
+                <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <ScreenContent />
+                </main>
+                <footer className="flex h-11 shrink-0 items-center justify-between border-t border-[#e5e7eb] bg-white px-6 text-xs text-[#6b7280]">
+                  <span>2014-2025 © Teamspace One.</span>
+                  <span>
+                    Designed &amp; Developed By{" "}
+                    <span className="text-brand">Dreams</span>
+                  </span>
+                </footer>
+              </div>
+            </>
+          ) : (
+            <>
+              <AppRail />
+              <WorkspaceSidebar />
+              <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+                <ScreenContent />
+              </main>
+              {rightPanelOpen && <RightPanel />}
+            </>
+          )}
         </div>
-        <StatusBar />
+        {!isAdmin && <StatusBar />}
       </div>
       <CommandMenu open={searchOpen} onOpenChange={setSearchOpen} />
       <IncomingCallOverlay />

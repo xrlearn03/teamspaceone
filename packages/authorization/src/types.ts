@@ -24,6 +24,10 @@ export interface AuthorizableUser {
   dataScopes: DataScope[];
   /** Optional super-admin flag that bypasses scope checks but is still audited. */
   isSuperAdmin?: boolean;
+  /** Primary role name for display/gating (e.g. "Organisation Super Admin"). */
+  roleName?: string;
+  /** Primary role category (administrative, managerial, employee, ...). */
+  roleCategory?: string;
 }
 
 export interface ScopeContext {
