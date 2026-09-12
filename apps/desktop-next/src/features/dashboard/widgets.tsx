@@ -180,20 +180,26 @@ export function QuickActionsWidget() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <PermissionGate permission="collaboration.message.send">
               <Button size="sm" className="w-full" onClick={() => setDialog("message")}>
-                <MessageSquare className="mr-1 h-4 w-4 shrink-0" />
-                <span className="block text-center">New message</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <MessageSquare className="h-4 w-4 shrink-0" />
+                  <span className="text-center">New message</span>
+                </span>
               </Button>
             </PermissionGate>
             <PermissionGate permission="collaboration.task.create">
               <Button size="sm" variant="secondary" className="w-full" onClick={() => setDialog("task")}>
-                <CheckSquare className="mr-1 h-4 w-4 shrink-0" />
-                <span className="block text-center">Create task</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <CheckSquare className="h-4 w-4 shrink-0" />
+                  <span className="text-center">Create task</span>
+                </span>
               </Button>
             </PermissionGate>
             <PermissionGate permission="collaboration.project.create">
               <Button size="sm" variant="secondary" className="w-full" onClick={() => setDialog("project")}>
-                <Folder className="mr-1 h-4 w-4 shrink-0" />
-                <span className="block text-center">Create project</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Folder className="h-4 w-4 shrink-0" />
+                  <span className="text-center">Create project</span>
+                </span>
               </Button>
             </PermissionGate>
             <PermissionGate permission="collaboration.meeting.create">
@@ -212,19 +218,25 @@ export function QuickActionsWidget() {
                   )
                 }
               >
-                <Video className="mr-1 h-4 w-4 shrink-0" />
-                <span className="block text-center">Start meeting</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Video className="h-4 w-4 shrink-0" />
+                  <span className="text-center">Start meeting</span>
+                </span>
               </Button>
             </PermissionGate>
             <PermissionGate permission="collaboration.file.upload">
               <Button size="sm" variant="secondary" className="w-full" onClick={() => setActiveView("files")}>
-                <Upload className="mr-1 h-4 w-4 shrink-0" />
-                <span className="block text-center">Upload file</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Upload className="h-4 w-4 shrink-0" />
+                  <span className="text-center">Upload file</span>
+                </span>
               </Button>
             </PermissionGate>
             <Button size="sm" variant="secondary" className="w-full" onClick={() => setActiveView("ai")}>
-              <Sparkles className="mr-1 h-4 w-4 shrink-0" />
-              <span className="block text-center">Ask AI</span>
+              <span className="inline-flex items-center gap-1.5">
+                <Sparkles className="h-4 w-4 shrink-0" />
+                <span className="text-center">Ask AI</span>
+              </span>
             </Button>
           </div>
         </CardContent>
