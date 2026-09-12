@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BriefcaseBusiness,
   ChevronRight,
-  ClipboardCheck,
   FileText,
   Folder,
   Hash,
@@ -250,9 +248,7 @@ export function WorkspaceSidebar() {
   const canAny = (permissions: string[]) =>
     authzUser ? hasAnyPermission(authzUser, permissions) : false;
   const canCollaborate = canAny(["collaboration.access"]);
-  const canHrms =
-    canAny(["hrms.access"]) ||
-    Boolean(authzUser?.permissions.some((p) => p.startsWith("hrms.")));
+
   const createChannel = useCreateChannel();
   const createDirectChannel = useCreateDirectChannel();
   const createProject = useCreateProject();
@@ -513,27 +509,7 @@ export function WorkspaceSidebar() {
             active={activeView === "saved"}
             onClick={() => navigate("saved")}
           />
-          {canHrms ? (
-            <SidebarItem
-              icon={BriefcaseBusiness}
-              label="HRMS"
-              active={activeView === "hrms"}
-              onClick={() => navigate("hrms")}
-            />
-          ) : null}
-          {canAny(["interview.access"]) ? (
-            <SidebarItem
-              icon={ClipboardCheck}
-              label="Interview"
-              active={activeView === "interview"}
-              onClick={() => navigate("interview")}
-            />
-          ) : null}
-          <SidebarItem
-            icon={Search}
-            label="Search"
-            onClick={() => setSearchOpen(true)}
-          />
+
         </SidebarSection>
 
         {canCollaborate ? (
