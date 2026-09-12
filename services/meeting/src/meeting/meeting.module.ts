@@ -8,12 +8,14 @@ import {
 import { OutboxModule } from '../outbox/outbox.module.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { MeetingService } from './meeting.service.js';
+import { MeetingScheduler } from './meeting.scheduler.js';
 import { MeetingController } from './meeting.controller.js';
 import { InternalMeetingController } from './internal-meeting.controller.js';
+import { PublicMeetingController } from './public-meeting.controller.js';
 
 @Module({
   imports: [OutboxModule, PrismaModule],
-  controllers: [MeetingController, InternalMeetingController],
+  controllers: [MeetingController, InternalMeetingController, PublicMeetingController],
   providers: [
     {
       provide: AUTHORIZATION_OPTIONS,
@@ -26,6 +28,7 @@ import { InternalMeetingController } from './internal-meeting.controller.js';
     },
     RemotePermissionGuard,
     MeetingService,
+    MeetingScheduler,
   ],
   exports: [MeetingService],
 })

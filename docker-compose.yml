@@ -335,6 +335,7 @@ services:
       SFU_CONTROL_URL: 'http://sfu:8445'
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
       ORGANISATION_SERVICE_URL: 'http://organisation-service:3003'
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-https://${WEB_DOMAIN:-teamspaceone.in}}
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       OTEL_SERVICE_NAME: 'teamspace-one-meeting-service'
     ports:

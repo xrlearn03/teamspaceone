@@ -5,6 +5,7 @@ import { useTheme } from "../../hooks/useTheme";
 import { TooltipProvider } from "@teamspace-one/ui/tooltip";
 import { CommandMenu } from "../search/command-menu";
 import { IncomingCallOverlay } from "../call/incoming-call";
+import { ScheduledMeetingPrompt } from "../call/scheduled-meeting-prompt";
 import { NotificationToasts } from "../ui/notification-toasts";
 import { ScreenContent } from "./screen-content";
 import { BottomNav } from "../navigation/bottom-nav";
@@ -70,6 +71,7 @@ export function MobileShell() {
       </div>
       <CommandMenu open={searchOpen} onOpenChange={setSearchOpen} />
       <IncomingCallOverlay />
+      <ScheduledMeetingPrompt />
       <NotificationToasts />
     </TooltipProvider>
   );

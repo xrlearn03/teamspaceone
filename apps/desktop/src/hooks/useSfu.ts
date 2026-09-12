@@ -120,6 +120,7 @@ export function useSfu() {
     displayName: string;
     mediaOptions: MediaOptions;
     userId?: string;
+    sfuToken?: string;
   } | null>(null);
 
   const isTauri = typeof (window as typeof window & { __TAURI_INTERNALS__?: unknown })?.__TAURI_INTERNALS__ !== "undefined";
@@ -475,13 +476,19 @@ export function useSfu() {
   }, [stopScreenShare]);
 
   const join = useCallback(
-    async (roomId: string, displayName: string, mediaOptions: MediaOptions, userId?: string) => {
+    async (
+      roomId: string,
+      displayName: string,
+      mediaOptions: MediaOptions,
+      userId?: string,
+      sfuTokenOverride?: string,
+    ) => {
       await leave();
       setError(null);
 
       isIntentionalLeaveRef.current = false;
       reconnectTimerRef.current = null;
-      lastJoinArgsRef.current = { roomId, displayName, mediaOptions, userId };
+      lastJoinArgsRef.current = { roomId, displayName, mediaOptions, userId, sfuToken: sfuTokenOverride };
 
       let stream: MediaStream | null = mediaOptions.stream ?? null;
       if (!stream || stream.getTracks().length === 0) {
@@ -533,8 +540,9 @@ export function useSfu() {
 
       let sfuToken: string;
       try {
-        const result = await getSfuToken(roomId);
-        sfuToken = result.token;
+        // Guests join with a token issued by the public join endpoint; members
+        // fetch one here (re-issue keeps reconnects working past expiry).
+        sfuToken = sfuTokenOverride ?? (await getSfuToken(roomId)).token;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to get SFU token");
         await leave();
@@ -719,8 +727,8 @@ export function useSfu() {
           reconnectTimerRef.current = null;
           const args = lastJoinArgsRef.current;
           if (!args) return;
-          const { roomId, displayName, mediaOptions, userId } = args;
-          void join(roomId, displayName, mediaOptions, userId);
+          const { roomId, displayName, mediaOptions, userId, sfuToken } = args;
+          void join(roomId, displayName, mediaOptions, userId, sfuToken);
         }, delay);
       };
     },

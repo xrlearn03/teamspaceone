@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Check,
   CircleDot,
+  Link2,
   Mic,
   MicOff,
   Monitor,
@@ -15,7 +17,7 @@ import { useNativeCamera } from "@/hooks/useNativeCamera";
 import { useNativeMicrophone } from "@/hooks/useNativeMicrophone";
 import { useSfu } from "@/hooks/useSfu";
 import { UserAvatar } from "@/components/user-avatar";
-import { type UserDto } from "@/lib/api";
+import { getMeetingShareLink, type UserDto } from "@/lib/api";
 
 interface NativeConferenceProps {
   user?: UserDto | null;
@@ -46,6 +48,7 @@ export function NativeConference({
   const [videoOn, setVideoOn] = useState(camera.enabled);
   const [screenSharing, setScreenSharing] = useState(false);
   const [isRecording] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const displayName = getUserDisplayName(user, "Guest");
   const userId = user?.id;
@@ -98,6 +101,17 @@ export function NativeConference({
     void sfu.leave();
     onLeave();
   }, [sfu, onLeave]);
+
+  async function copyInviteLink() {
+    try {
+      const { url } = await getMeetingShareLink(meetingId);
+      await navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      window.setTimeout(() => setCopiedLink(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy invite link", err);
+    }
+  }
 
   const participantCount = sfu.connected ? 1 + sfu.remoteStreams.length : 0;
 
@@ -156,16 +170,27 @@ export function NativeConference({
           </div>
         </div>
 
-        {onEnd ? (
+        <div className="flex items-center gap-2">
           <Button
-            variant="destructive"
-            className="gap-2 rounded-full px-4"
-            onClick={onEnd}
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 rounded-full"
+            onClick={copyInviteLink}
+            title={copiedLink ? "Link copied" : "Copy guest invite link"}
           >
-            <PhoneOff className="h-4 w-4" />
-            End
+            {copiedLink ? <Check className="h-5 w-5 text-success" /> : <Link2 className="h-5 w-5" />}
           </Button>
-        ) : null}
+          {onEnd ? (
+            <Button
+              variant="destructive"
+              className="gap-2 rounded-full px-4"
+              onClick={onEnd}
+            >
+              <PhoneOff className="h-4 w-4" />
+              End
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {/* Main area */}

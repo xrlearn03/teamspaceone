@@ -607,6 +607,13 @@ export interface Meeting {
   createdBy: string;
   scheduledAt?: string | null;
   participants?: MeetingParticipant[];
+  invitees?: MeetingInvitee[];
+}
+
+export interface MeetingInvitee {
+  id: string;
+  userId: string;
+  createdAt: string;
 }
 
 export interface MeetingParticipant {
@@ -1274,10 +1281,11 @@ export function createMeeting(
   description?: string,
   workspaceId?: string,
   scheduledAt?: string,
+  inviteeIds?: string[],
 ) {
   return apiRequest<Meeting>("/meetings", {
     method: "POST",
-    body: { title, description, workspaceId, scheduledAt },
+    body: { title, description, workspaceId, scheduledAt, inviteeIds },
   });
 }
 
@@ -1302,6 +1310,79 @@ export function joinMeeting(id: string, name?: string) {
 
 export function getSfuToken(id: string) {
   return apiRequest<MeetingSfuTokenResult>(`/meetings/${id}/sfu-token`, { method: "POST" });
+}
+
+export interface MeetingShareLink {
+  url: string;
+  token: string;
+  expiresAt: string;
+}
+
+export function getMeetingShareLink(id: string) {
+  return apiRequest<MeetingShareLink>(`/meetings/${id}/share-link`, { method: "POST" });
+}
+
+export interface GuestMeetingInfo {
+  meetingId: string;
+  title: string;
+  type: string;
+  status: string;
+  scheduledAt?: string | null;
+}
+
+export interface GuestJoinResult {
+  participantId: string;
+  roomId: string;
+  userId: string;
+  displayName: string;
+  title: string;
+  type: string;
+  token: string;
+}
+
+// Guest join endpoints are unauthenticated — the signed link token in the
+// path is the capability — so these bypass apiRequest's Bearer/org headers.
+async function publicApiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  const init: RequestInit = { method: options.method ?? "GET", headers };
+  if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(options.body);
+  }
+  const response = await fetch(`${GATEWAY_URL}${path}`, init);
+  if (!response.ok) {
+    const text = await response.text();
+    let message = `Request failed with status ${response.status}`;
+    try {
+      const body = JSON.parse(text) as { message?: string | string[] };
+      if (typeof body.message === "string") message = body.message;
+      else if (Array.isArray(body.message)) message = body.message.join(", ");
+    } catch {
+      if (text) message = text;
+    }
+    throw new ApiError(response.status, message);
+  }
+  return response.json() as Promise<T>;
+}
+
+/** Pulls the signed join token out of a pasted invite link or raw token. */
+export function extractMeetingJoinToken(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const linkMatch = /\/join\/([^/?#]+)/.exec(trimmed);
+  const candidate = linkMatch ? decodeURIComponent(linkMatch[1]) : trimmed;
+  return /^[A-Za-z0-9_-]+\.\d+\.[a-f0-9]{64}$/.test(candidate) ? candidate : null;
+}
+
+export function getGuestMeetingInfo(token: string) {
+  return publicApiRequest<GuestMeetingInfo>(`/meetings/public/join/${encodeURIComponent(token)}`);
+}
+
+export function joinMeetingAsGuest(token: string, body: { name: string; email: string }) {
+  return publicApiRequest<GuestJoinResult>(`/meetings/public/join/${encodeURIComponent(token)}`, {
+    method: "POST",
+    body,
+  });
 }
 
 export function leaveMeeting(id: string) {

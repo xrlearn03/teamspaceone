@@ -117,6 +117,15 @@ export class MeetingController {
     return this.meeting.setScreenShare(ctx, id, dto.isScreenSharing);
   }
 
+  @Post(':id/share-link')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
+  async shareLink(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') id: string,
+  ) {
+    return this.meeting.createShareLink(ctx, id);
+  }
+
   @Post(':id/sfu-token')
   @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
   async getSfuToken(

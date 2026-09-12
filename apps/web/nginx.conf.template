@@ -40,6 +40,27 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # Guest meeting join (signed link -> guest SFU token).
+    location /meetings/public {
+        proxy_pass http://api-gateway:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # SFU signaling WebSocket for browser guests (media runs over UDP/ICE).
+    location = /sfu {
+        proxy_pass http://sfu:8443/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
     location /auth/redeem {
         proxy_pass http://api-gateway:3000;
         proxy_http_version 1.1;

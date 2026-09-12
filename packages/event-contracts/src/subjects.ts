@@ -38,6 +38,7 @@ export const Subjects = {
   FILE_PROCESSED: 'teamspace-one.file.processed',
   FILE_DELETED: 'teamspace-one.file.deleted',
   MEETING_CREATED: 'teamspace-one.meeting.created',
+  MEETING_REMINDER: 'teamspace-one.meeting.reminder',
   MEETING_STARTED: 'teamspace-one.meeting.started',
   MEETING_ENDED: 'teamspace-one.meeting.ended',
   MEETING_RECORDING_TRANSCRIPT_READY: 'teamspace-one.meeting.recording.transcript.ready',

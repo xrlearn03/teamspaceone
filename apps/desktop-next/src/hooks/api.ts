@@ -157,6 +157,17 @@ export function useInviteMember() {
   });
 }
 
+export function useCreateInvitation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; email: string; roleId: string }) =>
+      api.createInvitation(args.organisationId, args.email, args.roleId),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["invitations", args.organisationId] });
+    },
+  });
+}
+
 export function useCreateWorkspace() {
   const client = useQueryClient();
   return useMutation({

@@ -7,6 +7,7 @@ import { login, register, setActiveOrganisation, requestPasswordReset, resetPass
 
 export interface AuthScreenProps {
   onAuthenticated?: () => void;
+  onJoinAsGuest?: () => void;
 }
 
 function errorMessage(err: unknown): string {
@@ -19,7 +20,7 @@ function errorMessage(err: unknown): string {
   }
 }
 
-export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
+export function AuthScreen({ onAuthenticated, onJoinAsGuest }: AuthScreenProps) {
   const [mode, setMode] = useState<"login" | "register" | "forgot-password" | "reset-password">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -335,6 +336,19 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
                 className="font-medium text-primary hover:underline"
               >
                 Reset it
+              </button>
+            </p>
+          )}
+
+          {mode === "login" && onJoinAsGuest && (
+            <p className="mt-2 text-center text-sm text-text-secondary">
+              Have a meeting link?{" "}
+              <button
+                type="button"
+                onClick={onJoinAsGuest}
+                className="font-medium text-primary hover:underline"
+              >
+                Join as guest
               </button>
             </p>
           )}

@@ -60,6 +60,8 @@ export class NotificationService {
         Subjects.TASK_CREATED,
         Subjects.TASK_UPDATED,
         Subjects.TASK_COMPLETED,
+        Subjects.MEETING_CREATED,
+        Subjects.MEETING_REMINDER,
         Subjects.MEETING_STARTED,
         Subjects.FILE_UPLOADED,
         Subjects.FILE_PROCESSED,
@@ -299,6 +301,51 @@ export class NotificationService {
             link: this.taskLink(organisationId, payload.projectId as string, payload.id as string),
           }));
       }
+      case Subjects.MEETING_CREATED: {
+        const inviteeIds = Array.isArray(payload.inviteeIds) ? (payload.inviteeIds as string[]).filter(Boolean) : [];
+        if (!inviteeIds.length) return [];
+        const title = String(payload.title ?? 'Meeting');
+        const scheduledAt = payload.scheduledAt ? new Date(payload.scheduledAt as string) : null;
+        const when =
+          scheduledAt && !Number.isNaN(scheduledAt.getTime())
+            ? ` on ${scheduledAt.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}`
+            : '';
+        return inviteeIds
+          .filter((userId) => userId !== actorId)
+          .map((userId) => ({
+            organisationId,
+            workspaceId,
+            userId,
+            actorId,
+            eventId: envelope.eventId,
+            eventType,
+            resourceType: 'meeting',
+            resourceId: payload.id as string,
+            title: 'Meeting invitation',
+            body: `You were invited to "${title}"${when}.`,
+            link: this.meetingLink(organisationId, payload.id as string),
+          }));
+      }
+      case Subjects.MEETING_REMINDER: {
+        const attendees = Array.isArray(payload.attendeeIds) ? (payload.attendeeIds as string[]).filter(Boolean) : [];
+        if (!attendees.length) return [];
+        const minutes = Math.max(1, Number(payload.minutesUntil ?? 15));
+        return attendees
+          .filter((userId) => userId !== actorId)
+          .map((userId) => ({
+            organisationId,
+            workspaceId,
+            userId,
+            actorId,
+            eventId: envelope.eventId,
+            eventType,
+            resourceType: 'meeting',
+            resourceId: payload.id as string,
+            title: 'Meeting starting soon',
+            body: `"${String(payload.title ?? 'Meeting')}" starts in ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+            link: this.meetingLink(organisationId, payload.id as string),
+          }));
+      }
       case Subjects.MEETING_STARTED: {
         const attendees = Array.isArray(payload.attendeeIds) ? (payload.attendeeIds as string[]) : [];
         return attendees
@@ -313,7 +360,7 @@ export class NotificationService {
             resourceType: 'meeting',
             resourceId: payload.id as string,
             title: 'Meeting started',
-            body: `Meeting ${payload.title || payload.id} has started`,
+            body: `Meeting ${payload.title || payload.id} has started — join now`,
             link: this.meetingLink(organisationId, payload.id as string),
           }));
       }

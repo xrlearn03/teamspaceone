@@ -140,6 +140,16 @@ export class AttendanceController {
     });
   }
 
+  @Get('corrections')
+  @RequirePermissions('hrms.attendance.view')
+  listCorrections(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Query('status') status?: string,
+  ) {
+    return this.attendance.listCorrections(toCtx(org), user, { status });
+  }
+
   @Post('corrections')
   @RequirePermissions('hrms.attendance.checkin')
   requestCorrection(

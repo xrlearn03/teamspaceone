@@ -157,6 +157,17 @@ export function useInviteMember() {
   });
 }
 
+export function useCreateInvitation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; email: string; roleId: string }) =>
+      api.createInvitation(args.organisationId, args.email, args.roleId),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["invitations", args.organisationId] });
+    },
+  });
+}
+
 export function useCreateWorkspace() {
   const client = useQueryClient();
   return useMutation({
@@ -690,6 +701,7 @@ export function useMeetings() {
     queryFn: api.getMeetings,
     enabled: getActiveOrganisation() !== null,
     staleTime: 60 * 1000,
+    refetchInterval: 30 * 1000,
     retry: 2,
   });
 }
@@ -712,12 +724,14 @@ export function useCreateMeeting() {
       description?: string;
       workspaceId?: string;
       scheduledAt?: string;
+      inviteeIds?: string[];
     }) =>
       api.createMeeting(
         args.title,
         args.description,
         args.workspaceId,
         args.scheduledAt,
+        args.inviteeIds,
       ),
     onSuccess: () =>
       client.invalidateQueries({ queryKey: ["meetings", orgId()] }),

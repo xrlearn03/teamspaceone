@@ -199,6 +199,58 @@ export class AttendanceService {
     });
   }
 
+  async listCorrections(
+    ctx: RequestContextInput,
+    user: AuthorizableUser,
+    filters: { status?: string } = {},
+  ) {
+    const resolved = await this.scope.resolve(user, ctx.organisationId);
+
+    const scopedEmployees = await this.prisma.employee.findMany({
+      where: { organisationId: ctx.organisationId, AND: [resolved.employeeWhere] },
+      select: { id: true },
+    });
+    const employeeIds = scopedEmployees.map((e) => e.id);
+
+    const where: Prisma.AttendanceCorrectionWhereInput = {
+      organisationId: ctx.organisationId,
+      employeeId: { in: employeeIds },
+    };
+    if (filters.status) {
+      where.status = filters.status;
+    }
+
+    const corrections = await this.prisma.attendanceCorrection.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const relatedEmployeeIds = [...new Set(corrections.map((c) => c.employeeId))];
+    const attendanceIds = [...new Set(corrections.map((c) => c.attendanceId))];
+
+    const [employees, records] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: { id: { in: relatedEmployeeIds } },
+        select: { id: true, firstName: true, lastName: true },
+      }),
+      this.prisma.attendanceRecord.findMany({
+        where: { id: { in: attendanceIds } },
+        select: { id: true, date: true },
+      }),
+    ]);
+
+    const employeeNameMap = new Map(
+      employees.map((e) => [e.id, `${e.firstName} ${e.lastName}`.trim()]),
+    );
+    const dateMap = new Map(records.map((r) => [r.id, r.date]));
+
+    return corrections.map((c) => ({
+      ...c,
+      employeeName: employeeNameMap.get(c.employeeId) ?? null,
+      date: dateMap.get(c.attendanceId)?.toISOString() ?? null,
+    }));
+  }
+
   /**
    * Reviewer must hold hrms.attendance.approve AND either be the manager of
    * the requesting employee or have organisation-level HR scope.

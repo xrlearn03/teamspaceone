@@ -579,7 +579,7 @@ pub(crate) fn max_participants_per_room() -> usize {
     std::env::var("SFU_MAX_PARTICIPANTS_PER_ROOM")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(12)
+        .unwrap_or(100)
 }
 
 pub(crate) fn max_rooms() -> usize {

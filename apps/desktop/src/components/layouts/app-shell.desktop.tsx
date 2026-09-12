@@ -8,6 +8,7 @@ import { StatusBar } from "./status-bar";
 import { RightPanel } from "./right-panel";
 import { CommandMenu } from "../search/command-menu";
 import { IncomingCallOverlay } from "../call/incoming-call";
+import { ScheduledMeetingPrompt } from "../call/scheduled-meeting-prompt";
 import { NotificationToasts } from "../ui/notification-toasts";
 import { TooltipProvider } from "@teamspace-one/ui/tooltip";
 import { ScreenContent } from "./screen-content";
@@ -106,6 +107,7 @@ export function AppShellDesktop() {
       </div>
       <CommandMenu open={searchOpen} onOpenChange={setSearchOpen} />
       <IncomingCallOverlay />
+      <ScheduledMeetingPrompt />
       <NotificationToasts />
     </TooltipProvider>
   );

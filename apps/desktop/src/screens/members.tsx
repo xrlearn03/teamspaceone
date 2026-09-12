@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { MailPlus, Trash2, UserPlus, Users, XCircle } from "lucide-react";
-import { useMembers, useRoles, useInviteMember, useInvitations, useOrganisations, useRemoveMember, useResendInvitation, useRevokeInvitation, useUsers } from "../hooks/api";
+import { useMembers, useRoles, useInviteMember, useCreateInvitation, useInvitations, useOrganisations, useRemoveMember, useResendInvitation, useRevokeInvitation, useUsers } from "../hooks/api";
 import { useUIStore } from "../stores/ui";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
 import { Badge } from "@teamspace-one/ui/badge";
@@ -28,6 +28,7 @@ export function MemberDirectoryScreen() {
   const { data: roles, isLoading: rolesLoading, error: rolesError } = useRoles(organisationId);
   const { data: invitations } = useInvitations(organisationId);
   const inviteMember = useInviteMember();
+  const createInvitation = useCreateInvitation();
   const revokeInvitation = useRevokeInvitation();
   const resendInvitation = useResendInvitation();
   const removeMember = useRemoveMember();
@@ -69,10 +70,17 @@ export function MemberDirectoryScreen() {
 
   function invite() {
     if (!organisationId || !email.trim() || !roleId) return;
-    inviteMember.mutate(
-      { organisationId, email: email.trim(), roleId },
-      { onSuccess: () => { setInviteOpen(false); setEmail(""); setRoleId(""); } },
-    );
+    if (inviteExternal) {
+      createInvitation.mutate(
+        { organisationId, email: email.trim(), roleId },
+        { onSuccess: () => { setInviteOpen(false); setEmail(""); setRoleId(""); } },
+      );
+    } else {
+      inviteMember.mutate(
+        { organisationId, email: email.trim(), roleId },
+        { onSuccess: () => { setInviteOpen(false); setEmail(""); setRoleId(""); } },
+      );
+    }
   }
 
   return (
@@ -223,11 +231,22 @@ export function MemberDirectoryScreen() {
               ))}
             </select>
             {rolesError ? <p className="text-sm text-error">Failed to load roles: {rolesError.message}</p> : null}
-            {inviteMember.error ? <p className="text-sm text-error">{inviteMember.error.message}</p> : null}
+            {inviteExternal
+              ? createInvitation.error
+                ? <p className="text-sm text-error">{createInvitation.error.message}</p>
+                : null
+              : inviteMember.error
+                ? <p className="text-sm text-error">{inviteMember.error.message}</p>
+                : null}
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setInviteOpen(false)}>Cancel</Button>
-              <Button onClick={invite} disabled={!email.trim() || !roleId || inviteMember.isPending}>
-                {inviteMember.isPending ? "Sending…" : "Send invitation"}
+              <Button
+                onClick={invite}
+                disabled={!email.trim() || !roleId || (inviteExternal ? createInvitation.isPending : inviteMember.isPending)}
+              >
+                {inviteExternal
+                  ? (createInvitation.isPending ? "Sending…" : "Send invitation")
+                  : (inviteMember.isPending ? "Sending…" : "Send invitation")}
               </Button>
             </div>
           </div>

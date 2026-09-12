@@ -5,6 +5,7 @@ import {
   CalendarClock,
   ClipboardCheck,
   FileText,
+  Scale,
   ShieldAlert,
   Users,
 } from "lucide-react";
@@ -17,6 +18,7 @@ import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { Skeleton } from "@teamspace-one/ui/skeleton";
 import {
   useCandidates,
+  useHiringDecisions,
   useInterviewOverview,
   useInterviewSessions,
   useJobOpenings,
@@ -33,7 +35,7 @@ import { AiInterviewButton } from "@/components/interview/ai-interview-dialog";
 import { HiringDecisionButton } from "@/components/interview/hiring-decision-dialog";
 import { TemplatesSection } from "@/components/interview/templates-panel";
 
-type TabId = "overview" | "jobs" | "candidates" | "sessions" | "evaluations" | "templates";
+type TabId = "overview" | "jobs" | "candidates" | "sessions" | "evaluations" | "decisions" | "templates";
 
 interface Tab {
   id: TabId;
@@ -55,6 +57,7 @@ const TABS: Tab[] = [
   { id: "candidates", label: "Candidates", icon: Users, permission: "interview.candidate.view" },
   { id: "sessions", label: "Sessions", icon: CalendarClock, permission: "interview.interview.view" },
   { id: "evaluations", label: "Evaluations", icon: ClipboardCheck, permission: "interview.interview.evaluate" },
+  { id: "decisions", label: "Decisions", icon: Scale, permission: "interview.decision.view" },
   { id: "templates", label: "Templates", icon: FileText, permission: "interview.template.view" },
 ];
 
@@ -327,6 +330,41 @@ function EvaluationsSection() {
   );
 }
 
+function DecisionsSection() {
+  const { data: decisions, isLoading } = useHiringDecisions();
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-sm">Hiring decisions</CardTitle>
+          <Badge variant="secondary">{decisions?.length ?? 0}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <SectionSkeletonRows />
+        ) : decisions && decisions.length > 0 ? (
+          <div className="divide-y">
+            {decisions.map((d) => (
+              <div key={d.id} className="flex items-center justify-between py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-text">{d.application?.candidate?.name ?? "Candidate"}</p>
+                  <p className="truncate text-xs text-text-muted">{d.application?.jobOpening?.title ?? d.applicationId}</p>
+                </div>
+                <Badge variant={d.decision === "hire" ? "success" : d.decision === "offer" ? "success" : d.decision === "reject" ? "error" : "secondary"}>
+                  {d.decision}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={Scale} title="No hiring decisions" />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function SectionSkeletonRows() {
   return (
     <div className="space-y-2">
@@ -414,6 +452,9 @@ export function InterviewScreen() {
         )}
         {activeTab === "evaluations" && (
           <SectionShell><EvaluationsSection /></SectionShell>
+        )}
+        {activeTab === "decisions" && (
+          <SectionShell><DecisionsSection /></SectionShell>
         )}
         {activeTab === "templates" && (
           <SectionShell><TemplatesSection /></SectionShell>

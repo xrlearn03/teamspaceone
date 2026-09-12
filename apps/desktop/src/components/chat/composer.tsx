@@ -6,12 +6,10 @@ import {
   Italic,
   Link2,
   List,
-  Mic,
   Paperclip,
   Send,
   Smile,
   Strikethrough,
-  Clock,
 } from "lucide-react";
 import { Button } from "@teamspace-one/ui/button";
 import { getDraft, setDraft } from "../../lib/message-local";
@@ -62,6 +60,7 @@ export function Composer({
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey) : ""));
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [slashIndex, setSlashIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { sendTyping } = useRealtime();
   const typingSent = useRef(false);
@@ -136,6 +135,13 @@ export function Composer({
     textareaRef.current?.focus();
   }
 
+  function insertSlashCommand(command: string) {
+    const next = `${command} `;
+    update(next);
+    setSlashIndex(0);
+    textareaRef.current?.focus();
+  }
+
   function wrapSelection(prefix: string, suffix = prefix) {
     const el = textareaRef.current;
     if (!el) return;
@@ -190,10 +196,27 @@ export function Composer({
         return;
       }
     }
-    if (slashSuggestions.length > 0 && e.key === "Escape") {
-      e.preventDefault();
-      update(` ${value}`);
-      return;
+    if (slashSuggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashIndex((i) => (i + 1) % slashSuggestions.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashIndex((i) => (i - 1 + slashSuggestions.length) % slashSuggestions.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        insertSlashCommand(slashSuggestions[Math.min(slashIndex, slashSuggestions.length - 1)].command);
+        return;
+      }
+      if (e.key === "Escape") {
+        setSlashIndex(0);
+        update(` ${value}`);
+        return;
+      }
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -242,13 +265,21 @@ export function Composer({
       {slashSuggestions.length > 0 ? (
         <div className="absolute bottom-full left-0 mb-1 w-72 overflow-hidden rounded-md border bg-surface shadow-lg">
           <p className="border-b px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-text-muted">
-            Slash commands (coming soon)
+            Slash commands
           </p>
-          {slashSuggestions.map((cmd) => (
-            <div key={cmd.command} className="flex items-center gap-2 px-3 py-1.5 text-sm text-text-muted">
+          {slashSuggestions.map((cmd, i) => (
+            <button
+              key={cmd.command}
+              type="button"
+              onClick={() => insertSlashCommand(cmd.command)}
+              className={cn(
+                "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm",
+                i === slashIndex ? "bg-primary-subtle text-primary" : "text-text hover:bg-surface-elevated",
+              )}
+            >
               <span className="font-mono text-primary">{cmd.command}</span>
               <span className="flex-1 truncate">{cmd.description}</span>
-            </div>
+            </button>
           ))}
         </div>
       ) : null}
@@ -288,14 +319,7 @@ export function Composer({
               <item.icon className="h-4 w-4" />
             </Button>
           ))}
-          <div className="ml-auto flex items-center gap-0.5">
-            <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-8 sm:w-8" disabled title="Voice message (coming soon)" aria-label="Voice message (coming soon)">
-              <Mic className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-8 sm:w-8" disabled title="Schedule message (coming soon)" aria-label="Schedule message (coming soon)">
-              <Clock className="h-4 w-4" />
-            </Button>
-          </div>
+
         </div>
         <div className="flex items-end gap-2 p-2">
           <textarea

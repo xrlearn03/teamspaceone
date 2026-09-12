@@ -1,7 +1,8 @@
-import { Mic, MicOff, Video, VideoOff } from "lucide-react";
+import { Check, Link2, Mic, MicOff, Video, VideoOff } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@teamspace-one/ui/button";
 import { useMediaDevices } from "../../hooks/useMediaDevices";
-import type { Meeting, UserDto } from "../../lib/api";
+import { getMeetingShareLink, type Meeting, type UserDto } from "../../lib/api";
 import { getUserDisplayName } from "../../lib/utils";
 
 interface MeetingLobbyProps {
@@ -60,7 +61,19 @@ export function MeetingLobby({
     audioOutputDevices,
   } = useMediaDevices({ audioEnabled: false, videoEnabled: false });
 
+  const [copiedLink, setCopiedLink] = useState(false);
   const displayName = getUserDisplayName(user, "Guest");
+
+  async function copyInviteLink() {
+    try {
+      const { url } = await getMeetingShareLink(meeting.id);
+      await navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      window.setTimeout(() => setCopiedLink(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy invite link", err);
+    }
+  }
 
   const formattedScheduled = meeting.scheduledAt
     ? new Date(meeting.scheduledAt).toLocaleString([], {
@@ -193,6 +206,10 @@ export function MeetingLobby({
         <div className="flex justify-center gap-3">
           <Button variant="ghost" onClick={onCancel}>
             Cancel
+          </Button>
+          <Button variant="secondary" onClick={copyInviteLink} className="gap-2">
+            {copiedLink ? <Check className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
+            {copiedLink ? "Link copied" : "Copy invite link"}
           </Button>
           <Button
             onClick={() => {

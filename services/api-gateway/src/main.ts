@@ -236,6 +236,7 @@ async function bootstrap() {
   app.use('/notifications', createAuthMiddleware(jwtSecret));
   app.use('/notifications', proxy(notificationUrl));
 
+  app.use('/meetings/public', proxy(meetingUrl));
   app.use('/meetings', createAuthMiddleware(jwtSecret));
   app.use('/meetings', proxy(meetingUrl));
 

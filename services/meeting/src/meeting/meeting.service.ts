@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
-import { randomUUID, createHmac } from 'node:crypto';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException, UnauthorizedException, Logger } from '@nestjs/common';
+import { randomUUID, createHmac, createHash, timingSafeEqual } from 'node:crypto';
 import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { Prisma } from '#prisma';
@@ -28,7 +28,8 @@ export class MeetingService {
     });
     if (!meeting) return null;
     const participant = await this.prisma.meetingParticipant.findUnique({ where: { meetingId_userId: { meetingId, userId: actorId } } });
-    if (meeting.status === 'ended' && !participant && meeting.createdBy !== actorId) return null;
+    const invitee = participant ? null : await this.prisma.meetingInvitee.findUnique({ where: { meetingId_userId: { meetingId, userId: actorId } } });
+    if (meeting.status === 'ended' && !participant && !invitee && meeting.createdBy !== actorId) return null;
     return { organisationId: meeting.organisationId, workspaceId: meeting.workspaceId };
   }
 
@@ -39,6 +40,7 @@ export class MeetingService {
 
     const id = randomUUID();
     const roomName = generateRoomName(organisationId, dto.title);
+    const inviteeIds = [...new Set(dto.inviteeIds ?? [])].filter((userId) => userId && userId !== createdBy);
     const payload = {
       id,
       organisationId,
@@ -47,6 +49,7 @@ export class MeetingService {
       title: dto.title,
       description: dto.description ?? null,
       scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt).toISOString() : null,
+      inviteeIds,
       type: 'meeting',
       createdBy,
     };
@@ -74,7 +77,15 @@ export class MeetingService {
           type: 'meeting',
           scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
           createdBy,
+          invitees: {
+            create: inviteeIds.map((userId) => ({
+              id: randomUUID(),
+              organisationId,
+              userId,
+            })),
+          },
         },
+        include: { invitees: true },
       });
       await this.outbox.createEvent(tx, envelope, Subjects.MEETING_CREATED);
       return meeting;
@@ -137,9 +148,10 @@ export class MeetingService {
         OR: [
           { createdBy: userId },
           { participants: { some: { userId, leftAt: null } } },
+          { invitees: { some: { userId } } },
         ],
       },
-      include: { participants: { where: { leftAt: null } } },
+      include: { participants: { where: { leftAt: null } }, invitees: true },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -173,6 +185,7 @@ export class MeetingService {
         OR: [
           { createdBy: userId },
           { participants: { some: { userId, leftAt: null } } },
+          { invitees: { some: { userId } } },
         ],
       },
       include: { participants: { where: { leftAt: null } } },
@@ -199,13 +212,24 @@ export class MeetingService {
     if (!userId) throw new ForbiddenException('Missing actor');
     const meeting = await this.prisma.meeting.findFirst({
       where: { id, organisationId: ctx.organisationId },
-      include: { participants: { where: { leftAt: null } } },
+      include: { participants: { where: { leftAt: null } }, invitees: true },
     });
     if (!meeting) throw new NotFoundException('Meeting not found');
     const isParticipant = meeting.participants.some((p) => p.userId === userId);
+    const isInvitee = meeting.invitees.some((i) => i.userId === userId);
     const isCreator = meeting.createdBy === userId;
-    if (!isParticipant && !isCreator) throw new NotFoundException('Meeting not found');
+    if (!isParticipant && !isInvitee && !isCreator) throw new NotFoundException('Meeting not found');
     return meeting;
+  }
+
+  private attendeeIds(meeting: { createdBy: string; participants: { userId: string }[]; invitees: { userId: string }[] }) {
+    return [
+      ...new Set([
+        meeting.createdBy,
+        ...meeting.invitees.map((i) => i.userId),
+        ...meeting.participants.map((p) => p.userId),
+      ]),
+    ];
   }
 
   async start(ctx: OrganisationContextValue, id: string) {
@@ -216,6 +240,9 @@ export class MeetingService {
       id,
       organisationId: ctx.organisationId,
       roomName: meeting.roomName,
+      title: meeting.title,
+      scheduledAt: meeting.scheduledAt ? meeting.scheduledAt.toISOString() : null,
+      attendeeIds: this.attendeeIds(meeting),
       startedAt: new Date().toISOString(),
     };
 
@@ -424,17 +451,7 @@ export class MeetingService {
     if (!userId) throw new ForbiddenException('Missing actor');
 
     const meeting = await this.getById(ctx, id);
-    const secret = process.env.SFU_TOKEN_SECRET;
-    if (!secret) throw new Error('SFU_TOKEN_SECRET environment variable is required');
-
-    const ttlSeconds = Number(process.env.SFU_TOKEN_TTL_SECONDS ?? 4 * 60 * 60);
-    const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
-    const roomB64 = Buffer.from(meeting.id).toString('base64url');
-    const userB64 = Buffer.from(userId).toString('base64url');
-    const base = `${roomB64}.${userB64}.${exp}`;
-    const signature = createHmac('sha256', secret).update(base).digest('hex');
-
-    return { token: `${base}.${signature}`, roomId: meeting.id, userId };
+    return { token: this.signSfuToken(meeting.id, userId), roomId: meeting.id, userId };
   }
 
   async createInterviewRoom(organisationId: string, id: string, title: string) {
@@ -463,17 +480,155 @@ export class MeetingService {
     });
     if (!meeting) throw new NotFoundException('Meeting not found');
 
+    return { token: this.signSfuToken(meeting.id, userId), roomId: meeting.id, userId, roomName: meeting.roomName };
+  }
+
+  /**
+   * Public guest links: the share token is a stateless HMAC over the meeting id
+   * and an expiry, signed with SFU_TOKEN_SECRET (domain-separated by the
+   * 'guest.' prefix so it can never be confused with a media join token).
+   */
+  private sfuSecret(): string {
     const secret = process.env.SFU_TOKEN_SECRET;
     if (!secret) throw new Error('SFU_TOKEN_SECRET environment variable is required');
+    return secret;
+  }
 
+  private signSfuToken(meetingId: string, userId: string): string {
     const ttlSeconds = Number(process.env.SFU_TOKEN_TTL_SECONDS ?? 4 * 60 * 60);
     const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
-    const roomB64 = Buffer.from(meeting.id).toString('base64url');
+    const roomB64 = Buffer.from(meetingId).toString('base64url');
     const userB64 = Buffer.from(userId).toString('base64url');
     const base = `${roomB64}.${userB64}.${exp}`;
-    const signature = createHmac('sha256', secret).update(base).digest('hex');
+    const signature = createHmac('sha256', this.sfuSecret()).update(base).digest('hex');
+    return `${base}.${signature}`;
+  }
 
-    return { token: `${base}.${signature}`, roomId: meeting.id, userId, roomName: meeting.roomName };
+  private signGuestToken(meetingId: string, exp: number): string {
+    const base = `${Buffer.from(meetingId).toString('base64url')}.${exp}`;
+    const signature = createHmac('sha256', this.sfuSecret()).update(`guest.${base}`).digest('hex');
+    return `${base}.${signature}`;
+  }
+
+  private verifyGuestToken(token: string): string {
+    const parts = token.split('.');
+    if (parts.length !== 3) throw new UnauthorizedException('Invalid meeting link');
+    const [meetingB64, expRaw, signature] = parts;
+    const expected = createHmac('sha256', this.sfuSecret())
+      .update(`guest.${meetingB64}.${expRaw}`)
+      .digest('hex');
+    const provided = Buffer.from(signature ?? '', 'utf8');
+    const wanted = Buffer.from(expected, 'utf8');
+    if (provided.length !== wanted.length || !timingSafeEqual(provided, wanted)) {
+      throw new UnauthorizedException('Invalid meeting link');
+    }
+    const exp = Number(expRaw);
+    if (!Number.isFinite(exp) || exp * 1000 <= Date.now()) {
+      throw new UnauthorizedException('Meeting link has expired');
+    }
+    const meetingId = Buffer.from(meetingB64, 'base64url').toString('utf8');
+    if (!meetingId) throw new UnauthorizedException('Invalid meeting link');
+    return meetingId;
+  }
+
+  private async meetingForGuestToken(token: string) {
+    const meetingId = this.verifyGuestToken(token);
+    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
+    if (!meeting) throw new NotFoundException('Meeting not found');
+    return meeting;
+  }
+
+  async createShareLink(ctx: OrganisationContextValue, id: string) {
+    const meeting = await this.getById(ctx, id);
+    const dayMs = 24 * 60 * 60 * 1000;
+    const scheduledEnd = meeting.scheduledAt ? meeting.scheduledAt.getTime() + dayMs : 0;
+    const exp = Math.floor(Math.max(Date.now() + dayMs, scheduledEnd) / 1000);
+    const token = this.signGuestToken(meeting.id, exp);
+    const baseUrl = (
+      process.env.PUBLIC_WEB_URL ??
+      process.env.APP_URL ??
+      'https://teamspaceone.in'
+    ).replace(/\/+$/, '');
+    return { url: `${baseUrl}/join/${token}`, token, expiresAt: new Date(exp * 1000).toISOString() };
+  }
+
+  async getGuestMeetingInfo(token: string) {
+    const meeting = await this.meetingForGuestToken(token);
+    if (meeting.status === 'ended') throw new ConflictException('Meeting has ended');
+    return {
+      meetingId: meeting.id,
+      title: meeting.title,
+      type: meeting.type,
+      status: meeting.status,
+      scheduledAt: meeting.scheduledAt,
+    };
+  }
+
+  async joinAsGuest(token: string, dto: { name?: string; email?: string }) {
+    const name = dto.name?.trim();
+    const email = dto.email?.trim().toLowerCase();
+    if (!name || name.length > 100) throw new BadRequestException('Name is required');
+    if (!email || email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new BadRequestException('A valid email is required');
+    }
+
+    const meeting = await this.meetingForGuestToken(token);
+    if (meeting.status === 'ended') throw new ConflictException('Meeting has ended');
+
+    const userId = `guest:${createHash('sha256').update(email).digest('hex').slice(0, 24)}`;
+    const participantId = randomUUID();
+    const envelope = createEventEnvelope({
+      eventType: Subjects.MEETING_PARTICIPANT_JOINED,
+      organisationId: meeting.organisationId,
+      actorId: userId,
+      resourceType: 'meeting_participant',
+      resourceId: participantId,
+      payload: {
+        participantId,
+        meetingId: meeting.id,
+        organisationId: meeting.organisationId,
+        roomName: meeting.roomName,
+        userId,
+        identity: name,
+        guest: true,
+        displayName: name,
+        joinedAt: new Date().toISOString(),
+      },
+    });
+
+    const participant = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const existing = await tx.meetingParticipant.findUnique({
+        where: { meetingId_userId: { meetingId: meeting.id, userId } },
+      });
+      if (existing) {
+        return tx.meetingParticipant.update({
+          where: { id: existing.id },
+          data: { leftAt: null, guestName: name, updatedAt: new Date() },
+        });
+      }
+      const created = await tx.meetingParticipant.create({
+        data: {
+          id: participantId,
+          meetingId: meeting.id,
+          organisationId: meeting.organisationId,
+          userId,
+          guestName: name,
+          guestEmail: email,
+        },
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.MEETING_PARTICIPANT_JOINED);
+      return created;
+    });
+
+    return {
+      participantId: participant.id,
+      roomId: meeting.id,
+      userId,
+      displayName: name,
+      title: meeting.title,
+      type: meeting.type,
+      token: this.signSfuToken(meeting.id, userId),
+    };
   }
 
   async createMeetingMessage(ctx: OrganisationContextValue, meetingId: string, content: string) {
@@ -691,6 +846,106 @@ export class MeetingService {
 
       return updated;
     });
+  }
+
+  /**
+   * Called by MeetingScheduler on an interval. Sends a reminder for meetings
+   * approaching their scheduledAt, and auto-starts meetings whose scheduledAt
+   * has passed so invitees get a "join" notification without a host action.
+   * Claims are conditional updateMany calls so multiple replicas won't emit
+   * duplicate events.
+   */
+  async sweepScheduledMeetings() {
+    const now = new Date();
+    const reminderBeforeMs = Number(process.env.MEETING_REMINDER_BEFORE_MS ?? 15 * 60 * 1000);
+
+    const due = await this.prisma.meeting.findMany({
+      where: {
+        type: 'meeting',
+        status: 'scheduled',
+        scheduledAt: { not: null, lte: now },
+      },
+      include: { participants: { where: { leftAt: null } }, invitees: true },
+      take: 50,
+    });
+
+    for (const meeting of due) {
+      const attendeeIds = this.attendeeIds(meeting);
+      const envelope = createEventEnvelope({
+        eventType: Subjects.MEETING_STARTED,
+        organisationId: meeting.organisationId,
+        workspaceId: meeting.workspaceId ?? undefined,
+        resourceType: 'meeting',
+        resourceId: meeting.id,
+        payload: {
+          id: meeting.id,
+          organisationId: meeting.organisationId,
+          roomName: meeting.roomName,
+          title: meeting.title,
+          scheduledAt: meeting.scheduledAt!.toISOString(),
+          attendeeIds,
+          startedAt: now.toISOString(),
+          autoStarted: true,
+        },
+      });
+
+      const claimed = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const result = await tx.meeting.updateMany({
+          where: { id: meeting.id, status: 'scheduled' },
+          data: { status: 'started', startedAt: now },
+        });
+        if (result.count === 0) return false;
+        await this.outbox.createEvent(tx, envelope, Subjects.MEETING_STARTED);
+        return true;
+      });
+      if (claimed) {
+        this.logger.log({ meetingId: meeting.id }, 'Auto-started scheduled meeting');
+      }
+    }
+
+    const upcoming = await this.prisma.meeting.findMany({
+      where: {
+        type: 'meeting',
+        status: 'scheduled',
+        reminderSentAt: null,
+        scheduledAt: { not: null, gt: now, lte: new Date(now.getTime() + reminderBeforeMs) },
+      },
+      include: { invitees: true, participants: { where: { leftAt: null } } },
+      take: 50,
+    });
+
+    for (const meeting of upcoming) {
+      const minutesUntil = Math.max(1, Math.round((meeting.scheduledAt!.getTime() - now.getTime()) / 60000));
+      const envelope = createEventEnvelope({
+        eventType: Subjects.MEETING_REMINDER,
+        organisationId: meeting.organisationId,
+        workspaceId: meeting.workspaceId ?? undefined,
+        resourceType: 'meeting',
+        resourceId: meeting.id,
+        payload: {
+          id: meeting.id,
+          organisationId: meeting.organisationId,
+          roomName: meeting.roomName,
+          title: meeting.title,
+          scheduledAt: meeting.scheduledAt!.toISOString(),
+          attendeeIds: this.attendeeIds(meeting),
+          minutesUntil,
+        },
+      });
+
+      const claimed = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const result = await tx.meeting.updateMany({
+          where: { id: meeting.id, status: 'scheduled', reminderSentAt: null },
+          data: { reminderSentAt: now },
+        });
+        if (result.count === 0) return false;
+        await this.outbox.createEvent(tx, envelope, Subjects.MEETING_REMINDER);
+        return true;
+      });
+      if (claimed) {
+        this.logger.log({ meetingId: meeting.id, minutesUntil }, 'Sent scheduled-meeting reminder');
+      }
+    }
   }
 
   async deleteEnded(ctx: OrganisationContextValue, workspaceId?: string) {

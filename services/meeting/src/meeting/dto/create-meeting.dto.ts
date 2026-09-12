@@ -3,4 +3,5 @@ export class CreateMeetingDto {
   description?: string;
   workspaceId?: string;
   scheduledAt?: string;
+  inviteeIds?: string[];
 }

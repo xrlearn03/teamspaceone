@@ -181,7 +181,7 @@ export class LeaveService {
       employeeIds = [filters.employeeId];
     }
 
-    return this.prisma.leaveRequest.findMany({
+    const requests = await this.prisma.leaveRequest.findMany({
       where: {
         organisationId: ctx.organisationId,
         employeeId: { in: employeeIds },
@@ -190,6 +190,21 @@ export class LeaveService {
       include: { leaveType: true },
       orderBy: { createdAt: 'desc' },
     });
+
+    const relatedEmployeeIds = [...new Set(requests.map((r) => r.employeeId))];
+    const employees = await this.prisma.employee.findMany({
+      where: { id: { in: relatedEmployeeIds } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const employeeNameMap = new Map(
+      employees.map((e) => [e.id, `${e.firstName} ${e.lastName}`.trim()]),
+    );
+
+    return requests.map((r) => ({
+      ...r,
+      employeeName: employeeNameMap.get(r.employeeId) ?? null,
+      leaveTypeName: r.leaveType?.name ?? null,
+    }));
   }
 
   async approve(

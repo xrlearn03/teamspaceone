@@ -1,22 +1,25 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { PermissionProvider } from "@teamspace-one/authorization/react";
 import type { AuthorizableUser } from "@teamspace-one/authorization";
 import { AppShell } from "./components/layouts/app-shell";
 import { SplashScreen } from "./components/splash/splash-screen";
 import { RealtimeProvider } from "./hooks/useRealtime";
 import { AuthScreen } from "./screens/auth";
+import { GuestMeetingScreen } from "./screens/guest-meeting";
 import { OnboardingScreen } from "./screens/onboarding";
 import { ForcePasswordChangeDialog } from "./components/auth/force-password-change-dialog";
-import { getAccessToken, getMe, getMyContext, getOrganisations, getActiveOrganisation, setActiveOrganisation, setOnSessionCleared } from "./lib/api";
+import { getAccessToken, getMe, getMyContext, getOrganisations, getActiveOrganisation, setActiveOrganisation, setOnSessionCleared, extractMeetingJoinToken } from "./lib/api";
 import { Button } from "@teamspace-one/ui/button";
 import { useUIStore } from "./stores/ui";
 import { UpdateChecker } from "./components/update/update-checker";
 
 const MIN_SPLASH_DURATION_MS = 4000;
 
-function AuthGate() {
+function AuthGate({ onJoinAsGuest }: { onJoinAsGuest?: () => void }) {
   const [session, setSession] = useState(0);
   const queryClient = useQueryClient();
   const [minSplashElapsed, setMinSplashElapsed] = useState(false);
@@ -53,11 +56,12 @@ function AuthGate() {
         queryClient.clear();
         setSession((s) => s + 1);
       }}
+      onJoinAsGuest={onJoinAsGuest}
     />
   );
 }
 
-function AuthGateInner({ onAuthenticated }: { onAuthenticated: () => void }) {
+function AuthGateInner({ onAuthenticated, onJoinAsGuest }: { onAuthenticated: () => void; onJoinAsGuest?: () => void }) {
   const { data: token, isLoading } = useQuery({
     queryKey: ["access-token"],
     queryFn: getAccessToken,
@@ -120,7 +124,7 @@ function AuthGateInner({ onAuthenticated }: { onAuthenticated: () => void }) {
 
   if (!token) {
     return (
-      <AuthScreen onAuthenticated={onAuthenticated} />
+      <AuthScreen onAuthenticated={onAuthenticated} onJoinAsGuest={onJoinAsGuest} />
     );
   }
 
@@ -231,9 +235,44 @@ function PermissionBoundary({ organisationId }: { organisationId: string | null 
 }
 
 function App() {
+  // Guest meeting links: `teamspace-one://join/<token>` deep links (cold start
+  // via the `get_deep_link` command, warm start via the plugin's
+  // `deep-link://new-url` event) and the manual "join as guest" entry both land
+  // here. A non-null value replaces the whole app with the guest join screen.
+  const [guestToken, setGuestToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return;
+    const handle = (urls: string[] | string) => {
+      for (const url of Array.isArray(urls) ? urls : [urls]) {
+        const token = extractMeetingJoinToken(url);
+        if (token) {
+          setGuestToken(token);
+          break;
+        }
+      }
+    };
+    invoke<string[] | null>("get_deep_link")
+      .then((urls) => { if (urls) handle(urls); })
+      .catch(() => undefined);
+    const unlisten = listen<string[]>("deep-link://new-url", (e) => handle(e.payload));
+    return () => {
+      void unlisten.then((u) => u());
+    };
+  }, []);
+
+  if (guestToken !== null) {
+    return (
+      <GuestMeetingScreen
+        initialToken={guestToken || undefined}
+        onExit={() => setGuestToken(null)}
+      />
+    );
+  }
+
   return (
     <>
-      <AuthGate />
+      <AuthGate onJoinAsGuest={() => setGuestToken("")} />
       <UpdateChecker />
     </>
   );

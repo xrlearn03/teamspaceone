@@ -315,6 +315,7 @@ export function WorkspaceSidebar() {
         description: meetingDescription || undefined,
         workspaceId: currentWorkspace?.id,
         scheduledAt: instant ? undefined : meetingScheduledAt || undefined,
+        inviteeIds: selectedMembers.length ? selectedMembers : undefined,
       },
       {
         onSuccess: (meeting) => {
@@ -680,8 +681,11 @@ export function WorkspaceSidebar() {
               <Input type="datetime-local" value={meetingScheduledAt} onChange={(e) => setMeetingScheduledAt(e.target.value)} />
             </>
           ) : null}
-          {(createMode === "direct" || createMode === "project" || privateChannel) ? (
+          {(createMode === "direct" || createMode === "project" || createMode === "meeting" || privateChannel) ? (
             <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border p-2">
+              {createMode === "meeting" ? (
+                <p className="px-2 pb-1 text-xs text-text-muted">Invite members — they&apos;ll be notified when the meeting starts.</p>
+              ) : null}
               {members?.map((member) => (
                 <label key={member.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-surface-elevated">
                   <input type="checkbox" checked={selectedMembers.includes(member.userId)} onChange={() => toggleMember(member.userId)} />

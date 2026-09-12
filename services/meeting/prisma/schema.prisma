@@ -19,6 +19,7 @@ model Meeting {
   scheduledAt    DateTime?
   startedAt      DateTime?
   endedAt        DateTime?
+  reminderSentAt DateTime?
   status         String              @default("scheduled")
   isRecording    Boolean             @default(false)
   recordingEgressId String?
@@ -27,6 +28,7 @@ model Meeting {
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   participants   MeetingParticipant[]
+  invitees       MeetingInvitee[]
   messages       MeetingMessage[]
   reactions      MeetingReaction[]
   raiseHands     MeetingRaiseHand[]
@@ -42,6 +44,8 @@ model MeetingParticipant {
   meetingId      String
   organisationId String
   userId         String
+  guestName      String?
+  guestEmail     String?
   joinedAt       DateTime @default(now())
   leftAt         DateTime?
   isScreenSharing Boolean @default(false)
@@ -55,6 +59,22 @@ model MeetingParticipant {
   @@index([userId])
   @@unique([meetingId, userId])
   @@map("meeting_participants")
+}
+
+model MeetingInvitee {
+  id             String   @id
+  meetingId      String
+  organisationId String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([organisationId])
+  @@index([userId])
+  @@unique([meetingId, userId])
+  @@map("meeting_invitees")
 }
 
 model MeetingMessage {

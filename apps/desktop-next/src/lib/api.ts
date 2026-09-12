@@ -1252,6 +1252,16 @@ export function getSfuToken(id: string) {
   return apiRequest<MeetingSfuTokenResult>(`/meetings/${id}/sfu-token`, { method: "POST" });
 }
 
+export interface MeetingShareLink {
+  url: string;
+  token: string;
+  expiresAt: string;
+}
+
+export function getMeetingShareLink(id: string) {
+  return apiRequest<MeetingShareLink>(`/meetings/${id}/share-link`, { method: "POST" });
+}
+
 export function leaveMeeting(id: string) {
   return apiRequest<MeetingParticipant>(`/meetings/${id}/leave`, { method: "POST" });
 }

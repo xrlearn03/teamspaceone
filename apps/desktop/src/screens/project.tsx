@@ -333,10 +333,6 @@ function TaskDialog({ task, members, userMap, open, onOpenChange, onSave }: { ta
               <Input type="date" className="mt-1" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
             </label>
           </div>
-          <div className="space-y-1 rounded-md border border-dashed p-3">
-            <p className="text-xs font-medium text-text-muted">Labels · Subtasks · Checklist · Dependencies</p>
-            <p className="text-xs text-text-muted">Coming soon — not yet supported by the projects service.</p>
-          </div>
           {taskActivity.length > 0 ? (
             <div>
               <p className="mb-1 text-xs font-medium text-text-muted">Activity</p>

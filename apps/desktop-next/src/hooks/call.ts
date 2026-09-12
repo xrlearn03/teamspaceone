@@ -1,10 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { apiRequest, type OrganisationMember, type UserDto } from "@/lib/api";
+import { apiRequest, getUsers as apiGetUsers, type OrganisationMember, type UserDto } from "@/lib/api";
 
 export function getUsers(userIds: string[]): Promise<UserDto[]> {
   if (userIds.length === 0) return Promise.resolve([]);
-  // Browser-safe stub until the backend endpoint is wired up.
-  return Promise.resolve([]);
+  return apiGetUsers(userIds);
 }
 
 export function getMembers(organisationId: string): Promise<OrganisationMember[]> {

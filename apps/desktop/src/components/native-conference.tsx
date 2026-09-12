@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Check,
   CircleDot,
   Hand,
+  Link2,
   MessageSquare,
   Mic,
   MicOff,
@@ -32,6 +34,7 @@ import {
   createMeetingReaction,
   getMeetingMessages,
   getMeetingRaiseHands,
+  getMeetingShareLink,
   setMeetingRecording,
   updateMeetingRaiseHand,
   type MeetingMessage,
@@ -102,6 +105,7 @@ export function NativeConference({
   const [chatInput, setChatInput] = useState("");
   const [reactions, setReactions] = useState<{ id: string; emoji: string; name: string }[]>([]);
   const [isRecording, setIsRecording] = useState(initialRecording);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [screenSharingUsers, setScreenSharingUsers] = useState<Set<string>>(new Set());
   const processedReactionIds = useRef<Set<string>>(new Set());
 
@@ -260,6 +264,17 @@ export function NativeConference({
     }
   }
 
+  async function copyInviteLink() {
+    try {
+      const { url } = await getMeetingShareLink(meetingId);
+      await navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      window.setTimeout(() => setCopiedLink(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy invite link", err);
+    }
+  }
+
   return (
     <div className="flex h-full flex-col bg-background">
       {/* Top bar */}
@@ -344,6 +359,15 @@ export function NativeConference({
             title="Participants"
           >
             <Users className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 rounded-full"
+            onClick={copyInviteLink}
+            title={copiedLink ? "Link copied" : "Copy guest invite link"}
+          >
+            {copiedLink ? <Check className="h-5 w-5 text-success" /> : <Link2 className="h-5 w-5" />}
           </Button>
           {onEnd ? (
             <Button

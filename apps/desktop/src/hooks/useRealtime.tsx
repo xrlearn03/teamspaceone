@@ -349,6 +349,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
               }
             }
           }
+          if (event === "meeting.created" || event === "meeting.started" || event === "meeting.ended") {
+            void queryClient.invalidateQueries({ queryKey: ["meetings"] });
+          }
           if (event === "meeting.chat.created") {
             const message = payload as RealtimeEventPayloads["meeting.chat.created"];
             queryClient.setQueryData<InfiniteData<{ items: typeof message[]; nextCursor: string | null }, string | null>>(["meeting-messages", message.meetingId], (data) => {
