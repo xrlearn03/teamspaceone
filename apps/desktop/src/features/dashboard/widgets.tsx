@@ -181,19 +181,19 @@ export function QuickActionsWidget() {
             <PermissionGate permission="collaboration.message.send">
               <Button size="sm" className="w-full" onClick={() => setDialog("message")}>
                 <MessageSquare className="mr-1 h-4 w-4 shrink-0" />
-                <span className="block min-w-0 truncate text-center">New message</span>
+                <span className="block text-center">New message</span>
               </Button>
             </PermissionGate>
             <PermissionGate permission="collaboration.task.create">
               <Button size="sm" variant="secondary" className="w-full" onClick={() => setDialog("task")}>
                 <CheckSquare className="mr-1 h-4 w-4 shrink-0" />
-                <span className="block min-w-0 truncate text-center">Create task</span>
+                <span className="block text-center">Create task</span>
               </Button>
             </PermissionGate>
             <PermissionGate permission="collaboration.project.create">
               <Button size="sm" variant="secondary" className="w-full" onClick={() => setDialog("project")}>
                 <Folder className="mr-1 h-4 w-4 shrink-0" />
-                <span className="block min-w-0 truncate text-center">Create project</span>
+                <span className="block text-center">Create project</span>
               </Button>
             </PermissionGate>
             <PermissionGate permission="collaboration.meeting.create">
@@ -213,18 +213,18 @@ export function QuickActionsWidget() {
                 }
               >
                 <Video className="mr-1 h-4 w-4 shrink-0" />
-                <span className="block min-w-0 truncate text-center">Start meeting</span>
+                <span className="block text-center">Start meeting</span>
               </Button>
             </PermissionGate>
             <PermissionGate permission="collaboration.file.upload">
               <Button size="sm" variant="secondary" className="w-full" onClick={() => setActiveView("files")}>
                 <Upload className="mr-1 h-4 w-4 shrink-0" />
-                <span className="block min-w-0 truncate text-center">Upload file</span>
+                <span className="block text-center">Upload file</span>
               </Button>
             </PermissionGate>
             <Button size="sm" variant="secondary" className="w-full" onClick={() => setActiveView("ai")}>
               <Sparkles className="mr-1 h-4 w-4 shrink-0" />
-              <span className="block min-w-0 truncate text-center">Ask AI</span>
+              <span className="block text-center">Ask AI</span>
             </Button>
           </div>
         </CardContent>

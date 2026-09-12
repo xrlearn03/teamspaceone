@@ -60,7 +60,7 @@ export function BottomNav() {
             type="button"
             onClick={item.onClick ?? (() => setActiveView(item.id as View))}
             className={cn(
-              "flex h-16 min-w-0 flex-1 flex-col items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors",
+              "flex min-h-16 h-auto min-w-0 flex-1 flex-col items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium transition-colors",
               isActive
                 ? "text-primary"
                 : "text-text-muted",
@@ -73,7 +73,7 @@ export function BottomNav() {
                 <span className="absolute -right-1 -top-1 flex h-2 w-2 rounded-full bg-mention" />
               ) : null}
             </div>
-            <span className="block w-full truncate text-center">{item.label}</span>
+            <span className="block w-full text-center leading-tight">{item.label}</span>
           </button>
         );
       })}

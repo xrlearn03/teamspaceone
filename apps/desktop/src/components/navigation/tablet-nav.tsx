@@ -72,7 +72,7 @@ export function TabletNav() {
               aria-label={item.label}
             >
               <Icon className="h-5 w-5" />
-              <span className="w-full truncate text-center">{item.label}</span>
+              <span className="w-full text-center leading-tight">{item.label}</span>
               {(item.badge ?? 0) > 0 ? (
                 <span className="absolute right-2 top-1.5 h-2 w-2 rounded-full bg-mention" />
               ) : null}
