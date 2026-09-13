@@ -28,6 +28,7 @@ import { EmployeeDetailScreen } from "../../screens/hr/employee-detail";
 import { HrDepartmentsScreen } from "../../screens/hr/departments";
 import { HrDesignationsScreen } from "../../screens/hr/designations";
 import { HrLeavesScreen } from "../../screens/hr/leaves";
+import { MyAttendanceScreen } from "../../screens/my-attendance";
 import { HelpScreen } from "../../screens/help";
 
 const screens: Record<View, React.ComponentType> = {
@@ -54,6 +55,7 @@ const screens: Record<View, React.ComponentType> = {
   departments: HrDepartmentsScreen,
   designations: HrDesignationsScreen,
   leaves: HrLeavesScreen,
+  "my-attendance": MyAttendanceScreen,
   settings: SettingsScreen,
   help: HelpScreen,
 };

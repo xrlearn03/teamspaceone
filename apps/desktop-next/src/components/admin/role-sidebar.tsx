@@ -39,7 +39,7 @@ const SHARED_SECTION_1: MenuItem[] = [
 ];
 
 const SELF_SERVICE_SECTION: MenuItem[] = [
-  { view: "hrms", label: "My Attendance", icon: Clock, hrmsTab: "attendance" },
+  { view: "my-attendance", label: "My Attendance", icon: Clock },
   { view: "hrms", label: "My Leaves", icon: CalendarDays, hrmsTab: "leave" },
   { view: "hrms", label: "My Payroll", icon: Wallet, hrmsTab: "payroll" },
   { view: "hrms", label: "My Performance", icon: TrendingUp, hrmsTab: "performance" },

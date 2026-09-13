@@ -1,18 +1,30 @@
 import { useMemo, useState } from "react";
-import { CalendarCheck, Check, Clock, LogIn, LogOut, ShieldAlert, X } from "lucide-react";
+import {
+  CalendarCheck,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Coffee,
+  FileText,
+  Fingerprint,
+  LogIn,
+  Search,
+  ShieldAlert,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import {
   useAttendance,
   useAttendanceCheckin,
   useAttendanceCheckout,
-  useAttendanceCorrections,
   useAttendancePresence,
+  useMe,
   useMyEmployee,
   useRequestAttendanceCorrection,
-  useReviewAttendanceCorrection,
 } from "../../hooks/api";
 import { usePermissions } from "../../hooks/usePermissions";
 import { Button } from "@teamspace-one/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@teamspace-one/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -22,17 +34,51 @@ import {
 } from "@teamspace-one/ui/dialog";
 import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { Input } from "@teamspace-one/ui/input";
+import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
 import type { AttendanceRecord } from "../../lib/api";
-import { SectionError, SectionSkeleton, StatusBadge, formatDate, formatMinutes, formatTime } from "./common";
+import {
+  SectionError,
+  SectionSkeleton,
+  StatusBadge,
+  formatDate,
+  formatTime,
+} from "./common";
+import { cn, getUserDisplayName } from "../../lib/utils";
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function thirtyDaysAgo() {
+function daysAgo(n: number) {
   const d = new Date();
-  d.setDate(d.getDate() - 30);
+  d.setDate(d.getDate() - n);
   return d.toISOString().slice(0, 10);
+}
+
+/** Standard full working day: 9h. */
+const DAY_TARGET_MIN = 9 * 60;
+const WEEK_TARGET_MIN = 40 * 60;
+const MONTH_TARGET_MIN = 160 * 60;
+/** Timeline axis: 06:00 → 20:00 local time. */
+const AXIS_START_H = 6;
+const AXIS_END_H = 20;
+
+function hoursLabel(mins: number) {
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return `${h}.${String(m).padStart(2, "0")}`;
+}
+
+function hoursMinutesLabel(mins: number | null) {
+  if (mins == null) return "—";
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return `${String(h).padStart(2, "0")}h ${String(m).padStart(2, "0")}m`;
+}
+
+function minutesOfDay(iso: string) {
+  const d = new Date(iso);
+  return d.getHours() * 60 + d.getMinutes();
 }
 
 function RequestCorrectionDialog({
@@ -106,10 +152,55 @@ function RequestCorrectionDialog({
   );
 }
 
+function HoursCard({
+  icon: Icon,
+  iconClass,
+  value,
+  target,
+  label,
+  delta,
+  deltaLabel,
+}: {
+  icon: React.ElementType;
+  iconClass: string;
+  value: number;
+  target: number;
+  label: string;
+  delta: number | null;
+  deltaLabel: string;
+}) {
+  const up = (delta ?? 0) >= 0;
+  return (
+    <div className="rounded-lg border border-border bg-surface p-5">
+      <div className={cn("flex h-7 w-7 items-center justify-center rounded", iconClass)}>
+        <Icon className="h-4 w-4 text-white" />
+      </div>
+      <div className="mt-3 text-xl font-bold text-text">
+        {hoursLabel(value)} <span className="text-xs font-normal text-text-muted">/ {Math.round(target / 60)}</span>
+      </div>
+      <div className="text-xs text-text-secondary">{label}</div>
+      {delta != null && (
+        <div className="mt-3 flex items-center gap-1.5 border-t border-border pt-3 text-xs">
+          {up ? (
+            <TrendingUp className="h-3.5 w-3.5 text-success" />
+          ) : (
+            <TrendingDown className="h-3.5 w-3.5 text-error" />
+          )}
+          <span className={up ? "text-success" : "text-error"}>{Math.abs(Math.round(delta))}%</span>
+          <span className="text-text-muted">by {deltaLabel}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PAGE_SIZE = 10;
+
 export function AttendanceSection() {
   const { can } = usePermissions();
   const me = useMyEmployee();
-  const [from, setFrom] = useState(thirtyDaysAgo());
+  const { data: user } = useMe();
+  const [from, setFrom] = useState(daysAgo(60));
   const [to, setTo] = useState(todayStr());
   const params = useMemo(
     () => ({ employeeId: me.data?.id, from, to }),
@@ -119,10 +210,10 @@ export function AttendanceSection() {
   const checkin = useAttendanceCheckin();
   const checkout = useAttendanceCheckout();
   const presence = useAttendancePresence();
-  const corrections = useAttendanceCorrections("pending");
-  const review = useReviewAttendanceCorrection();
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
 
   if (me.isLoading || attendance.isLoading) return <SectionSkeleton />;
   if (me.isError) return <SectionError onRetry={() => me.refetch()} message={me.error?.message} />;
@@ -138,216 +229,374 @@ export function AttendanceSection() {
   if (attendance.isError) return <SectionError onRetry={() => attendance.refetch()} message={attendance.error?.message} />;
 
   const today = todayStr();
-  const todayRecord = attendance.data?.find((r) => r.date.slice(0, 10) === today);
+  const records = attendance.data ?? [];
+  const todayRecord = records.find((r) => r.date.slice(0, 10) === today);
   const canCheckin = can("hrms.attendance.checkin");
   const canCheckout = can("hrms.attendance.checkout");
-  const canApprove = can("hrms.attendance.approve");
+  const sumRange = (startDate: string, endDate: string) =>
+    records
+      .filter((r) => r.date.slice(0, 10) >= startDate && r.date.slice(0, 10) <= endDate)
+      .reduce((acc, r) => acc + (r.workedMinutes ?? 0), 0);
+
+  const minsToday = todayRecord?.workedMinutes ?? 0;
+  const minsYesterday = records.find((r) => r.date.slice(0, 10) === daysAgo(1))?.workedMinutes ?? 0;
+  const minsWeek = sumRange(daysAgo(7), today);
+  const minsPrevWeek = sumRange(daysAgo(14), daysAgo(8));
+  const monthStart = today.slice(0, 7) + "-01";
+  const minsMonth = sumRange(monthStart, today);
+  const prevMonthEnd = new Date(new Date(monthStart).getTime() - 86400000).toISOString().slice(0, 10);
+  const prevMonthStart = prevMonthEnd.slice(0, 7) + "-01";
+  const minsPrevMonth = sumRange(prevMonthStart, prevMonthEnd);
+  const overtimeMonth = records
+    .filter((r) => r.date.slice(0, 10) >= monthStart)
+    .reduce((acc, r) => acc + Math.max(0, (r.workedMinutes ?? 0) - DAY_TARGET_MIN), 0);
+  const overtimePrevMonth = records
+    .filter((r) => r.date.slice(0, 10) >= prevMonthStart && r.date.slice(0, 10) <= prevMonthEnd)
+    .reduce((acc, r) => acc + Math.max(0, (r.workedMinutes ?? 0) - DAY_TARGET_MIN), 0);
+
+  const pct = (cur: number, prev: number) =>
+    prev > 0 ? ((cur - prev) / prev) * 100 : null;
+
+  // Timeline bar (today): worked segment + overtime tail on a 06:00–20:00 axis.
+  const axisMin = AXIS_START_H * 60;
+  const axisSpan = (AXIS_END_H - AXIS_START_H) * 60;
+  const axisTicks = Array.from({ length: AXIS_END_H - AXIS_START_H + 1 }, (_, i) => AXIS_START_H + i);
+  const inMin = todayRecord?.checkInAt ? minutesOfDay(todayRecord.checkInAt) : null;
+  const outMin = todayRecord?.checkOutAt
+    ? minutesOfDay(todayRecord.checkOutAt)
+    : todayRecord?.checkInAt
+      ? new Date().getHours() * 60 + new Date().getMinutes()
+      : null;
+  const segStart = inMin != null ? Math.min(Math.max((inMin - axisMin) / axisSpan, 0), 1) : null;
+  const segEnd = inMin != null && outMin != null ? Math.min(Math.max((outMin - axisMin) / axisSpan, 0), 1) : null;
+  const productiveEnd =
+    segStart != null && segEnd != null
+      ? Math.min(segEnd, segStart + (Math.min(minsToday, DAY_TARGET_MIN) / axisSpan))
+      : null;
+  const spanToday = inMin != null && outMin != null ? outMin - inMin : null;
+  const overtimeToday = Math.max(0, minsToday - DAY_TARGET_MIN);
+
+  const filtered = query
+    ? records.filter((r) => r.date.slice(0, 10).includes(query))
+    : records;
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const rows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const firstName = getUserDisplayName(user, "there").split(" ")[0];
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
+  const checkedIn = Boolean(todayRecord?.checkInAt);
+  const checkedOut = Boolean(todayRecord?.checkOutAt);
+  const dayProgress = Math.min(1, minsToday / DAY_TARGET_MIN);
 
   return (
-    <div className="flex flex-col gap-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Today</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-elevated text-text-muted">
-                <Clock className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-text">
-                  {todayRecord?.checkInAt ? "Checked in" : "Not checked in"}
-                </p>
-                <p className="text-xs text-text-muted">
-                  {todayRecord?.checkInAt ? formatTime(todayRecord.checkInAt) : "—"}
-                  {todayRecord?.checkOutAt ? ` → ${formatTime(todayRecord.checkOutAt)}` : ""}
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                disabled={!canCheckin || checkin.isPending || Boolean(todayRecord?.checkInAt)}
-                onClick={() => checkin.mutate()}
-              >
-                <LogIn className="mr-1 h-4 w-4" /> Check in
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!canCheckout || checkout.isPending || !todayRecord?.checkInAt || Boolean(todayRecord?.checkOutAt)}
-                onClick={() => checkout.mutate()}
-              >
-                <LogOut className="mr-1 h-4 w-4" /> Check out
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!canCheckin || presence.isPending || !todayRecord?.checkInAt || Boolean(todayRecord?.checkOutAt)}
-                onClick={() => presence.mutate("lunch")}
-              >
-                Lunch
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!canCheckin || presence.isPending || !todayRecord?.checkInAt || Boolean(todayRecord?.checkOutAt)}
-                onClick={() => presence.mutate("tea_break")}
-              >
-                Tea break
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!canCheckin || presence.isPending || !todayRecord?.checkInAt || Boolean(todayRecord?.checkOutAt)}
-                onClick={() => presence.mutate("out_of_office")}
-              >
-                OOO
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-text">My Attendance</h1>
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
+        >
+          <FileText className="h-4 w-4" />
+          Report
+        </button>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Attendance history</CardTitle>
-            <div className="flex items-center gap-2">
-              <Input
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="w-36"
-              />
-              <span className="text-text-muted">→</span>
-              <Input
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="w-36"
-              />
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
+        {/* Punch card */}
+        <div className="flex flex-col items-center gap-4 rounded-lg border border-border bg-surface p-6 text-center xl:row-span-2">
+          <div>
+            <div className="text-sm text-text-secondary">{greeting}, {firstName}</div>
+            <div className="mt-1 text-base font-semibold text-text">
+              {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })},{" "}
+              {new Date().toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" })}
             </div>
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {(attendance.data ?? []).length === 0 ? (
+
+          <div
+            className="flex h-28 w-28 items-center justify-center rounded-full"
+            style={{
+              background: `conic-gradient(var(--success) ${dayProgress * 360}deg, var(--surface-elevated) 0deg)`,
+            }}
+          >
+            <div className="flex h-24 w-24 items-center justify-center rounded-full bg-surface">
+              <Avatar className="h-20 w-20">
+                <AvatarFallback className="text-lg">
+                  {getUserDisplayName(user, "?").slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            </div>
+          </div>
+
+          <span className="rounded bg-primary px-3 py-1 text-xs font-medium text-white">
+            Production : {hoursLabel(minsToday)} hrs
+          </span>
+          <span className="flex items-center gap-1.5 text-xs text-text-secondary">
+            <Fingerprint className="h-3.5 w-3.5" />
+            {checkedIn ? `Punch In at ${formatTime(todayRecord?.checkInAt)}` : "Not punched in yet"}
+          </span>
+
+          <div className="flex w-full flex-col gap-2">
+            {checkedIn && !checkedOut ? (
+              <button
+                type="button"
+                disabled={!canCheckout || checkout.isPending}
+                onClick={() => checkout.mutate()}
+                className="h-10 w-full rounded-md bg-text text-sm font-medium text-surface disabled:opacity-50"
+              >
+                Punch Out
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={!canCheckin || checkin.isPending || checkedIn}
+                onClick={() => checkin.mutate()}
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
+              >
+                <LogIn className="h-4 w-4" />
+                Punch In
+              </button>
+            )}
+            {checkedIn && !checkedOut && (
+              <div className="flex justify-center gap-2">
+                {(["lunch", "tea_break", "out_of_office"] as const).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    disabled={!canCheckin || presence.isPending}
+                    onClick={() => presence.mutate(p)}
+                    className="rounded-md border border-border px-2.5 py-1 text-xs text-text-secondary hover:bg-surface-elevated disabled:opacity-50"
+                  >
+                    {p === "lunch" ? "Lunch" : p === "tea_break" ? "Tea break" : "OOO"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Stat cards + timeline */}
+        <div className="flex flex-col gap-5 xl:col-span-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <HoursCard icon={Clock} iconClass="bg-primary" value={minsToday} target={DAY_TARGET_MIN} label="Total Hours Today" delta={pct(minsToday, minsYesterday)} deltaLabel="Yesterday" />
+            <HoursCard icon={CalendarCheck} iconClass="bg-info" value={minsWeek} target={WEEK_TARGET_MIN} label="Total Hours Week" delta={pct(minsWeek, minsPrevWeek)} deltaLabel="Last Week" />
+            <HoursCard icon={FileText} iconClass="bg-success" value={minsMonth} target={MONTH_TARGET_MIN} label="Total Hours Month" delta={pct(minsMonth, minsPrevMonth)} deltaLabel="Last Month" />
+            <HoursCard icon={Coffee} iconClass="bg-mention" value={overtimeMonth} target={28 * 60} label="Overtime this Month" delta={pct(overtimeMonth, overtimePrevMonth)} deltaLabel="Last Month" />
+          </div>
+
+          <div className="rounded-lg border border-border bg-surface p-5">
+            <div className="flex flex-wrap gap-x-8 gap-y-3">
+              {[
+                { label: "Total Working hours", value: hoursMinutesLabel(spanToday), dot: "bg-text-muted" },
+                { label: "Productive Hours", value: hoursMinutesLabel(minsToday), dot: "bg-success" },
+                { label: "Break hours", value: spanToday != null && minsToday != null ? hoursMinutesLabel(Math.max(0, spanToday - minsToday)) : "—", dot: "bg-warning" },
+                { label: "Overtime", value: hoursMinutesLabel(overtimeToday), dot: "bg-info" },
+              ].map((s) => (
+                <div key={s.label}>
+                  <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                    <span className={cn("h-2 w-2 rounded-full", s.dot)} />
+                    {s.label}
+                  </div>
+                  <div className="mt-1 text-lg font-semibold text-text">{s.value}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5">
+              <div className="relative h-4 w-full">
+                {segStart != null && segEnd != null && segEnd > segStart ? (
+                  <>
+                    <div
+                      className="absolute top-0 h-4 rounded bg-success"
+                      style={{ left: `${segStart * 100}%`, width: `${((productiveEnd ?? segEnd) - segStart) * 100}%` }}
+                    />
+                    {productiveEnd != null && segEnd > productiveEnd && (
+                      <div
+                        className="absolute top-0 h-4 rounded bg-info"
+                        style={{ left: `${productiveEnd * 100}%`, width: `${(segEnd - productiveEnd) * 100}%` }}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <div className="h-4 w-full rounded bg-surface-elevated" />
+                )}
+              </div>
+              <div className="mt-1 flex justify-between text-[10px] text-text-muted">
+                {axisTicks.filter((_, i) => i % 2 === 0).map((h) => (
+                  <span key={h}>{String(h).padStart(2, "0")}:00</span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Employee Attendance table */}
+      <div className="rounded-lg border border-border bg-surface">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <h2 className="text-base font-semibold text-text">All time Attendance</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="date"
+              value={from}
+              onChange={(e) => { setFrom(e.target.value); setPage(1); }}
+              className="h-8 w-36 text-xs"
+            />
+            <span className="text-text-muted">–</span>
+            <Input
+              type="date"
+              value={to}
+              onChange={(e) => { setTo(e.target.value); setPage(1); }}
+              className="h-8 w-36 text-xs"
+            />
+            <button type="button" className="flex h-8 items-center gap-2 rounded-md border border-border bg-surface px-3 text-xs text-text">
+              Select Status <ChevronDown className="h-3.5 w-3.5 text-text-muted" />
+            </button>
+            <button type="button" className="flex h-8 items-center gap-2 rounded-md border border-border bg-surface px-3 text-xs text-text">
+              Sort By : Last 7 Days <ChevronDown className="h-3.5 w-3.5 text-text-muted" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+          <div className="flex items-center gap-2 text-sm text-text-secondary">
+            <span>Row Per Page</span>
+            <span className="flex h-7 items-center rounded-md border border-border bg-surface px-2.5 text-xs text-text">10</span>
+            <span>Entries</span>
+          </div>
+          <div className="flex h-8 w-full items-center gap-2 rounded-md border border-border bg-surface px-3 sm:w-56">
+            <Search className="h-3.5 w-3.5 text-text-muted" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+              placeholder="Search by date"
+              className="w-full bg-transparent text-xs text-text placeholder:text-text-muted focus:outline-none"
+            />
+          </div>
+        </div>
+
+        {rows.length === 0 ? (
+          <div className="border-t border-border">
             <EmptyState
               icon={CalendarCheck}
               title="No attendance records"
               description="Records appear once you start checking in."
             />
-          ) : (
-            <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-text-muted">
-                  <th className="px-4 py-2 font-medium">Date</th>
-                  <th className="px-4 py-2 font-medium">Check-in</th>
-                  <th className="px-4 py-2 font-medium">Check-out</th>
-                  <th className="px-4 py-2 font-medium">Worked</th>
-                  <th className="px-4 py-2 font-medium">Status</th>
-                  <th className="px-4 py-2 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                {(attendance.data ?? []).map((r) => (
-                  <tr key={r.id} className="border-b last:border-0">
-                    <td className="px-4 py-2.5 text-text">{formatDate(r.date)}</td>
-                    <td className="px-4 py-2.5 text-text-secondary">{formatTime(r.checkInAt)}</td>
-                    <td className="px-4 py-2.5 text-text-secondary">{formatTime(r.checkOutAt)}</td>
-                    <td className="px-4 py-2.5 text-text-secondary">{formatMinutes(r.workedMinutes)}</td>
-                    <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
-                    <td className="px-4 py-2.5 text-right">
-                      {r.date.slice(0, 10) !== today && canCheckin ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedRecord(r);
-                            setCorrectionOpen(true);
-                          }}
-                        >
-                          Request correction
-                        </Button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table></div>
-          )}
-        </CardContent>
-      </Card>
-
-      {canApprove ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Pending corrections</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {corrections.isLoading ? (
-              <p className="p-4 text-xs text-text-muted">Loading…</p>
-            ) : corrections.isError ? (
-              <SectionError onRetry={() => corrections.refetch()} />
-            ) : (corrections.data ?? []).length === 0 ? (
-              <p className="p-4 text-xs text-text-muted">Nothing awaiting approval.</p>
-            ) : (
-              <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[820px] text-left text-sm">
                 <thead>
-                  <tr className="border-b text-left text-xs text-text-muted">
-                    <th className="px-4 py-2 font-medium">Employee</th>
-                    <th className="px-4 py-2 font-medium">Date</th>
-                    <th className="px-4 py-2 font-medium">Requested</th>
-                    <th className="px-4 py-2 font-medium">Reason</th>
-                    <th className="px-4 py-2 font-medium" />
+                  <tr className="bg-surface-elevated">
+                    <th className="px-4 py-2.5 font-semibold text-text">Date</th>
+                    <th className="px-4 py-2.5 font-semibold text-text">Check In</th>
+                    <th className="px-4 py-2.5 font-semibold text-text">Status</th>
+                    <th className="px-4 py-2.5 font-semibold text-text">Check Out</th>
+                    <th className="px-4 py-2.5 font-semibold text-text">Overtime</th>
+                    <th className="px-4 py-2.5 font-semibold text-text">Production Hours</th>
+                    <th className="w-28 px-4 py-2.5" />
                   </tr>
                 </thead>
                 <tbody>
-                  {(corrections.data ?? []).map((c) => (
-                    <tr key={c.id} className="border-b last:border-0">
-                      <td className="px-4 py-2.5 text-text">{c.employeeName ?? c.employeeId}</td>
-                      <td className="px-4 py-2.5 text-text-secondary">{formatDate(c.date)}</td>
-                      <td className="px-4 py-2.5 text-text-secondary">
-                        {formatTime(c.requestedCheckInAt)} – {formatTime(c.requestedCheckOutAt)}
-                      </td>
-                      <td className="px-4 py-2.5 text-text-secondary">{c.reason ?? "—"}</td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Approve"
-                            disabled={review.isPending}
-                            onClick={() => {
-                              const note = window.prompt("Approval note (optional)") ?? undefined;
-                              review.mutate({ id: c.id, action: "approve", note });
-                            }}
+                  {rows.map((r) => {
+                    const worked = r.workedMinutes ?? 0;
+                    const overtime = Math.max(0, worked - DAY_TARGET_MIN);
+                    const good = worked >= 8 * 60;
+                    return (
+                      <tr key={r.id} className="border-t border-border">
+                        <td className="px-4 py-3 text-text">{formatDate(r.date)}</td>
+                        <td className="px-4 py-3 text-text-secondary">{formatTime(r.checkInAt)}</td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={r.status} />
+                        </td>
+                        <td className="px-4 py-3 text-text-secondary">{formatTime(r.checkOutAt)}</td>
+                        <td className="px-4 py-3 text-text-secondary">
+                          {overtime > 0 ? `${Math.round(overtime)} Min` : "-"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-medium text-white",
+                              good ? "bg-success" : "bg-error",
+                            )}
                           >
-                            <Check className="h-4 w-4 text-success" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Reject"
-                            disabled={review.isPending}
-                            onClick={() => {
-                              const note = window.prompt("Rejection note (optional)") ?? undefined;
-                              review.mutate({ id: c.id, action: "reject", note });
-                            }}
-                          >
-                            <X className="h-4 w-4 text-error" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            <Clock className="h-3 w-3" />
+                            {hoursLabel(worked)} Hrs
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {r.date.slice(0, 10) !== today && canCheckin ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedRecord(r);
+                                setCorrectionOpen(true);
+                              }}
+                            >
+                              Request correction
+                            </Button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
-              </table></div>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
+              </table>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3">
+              <span className="text-sm text-text-secondary">
+                Showing {filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
+                {Math.min(filtered.length, page * PAGE_SIZE)} of {filtered.length} entries
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                  disabled={page === 1}
+                  className="flex h-7 w-7 items-center justify-center text-text-muted disabled:opacity-40"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                {Array.from({ length: Math.min(4, pages) }, (_, i) => i + 1).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setPage(n)}
+                    className={cn(
+                      "flex h-7 w-7 items-center justify-center rounded-full text-xs",
+                      page === n ? "bg-primary text-white" : "text-text hover:bg-surface-elevated",
+                    )}
+                  >
+                    {n}
+                  </button>
+                ))}
+                {pages > 4 && <span className="px-1 text-xs text-text-muted">…</span>}
+                {pages > 4 && (
+                  <button
+                    type="button"
+                    onClick={() => setPage(pages)}
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-xs text-text hover:bg-surface-elevated"
+                  >
+                    {pages}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPage(Math.min(pages, page + 1))}
+                  disabled={page === pages}
+                  className="flex h-7 w-7 items-center justify-center text-text-muted disabled:opacity-40"
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
 
       <RequestCorrectionDialog
         record={selectedRecord}
