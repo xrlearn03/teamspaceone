@@ -5,17 +5,22 @@ import {
   Bell,
   CalendarDays,
   CheckCircle2,
+  CheckSquare,
   ChevronRight,
   Clock,
+  Clock3,
   Coffee,
   DoorOpen,
   Hash,
+  ListTodo,
   LogIn,
   LogOut,
   Package,
+  Plus,
   ShieldAlert,
   Sparkles,
   Ticket,
+  Trash2,
   TrendingDown,
   TrendingUp,
   UserCheck,
@@ -33,7 +38,9 @@ import {
   useAttendancePresence,
   useAuditEvents,
   useChannels,
+  useCreateTodo,
   useDailyDigest,
+  useDeleteTodo,
   useMe,
   useMeetings,
   useMembers,
@@ -42,15 +49,21 @@ import {
   useOffboardingCases,
   useOnboardingInstances,
   useTickets,
+  useTimeEntries,
+  useTodos,
+  useUpdateTodo,
   useUsers,
 } from "@/hooks/api";
 import { PermissionGate } from "@teamspace-one/authorization/react";
 import { usePermissions } from "@/hooks/usePermissions";
-import { getActiveOrganisation, type AuditEvent, type DailyDigestResult } from "@/lib/api";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
+import { getActiveOrganisation, type AuditEvent, type DailyDigestResult, type TimeEntry } from "@/lib/api";
 import { normalizeDigest } from "@/features/dashboard/widgets";
 import { useUIStore, type View } from "@/stores/ui";
 import { cn, getUserDisplayName } from "@/lib/utils";
 import { DATE_RANGE_OPTIONS, FilterDropdown, withinDateRange } from "./hr/common";
+import { formatDate, SectionError, SectionSkeleton } from "@/screens/hrms/common";
 
 /* =========================================================
    HELPERS
@@ -747,6 +760,175 @@ function QuickCheckInCard() {
 }
 
 /* =========================================================
+   PERSONAL TODOS CARD
+========================================================= */
+
+function PersonalTodosCard() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const todos = useTodos();
+  const create = useCreateTodo();
+  const update = useUpdateTodo();
+  const remove = useDeleteTodo();
+  const [title, setTitle] = useState("");
+
+  const openTodos = useMemo(
+    () =>
+      (todos.data ?? [])
+        .filter((t) => !t.completedAt)
+        .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"))
+        .slice(0, 5),
+    [todos.data],
+  );
+
+  function addTodo(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    create.mutate({ title: trimmed }, { onSuccess: () => setTitle("") });
+  }
+
+  return (
+    <DashboardCard
+      title="My Todos"
+      icon={
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <ListTodo size={16} />
+        </div>
+      }
+      onViewAll={() => setActiveView("hr-dashboard")}
+    >
+      <form onSubmit={addTodo} className="mt-3 flex items-center gap-2">
+        <Input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Add a quick task…"
+          className="h-9 flex-1 text-[12px]"
+        />
+        <Button type="submit" size="sm" disabled={!title.trim() || create.isPending}>
+          <Plus size={14} />
+        </Button>
+      </form>
+
+      <div className="mt-3 space-y-1">
+        {todos.isLoading ? (
+          <SectionSkeleton rows={3} />
+        ) : todos.isError ? (
+          <SectionError onRetry={() => todos.refetch()} />
+        ) : openTodos.length === 0 ? (
+          <p className="py-4 text-center text-xs text-text-muted">No open tasks. Great job!</p>
+        ) : (
+          openTodos.map((todo) => (
+            <div
+              key={todo.id}
+              className="flex items-center gap-2 rounded-lg border border-border px-2 py-2 transition hover:bg-surface-elevated/40"
+            >
+              <button
+                type="button"
+                aria-label="Mark complete"
+                disabled={update.isPending}
+                onClick={() => update.mutate({ todoId: todo.id, body: { completed: true } })}
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-border text-primary hover:border-primary/50"
+              >
+                <CheckSquare size={12} />
+              </button>
+              <span className="min-w-0 flex-1 truncate text-[12px] text-text">{todo.title}</span>
+              {todo.dueDate ? (
+                <span className="shrink-0 text-[10px] text-text-muted">{formatDate(todo.dueDate)}</span>
+              ) : null}
+              <button
+                type="button"
+                aria-label="Delete todo"
+                disabled={remove.isPending}
+                onClick={() => remove.mutate(todo.id)}
+                className="shrink-0 text-text-muted transition hover:text-error"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </DashboardCard>
+  );
+}
+
+/* =========================================================
+   TIME TRACKING CARD
+========================================================= */
+
+function TimeTrackingCard() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const entries = useTimeEntries({ from: today, to: today });
+
+  const list = entries.data ?? [];
+  const totalMinutes = list.reduce((s, e) => s + e.minutes, 0);
+  const billableMinutes = list.filter((e) => e.billable).reduce((s, e) => s + e.minutes, 0);
+
+  function fmt(minutes: number) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m === 0 ? `${h}h` : `${h}h ${String(m).padStart(2, "0")}m`;
+  }
+
+  function entryLabel(e: TimeEntry) {
+    return e.task?.title ?? e.label ?? "General";
+  }
+
+  return (
+    <DashboardCard
+      title="Time Tracking"
+      icon={
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-success/10 text-success">
+          <Clock3 size={16} />
+        </div>
+      }
+      onViewAll={() => setActiveView("my-timesheet")}
+    >
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="rounded-lg border border-border bg-surface-elevated/50 px-3 py-2">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Today</p>
+          <p className="mt-1 text-lg font-semibold text-text">{fmt(totalMinutes)}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-surface-elevated/50 px-3 py-2">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Billable</p>
+          <p className="mt-1 text-lg font-semibold text-text">{fmt(billableMinutes)}</p>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        {entries.isLoading ? (
+          <SectionSkeleton rows={3} />
+        ) : entries.isError ? (
+          <SectionError onRetry={() => entries.refetch()} />
+        ) : list.length === 0 ? (
+          <p className="py-4 text-center text-xs text-text-muted">No time logged today.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {list.slice(0, 5).map((e) => (
+              <div key={e.id} className="flex items-center gap-2 text-[12px]">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />
+                <span className="min-w-0 flex-1 truncate text-text">{entryLabel(e)}</span>
+                <span className="shrink-0 text-text-secondary">{fmt(e.minutes)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Button
+        variant="secondary"
+        size="sm"
+        className="mt-4 w-full"
+        onClick={() => setActiveView("my-timesheet")}
+      >
+        Open Timesheet
+      </Button>
+    </DashboardCard>
+  );
+}
+
+/* =========================================================
    MAIN DASHBOARD
 ========================================================= */
 
@@ -1013,6 +1195,12 @@ export function AdminHomeScreen() {
             centerTitle="Total Tickets"
             onViewAll={() => useUIStore.getState().setActiveView("tickets")}
           />
+        </section>
+
+        {/* PERSONAL PRODUCTIVITY */}
+        <section className="mt-4 grid gap-4 xl:grid-cols-2">
+          <PersonalTodosCard />
+          <TimeTrackingCard />
         </section>
 
         {/* BOTTOM */}
