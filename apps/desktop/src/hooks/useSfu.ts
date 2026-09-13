@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type Event } from "@tauri-apps/api/event";
 import { getSfuToken } from "../lib/api";
+import { toast } from "../lib/toast";
 
 export interface SfuParticipant {
   id: string;
@@ -398,10 +399,17 @@ export function useSfu() {
 
   const toggleAudio = useCallback(() => {
     const track = localStreamRef.current?.getAudioTracks()[0];
-    if (!track) return;
+    if (!track) {
+      if (isTauri) {
+        // getUserMedia doesn't exist in the Tauri webview — the mic is
+        // captured natively before joining, so there is nothing to attach.
+        toast.error("Microphone is off. Enable it before joining or check mic permissions.");
+      }
+      return;
+    }
     track.enabled = !track.enabled;
     setLocalAudioEnabled(track.enabled);
-  }, []);
+  }, [isTauri]);
 
   const toggleVideo = useCallback(async () => {
     const pc = pcRef.current;
@@ -420,6 +428,14 @@ export function useSfu() {
       // instead of replacing it with a browser one.
       currentVideoTrack.enabled = !currentVideoTrack.enabled;
       setLocalVideoEnabled(currentVideoTrack.enabled);
+      return;
+    }
+
+    if (isTauri) {
+      // getUserMedia doesn't exist in the Tauri webview — camera is captured
+      // natively before joining, so there is nothing to attach mid-call.
+      // (Toast, not setError: a recoverable toggle shouldn't replace the call UI.)
+      toast.error("Camera is off. Enable it before joining or check camera permissions.");
       return;
     }
 
@@ -491,7 +507,10 @@ export function useSfu() {
       lastJoinArgsRef.current = { roomId, displayName, mediaOptions, userId, sfuToken: sfuTokenOverride };
 
       let stream: MediaStream | null = mediaOptions.stream ?? null;
-      if (!stream || stream.getTracks().length === 0) {
+      if ((!stream || stream.getTracks().length === 0) && !isTauri) {
+        // Browsers only — the Tauri webview (WKWebView) has no getUserMedia
+        // ("The operation is insecure"); the desktop app captures natively and
+        // passes the stream in via mediaOptions.stream.
         const audioConstraints: MediaTrackConstraints = {
           deviceId: mediaOptions.audioInputId ? { exact: mediaOptions.audioInputId } : undefined,
           echoCancellation: true,
@@ -524,6 +543,17 @@ export function useSfu() {
           }
         }
       }
+      // In Tauri with no captured tracks (e.g. camera/mic permission denied),
+      // join anyway with an empty stream so the user can still watch/listen.
+      if (isTauri && (!stream || stream.getTracks().length === 0)) {
+        if (mediaOptions.audioEnabled || mediaOptions.videoEnabled) {
+          toast.error(
+            "Joined without camera/microphone — check permissions in System Settings > Privacy & Security.",
+          );
+        }
+        stream = new MediaStream();
+      }
+      stream ??= new MediaStream();
 
       stream.getAudioTracks().forEach((t) => {
         t.enabled = mediaOptions.audioEnabled;
@@ -590,6 +620,13 @@ export function useSfu() {
         const stream = e.streams[0] ?? new MediaStream([e.track]);
         const participantId = stream.id;
         trackIdToParticipantRef.current[e.track.id] = participantId;
+        // `muted` flips on the remote track when the peer stops sending (mic
+        // muted / camera off). That isn't a state change React can see, so
+        // bump remoteStreams to re-render tiles and mic/cam indicators.
+        const bump = () => setRemoteStreams((prev) => [...prev]);
+        e.track.onmute = bump;
+        e.track.onunmute = bump;
+        e.track.onended = bump;
         setRemoteStreams((prev) => {
           const others = prev.filter((p) => p.participantId !== participantId);
           return [...others, { participantId, stream }];
@@ -669,6 +706,18 @@ export function useSfu() {
               send({ type: "answer", target: "sfu", sdp: answer.sdp! });
             } catch (err) {
               setError(err instanceof Error ? err.message : "Failed to handle SFU offer");
+            }
+            break;
+          }
+
+          case "answer": {
+            // Reply to a client-initiated offer (e.g. screen-share or camera
+            // started mid-call via onnegotiationneeded). Without this the pc
+            // stays stuck in have-local-offer and the track never flows.
+            try {
+              await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp! });
+            } catch (err) {
+              console.error("Failed to apply SFU answer", err);
             }
             break;
           }

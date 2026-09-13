@@ -516,8 +516,10 @@ function CallWaitingRoom({
         name: p.displayName,
         user: p.userId ? attendeeMap.get(p.userId) : undefined,
         subtitle: p.userId === meeting?.createdBy ? "Host" : "Participant",
-        audioOn: tracks("audio")?.some((t) => t.enabled && t.readyState !== "ended") ?? false,
-        videoOn: tracks("video")?.some((t) => t.enabled && t.readyState !== "ended") ?? false,
+        audioOn:
+          tracks("audio")?.some((t) => t.enabled && !t.muted && t.readyState !== "ended") ?? false,
+        videoOn:
+          tracks("video")?.some((t) => t.enabled && !t.muted && t.readyState !== "ended") ?? false,
       };
     }),
     ...guestJoined.map((p) => ({
@@ -1318,7 +1320,7 @@ function CallTile({
     !isScreenTile &&
     videoEnabled &&
     (stream
-      ? stream.getVideoTracks().some((t) => t.enabled && t.readyState !== "ended")
+      ? stream.getVideoTracks().some((t) => t.enabled && !t.muted && t.readyState !== "ended")
       : Boolean(nativeFrame));
   const showVideo =
     (isScreenTile && stream != null) || hasLiveVideo;
@@ -1579,7 +1581,7 @@ function ActiveCallRoom({
     remoteStreams.find((s) => s.participantId === pid)?.stream ?? null;
   const mediaOn = (stream: MediaStream | null, kindOf: "audio" | "video") => {
     const tracks = kindOf === "audio" ? stream?.getAudioTracks() : stream?.getVideoTracks();
-    return tracks?.some((t) => t.enabled && t.readyState !== "ended") ?? false;
+    return tracks?.some((t) => t.enabled && !t.muted && t.readyState !== "ended") ?? false;
   };
 
   const kindLabel = isAudio ? "Voice Call" : totalCount > 2 ? "Group Call" : "1:1 Call";

@@ -518,6 +518,13 @@ export function useSfu(): UseSfuReturn {
         const stream = e.streams[0] ?? new MediaStream([e.track]);
         const participantId = stream.id;
         trackIdToParticipantRef.current[e.track.id] = participantId;
+        // `muted` flips on the remote track when the peer stops sending (mic
+        // muted / camera off). That isn't a state change React can see, so
+        // bump remoteStreams to re-render tiles and mic/cam indicators.
+        const bump = () => setRemoteStreams((prev) => [...prev]);
+        e.track.onmute = bump;
+        e.track.onunmute = bump;
+        e.track.onended = bump;
         setRemoteStreams((prev) => {
           const others = prev.filter((p) => p.participantId !== participantId);
           return [...others, { participantId, stream }];
@@ -595,6 +602,18 @@ export function useSfu(): UseSfuReturn {
               send({ type: "answer", target: "sfu", sdp: answer.sdp! });
             } catch (err) {
               setError(err instanceof Error ? err.message : "Failed to handle SFU offer");
+            }
+            break;
+          }
+
+          case "answer": {
+            // Reply to a client-initiated offer (e.g. screen-share or camera
+            // started mid-call via onnegotiationneeded). Without this the pc
+            // stays stuck in have-local-offer and the track never flows.
+            try {
+              await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp! });
+            } catch (err) {
+              console.error("Failed to apply SFU answer", err);
             }
             break;
           }

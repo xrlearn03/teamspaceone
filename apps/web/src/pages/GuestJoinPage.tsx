@@ -1,4 +1,15 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  Mic,
+  MicOff,
+  Monitor,
+  MonitorOff,
+  PhoneOff,
+  Users,
+  Video,
+  VideoOff,
+  X,
+} from "lucide-react";
 import { useGuestSfu, defaultSfuUrl } from "../lib/sfu";
 
 const API_BASE =
@@ -25,26 +36,155 @@ interface GuestJoinResult {
   token: string;
 }
 
-function RemoteVideo({ stream, name }: { stream: MediaStream; name: string }) {
-  const ref = useRef<HTMLVideoElement>(null);
+function trackLive(stream: MediaStream | null | undefined, kind: "audio" | "video") {
+  const tracks = kind === "audio" ? stream?.getAudioTracks() : stream?.getVideoTracks();
+  return tracks?.some((t) => t.enabled && !t.muted && t.readyState !== "ended") ?? false;
+}
+
+function ConferenceTile({
+  name,
+  subtitle,
+  stream,
+  isLocal,
+  isScreen,
+  videoEnabled,
+  audioOn,
+  onToggleMic,
+  onToggleCamera,
+}: {
+  name: string;
+  subtitle?: string;
+  stream: MediaStream | null;
+  isLocal?: boolean;
+  isScreen?: boolean;
+  videoEnabled: boolean;
+  audioOn: boolean;
+  onToggleMic?: () => void;
+  onToggleCamera?: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  const hasLiveVideo = !isScreen && videoEnabled && trackLive(stream, "video");
+  const showVideo = (isScreen && stream != null) || hasLiveVideo;
+
   useEffect(() => {
-    if (ref.current) ref.current.srcObject = stream;
-  }, [stream]);
-  const hasVideo = stream.getVideoTracks().some((t) => t.enabled && t.readyState !== "ended");
+    if (videoRef.current && stream) videoRef.current.srcObject = stream;
+  }, [stream, showVideo]);
+
+  useEffect(() => {
+    if (audioRef.current && stream) audioRef.current.srcObject = stream;
+  }, [stream, showVideo]);
+
   return (
-    <div className="relative aspect-video overflow-hidden rounded-xl bg-slate-900">
-      <video ref={ref} autoPlay playsInline className="h-full w-full object-cover" />
-      {!hasVideo && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-700 text-xl font-semibold text-white">
+    <div className="relative min-h-0 overflow-hidden rounded-xl border border-white/[0.07] bg-[#0d1c2c]">
+      {showVideo && stream ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          muted={isLocal}
+          playsInline
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#101e30] to-[#0b1828]">
+          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#334675] text-2xl font-semibold text-white">
             {name.charAt(0).toUpperCase() || "?"}
           </div>
         </div>
       )}
-      <div className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-xs text-white">
-        {name}
+      {showVideo ? (
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/10" />
+      ) : null}
+      {/* Remote audio when no video element carries it */}
+      {!isLocal && stream && !showVideo ? (
+        <audio ref={audioRef} autoPlay playsInline className="hidden" />
+      ) : null}
+
+      {/* Bottom info */}
+      <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between p-3">
+        <div className="rounded-lg bg-black/55 px-2.5 py-2 backdrop-blur-xl">
+          <span className="text-xs font-semibold text-white">
+            {name}
+            {isLocal ? " (You)" : ""}
+          </span>
+          {subtitle ? <p className="mt-0.5 text-[10px] text-slate-300">{subtitle}</p> : null}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {isLocal && onToggleMic ? (
+            <button
+              onClick={onToggleMic}
+              className={`flex h-9 w-9 items-center justify-center rounded-full backdrop-blur-xl transition ${
+                audioOn ? "bg-black/50 text-white" : "bg-red-500/80 text-red-100"
+              }`}
+              aria-label={audioOn ? "Mute" : "Unmute"}
+            >
+              {audioOn ? <Mic size={16} /> : <MicOff size={16} />}
+            </button>
+          ) : (
+            <span
+              className={`flex h-9 w-9 items-center justify-center rounded-full backdrop-blur-xl ${
+                audioOn ? "bg-black/50 text-white" : "bg-red-500/80 text-red-100"
+              }`}
+            >
+              {audioOn ? <Mic size={16} /> : <MicOff size={16} />}
+            </span>
+          )}
+          {!isScreen ? (
+            isLocal && onToggleCamera ? (
+              <button
+                onClick={onToggleCamera}
+                className={`flex h-9 w-9 items-center justify-center rounded-full backdrop-blur-xl transition ${
+                  videoEnabled ? "bg-black/50 text-white" : "bg-red-500/80 text-red-100"
+                }`}
+                aria-label={videoEnabled ? "Stop video" : "Start video"}
+              >
+                {videoEnabled ? <Video size={16} /> : <VideoOff size={16} />}
+              </button>
+            ) : (
+              <span
+                className={`flex h-9 w-9 items-center justify-center rounded-full backdrop-blur-xl ${
+                  videoEnabled ? "bg-black/50 text-white" : "bg-red-500/80 text-red-100"
+                }`}
+              >
+                {videoEnabled ? <Video size={16} /> : <VideoOff size={16} />}
+              </span>
+            )
+          ) : null}
+        </div>
       </div>
     </div>
+  );
+}
+
+function ControlButton({
+  icon,
+  label,
+  active = true,
+  danger,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active?: boolean;
+  danger?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button onClick={onClick} className="group flex min-w-[64px] flex-col items-center gap-2">
+      <span
+        className={`flex h-14 w-14 items-center justify-center rounded-full border border-white/[0.05] shadow-lg transition ${
+          danger
+            ? "bg-red-600 text-white hover:bg-red-500"
+            : active
+              ? "bg-[#142337] text-white hover:bg-[#1b2e46]"
+              : "bg-red-500/15 text-red-400 hover:bg-red-500/25"
+        }`}
+      >
+        {icon}
+      </span>
+      <span className="text-[11px] text-slate-300">{label}</span>
+    </button>
   );
 }
 
@@ -60,7 +200,9 @@ export function GuestJoinPage({ token }: { token: string }) {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joined, setJoined] = useState<GuestJoinResult | null>(null);
   const [left, setLeft] = useState(false);
-  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const [joinedAt, setJoinedAt] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [showParticipants, setShowParticipants] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,11 +225,14 @@ export function GuestJoinPage({ token }: { token: string }) {
     };
   }, [token]);
 
+  // Call duration ticker, matching the host's conference header.
   useEffect(() => {
-    if (localVideoRef.current && sfu.localStream) {
-      localVideoRef.current.srcObject = sfu.localStream;
-    }
-  }, [sfu.localStream, joined]);
+    if (joinedAt === null) return;
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - joinedAt) / 1000)));
+    tick();
+    const interval = window.setInterval(tick, 1000);
+    return () => window.clearInterval(interval);
+  }, [joinedAt]);
 
   async function onJoin(e: React.FormEvent) {
     e.preventDefault();
@@ -131,6 +276,7 @@ export function GuestJoinPage({ token }: { token: string }) {
         stream,
       });
       setJoined(result);
+      setJoinedAt(Date.now());
     } catch (err) {
       setJoinError(err instanceof Error ? err.message : "Could not join the meeting");
     } finally {
@@ -166,68 +312,241 @@ export function GuestJoinPage({ token }: { token: string }) {
   }
 
   if (joined) {
+    const isVoice = joined.type === "voice_room";
+    const baseId = (id: string) => id.replace(/^screen-/, "");
     const nameOf = (participantId: string) =>
-      sfu.participants.find((p) => p.id === participantId)?.displayName ?? "Participant";
+      sfu.participants.find((p) => p.id === baseId(participantId))?.displayName ?? "Participant";
+
+    const screenStreams = sfu.remoteStreams.filter((s) => s.participantId.startsWith("screen-"));
+    const cameraStreams = sfu.remoteStreams.filter((s) => !s.participantId.startsWith("screen-"));
+
+    const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+    const ss = String(elapsed % 60).padStart(2, "0");
+
+    interface TileData {
+      key: string;
+      name: string;
+      subtitle?: string;
+      stream: MediaStream | null;
+      isLocal?: boolean;
+      isScreen?: boolean;
+      videoEnabled: boolean;
+      audioOn: boolean;
+    }
+
+    const tiles: TileData[] = [
+      ...screenStreams.map((s) => ({
+        key: s.participantId,
+        name: nameOf(s.participantId),
+        subtitle: "Screen share",
+        stream: s.stream,
+        isScreen: true,
+        videoEnabled: true,
+        audioOn: false,
+      })),
+      {
+        key: "self",
+        name: joined.displayName,
+        stream: sfu.localStream,
+        isLocal: true,
+        videoEnabled: sfu.videoEnabled,
+        audioOn: sfu.audioEnabled,
+      },
+      ...cameraStreams.map((s) => ({
+        key: s.participantId,
+        name: nameOf(s.participantId),
+        stream: s.stream,
+        videoEnabled: trackLive(s.stream, "video"),
+        audioOn: trackLive(s.stream, "audio"),
+      })),
+    ];
+
+    const cols =
+      tiles.length <= 1 ? 1 : tiles.length <= 4 ? 2 : tiles.length <= 9 ? 3 : 4;
+    const featured = screenStreams.length > 0 ? tiles[0] : null;
+    const gridTiles = featured ? tiles.slice(1) : tiles;
+
+    const roster = [
+      {
+        key: "self",
+        name: `${joined.displayName} (You)`,
+        audioOn: sfu.audioEnabled,
+        videoOn: sfu.videoEnabled,
+      },
+      ...sfu.participants
+        .filter((p) => p.id !== joined.participantId)
+        .map((p) => {
+          const stream = cameraStreams.find((s) => s.participantId === p.id)?.stream ?? null;
+          return {
+            key: p.id,
+            name: p.displayName,
+            audioOn: trackLive(stream, "audio"),
+            videoOn: trackLive(stream, "video"),
+          };
+        }),
+    ];
+
     return (
-      <div className="flex min-h-screen flex-col bg-slate-950 text-white">
-        <header className="flex h-14 items-center justify-between border-b border-slate-800 px-4">
-          <div>
-            <span className="text-sm font-semibold">{joined.title}</span>
-            <span className="ml-3 text-xs text-slate-400">
-              {sfu.connected ? "connected" : "connecting..."} · {sfu.participants.length + 1}{" "}
-              participant{sfu.participants.length === 0 ? "" : "s"}
-            </span>
+      <div className="relative flex h-screen flex-col overflow-hidden bg-[#040b15] text-white">
+        {/* Background glow, same as the in-app conference */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -left-52 bottom-[-150px] h-[600px] w-[700px] rounded-full bg-indigo-700/10 blur-[130px]" />
+          <div className="absolute right-[-180px] bottom-[-120px] h-[500px] w-[500px] rounded-full bg-indigo-600/10 blur-[130px]" />
+          <div className="absolute right-[25%] top-[-250px] h-[450px] w-[450px] rounded-full bg-blue-700/10 blur-[130px]" />
+        </div>
+
+        {/* Header */}
+        <header className="relative flex h-16 shrink-0 items-center justify-between border-b border-white/[0.06] px-4 sm:px-6">
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-semibold sm:text-base">{joined.title}</h1>
+            <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">
+              <span
+                className={`h-2 w-2 rounded-full ${sfu.connected ? "bg-emerald-400" : "bg-amber-400"}`}
+              />
+              <span>{sfu.connected ? "Connected" : "Connecting..."}</span>
+              <span>·</span>
+              <span>
+                {sfu.participants.length + 1} participant
+                {sfu.participants.length === 0 ? "" : "s"}
+              </span>
+              <span>·</span>
+              <span>
+                {mm}:{ss}
+              </span>
+            </div>
           </div>
           <button
             onClick={onLeave}
-            className="rounded-full bg-red-600 px-4 py-1.5 text-sm font-medium hover:bg-red-500"
+            className="flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-lg transition hover:bg-red-500"
           >
+            <PhoneOff size={16} />
             Leave
           </button>
         </header>
-        <main className="relative flex-1 p-4">
-          {sfu.remoteStreams.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-sm text-slate-400">
+
+        {/* Tiles */}
+        <main className="relative flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
+          {featured ? (
+            <div className="min-h-0 flex-1">
+              <ConferenceTile
+                name={featured.name}
+                subtitle={featured.subtitle}
+                stream={featured.stream}
+                isScreen={featured.isScreen}
+                videoEnabled={featured.videoEnabled}
+                audioOn={featured.audioOn}
+              />
+            </div>
+          ) : null}
+          {gridTiles.length === 0 ? (
+            <div className="flex flex-1 items-center justify-center text-sm text-slate-400">
               Waiting for others to join...
             </div>
           ) : (
-            <div className="mx-auto grid h-full max-w-6xl auto-rows-fr grid-cols-1 content-center gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {sfu.remoteStreams.map(({ participantId, stream }) => (
-                <RemoteVideo key={participantId} stream={stream} name={nameOf(participantId)} />
+            <div
+              className={`grid min-h-0 flex-1 gap-3 ${
+                featured ? "auto-rows-[120px] overflow-y-auto sm:auto-rows-[140px]" : "auto-rows-fr"
+              }`}
+              style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+            >
+              {gridTiles.map((t) => (
+                <ConferenceTile
+                  key={t.key}
+                  name={t.name}
+                  subtitle={t.subtitle}
+                  stream={t.stream}
+                  isLocal={t.isLocal}
+                  isScreen={t.isScreen}
+                  videoEnabled={t.videoEnabled}
+                  audioOn={t.audioOn}
+                  onToggleMic={t.isLocal ? sfu.toggleAudio : undefined}
+                  onToggleCamera={t.isLocal && !isVoice ? sfu.toggleVideo : undefined}
+                />
               ))}
             </div>
           )}
-          {sfu.localStream && (
-            <video
-              ref={localVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className="absolute bottom-4 right-4 aspect-video w-48 rounded-xl border border-slate-700 bg-slate-900 object-cover"
-            />
-          )}
         </main>
-        <footer className="flex h-16 items-center justify-center gap-3 border-t border-slate-800">
-          <button
-            onClick={sfu.toggleAudio}
-            className={`rounded-full px-4 py-2 text-sm font-medium ${
-              sfu.audioEnabled ? "bg-slate-800 hover:bg-slate-700" : "bg-red-600 hover:bg-red-500"
-            }`}
-          >
-            {sfu.audioEnabled ? "Mute" : "Unmute"}
-          </button>
-          {sfu.localStream?.getVideoTracks().length ? (
-            <button
-              onClick={sfu.toggleVideo}
-              className={`rounded-full px-4 py-2 text-sm font-medium ${
-                sfu.videoEnabled ? "bg-slate-800 hover:bg-slate-700" : "bg-red-600 hover:bg-red-500"
-              }`}
-            >
-              {sfu.videoEnabled ? "Stop video" : "Start video"}
-            </button>
+
+        {/* Controls — same icon style as the in-app conference */}
+        <footer className="relative flex h-[110px] shrink-0 items-start justify-center pt-1">
+          <div className="flex items-start gap-5 sm:gap-8">
+            <ControlButton
+              icon={sfu.audioEnabled ? <Mic size={22} /> : <MicOff size={22} />}
+              label={sfu.audioEnabled ? "Mute" : "Unmute"}
+              active={sfu.audioEnabled}
+              onClick={sfu.toggleAudio}
+            />
+            {!isVoice ? (
+              <ControlButton
+                icon={sfu.videoEnabled ? <Video size={22} /> : <VideoOff size={22} />}
+                label={sfu.videoEnabled ? "Stop Video" : "Start Video"}
+                active={sfu.videoEnabled}
+                onClick={sfu.toggleVideo}
+              />
+            ) : null}
+            <ControlButton
+              icon={sfu.screenShareEnabled ? <Monitor size={21} /> : <MonitorOff size={21} />}
+              label="Share"
+              active={sfu.screenShareEnabled}
+              onClick={() => void sfu.toggleScreenShare()}
+            />
+            <ControlButton
+              icon={<Users size={21} />}
+              label="Participants"
+              active={showParticipants}
+              onClick={() => setShowParticipants((v) => !v)}
+            />
+            <div className="mx-1 h-10 w-px bg-white/[0.08]" />
+            <ControlButton
+              icon={<PhoneOff size={21} />}
+              label="Leave"
+              danger
+              onClick={onLeave}
+            />
+          </div>
+          {sfu.error ? (
+            <p className="absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-red-400">
+              {sfu.error}
+            </p>
           ) : null}
-          {sfu.error ? <span className="text-xs text-red-400">{sfu.error}</span> : null}
         </footer>
+
+        {/* Participants panel */}
+        {showParticipants ? (
+          <aside className="absolute inset-y-0 right-0 z-20 flex w-72 flex-col border-l border-white/[0.08] bg-[#0b1523]/95 backdrop-blur-xl lg:w-[320px]">
+            <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-4">
+              <h2 className="text-sm font-semibold">Participants ({roster.length})</h2>
+              <button
+                onClick={() => setShowParticipants(false)}
+                className="text-slate-400 transition hover:text-white"
+                aria-label="Close participants"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 space-y-1 overflow-y-auto p-3">
+              {roster.map((r) => (
+                <div
+                  key={r.key}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-white/[0.04]"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#334675] text-sm font-semibold text-white">
+                    {r.name.charAt(0).toUpperCase() || "?"}
+                  </div>
+                  <span className="min-w-0 flex-1 truncate text-sm text-slate-200">{r.name}</span>
+                  <span className={r.audioOn ? "text-slate-300" : "text-red-400"}>
+                    {r.audioOn ? <Mic size={15} /> : <MicOff size={15} />}
+                  </span>
+                  {!isVoice ? (
+                    <span className={r.videoOn ? "text-slate-300" : "text-red-400"}>
+                      {r.videoOn ? <Video size={15} /> : <VideoOff size={15} />}
+                    </span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </aside>
+        ) : null}
       </div>
     );
   }

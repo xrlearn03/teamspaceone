@@ -30,6 +30,13 @@ function isTauriDesktop(): boolean {
   return !/android|iphone|ipad|ipod/i.test(navigator.userAgent);
 }
 
+function isTauriReleaseBuild(): boolean {
+  // In `pnpm dev:desktop` the Rust side does not register the updater plugin,
+  // but the JS guard here also skips the check in Vite dev mode so we don't
+  // poll the update endpoint or log harmless plugin-not-found errors.
+  return isTauriDesktop() && !import.meta.env.DEV;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 MB";
   const mb = bytes / (1024 * 1024);
@@ -55,7 +62,7 @@ export function UpdateChecker() {
   phaseRef.current = phase;
 
   const checkForUpdate = useCallback(async (interactive = false) => {
-    if (!isTauriDesktop()) return;
+    if (!isTauriReleaseBuild()) return;
     // A scheduled re-check must not stomp an open prompt, a running
     // download, or the restart prompt.
     if (!interactive && phaseRef.current !== "idle") return;
