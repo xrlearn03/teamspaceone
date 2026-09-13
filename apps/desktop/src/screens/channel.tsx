@@ -437,6 +437,7 @@ export function ChannelScreen() {
                           onEdit={handleEdit}
                           onDelete={handleDelete}
                           onPin={canPinMessage ? handlePin : undefined}
+                          onCallBack={(kind) => (kind === "video" ? startVideoCall() : startVoiceCall())}
                         />
                       );
                     })

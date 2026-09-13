@@ -428,12 +428,20 @@ export interface MessageMention {
   createdAt: string;
 }
 
+export interface CallMessageMetadata {
+  meetingId?: string;
+  kind: "audio" | "video";
+  status: "missed" | "declined" | "ended";
+}
+
 export interface Message {
   id: string;
   channelId: string;
   senderId: string;
   parentMessageId?: string | null;
   content: string;
+  type?: string;
+  metadata?: CallMessageMetadata | null;
   editedAt?: string | null;
   deletedAt?: string | null;
   pinnedAt?: string | null;
@@ -1152,6 +1160,19 @@ export function sendMessage(channelId: string, content: string, attachmentIds?: 
   });
 }
 
+export function callMessageLabel(call: CallMessageMetadata): string {
+  if (call.status === "declined") return "Call declined";
+  if (call.status === "ended") return call.kind === "video" ? "Video call ended" : "Voice call ended";
+  return call.kind === "video" ? "Missed video call" : "Missed voice call";
+}
+
+export function sendCallMessage(channelId: string, call: CallMessageMetadata) {
+  return apiRequest<Message>("/messages", {
+    method: "POST",
+    body: { channelId, content: callMessageLabel(call), type: "call", metadata: call },
+  });
+}
+
 export function updateMessage(messageId: string, content: string) {
   return apiRequest<Message>(`/messages/${messageId}`, { method: "PATCH", body: { content } });
 }
@@ -1838,8 +1859,9 @@ export interface LeaveType {
   organisationId?: string;
   name: string;
   code?: string | null;
-  paid?: boolean;
-  annualEntitlement?: number | null;
+  annualQuota?: number | null;
+  isPaid?: boolean;
+  isActive?: boolean;
   createdAt?: string;
 }
 
@@ -1894,6 +1916,11 @@ export interface Payslip {
   periodName?: string | null;
   gross?: number | null;
   net?: number | null;
+  /** Fields as returned by the HRMS service (Prisma row). */
+  grossPay?: number | null;
+  netPay?: number | null;
+  earnings?: Record<string, number> | null;
+  deductions?: Record<string, number> | null;
   currency?: string | null;
   status: string;
   createdAt?: string;
@@ -2095,7 +2122,7 @@ export function getAttendanceCorrections(params?: { status?: string }) {
 export function reviewAttendanceCorrection(id: string, action: "approve" | "reject", note?: string) {
   return apiRequest<AttendanceCorrection>(
     `/hrms/attendance/corrections/${encodeURIComponent(id)}/${action}`,
-    { method: "POST", body: note ? { note } : {} },
+    { method: "POST", body: note ? { reviewNote: note } : {} },
   );
 }
 
@@ -2117,14 +2144,14 @@ export function getLeaveRequests(params?: { status?: string; employeeId?: string
   return apiRequest<LeaveRequest[]>(`/hrms/leave/requests${qs ? `?${qs}` : ""}`);
 }
 
-export function applyLeave(body: { leaveTypeId: string; startDate: string; endDate: string; reason?: string }) {
+export function applyLeave(body: { leaveTypeId: string; startDate: string; endDate: string; days: number; reason?: string }) {
   return apiRequest<LeaveRequest>("/hrms/leave/requests", { method: "POST", body });
 }
 
 export function reviewLeaveRequest(id: string, action: "approve" | "reject" | "cancel", note?: string) {
   return apiRequest<LeaveRequest>(
     `/hrms/leave/requests/${encodeURIComponent(id)}/${action}`,
-    { method: "POST", body: note ? { note } : {} },
+    { method: "POST", body: note ? { reviewNote: note } : {} },
   );
 }
 
@@ -2139,7 +2166,8 @@ export function getPayrollPeriods() {
 export function getPayslips(params?: { employeeId?: string; payrollPeriodId?: string }) {
   const query = new URLSearchParams();
   if (params?.employeeId) query.set("employeeId", params.employeeId);
-  if (params?.payrollPeriodId) query.set("payrollPeriodId", params.payrollPeriodId);
+  // The HRMS controller reads `periodId`, not `payrollPeriodId`.
+  if (params?.payrollPeriodId) query.set("periodId", params.payrollPeriodId);
   const qs = query.toString();
   return apiRequest<Payslip[]>(`/hrms/payroll/payslips${qs ? `?${qs}` : ""}`);
 }

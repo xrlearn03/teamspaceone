@@ -240,8 +240,8 @@ export function PayrollSection() {
                   >
                     <td className="px-4 py-2.5 text-text">{p.periodName ?? periodName(p.payrollPeriodId)}</td>
                     <td className="px-4 py-2.5 text-text-secondary">{p.employeeName ?? "—"}</td>
-                    <td className="px-4 py-2.5 text-text-secondary">{money(p.gross, p.currency)}</td>
-                    <td className="px-4 py-2.5 text-text-secondary">{money(p.net, p.currency)}</td>
+                    <td className="px-4 py-2.5 text-text-secondary">{money(p.gross ?? p.grossPay, p.currency)}</td>
+                    <td className="px-4 py-2.5 text-text-secondary">{money(p.net ?? p.netPay, p.currency)}</td>
                     <td className="px-4 py-2.5"><StatusBadge status={p.status} /></td>
                   </tr>
                 ))}
@@ -266,8 +266,8 @@ export function PayrollSection() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-text-muted">Employee</span><span className="text-text">{selectedPayslip.data.employeeName ?? "—"}</span></div>
                 <div className="flex justify-between"><span className="text-text-muted">Period</span><span className="text-text">{selectedPayslip.data.periodName ?? periodName(selectedPayslip.data.payrollPeriodId)}</span></div>
-                <div className="flex justify-between"><span className="text-text-muted">Gross</span><span className="text-text">{money(selectedPayslip.data.gross, selectedPayslip.data.currency)}</span></div>
-                <div className="flex justify-between"><span className="text-text-muted">Net</span><span className="text-text">{money(selectedPayslip.data.net, selectedPayslip.data.currency)}</span></div>
+                <div className="flex justify-between"><span className="text-text-muted">Gross</span><span className="text-text">{money(selectedPayslip.data.gross ?? selectedPayslip.data.grossPay, selectedPayslip.data.currency)}</span></div>
+                <div className="flex justify-between"><span className="text-text-muted">Net</span><span className="text-text">{money(selectedPayslip.data.net ?? selectedPayslip.data.netPay, selectedPayslip.data.currency)}</span></div>
                 <div className="flex justify-between"><span className="text-text-muted">Status</span><span className="text-text"><StatusBadge status={selectedPayslip.data.status} /></span></div>
               </div>
             ) : null}

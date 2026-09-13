@@ -28,6 +28,9 @@ export const VIEW_PERMISSIONS: Partial<Record<View, string[]>> = {
   designations: ["hrms.designation.view"],
   leaves: ["hrms.leave.view"],
   "my-attendance": ["hrms.attendance.view", "hrms.attendance.checkin", "hrms.access"],
+  "my-leaves": ["hrms.leave.view", "hrms.leave.apply", "hrms.access"],
+  "my-payroll": ["hrms.payroll.view", "hrms.access"],
+  "my-performance": ["hrms.performance.view", "hrms.access"],
 };
 
 export function canAccessView(user: AuthorizableUser | null, view: View): boolean {

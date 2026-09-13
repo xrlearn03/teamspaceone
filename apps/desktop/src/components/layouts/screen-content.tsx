@@ -29,6 +29,9 @@ import { HrDepartmentsScreen } from "../../screens/hr/departments";
 import { HrDesignationsScreen } from "../../screens/hr/designations";
 import { HrLeavesScreen } from "../../screens/hr/leaves";
 import { MyAttendanceScreen } from "../../screens/my-attendance";
+import { MyLeavesScreen } from "../../screens/my-leaves";
+import { MyPayrollScreen } from "../../screens/my-payroll";
+import { MyPerformanceScreen } from "../../screens/my-performance";
 import { HelpScreen } from "../../screens/help";
 
 const screens: Record<View, React.ComponentType> = {
@@ -56,6 +59,9 @@ const screens: Record<View, React.ComponentType> = {
   designations: HrDesignationsScreen,
   leaves: HrLeavesScreen,
   "my-attendance": MyAttendanceScreen,
+  "my-leaves": MyLeavesScreen,
+  "my-payroll": MyPayrollScreen,
+  "my-performance": MyPerformanceScreen,
   settings: SettingsScreen,
   help: HelpScreen,
 };

@@ -228,6 +228,9 @@ export class MessagingService {
     if (!content && !attachmentIds.length) throw new BadRequestException('Message content or an attachment is required');
     if (content.length > 10000) throw new BadRequestException('Message content is too long');
     if (attachmentIds.length > 10) throw new BadRequestException('A message can contain at most 10 attachments');
+    const type = dto.type ?? 'text';
+    if (type !== 'text' && type !== 'call') throw new BadRequestException('Unsupported message type');
+    const metadata = this.callMetadata(type, dto.metadata);
 
     let parentMessageId: string | undefined;
     if (dto.parentMessageId) {
@@ -249,6 +252,8 @@ export class MessagingService {
           senderId,
           parentMessageId,
           content,
+          type,
+          metadata,
           attachments: { create: attachmentIds.map((fileId) => ({ id: randomUUID(), fileId })) },
         },
         include: messageInclude,
@@ -437,6 +442,18 @@ export class MessagingService {
 
   private uniqueIds(ids: string[]): string[] {
     return [...new Set(ids.map((id) => id?.trim()).filter(Boolean))];
+  }
+
+  private callMetadata(type: string, metadata?: Record<string, unknown>): Prisma.InputJsonValue | undefined {
+    if (type !== 'call') return undefined;
+    const kind = metadata?.kind;
+    const status = metadata?.status;
+    if (kind !== 'audio' && kind !== 'video') throw new BadRequestException('Call messages require metadata.kind of audio or video');
+    if (status !== 'missed' && status !== 'declined' && status !== 'ended') {
+      throw new BadRequestException('Call messages require metadata.status of missed, declined or ended');
+    }
+    const meetingId = typeof metadata?.meetingId === 'string' ? metadata.meetingId : undefined;
+    return { kind, status, meetingId } as Prisma.InputJsonValue;
   }
 
   private async accessibleChannel(ctx: OrganisationContextValue, channelId: string) {

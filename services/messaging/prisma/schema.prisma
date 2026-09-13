@@ -47,6 +47,8 @@ model Message {
   senderId       String
   parentMessageId String?
   content        String
+  type           String              @default("text")
+  metadata       Json?
   editedAt       DateTime?
   deletedAt      DateTime?
   pinnedAt       DateTime?

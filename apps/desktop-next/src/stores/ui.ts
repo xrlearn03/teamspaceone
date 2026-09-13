@@ -52,6 +52,9 @@ export type View =
   | "designations"
   | "leaves"
   | "my-attendance"
+  | "my-leaves"
+  | "my-payroll"
+  | "my-performance"
   | "settings"
   | "help";
 

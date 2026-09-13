@@ -66,7 +66,7 @@ export class LeaveService {
       throw new ForbiddenException('Employee is outside your data scope');
     }
 
-    return this.prisma.leaveBalance.findMany({
+    const balances = await this.prisma.leaveBalance.findMany({
       where: {
         organisationId: ctx.organisationId,
         employeeId: target.id,
@@ -74,6 +74,12 @@ export class LeaveService {
       },
       include: { leaveType: true },
     });
+
+    return balances.map((b) => ({
+      ...b,
+      leaveTypeName: b.leaveType?.name ?? null,
+      remaining: b.entitled - b.used,
+    }));
   }
 
   async apply(
@@ -164,7 +170,7 @@ export class LeaveService {
   async listRequests(
     ctx: RequestContextInput,
     user: AuthorizableUser,
-    filters: { status?: string; employeeId?: string },
+    filters: { status?: string; employeeId?: string; mine?: boolean },
   ) {
     const resolved = await this.scope.resolve(user, ctx.organisationId);
 
@@ -173,6 +179,10 @@ export class LeaveService {
       select: { id: true },
     });
     let employeeIds = scopedEmployees.map((e) => e.id);
+
+    if (filters.mine) {
+      employeeIds = resolved.actorEmployee ? [resolved.actorEmployee.id] : [];
+    }
 
     if (filters.employeeId) {
       if (!employeeIds.includes(filters.employeeId)) {

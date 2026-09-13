@@ -25,6 +25,7 @@ import { OrgChartSection } from "./org-chart";
 import { AttendanceSection } from "./attendance";
 import { LeaveSection } from "./leave";
 import { PayrollSection } from "./payroll";
+import { MyPayrollScreen } from "@/screens/my-payroll";
 import { DocumentsSection } from "./documents";
 import { OnboardingSection } from "./onboarding";
 import { OffboardingSection } from "./offboarding";
@@ -99,6 +100,10 @@ export function HrmsScreen() {
     );
   }
 
+  // Employees with view-only payroll access get the self-service page;
+  // payroll operators keep the period/payslip management view.
+  const isPayrollOperator = can("hrms.payroll.manage") || can("hrms.payroll.process");
+
   const visibleTabs = TABS.filter((t) => !t.permission || can(t.permission));
   const activeTab = visibleTabs.some((t) => t.id === tab) ? tab : visibleTabs[0]?.id ?? "overview";
 
@@ -141,7 +146,7 @@ export function HrmsScreen() {
         {activeTab === "org-chart" && <OrgChartSection />}
         {activeTab === "attendance" && <AttendanceSection />}
         {activeTab === "leave" && <LeaveSection />}
-        {activeTab === "payroll" && <PayrollSection />}
+        {activeTab === "payroll" && (isPayrollOperator ? <PayrollSection /> : <MyPayrollScreen />)}
         {activeTab === "documents" && <DocumentsSection />}
         {activeTab === "onboarding" && <OnboardingSection />}
         {activeTab === "offboarding" && <OffboardingSection />}
