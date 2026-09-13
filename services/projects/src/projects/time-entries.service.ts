@@ -60,10 +60,11 @@ export class TimeEntriesService {
     const entry = await this.ownEntry(ctx, entryId);
     const data: Prisma.TimeEntryUpdateInput = {};
     if (dto.projectId !== undefined || dto.taskId !== undefined) {
-      const { projectId, taskId } = await this.resolveRefs(
+      const { projectId, taskId } = await this.resolveUpdateRefs(
         ctx,
-        dto.projectId === undefined ? entry.projectId ?? undefined : (dto.projectId ?? undefined),
-        dto.taskId === undefined ? entry.taskId ?? undefined : (dto.taskId ?? undefined),
+        entry,
+        dto.projectId === undefined ? undefined : (dto.projectId ?? null),
+        dto.taskId === undefined ? undefined : (dto.taskId ?? null),
       );
       data.project = projectId ? { connect: { id: projectId } } : { disconnect: true };
       data.task = taskId ? { connect: { id: taskId } } : { disconnect: true };
@@ -108,6 +109,46 @@ export class TimeEntriesService {
       if (!project) throw new NotFoundException('Project not found');
     }
     return { projectId: projectId ?? null, taskId: task?.id ?? null };
+  }
+
+  /**
+   * Resolves project/task references for an update, preserving existing values
+   * when a field is omitted. A task always determines its project; changing the
+   * project without the task drops the task so the entry stays consistent.
+   */
+  private async resolveUpdateRefs(
+    ctx: OrganisationContextValue,
+    entry: { projectId: string | null; taskId: string | null },
+    projectId: string | null | undefined,
+    taskId: string | null | undefined,
+  ): Promise<{ projectId: string | null; taskId: string | null }> {
+    let resolvedProjectId = projectId === undefined ? entry.projectId : projectId;
+    let resolvedTaskId = taskId === undefined ? entry.taskId : taskId;
+
+    if (taskId !== undefined && taskId !== null) {
+      const task = await this.prisma.task.findFirst({
+        where: { id: taskId, organisationId: ctx.organisationId },
+        select: { id: true, projectId: true },
+      });
+      if (!task) throw new NotFoundException('Task not found');
+      return { projectId: task.projectId, taskId: task.id };
+    }
+
+    // Changing the project without specifying a task drops the old task,
+    // otherwise the entry would still point to a task in a different project.
+    if (projectId !== undefined && resolvedTaskId) {
+      resolvedTaskId = null;
+    }
+
+    if (resolvedProjectId) {
+      const project = await this.prisma.project.findFirst({
+        where: { id: resolvedProjectId, organisationId: ctx.organisationId },
+        select: { id: true },
+      });
+      if (!project) throw new NotFoundException('Project not found');
+    }
+
+    return { projectId: resolvedProjectId, taskId: resolvedTaskId };
   }
 
   private actor(ctx: OrganisationContextValue) {
