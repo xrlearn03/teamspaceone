@@ -8,7 +8,7 @@ import { InboxScreen } from "@/screens/inbox";
 import { ChannelScreen } from "@/screens/channel";
 import { DirectMessageScreen } from "@/screens/direct-message";
 import { ProjectScreen } from "@/screens/project";
-import { MeetingScreen } from "@/screens/meeting";
+import { MeetingView } from "@/screens/meetings";
 import { VoiceRoomScreen } from "@/screens/voice-room";
 import { FileBrowserScreen } from "@/screens/file-browser";
 import { AIAssistantScreen } from "@/screens/ai-assistant";
@@ -37,7 +37,7 @@ const screens: Record<View, React.ComponentType> = {
   channel: ChannelScreen,
   dm: DirectMessageScreen,
   project: ProjectScreen,
-  meeting: MeetingScreen,
+  meeting: MeetingView,
   voice: VoiceRoomScreen,
   files: FileBrowserScreen,
   ai: AIAssistantScreen,

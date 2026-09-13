@@ -94,6 +94,8 @@ function AuthGateInner({ onAuthenticated }: { onAuthenticated: () => void }) {
 
   const forcePasswordChange = Boolean(token && me?.mustChangePassword);
 
+  const setActiveView = useUIStore((s) => s.setActiveView);
+
   useEffect(() => {
     if (!organisations) return;
     const active = getActiveOrganisation();
@@ -109,6 +111,17 @@ function AuthGateInner({ onAuthenticated }: { onAuthenticated: () => void }) {
       setOrganisation(organisations[0].id);
     }
   }, [organisations, setOrganisation]);
+
+  // Guest links hand a meeting id over via sessionStorage; once signed in,
+  // drop the user straight into that meeting.
+  useEffect(() => {
+    if (!token || !organisations?.length) return;
+    const pending = sessionStorage.getItem("teamspace-one:pendingMeetingId");
+    if (pending) {
+      sessionStorage.removeItem("teamspace-one:pendingMeetingId");
+      setActiveView("meeting", { meetingId: pending });
+    }
+  }, [token, organisations, setActiveView]);
 
   if (isLoading || (token && organisationsLoading)) {
     return (

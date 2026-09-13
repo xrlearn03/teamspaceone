@@ -72,6 +72,7 @@ interface UIState {
   activeMeetingId: string | null;
   activeEmployeeId: string | null;
   hrmsTab: string | null;
+  helpTab: string | null;
   sidebarCollapsed: boolean;
   sidebarWidth: number;
   rightPanelOpen: boolean;
@@ -88,9 +89,10 @@ interface UIState {
   setTheme: (theme: "light" | "dark" | "system") => void;
   setActiveView: (
     view: View,
-    params?: { channelId?: string; projectId?: string; meetingId?: string; employeeId?: string; hrmsTab?: string },
+    params?: { channelId?: string; projectId?: string; meetingId?: string; employeeId?: string; hrmsTab?: string; helpTab?: string },
   ) => void;
   setHrmsTab: (tab: string | null) => void;
+  setHelpTab: (tab: string | null) => void;
   setActiveMeetingId: (meetingId: string | null) => void;
   setPendingActionFilter: (filter: string | null) => void;
   toggleSidebar: () => void;
@@ -113,6 +115,7 @@ export const useUIStore = create<UIState>((set) => ({
   activeMeetingId: null,
   activeEmployeeId: null,
   hrmsTab: null,
+  helpTab: null,
   sidebarCollapsed: false,
   sidebarWidth: getSidebarWidthDefault(),
   rightPanelOpen: false,
@@ -137,6 +140,7 @@ export const useUIStore = create<UIState>((set) => ({
       activeMeetingId: null,
       activeEmployeeId: null,
       hrmsTab: null,
+      helpTab: null,
       rightPanelOpen: false,
       searchOpen: false,
       pendingCount: 0,
@@ -158,8 +162,10 @@ export const useUIStore = create<UIState>((set) => ({
       activeMeetingId: params?.meetingId ?? null,
       activeEmployeeId: params?.employeeId ?? null,
       hrmsTab: params?.hrmsTab ?? (view === "hrms" ? "overview" : null),
+      helpTab: params?.helpTab ?? (view === "help" ? "tutorials" : null),
     }),
   setHrmsTab: (tab) => set({ hrmsTab: tab }),
+  setHelpTab: (tab) => set({ helpTab: tab }),
   setActiveMeetingId: (meetingId) => set({ activeMeetingId: meetingId }),
   setPendingActionFilter: (filter) => set({ pendingActionFilter: filter }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),

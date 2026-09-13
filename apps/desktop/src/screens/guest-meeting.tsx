@@ -14,6 +14,7 @@ import {
   type GuestJoinResult,
   type GuestMeetingInfo,
 } from "../lib/api";
+import { toast, toastError } from "../lib/toast";
 import { useUIStore } from "../stores/ui";
 
 function decodeMeetingId(token: string): string | null {
@@ -63,13 +64,11 @@ export function GuestMeetingScreen({
 
   const [token, setToken] = useState(initialToken ?? "");
   const [linkInput, setLinkInput] = useState("");
-  const [linkError, setLinkError] = useState<string | null>(null);
   const [info, setInfo] = useState<GuestMeetingInfo | null>(null);
   const [infoError, setInfoError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [joining, setJoining] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
   const [joined, setJoined] = useState<GuestJoinResult | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -100,7 +99,9 @@ export function GuestMeetingScreen({
         if (!cancelled) setInfo(data);
       } catch (err) {
         if (!cancelled) {
-          setInfoError(err instanceof Error ? err.message : "This meeting link is invalid or has expired");
+          const message = err instanceof Error ? err.message : "This meeting link is invalid or has expired";
+          setInfoError(message);
+          toast.error(message);
         }
       }
     })();
@@ -121,17 +122,23 @@ export function GuestMeetingScreen({
     e.preventDefault();
     const extracted = extractMeetingJoinToken(linkInput);
     if (!extracted) {
-      setLinkError("That doesn't look like a valid meeting link");
+      toast.error("That doesn't look like a valid meeting link");
       return;
     }
-    setLinkError(null);
     setToken(extracted);
   }
 
   async function handleJoin(e: React.FormEvent) {
     e.preventDefault();
+    if (!name.trim()) {
+      toast.error("Your name is required");
+      return;
+    }
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      toast.error("Enter a valid email address");
+      return;
+    }
     setJoining(true);
-    setJoinError(null);
     try {
       const result = await joinMeetingAsGuest(token, { name, email });
 
@@ -155,7 +162,7 @@ export function GuestMeetingScreen({
       );
       setJoined(result);
     } catch (err) {
-      setJoinError(err instanceof Error ? err.message : "Could not join the meeting");
+      toastError(err, "Could not join the meeting");
     } finally {
       setJoining(false);
     }
@@ -247,7 +254,7 @@ export function GuestMeetingScreen({
   if (!token) {
     return (
       <div className="flex h-full items-center justify-center bg-background p-6">
-        <form onSubmit={submitLink} className="w-full max-w-sm space-y-4 rounded-lg border border-border bg-surface p-8 shadow-sm">
+        <form onSubmit={submitLink} noValidate className="w-full max-w-sm space-y-4 rounded-lg border border-border bg-surface p-8 shadow-sm">
           <h1 className="text-2xl font-semibold text-text">Join a meeting</h1>
           <p className="text-sm text-text-muted">Paste the invite link you were sent.</p>
           <Input
@@ -256,7 +263,6 @@ export function GuestMeetingScreen({
             placeholder="https://…/join/… or teamspace-one://join/…"
             required
           />
-          {linkError && <p className="text-sm text-error">{linkError}</p>}
           <Button type="submit" className="w-full gap-2">
             <Link2 className="h-4 w-4" />
             Continue
@@ -344,7 +350,7 @@ export function GuestMeetingScreen({
           </div>
         </div>
 
-        <form onSubmit={handleJoin} className="space-y-4">
+        <form onSubmit={handleJoin} noValidate className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
               value={name}
@@ -361,7 +367,6 @@ export function GuestMeetingScreen({
               required
             />
           </div>
-          {joinError && <p className="text-sm text-error">{joinError}</p>}
           {sfu.error && <p className="text-sm text-error">{sfu.error}</p>}
           <div className="flex justify-center gap-3">
             <Button type="button" variant="ghost" onClick={onExit}>

@@ -177,6 +177,9 @@ pub fn new_track_writer_slot() -> SharedTrackWriter {
 /// Per-room recording state.
 pub struct Recorder {
     pub dir: PathBuf,
+    /// The room these recordings belong to; used as the file-storage
+    /// `resourceId` so uploaded files are ACL'd to meeting attendees.
+    pub room_id: String,
     pub organisation_id: String,
     pub actor_id: String,
     /// Tracks whose writers already ended mid-recording (camera off, screenshare
@@ -200,6 +203,7 @@ pub fn create_recorder(
     std::fs::create_dir_all(&dir)?;
     Ok(Arc::new(Recorder {
         dir,
+        room_id: room_id.to_string(),
         organisation_id: organisation_id.to_string(),
         actor_id: actor_id.to_string(),
         finished_files: Mutex::new(Vec::new()),
@@ -319,7 +323,10 @@ pub async fn upload_files(
             let part = reqwest::multipart::Part::stream(reqwest::Body::from(file))
                 .file_name(file_name.clone())
                 .mime_str(mime)?;
-            let form = reqwest::multipart::Form::new().part("file", part);
+            let form = reqwest::multipart::Form::new()
+                .part("file", part)
+                .text("resourceType", "meeting".to_string())
+                .text("resourceId", rec.room_id.clone());
             let resp = client
                 .post(&url)
                 .header("x-internal-api-key", internal_api_key)

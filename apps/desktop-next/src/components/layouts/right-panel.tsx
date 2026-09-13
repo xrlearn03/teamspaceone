@@ -1,29 +1,52 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, Hash, Folder, Info, Calendar, Users, Mic } from "lucide-react";
+import {
+  Calendar,
+  FileArchive,
+  File as FileIcon,
+  FileText,
+  Folder,
+  Hash,
+  Info,
+  Link2,
+  Mic,
+  Phone,
+  Pin,
+  Users,
+  Video,
+  X,
+} from "lucide-react";
 import { useUIStore } from "@/stores/ui";
 import { useShallow } from "zustand/shallow";
 import { EmptyState } from "@teamspace-one/ui/empty-state";
-import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
 import { Badge } from "@teamspace-one/ui/badge";
 import { Button } from "@teamspace-one/ui/button";
 import {
   useAddChannelModerator,
   useChannels,
+  useCreateMeeting,
+  useCreateVoiceRoom,
+  useFiles,
   useMeeting,
   useMe,
   useMembers,
+  useMessages,
   usePinnedMessages,
   useProjects,
   useRemoveChannelModerator,
   useTasks,
   useUsers,
 } from "@/hooks/api";
-import { getUserDisplayName } from "@/lib/utils";
+import { useRealtime } from "@/hooks/useRealtime";
+import { cn, getUserDisplayName } from "@/lib/utils";
+import { UserAvatar } from "@/components/user-avatar";
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="border-b px-4 py-3">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">{title}</p>
+    <div className="border-b border-border px-4 py-4">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm font-semibold text-text">{title}</p>
+        {action}
+      </div>
       {children}
     </div>
   );
@@ -36,6 +59,31 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
       <span className="truncate text-text">{value ?? "—"}</span>
     </div>
   );
+}
+
+function AboutRow({ icon: Icon, label, children }: { icon: React.ElementType; label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-3">
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-text-muted" />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-text-muted">{label}</p>
+        <div className="mt-1">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function formatBytes(bytes: number) {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function fileIcon(mime: string) {
+  if (/zip|tar|gzip|archive/.test(mime)) return FileArchive;
+  if (/pdf|word|text|markdown|presentation|sheet|document/.test(mime)) return FileText;
+  return FileIcon;
 }
 
 function MemberList({
@@ -54,17 +102,19 @@ function MemberList({
     <div className="space-y-1.5">
       {userIds.map((id) => (
         <div key={id} className="flex items-center gap-2">
-          <Avatar className="h-6 w-6">
-            <AvatarFallback className="text-[10px]">{getUserDisplayName(userMap.get(id)).slice(0, 2).toUpperCase()}</AvatarFallback>
-          </Avatar>
+          <UserAvatar user={userMap.get(id)} className="h-7 w-7" />
           <span className="flex-1 truncate text-sm text-text">{getUserDisplayName(userMap.get(id))}</span>
-          {externalIds?.has(id) ? <Badge variant="warning">External</Badge> : null}
+          {externalIds?.has(id) ? <Badge variant="warning">Client</Badge> : null}
           {renderMeta ? renderMeta(id) : null}
         </div>
       ))}
     </div>
   );
 }
+
+type ChannelPanelTab = "about" | "members" | "files" | "links";
+
+const URL_RE = /https?:\/\/[^\s<>"']+/g;
 
 function ChannelDetails() {
   const activeChannelId = useUIStore((s) => s.activeChannelId);
@@ -75,13 +125,44 @@ function ChannelDetails() {
   const addModerator = useAddChannelModerator();
   const removeModerator = useRemoveChannelModerator();
   const channel = channels?.find((c) => c.id === activeChannelId) ?? channels?.[0];
+  const [tab, setTab] = useState<ChannelPanelTab>("about");
+  const { data: pinned } = usePinnedMessages(channel?.id);
+  const { data: messages } = useMessages(channel?.id);
+  const { data: allFiles } = useFiles();
   const externalIds = new Set(
     (members ?? []).filter((m) => /client|external/i.test(m.role.name)).map((m) => m.userId),
   );
+  const memberIds = useMemo(() => (channel?.members ?? []).map((m) => m.userId), [channel]);
+  const { data: memberUsers } = useUsers(memberIds);
+  const memberUserMap = useMemo(() => new Map((memberUsers ?? []).map((u) => [u.id, u])), [memberUsers]);
+  const pinnedSenderIds = useMemo(
+    () => [...new Set((pinned ?? []).map((m) => m.senderId))],
+    [pinned],
+  );
+  const { data: pinnedUsers } = useUsers(pinnedSenderIds);
+  const pinnedUserMap = useMemo(() => new Map((pinnedUsers ?? []).map((u) => [u.id, u])), [pinnedUsers]);
+
+  const channelFiles = useMemo(
+    () => (allFiles ?? []).filter((f) => f.resourceType === "channel" && f.resourceId === channel?.id),
+    [allFiles, channel?.id],
+  );
+
+  const channelLinks = useMemo(() => {
+    const out: { url: string; senderId: string; createdAt: string }[] = [];
+    for (const m of messages ?? []) {
+      if (m.deletedAt) continue;
+      for (const url of m.content.match(URL_RE) ?? []) {
+        out.push({ url, senderId: m.senderId, createdAt: m.createdAt });
+      }
+    }
+    return out;
+  }, [messages]);
+
   if (!channel) return <EmptyState icon={Hash} title="No channel" description="Select a channel to see its details." />;
-  const memberIds = channel.members.map((m) => m.userId);
+
   const isOwner = me ? channel.members.some((m) => m.userId === me.id && m.role === "owner") : false;
-  const memberMap = useMemo(() => new Map(channel.members.map((m) => [m.userId, m])), [channel.members]);
+  const memberMap = new Map(channel.members.map((m) => [m.userId, m]));
+  const creatorUser = memberUserMap.get(channel.createdBy);
   const renderMeta = (userId: string) => {
     const member = memberMap.get(userId);
     if (!member) return null;
@@ -106,62 +187,391 @@ function ChannelDetails() {
       </div>
     );
   };
-  const { data: pinned } = usePinnedMessages(channel.id);
-  const pinnedSenderIds = useMemo(
-    () => [...new Set((pinned ?? []).map((m) => m.senderId))],
-    [pinned],
-  );
-  const { data: pinnedUsers } = useUsers(pinnedSenderIds);
-  const pinnedUserMap = useMemo(() => new Map((pinnedUsers ?? []).map((u) => [u.id, u])), [pinnedUsers]);
+
   return (
     <>
-      <Section title="About">
-        <Meta label="Name" value={`#${channel.name}`} />
-        <Meta label="Type" value={<span className="capitalize">{channel.type}</span>} />
-        <Meta label="Created" value={new Date(channel.createdAt).toLocaleDateString()} />
-      </Section>
-      <Section title={`Members (${memberIds.length})`}>
-        <MemberList userIds={memberIds} externalIds={externalIds} renderMeta={renderMeta} />
-      </Section>
-      <Section title="Pinned & shared">
-        {!pinned?.length ? (
-          <p className="text-sm text-text-muted">No pinned messages yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {pinned.map((m) => {
-              const sender = pinnedUserMap.get(m.senderId);
-              const preview = m.content.length > 80 ? `${m.content.slice(0, 80)}…` : m.content;
-              return (
-                <div key={m.id} className="rounded border bg-surface-elevated p-2">
-                  <p className="text-xs text-text-muted">{getUserDisplayName(sender)}</p>
-                  <p className="mt-0.5 text-sm text-text">{preview}</p>
+      {/* Panel header */}
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-white">
+            <Hash className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold text-text">{channel.name}</h2>
+            <p className="truncate text-xs capitalize text-text-muted">
+              {channel.type} channel · {memberIds.length} members
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => useUIStore.getState().toggleRightPanel()}
+          className="rounded p-1 text-text-muted hover:bg-surface-elevated hover:text-text"
+          aria-label="Close details panel"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex h-11 shrink-0 items-center border-b border-border px-2">
+        {([
+          ["about", "About"],
+          ["members", `Members (${memberIds.length})`],
+          ["files", "Files"],
+          ["links", "Links"],
+        ] as [ChannelPanelTab, string][]).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={cn(
+              "relative flex h-full items-center px-3 text-xs font-medium",
+              tab === id ? "text-text" : "text-text-muted hover:text-text-secondary",
+            )}
+          >
+            {label}
+            {tab === id && <span className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-primary" />}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {tab === "about" ? (
+          <>
+            <div className="border-b border-border p-4">
+              <div className="flex flex-col gap-4">
+                <AboutRow icon={Users} label="Created by">
+                  <div className="flex items-center gap-2">
+                    <UserAvatar user={creatorUser} className="h-6 w-6" />
+                    <span className="text-xs text-text">{getUserDisplayName(creatorUser)}</span>
+                  </div>
+                  <p className="mt-0.5 text-[10px] text-text-muted">
+                    on {new Date(channel.createdAt).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </AboutRow>
+                <AboutRow icon={Link2} label="Type">
+                  <p className="text-xs capitalize text-text">{channel.type}</p>
+                </AboutRow>
+                <AboutRow icon={Pin} label="Pinned messages">
+                  <p className="text-xs text-text">{(pinned ?? []).length} pinned</p>
+                </AboutRow>
+              </div>
+            </div>
+
+            <Section title="Pinned Messages">
+              {(pinned ?? []).length === 0 ? (
+                <p className="text-xs text-text-muted">No pinned messages yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {(pinned ?? []).map((m) => {
+                    const preview = m.content.length > 80 ? `${m.content.slice(0, 80)}…` : m.content;
+                    return (
+                      <div
+                        key={m.id}
+                        className="flex w-full items-center gap-3 rounded-lg border border-border bg-surface-elevated/50 p-2.5"
+                      >
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-subtle text-primary">
+                          <Pin className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-text">{preview || "Attachment"}</p>
+                          <p className="mt-0.5 truncate text-[10px] text-text-muted">
+                            {getUserDisplayName(pinnedUserMap.get(m.senderId))} ·{" "}
+                            {new Date(m.createdAt).toLocaleDateString([], { day: "numeric", month: "short" })}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              )}
+            </Section>
+
+            <Section
+              title="Recent Files"
+              action={channelFiles.length > 0 ? <span className="text-xs font-medium text-primary">View all</span> : undefined}
+            >
+              {channelFiles.length === 0 ? (
+                <p className="text-xs text-text-muted">No files shared in this channel.</p>
+              ) : (
+                <div className="space-y-1">
+                  {channelFiles.slice(0, 5).map((f) => {
+                    const FIcon = fileIcon(f.mimeType);
+                    return (
+                      <a
+                        key={f.id}
+                        href={f.downloadUrl ?? f.url ?? "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex w-full items-center gap-3 rounded-lg p-2 transition-colors hover:bg-surface-elevated"
+                      >
+                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-info/10 text-info">
+                          <FIcon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 text-left">
+                          <p className="truncate text-xs font-medium text-text">{f.originalName}</p>
+                          <p className="mt-0.5 text-[10px] text-text-muted">
+                            {new Date(f.createdAt).toLocaleDateString([], { day: "numeric", month: "short" })} · {formatBytes(f.size)}
+                          </p>
+                        </div>
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
+            </Section>
+          </>
+        ) : tab === "members" ? (
+          <div className="p-4">
+            <MemberList userIds={memberIds} externalIds={externalIds} renderMeta={renderMeta} />
+          </div>
+        ) : tab === "files" ? (
+          <div className="p-4">
+            {channelFiles.length === 0 ? (
+              <p className="text-xs text-text-muted">No files shared in this channel.</p>
+            ) : (
+              <div className="space-y-1">
+                {channelFiles.map((f) => {
+                  const FIcon = fileIcon(f.mimeType);
+                  return (
+                    <a
+                      key={f.id}
+                      href={f.downloadUrl ?? f.url ?? "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex w-full items-center gap-3 rounded-lg p-2 transition-colors hover:bg-surface-elevated"
+                    >
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-info/10 text-info">
+                        <FIcon className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 text-left">
+                        <p className="truncate text-xs font-medium text-text">{f.originalName}</p>
+                        <p className="mt-0.5 text-[10px] text-text-muted">
+                          {new Date(f.createdAt).toLocaleDateString([], { day: "numeric", month: "short" })} · {formatBytes(f.size)}
+                        </p>
+                      </div>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="p-4">
+            {channelLinks.length === 0 ? (
+              <p className="text-xs text-text-muted">No links shared in this channel.</p>
+            ) : (
+              <div className="space-y-1">
+                {channelLinks.map((l, i) => (
+                  <a
+                    key={i}
+                    href={l.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex w-full items-center gap-3 rounded-lg p-2 transition-colors hover:bg-surface-elevated"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-info/10 text-info">
+                      <Link2 className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <p className="truncate text-xs font-medium text-primary">{l.url}</p>
+                      <p className="mt-0.5 text-[10px] text-text-muted">
+                        {new Date(l.createdAt).toLocaleDateString([], { day: "numeric", month: "short" })}
+                      </p>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         )}
-      </Section>
+      </div>
     </>
   );
 }
 
 function DirectMessageDetails() {
   const activeChannelId = useUIStore((s) => s.activeChannelId);
+  const organisationId = useUIStore((s) => s.organisationId);
+  const setActiveView = useUIStore((s) => s.setActiveView);
   const { data: channels } = useChannels();
+  const { data: members } = useMembers(organisationId ?? undefined);
+  const { data: me } = useMe();
+  const createMeeting = useCreateMeeting();
+  const createVoiceRoom = useCreateVoiceRoom();
+  const { sendCallRing } = useRealtime();
+  const { data: allFiles } = useFiles();
+
   const contact = channels?.find((c) => c.id === activeChannelId && c.type === "direct")
     ?? channels?.find((c) => c.type === "direct");
+  const memberIds = useMemo(() => contact?.members.map((m) => m.userId) ?? [], [contact]);
+  const { data: memberUsers } = useUsers(memberIds);
+  const memberUserMap = useMemo(() => new Map((memberUsers ?? []).map((u) => [u.id, u])), [memberUsers]);
+  const { data: messages } = useMessages(contact?.id);
+
+  const dmFiles = useMemo(
+    () => (allFiles ?? []).filter((f) => f.resourceType === "channel" && f.resourceId === contact?.id),
+    [allFiles, contact?.id],
+  );
+
+  const dmLinks = useMemo(() => {
+    const out: { url: string; senderId: string; createdAt: string }[] = [];
+    for (const m of messages ?? []) {
+      if (m.deletedAt) continue;
+      for (const url of m.content.match(URL_RE) ?? []) {
+        out.push({ url, senderId: m.senderId, createdAt: m.createdAt });
+      }
+    }
+    return out;
+  }, [messages]);
+
   if (!contact) return <EmptyState icon={Users} title="No conversation" description="Select a conversation to see details." />;
-  const memberIds = contact.members.map((m) => m.userId);
+
+  const others = contact.members.filter((m) => m.userId !== me?.id);
+  const primaryUser = others[0] ? memberUserMap.get(others[0].userId) : undefined;
+  const names = others.map((m) => getUserDisplayName(memberUserMap.get(m.userId)));
+  const contactName =
+    names.length === 0
+      ? contact.name || "Direct message"
+      : names.length <= 2
+        ? names.join(", ")
+        : `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+  const roleName = others[0]
+    ? members?.find((m) => m.userId === others[0].userId)?.role.name
+    : undefined;
+
+  function startCall(video: boolean) {
+    if (!contact) return;
+    const title = `${contactName} ${video ? "video call" : "voice call"}`;
+    const inviteeIds = contact.members.map((m) => m.userId).filter((id) => id !== me?.id);
+    const ring = (meetingId: string) => {
+      if (inviteeIds.length === 0) return;
+      const callerName = me ? getUserDisplayName(me) : undefined;
+      sendCallRing({ meetingId, kind: video ? "video" : "audio", title, channelId: contact.id, callerName, userIds: inviteeIds });
+    };
+    if (video) createMeeting.mutate({ title, inviteeIds }, { onSuccess: (meeting) => { ring(meeting.id); setActiveView("meeting", { meetingId: meeting.id }); } });
+    else createVoiceRoom.mutate({ title, inviteeIds }, { onSuccess: (meeting) => { ring(meeting.id); setActiveView("voice", { meetingId: meeting.id }); } });
+  }
+
   return (
     <>
-      <Section title="Conversation">
-        <Meta label="Name" value={contact.name} />
-        <Meta label="Participants" value={memberIds.length} />
-        <Meta label="Created" value={new Date(contact.createdAt).toLocaleDateString()} />
-      </Section>
-      <Section title="Participants">
-        <MemberList userIds={memberIds} />
-      </Section>
+      {/* Panel header */}
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <UserAvatar user={primaryUser} className="h-11 w-11" />
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold text-text">{contactName}</h2>
+            <p className="truncate text-xs text-text-muted">
+              {others.length > 1 ? `${memberIds.length} participants` : (roleName ?? "Direct message")}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => useUIStore.getState().toggleRightPanel()}
+          className="rounded p-1 text-text-muted hover:bg-surface-elevated hover:text-text"
+          aria-label="Close details panel"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {/* Profile card + quick actions */}
+        <div className="border-b border-border p-4">
+          <div className="flex flex-col items-center text-center">
+            <UserAvatar user={primaryUser} className="h-20 w-20" />
+            <h3 className="mt-3 text-base font-semibold text-text">{contactName}</h3>
+            <p className="mt-0.5 truncate text-xs text-text-muted">
+              {others.length > 1 ? "Group conversation" : (primaryUser?.email ?? "Direct message")}
+            </p>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <Button variant="secondary" size="sm" disabled={createVoiceRoom.isPending} onClick={() => startCall(false)}>
+              <Phone className="mr-1.5 h-3.5 w-3.5" />
+              Call
+            </Button>
+            <Button variant="secondary" size="sm" disabled={createMeeting.isPending} onClick={() => startCall(true)}>
+              <Video className="mr-1.5 h-3.5 w-3.5" />
+              Video
+            </Button>
+          </div>
+        </div>
+
+        <Section title="Details">
+          {others.length <= 1 ? <Meta label="Email" value={primaryUser?.email} /> : null}
+          {roleName ? <Meta label="Role" value={<span className="capitalize">{roleName}</span>} /> : null}
+          <Meta label="Participants" value={memberIds.length} />
+          <Meta label="Created" value={new Date(contact.createdAt).toLocaleDateString()} />
+        </Section>
+
+        <Section title={`Shared files (${dmFiles.length})`}>
+          {dmFiles.length === 0 ? (
+            <p className="text-xs text-text-muted">No files shared in this conversation.</p>
+          ) : (
+            <div className="space-y-1">
+              {dmFiles.map((f) => {
+                const FIcon = fileIcon(f.mimeType);
+                return (
+                  <a
+                    key={f.id}
+                    href={f.downloadUrl ?? f.url ?? "#"}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex w-full items-center gap-3 rounded-lg p-2 transition-colors hover:bg-surface-elevated"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-info/10 text-info">
+                      <FIcon className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <p className="truncate text-xs font-medium text-text">{f.originalName}</p>
+                      <p className="mt-0.5 text-[10px] text-text-muted">
+                        {new Date(f.createdAt).toLocaleDateString([], { day: "numeric", month: "short" })} · {formatBytes(f.size)}
+                      </p>
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          )}
+        </Section>
+
+        <Section title={`Shared links (${dmLinks.length})`}>
+          {dmLinks.length === 0 ? (
+            <p className="text-xs text-text-muted">No links shared in this conversation.</p>
+          ) : (
+            <div className="space-y-1">
+              {dmLinks.map((l, i) => (
+                <a
+                  key={i}
+                  href={l.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex w-full items-center gap-3 rounded-lg p-2 transition-colors hover:bg-surface-elevated"
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-info/10 text-info">
+                    <Link2 className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <p className="truncate text-xs font-medium text-primary">{l.url}</p>
+                    <p className="mt-0.5 text-[10px] text-text-muted">
+                      {getUserDisplayName(memberUserMap.get(l.senderId))} ·{" "}
+                      {new Date(l.createdAt).toLocaleDateString([], { day: "numeric", month: "short" })}
+                    </p>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+        </Section>
+
+        {memberIds.length > 2 ? (
+          <Section title={`Participants (${memberIds.length})`}>
+            <MemberList userIds={memberIds} />
+          </Section>
+        ) : null}
+      </div>
     </>
   );
 }
@@ -224,9 +634,9 @@ function MeetingDetails() {
 function panelContent(view: string) {
   switch (view) {
     case "channel":
-      return { icon: Hash, title: "Channel details", body: <ChannelDetails /> };
+      return { icon: Hash, title: null, body: <ChannelDetails />, bare: true };
     case "dm":
-      return { icon: Users, title: "Conversation details", body: <DirectMessageDetails /> };
+      return { icon: Users, title: null, body: <DirectMessageDetails />, bare: true };
     case "project":
       return { icon: Folder, title: "Project details", body: <ProjectDetails /> };
     case "meeting":
@@ -275,26 +685,32 @@ export function RightPanel() {
       className="relative flex shrink-0 flex-col border-l bg-surface"
       style={{ width: rightPanelWidth }}
     >
-      <div className="flex h-12 items-center justify-between border-b px-4">
-        <span className="text-sm font-semibold text-text">{content?.title ?? "Details"}</span>
-        <button
-          type="button"
-          onClick={toggleRightPanel}
-          className="rounded p-1 text-text-muted hover:bg-surface-elevated hover:text-text"
-          aria-label="Close details panel"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="flex-1 overflow-y-auto">
-        {content?.body ?? (
-          <EmptyState
-            icon={Info}
-            title="No details"
-            description="Open a channel, conversation, project, or meeting to see context here."
-          />
-        )}
-      </div>
+      {content?.bare ? (
+        content.body
+      ) : (
+        <>
+          <div className="flex h-12 items-center justify-between border-b px-4">
+            <span className="text-sm font-semibold text-text">{content?.title ?? "Details"}</span>
+            <button
+              type="button"
+              onClick={toggleRightPanel}
+              className="rounded p-1 text-text-muted hover:bg-surface-elevated hover:text-text"
+              aria-label="Close details panel"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {content?.body ?? (
+              <EmptyState
+                icon={Info}
+                title="No details"
+                description="Open a channel, conversation, project, or meeting to see context here."
+              />
+            )}
+          </div>
+        </>
+      )}
       <button
         type="button"
         className="absolute -left-1 top-0 h-full w-2 cursor-col-resize"

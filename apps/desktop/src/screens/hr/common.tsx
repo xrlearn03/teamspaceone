@@ -1,10 +1,17 @@
 import {
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Home,
   Search,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@teamspace-one/ui/dropdown-menu";
 import { cn } from "../../lib/utils";
 
 export function PageHeader({
@@ -56,33 +63,124 @@ export function PrimaryAction({
   );
 }
 
-export function FilterDropdown({ label, children }: { label?: string; children: React.ReactNode }) {
+export interface FilterOption {
+  value: string;
+  label: string;
+}
+
+/** Presets shared by the "Sort By" period dropdowns on HR list screens. */
+export const DATE_RANGE_OPTIONS: FilterOption[] = [
+  { value: "all", label: "All time" },
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+  { value: "90d", label: "Last 90 days" },
+];
+
+/** True when an ISO timestamp falls inside a DATE_RANGE_OPTIONS value. */
+export function withinDateRange(iso: string | null | undefined, range: string) {
+  if (!range || range === "all") return true;
+  if (!iso) return false;
+  const days = range === "7d" ? 7 : range === "30d" ? 30 : range === "90d" ? 90 : 0;
+  if (!days) return true;
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return false;
+  return ts >= Date.now() - days * 86400000;
+}
+
+export function FilterDropdown({
+  label,
+  value,
+  onChange,
+  options,
+  children,
+}: {
+  label?: string;
+  value?: string;
+  onChange?: (value: string) => void;
+  options?: FilterOption[];
+  children?: React.ReactNode;
+}) {
+  const selected = options?.find((o) => o.value === value);
   return (
-    <button
-      type="button"
-      className="flex h-8 items-center gap-2 rounded-md border border-border bg-surface px-3 text-xs text-text"
-    >
-      {label}
-      {children}
-      <ChevronDown className="h-3.5 w-3.5 text-text-muted" />
-    </button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex h-8 items-center gap-2 rounded-md border border-border bg-surface px-3 text-xs text-text"
+        >
+          {label}
+          {selected?.label ?? children}
+          <ChevronDown className="h-3.5 w-3.5 text-text-muted" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {(options ?? []).map((option) => (
+          <DropdownMenuItem
+            key={option.value}
+            onClick={() => onChange?.(option.value)}
+            className="flex items-center justify-between gap-3 text-xs"
+          >
+            {option.label}
+            {option.value === value ? <Check className="h-3.5 w-3.5 text-primary" /> : null}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
+
+export const PAGE_SIZE_OPTIONS: FilterOption[] = [
+  { value: "10", label: "10" },
+  { value: "25", label: "25" },
+  { value: "50", label: "50" },
+];
 
 export function TableToolbar({
   query,
   onQuery,
+  perPage,
+  onPerPage,
 }: {
   query: string;
   onQuery: (q: string) => void;
+  perPage?: number;
+  onPerPage?: (n: number) => void;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
       <div className="flex items-center gap-2 text-sm text-text-secondary">
         <span>Row Per Page</span>
-        <span className="flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-xs text-text">
-          10
-        </span>
+        {onPerPage ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-xs text-text"
+              >
+                {perPage ?? 10}
+                <ChevronDown className="h-3 w-3 text-text-muted" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onClick={() => onPerPage(Number(option.value))}
+                  className="flex items-center justify-between gap-3 text-xs"
+                >
+                  {option.label}
+                  {Number(option.value) === perPage ? (
+                    <Check className="h-3.5 w-3.5 text-primary" />
+                  ) : null}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <span className="flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-xs text-text">
+            {perPage ?? 10}
+          </span>
+        )}
         <span>Entries</span>
       </div>
       <div className="flex h-8 w-full items-center gap-2 rounded-md border border-border bg-surface px-3 sm:w-56">

@@ -11,10 +11,8 @@ import {
   MyAttendanceWidget,
   MyLeaveWidget,
   MyTasksWidget,
-  NotificationsWidget,
   PendingHrApprovalsWidget,
   PeopleWidget,
-  QuickActionsWidget,
   RecentConversationsWidget,
   RecentProjectsWidget,
   UpcomingMeetingsWidget,
@@ -44,13 +42,6 @@ export interface DashboardWidget {
 }
 
 export const DASHBOARD_WIDGETS: DashboardWidget[] = [
-  {
-    id: "quick-actions",
-    title: "Quick actions",
-    banner: true,
-    permissions: ["dashboard.quick-action.execute"],
-    component: QuickActionsWidget,
-  },
   {
     id: "my-tasks",
     title: "My tasks",
@@ -137,13 +128,6 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
     gridClass: "md:col-span-2 xl:col-span-1",
     permissions: ["dashboard.widget.view"],
     component: DailyBriefWidget,
-  },
-  {
-    id: "notifications",
-    title: "Notifications",
-    gridClass: "md:col-span-2 xl:col-span-3",
-    permissions: ["dashboard.view"],
-    component: NotificationsWidget,
   },
 ];
 

@@ -10,11 +10,13 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
 import { ApplyLeaveDialog } from "@/screens/hrms/leave";
 import {
+  DATE_RANGE_OPTIONS,
   FilterDropdown,
   PageHeader,
   Pagination,
   PrimaryAction,
   TableToolbar,
+  withinDateRange,
 } from "./common";
 import { SectionError, SectionSkeleton, formatDate } from "@/screens/hrms/common";
 import { cn } from "@/lib/utils";
@@ -54,6 +56,9 @@ export function HrLeavesScreen() {
   const review = useReviewLeaveRequest();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(PAGE_SIZE);
+  const [leaveType, setLeaveType] = useState("");
+  const [range, setRange] = useState("all");
   const [applyOpen, setApplyOpen] = useState(false);
 
   const all = requests.data ?? [];
@@ -76,14 +81,28 @@ export function HrLeavesScreen() {
     };
   }, [all, attendance.data, employees.data, today]);
 
-  const filtered = query
-    ? all.filter(
-        (r) =>
-          (r.employeeName ?? "").toLowerCase().includes(query.toLowerCase()) ||
-          (r.leaveTypeName ?? "").toLowerCase().includes(query.toLowerCase()),
-      )
-    : all;
-  const rows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const leaveTypeOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of all) map.set(r.leaveTypeId, r.leaveTypeName ?? "Leave");
+    return [
+      { value: "", label: "All types" },
+      ...[...map.entries()].map(([value, label]) => ({ value, label })),
+    ];
+  }, [all]);
+
+  const filtered = all.filter((r) => {
+    if (leaveType && r.leaveTypeId !== leaveType) return false;
+    if (!withinDateRange(r.startDate, range)) return false;
+    if (query) {
+      const q = query.toLowerCase();
+      return (
+        (r.employeeName ?? "").toLowerCase().includes(q) ||
+        (r.leaveTypeName ?? "").toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+  const rows = filtered.slice((page - 1) * perPage, page * perPage);
   const canApprove = can("hrms.leave.approve");
 
   return (
@@ -105,12 +124,28 @@ export function HrLeavesScreen() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold text-text">Leave List</h2>
           <div className="flex flex-wrap items-center gap-2">
-            <FilterDropdown>Leave Type</FilterDropdown>
-            <FilterDropdown label="Sort By : ">Last 7 Days</FilterDropdown>
+            <FilterDropdown
+              value={leaveType}
+              onChange={(v) => { setLeaveType(v); setPage(1); }}
+              options={leaveTypeOptions}
+            >
+              Leave Type
+            </FilterDropdown>
+            <FilterDropdown
+              label="Sort By : "
+              value={range}
+              onChange={(v) => { setRange(v); setPage(1); }}
+              options={DATE_RANGE_OPTIONS}
+            />
           </div>
         </div>
 
-        <TableToolbar query={query} onQuery={(q) => { setQuery(q); setPage(1); }} />
+        <TableToolbar
+          query={query}
+          onQuery={(q) => { setQuery(q); setPage(1); }}
+          perPage={perPage}
+          onPerPage={(n) => { setPerPage(n); setPage(1); }}
+        />
 
         {requests.isLoading ? (
           <div className="p-5">
@@ -211,7 +246,7 @@ export function HrLeavesScreen() {
                 </tbody>
               </table>
             </div>
-            <Pagination page={page} total={filtered.length} perPage={PAGE_SIZE} onPage={setPage} />
+            <Pagination page={page} total={filtered.length} perPage={perPage} onPage={setPage} />
           </>
         )}
       </div>

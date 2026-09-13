@@ -17,6 +17,10 @@ model Meeting {
   description    String?
   type           String              @default("meeting")
   scheduledAt    DateTime?
+  durationMinutes Int?
+  recurrence     String?
+  seriesId       String?
+  joinCode       String?
   startedAt      DateTime?
   endedAt        DateTime?
   reminderSentAt DateTime?
@@ -36,6 +40,8 @@ model Meeting {
   @@index([organisationId])
   @@index([workspaceId])
   @@index([status])
+  @@index([seriesId])
+  @@unique([organisationId, joinCode])
   @@map("meetings")
 }
 

@@ -82,7 +82,9 @@ export function MobileHeader({ onOpenDrawer }: MobileHeaderProps) {
 
       <button
         type="button"
+        onClick={onOpenDrawer}
         className="flex flex-1 items-center justify-center gap-1 overflow-hidden px-2 text-base font-medium text-text"
+        aria-label="Switch workspace"
       >
         <span className="truncate">
           {isSubView ? (viewTitle[activeView] ?? "Teamspace One") : (workspace?.name ?? organisation?.name ?? "Teamspace One")}

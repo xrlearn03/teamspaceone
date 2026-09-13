@@ -12,7 +12,14 @@ import { useEmployees } from "@/hooks/api";
 import { useUIStore } from "@/stores/ui";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
 import { EmployeeFormDialog } from "@/screens/hrms/employees";
-import { FilterDropdown, PageHeader, Pagination, PrimaryAction } from "./common";
+import {
+  DATE_RANGE_OPTIONS,
+  FilterDropdown,
+  PageHeader,
+  Pagination,
+  PrimaryAction,
+  withinDateRange,
+} from "./common";
 import { SectionError, SectionSkeleton } from "@/screens/hrms/common";
 import { cn } from "@/lib/utils";
 import type { Employee } from "@/lib/api";
@@ -54,9 +61,28 @@ export function HrEmployeesScreen() {
   const setActiveView = useUIStore((s) => s.setActiveView);
   const employees = useEmployees();
   const [page, setPage] = useState(1);
+  const [designationId, setDesignationId] = useState("");
+  const [range, setRange] = useState("all");
   const [addOpen, setAddOpen] = useState(false);
 
   const list = employees.data ?? [];
+  const designationOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of list) {
+      if (e.designationId) {
+        map.set(e.designationId, e.designationName ?? e.designation?.title ?? e.designation?.name ?? "—");
+      }
+    }
+    return [
+      { value: "", label: "All designations" },
+      ...[...map.entries()].map(([value, label]) => ({ value, label })),
+    ];
+  }, [list]);
+  const filtered = list.filter((e) => {
+    if (designationId && e.designationId !== designationId) return false;
+    if (!withinDateRange(e.joiningDate ?? e.createdAt, range)) return false;
+    return true;
+  });
   const stats = useMemo(() => {
     const now = Date.now();
     const month = 30 * 24 * 60 * 60 * 1000;
@@ -70,7 +96,7 @@ export function HrEmployeesScreen() {
     };
   }, [list]);
 
-  const paged = list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="p-4 sm:p-6">
@@ -89,8 +115,19 @@ export function HrEmployeesScreen() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold text-text">Employees Grid</h2>
           <div className="flex flex-wrap items-center gap-2">
-            <FilterDropdown>Designation</FilterDropdown>
-            <FilterDropdown label="Sort By : ">Last 7 Days</FilterDropdown>
+            <FilterDropdown
+              value={designationId}
+              onChange={(v) => { setDesignationId(v); setPage(1); }}
+              options={designationOptions}
+            >
+              Designation
+            </FilterDropdown>
+            <FilterDropdown
+              label="Sort By : "
+              value={range}
+              onChange={(v) => { setRange(v); setPage(1); }}
+              options={DATE_RANGE_OPTIONS}
+            />
           </div>
         </div>
 
@@ -100,8 +137,10 @@ export function HrEmployeesScreen() {
           </div>
         ) : employees.isError ? (
           <SectionError onRetry={() => employees.refetch()} />
-        ) : list.length === 0 ? (
-          <p className="p-8 text-center text-sm text-text-muted">No employees yet.</p>
+        ) : filtered.length === 0 ? (
+          <p className="p-8 text-center text-sm text-text-muted">
+            {list.length === 0 ? "No employees yet." : "No employees match the selected filters."}
+          </p>
         ) : (
           <>
             <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-3 2xl:grid-cols-5">
@@ -178,7 +217,7 @@ export function HrEmployeesScreen() {
                 );
               })}
             </div>
-            <Pagination page={page} total={list.length} perPage={PAGE_SIZE} onPage={setPage} />
+            <Pagination page={page} total={filtered.length} perPage={PAGE_SIZE} onPage={setPage} />
           </>
         )}
       </div>

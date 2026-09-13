@@ -3,22 +3,15 @@ import { useMutation } from "@tanstack/react-query";
 import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@teamspace-one/ui/button";
 import { Input } from "@teamspace-one/ui/input";
-import { login, register, setActiveOrganisation, requestPasswordReset, resetPassword } from "../lib/api";
+import { login, register, setActiveOrganisation, requestPasswordReset, resetPassword, friendlyAuthMessage } from "../lib/api";
+import { toast } from "../lib/toast";
 
 export interface AuthScreenProps {
   onAuthenticated?: () => void;
   onJoinAsGuest?: () => void;
 }
 
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
-}
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function AuthScreen({ onAuthenticated, onJoinAsGuest }: AuthScreenProps) {
   const [mode, setMode] = useState<"login" | "register" | "forgot-password" | "reset-password">("login");
@@ -29,11 +22,8 @@ export function AuthScreen({ onAuthenticated, onJoinAsGuest }: AuthScreenProps) 
   const [resetCode, setResetCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [registered, setRegistered] = useState(false);
 
   const loginMutation = useMutation({
     mutationFn: (args: { email: string; password: string }) =>
@@ -42,7 +32,7 @@ export function AuthScreen({ onAuthenticated, onJoinAsGuest }: AuthScreenProps) 
       if (data.user) setActiveOrganisation(null);
       onAuthenticated?.();
     },
-    onError: (err: unknown) => setError(errorMessage(err)),
+    onError: (err: unknown) => toast.error(friendlyAuthMessage(err)),
   });
 
   const registerMutation = useMutation({
@@ -52,9 +42,9 @@ export function AuthScreen({ onAuthenticated, onJoinAsGuest }: AuthScreenProps) 
       setPassword("");
       setFirstName("");
       setLastName("");
-      setRegistered(true);
+      toast.success("Account successfully created. Please sign in.");
     },
-    onError: (err: unknown) => setError(errorMessage(err)),
+    onError: (err: unknown) => toast.error(friendlyAuthMessage(err)),
   });
 
   const requestResetMutation = useMutation({
@@ -64,9 +54,9 @@ export function AuthScreen({ onAuthenticated, onJoinAsGuest }: AuthScreenProps) 
       setNewPassword("");
       setConfirmPassword("");
       setMode("reset-password");
-      setSuccess("If that account exists, a 6-digit code has been sent to your email.");
+      toast.success("If that account exists, a 6-digit code has been sent to your email.");
     },
-    onError: (err: unknown) => setError(errorMessage(err)),
+    onError: (err: unknown) => toast.error(friendlyAuthMessage(err)),
   });
 
   const resetMutation = useMutation({
@@ -77,16 +67,49 @@ export function AuthScreen({ onAuthenticated, onJoinAsGuest }: AuthScreenProps) 
       setConfirmPassword("");
       setPassword("");
       setMode("login");
-      setSuccess("Your password has been updated. Please sign in.");
+      toast.success("Your password has been updated. Please sign in.");
     },
-    onError: (err: unknown) => setError(errorMessage(err)),
+    onError: (err: unknown) => toast.error(friendlyAuthMessage(err)),
   });
+
+  function validate(): boolean {
+    if (mode === "reset-password") {
+      if (resetCode.length !== 6) {
+        toast.error("Enter the 6-digit code from your email");
+        return false;
+      }
+      if (newPassword.length < 12) {
+        toast.error("Password must be at least 12 characters");
+        return false;
+      }
+      if (newPassword !== confirmPassword) {
+        toast.error("New passwords do not match");
+        return false;
+      }
+      return true;
+    }
+    if (!email.trim()) {
+      toast.error("Email is required");
+      return false;
+    }
+    if (!EMAIL_RE.test(email.trim())) {
+      toast.error("Enter a valid email address");
+      return false;
+    }
+    if (mode === "login" && !password) {
+      toast.error("Password is required");
+      return false;
+    }
+    if (mode === "register" && password.length < 12) {
+      toast.error("Password must be at least 12 characters");
+      return false;
+    }
+    return true;
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    setSuccess(null);
-    setRegistered(false);
+    if (!validate()) return;
     if (mode === "login") {
       loginMutation.mutate({ email, password });
     } else if (mode === "register") {
@@ -94,27 +117,12 @@ export function AuthScreen({ onAuthenticated, onJoinAsGuest }: AuthScreenProps) 
     } else if (mode === "forgot-password") {
       requestResetMutation.mutate();
     } else {
-      if (resetCode.length !== 6) {
-        setError("Enter the 6-digit code");
-        return;
-      }
-      if (newPassword.length < 12) {
-        setError("Password must be at least 12 characters");
-        return;
-      }
-      if (newPassword !== confirmPassword) {
-        setError("Passwords do not match");
-        return;
-      }
       resetMutation.mutate();
     }
   }
 
   function switchMode(next: "login" | "register" | "forgot-password" | "reset-password") {
     setMode(next);
-    setError(null);
-    setSuccess(null);
-    setRegistered(false);
   }
 
   const title =
@@ -177,7 +185,7 @@ export function AuthScreen({ onAuthenticated, onJoinAsGuest }: AuthScreenProps) 
           <h1 className="text-2xl font-semibold text-text">{title}</h1>
           <p className="mt-1 text-sm text-text-muted">{description}</p>
 
-          <form onSubmit={submit} className="mt-6 space-y-4">
+          <form onSubmit={submit} noValidate className="mt-6 space-y-4">
             {mode === "reset-password" && (
               <Input
                 type="text"
@@ -275,16 +283,6 @@ export function AuthScreen({ onAuthenticated, onJoinAsGuest }: AuthScreenProps) 
                 </div>
               </>
             )}
-
-            {registered && mode === "login" && (
-              <p className="text-sm text-success">
-                Account successfully created. Please sign in.
-              </p>
-            )}
-
-            {success && <p className="text-sm text-success">{success}</p>}
-
-            {error && <p className="text-sm text-danger">{error}</p>}
 
             <Button type="submit" className="w-full" disabled={isPending}>
               {isPending ? "Working…" : buttonLabel}

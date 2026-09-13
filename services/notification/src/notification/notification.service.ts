@@ -81,6 +81,8 @@ export class NotificationService {
         Subjects.INTERVIEW_SESSION_SCHEDULED,
         Subjects.INTERVIEW_SCREENING_COMPLETED,
         Subjects.INTERVIEW_EVALUATION_READY,
+        Subjects.TICKET_CREATED,
+        Subjects.TICKET_STATUS_CHANGED,
       ] as string[]
     ).includes(eventType);
   }
@@ -637,6 +639,48 @@ export class NotificationService {
             link: this.interviewLink(organisationId),
           }));
       }
+      case Subjects.TICKET_CREATED: {
+        const recipientIds = Array.isArray(payload.recipientIds) ? (payload.recipientIds as string[]).filter(Boolean) : [];
+        if (!recipientIds.length) return [];
+        const subject = String(payload.subject ?? 'Support ticket');
+        const roleName = String(payload.assigneeRoleName ?? 'your team');
+        return recipientIds
+          .filter((userId) => userId !== actorId)
+          .map((userId) => ({
+            organisationId,
+            workspaceId,
+            userId,
+            actorId,
+            eventId: envelope.eventId,
+            eventType,
+            resourceType: 'ticket',
+            resourceId: envelope.resourceId,
+            title: 'New support ticket',
+            body: `"${subject}" was assigned to ${roleName}.`,
+            link: this.ticketLink(organisationId),
+          }));
+      }
+      case Subjects.TICKET_STATUS_CHANGED: {
+        const recipientIds = Array.isArray(payload.recipientIds) ? (payload.recipientIds as string[]).filter(Boolean) : [];
+        if (!recipientIds.length) return [];
+        const subject = String(payload.subject ?? 'Support ticket');
+        const status = String(payload.status ?? 'updated');
+        return recipientIds
+          .filter((userId) => userId !== actorId)
+          .map((userId) => ({
+            organisationId,
+            workspaceId,
+            userId,
+            actorId,
+            eventId: envelope.eventId,
+            eventType,
+            resourceType: 'ticket',
+            resourceId: envelope.resourceId,
+            title: `Ticket ${status}`,
+            body: `Your ticket "${subject}" was marked as ${status}.`,
+            link: this.ticketLink(organisationId),
+          }));
+      }
       default:
         return [];
     }
@@ -686,6 +730,10 @@ export class NotificationService {
 
   private interviewLink(organisationId: string) {
     return `/organisations/${organisationId}/interview`;
+  }
+
+  private ticketLink(organisationId: string) {
+    return `/organisations/${organisationId}/tickets`;
   }
 
   private buildDeliveryCreates(channels: ChannelFlags) {

@@ -28,6 +28,8 @@ export interface AuthorizableUser {
   roleName?: string;
   /** Primary role category (administrative, managerial, employee, ...). */
   roleCategory?: string;
+  /** All role ids the user holds in this organisation (primary + extra). */
+  roleIds?: string[];
 }
 
 export interface ScopeContext {

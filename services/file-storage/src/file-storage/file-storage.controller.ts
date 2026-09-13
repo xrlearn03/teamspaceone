@@ -59,8 +59,10 @@ export class FileStorageController {
   async list(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Query('folderId') folderId?: string,
+    @Query('resourceType') resourceType?: string,
+    @Query('resourceId') resourceId?: string,
   ) {
-    return this.fileStorage.list(ctx, folderId);
+    return this.fileStorage.list(ctx, folderId, resourceType, resourceId);
   }
 
   @Post('folders')
@@ -180,6 +182,7 @@ export class FileStorageController {
   async upload(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @UploadedFile() file: any,
+    @Body() body: { resourceType?: string; resourceId?: string },
   ) {
     if (!file || !file.size || file.size <= 0) {
       throw new BadRequestException('File payload is empty');
@@ -187,7 +190,10 @@ export class FileStorageController {
     if (file.size > MAX_UPLOAD_BYTES) {
       throw new BadRequestException(`File exceeds the maximum upload size of ${MAX_UPLOAD_BYTES} bytes`);
     }
-    return this.fileStorage.upload(ctx, file);
+    return this.fileStorage.upload(ctx, file, {
+      resourceType: body?.resourceType,
+      resourceId: body?.resourceId,
+    });
   }
 
   @Get(':id/shares')

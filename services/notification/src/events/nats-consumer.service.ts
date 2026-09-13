@@ -49,6 +49,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
       { stream: Streams.USERS, subject: Subjects.PASSWORD_RESET_REQUESTED, durable: 'notification-password-reset-consumer' },
       { stream: Streams.HRMS, subject: 'teamspace-one.hrms.>', durable: 'notification-hrms-consumer' },
       { stream: Streams.INTERVIEW, subject: 'teamspace-one.interview.>', durable: 'notification-interview-consumer' },
+      { stream: Streams.TICKETS, subject: 'teamspace-one.ticket.>', durable: 'notification-tickets-consumer' },
     ];
 
     for (const c of consumers) {

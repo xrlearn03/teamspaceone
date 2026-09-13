@@ -222,6 +222,7 @@ async fn test_recording_tee_writes_vp8_file() {
 
     let rec = Arc::new(Recorder {
         dir: dir.clone(),
+        room_id: "room1".to_string(),
         organisation_id: "org1".to_string(),
         actor_id: "actor1".to_string(),
         finished_files: tokio::sync::Mutex::new(Vec::new()),

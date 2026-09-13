@@ -3,12 +3,18 @@ import {
   BookOpen,
   ChevronDown,
   ChevronUp,
+  FileText,
+  Film,
   HelpCircle,
+  Image,
   Mail,
   MessageCircle,
+  Paperclip,
   Search,
   Send,
+  Ticket,
   User,
+  X,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { usePermissionContext } from "@teamspace-one/authorization/react";
@@ -17,11 +23,13 @@ import { Button } from "@teamspace-one/ui/button";
 import { Card } from "@teamspace-one/ui/card";
 import { Input } from "@teamspace-one/ui/input";
 import { UserAvatar } from "../components/user-avatar";
-import { useMe } from "../hooks/api";
+import { useCreateTicket, useMe, useRoles, useTickets } from "../hooks/api";
+import { downloadFile, uploadFile, type TicketPriority } from "../lib/api";
 import { useUIStore } from "../stores/ui";
+import { toast, toastError } from "../lib/toast";
 import { cn } from "../lib/utils";
 
-type Tab = "tutorials" | "faqs" | "chat" | "contact";
+type Tab = "tutorials" | "faqs" | "tickets" | "chat" | "contact";
 
 interface Tutorial {
   id: string;
@@ -45,6 +53,7 @@ interface ChatMessage {
 const tabs: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
   { id: "tutorials", label: "Tutorials", icon: BookOpen },
   { id: "faqs", label: "FAQs", icon: HelpCircle },
+  { id: "tickets", label: "Tickets", icon: Ticket },
   { id: "chat", label: "Live Chat", icon: MessageCircle },
   { id: "contact", label: "Contact us", icon: Mail },
 ];
@@ -552,6 +561,367 @@ function ContactPanel() {
   );
 }
 
+const TICKET_PRIORITIES = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "urgent", label: "Urgent" },
+];
+
+/** Internal tickets can only be routed to these system roles (enforced server-side too). */
+const TICKET_ASSIGNEE_ROLE_NAMES = ["owner", "org_admin", "hr_admin", "hr_manager"];
+
+const ticketSelectClass =
+  "flex h-9 w-full rounded-md border bg-surface px-3 py-1 text-sm text-text shadow-sm focus-visible:border-primary disabled:opacity-50";
+
+const TICKET_ATTACHMENT_ACCEPT =
+  "image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.zip";
+
+function formatBytes(bytes: number) {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+function attachmentIcon(file: File) {
+  if (file.type.startsWith("image/")) return Image;
+  if (file.type.startsWith("video/")) return Film;
+  return FileText;
+}
+
+function ticketStatusClass(status: string) {
+  switch (status) {
+    case "solved":
+      return "bg-success/10 text-success";
+    case "open":
+      return "bg-mention/10 text-mention";
+    case "pending":
+      return "bg-warning/10 text-warning";
+    default:
+      return "bg-info/10 text-info";
+  }
+}
+
+function ticketPriorityClass(priority: string) {
+  switch (priority) {
+    case "urgent":
+      return "bg-error/10 text-error";
+    case "high":
+      return "bg-warning/10 text-warning";
+    case "low":
+      return "bg-surface-elevated text-text-muted";
+    default:
+      return "bg-info/10 text-info";
+  }
+}
+
+function TicketsPanel() {
+  const organisationId = useUIStore((s) => s.organisationId) ?? undefined;
+  const { data: me } = useMe();
+  const { data: roles, isLoading: rolesLoading, error: rolesError } = useRoles(organisationId);
+  const { data: tickets } = useTickets(organisationId);
+  const createTicket = useCreateTicket();
+  const assignableRoles = (roles ?? []).filter((role) =>
+    TICKET_ASSIGNEE_ROLE_NAMES.includes(role.name),
+  );
+  const [subject, setSubject] = useState("");
+  const [category, setCategory] = useState(CHAT_CATEGORIES[0]);
+  const [priority, setPriority] = useState<TicketPriority>("medium");
+  const [roleId, setRoleId] = useState("");
+  const [description, setDescription] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const myTickets = (tickets ?? []).filter((t) => t.requesterId === me?.id);
+
+  function addAttachments(list: FileList | null) {
+    if (!list) return;
+    const incoming = Array.from(list);
+    setAttachments((current) => [
+      ...current,
+      ...incoming.filter(
+        (file) => !current.some((c) => c.name === file.name && c.size === file.size),
+      ),
+    ]);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!organisationId || !subject.trim() || !roleId || !description.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      const uploaded = await Promise.all(
+        attachments.map(async (file) => {
+          const record = await uploadFile(file);
+          return {
+            fileId: record.id,
+            name: record.originalName,
+            size: record.size,
+            mimeType: record.mimeType,
+          };
+        }),
+      );
+      await createTicket.mutateAsync({
+        organisationId,
+        subject: subject.trim(),
+        description: description.trim(),
+        category,
+        priority,
+        assigneeRoleId: roleId,
+        attachments: uploaded,
+      });
+      toast.success("Ticket submitted.");
+      setSubject("");
+      setDescription("");
+      setRoleId("");
+      setAttachments([]);
+      setPriority("medium");
+    } catch (err) {
+      toastError(err, "Failed to submit ticket");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card className="p-4 sm:p-6">
+        <h2 className="text-base font-semibold text-text">Raise a ticket</h2>
+        <p className="text-sm text-text-secondary">
+          Submit an internal support ticket and choose which role it should be assigned to.
+        </p>
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-text-secondary" htmlFor="ticket-subject">
+              Subject
+            </label>
+            <Input
+              id="ticket-subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="Brief summary of the issue"
+              required
+            />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-text-secondary" htmlFor="ticket-category">
+                Category
+              </label>
+              <select
+                id="ticket-category"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className={ticketSelectClass}
+              >
+                {CHAT_CATEGORIES.map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-text-secondary" htmlFor="ticket-priority">
+                Priority
+              </label>
+              <select
+                id="ticket-priority"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as TicketPriority)}
+                className={ticketSelectClass}
+              >
+                {TICKET_PRIORITIES.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-text-secondary" htmlFor="ticket-role">
+              Assign to role
+            </label>
+            <select
+              id="ticket-role"
+              value={roleId}
+              onChange={(e) => setRoleId(e.target.value)}
+              className={ticketSelectClass}
+              disabled={rolesLoading || !organisationId}
+              required
+            >
+              <option value="">
+                {rolesLoading ? "Loading roles…" : "Select a role"}
+              </option>
+              {assignableRoles.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.description || role.name}
+                </option>
+              ))}
+            </select>
+            {rolesError ? (
+              <p className="text-xs text-error">Failed to load roles: {rolesError.message}</p>
+            ) : null}
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-text-secondary" htmlFor="ticket-description">
+              Description
+            </label>
+            <textarea
+              id="ticket-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Describe the issue in detail..."
+              required
+              className="min-h-[120px] w-full rounded-md border bg-surface px-3 py-2 text-sm text-text shadow-sm placeholder:text-text-muted focus-visible:border-primary disabled:opacity-50"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-xs font-medium text-text-secondary">Attachments</span>
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-border bg-surface px-3 py-4 text-xs text-text-secondary transition-colors hover:border-primary hover:text-text">
+              <Paperclip className="h-3.5 w-3.5" />
+              Attach images, videos, or documents
+              <input
+                type="file"
+                multiple
+                accept={TICKET_ATTACHMENT_ACCEPT}
+                className="hidden"
+                onChange={(e) => {
+                  addAttachments(e.target.files);
+                  e.currentTarget.value = "";
+                }}
+              />
+            </label>
+            {attachments.length > 0 ? (
+              <ul className="space-y-1">
+                {attachments.map((file, index) => {
+                  const AttachmentIcon = attachmentIcon(file);
+                  return (
+                    <li
+                      key={`${file.name}-${index}`}
+                      className="flex items-center gap-2 rounded-md border border-border bg-surface-elevated px-2.5 py-1.5 text-xs"
+                    >
+                      <AttachmentIcon className="h-3.5 w-3.5 shrink-0 text-text-muted" />
+                      <span className="flex-1 truncate text-text">{file.name}</span>
+                      <span className="shrink-0 text-text-muted">{formatBytes(file.size)}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setAttachments((current) => current.filter((_, i) => i !== index))
+                        }
+                        aria-label={`Remove ${file.name}`}
+                        className="shrink-0 text-text-muted transition-colors hover:text-error"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </div>
+          <Button
+            type="submit"
+            disabled={submitting || !subject.trim() || !roleId || !description.trim()}
+            className="w-full sm:w-auto"
+          >
+            {submitting ? "Submitting…" : "Submit ticket"}
+          </Button>
+        </form>
+      </Card>
+
+      <Card className="flex flex-col p-0">
+        <div className="border-b border-border px-4 py-3 sm:px-5">
+          <h2 className="text-base font-semibold text-text">My tickets</h2>
+        </div>
+        {myTickets.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-5 py-16 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-elevated text-text-muted">
+              <Ticket className="h-6 w-6" />
+            </div>
+            <p className="text-sm font-medium text-text">No tickets yet</p>
+            <p className="max-w-xs text-xs text-text-muted">
+              Tickets you raise will appear here, along with their status.
+            </p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {myTickets.map((ticket) => (
+              <li key={ticket.id} className="px-4 py-3 sm:px-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-text">{ticket.subject}</p>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">
+                      {ticket.description}
+                    </p>
+                    <p className="mt-1.5 text-[11px] text-text-muted">
+                      Assigned to {ticket.assigneeRole?.description || ticket.assigneeRole?.name || "—"}
+                      {" · "}
+                      {new Date(ticket.createdAt).toLocaleDateString([], {
+                        day: "numeric",
+                        month: "short",
+                      })}
+                    </p>
+                    {ticket.attachments.length > 0 ? (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {ticket.attachments.map((a) => (
+                          <button
+                            key={a.fileId}
+                            type="button"
+                            title={`Download ${a.name}`}
+                            onClick={() => {
+                              void (async () => {
+                                try {
+                                  const blob = await downloadFile(a.fileId);
+                                  const url = URL.createObjectURL(blob);
+                                  const link = document.createElement("a");
+                                  link.href = url;
+                                  link.download = a.name;
+                                  link.click();
+                                  URL.revokeObjectURL(url);
+                                } catch (err) {
+                                  toastError(err, "Couldn't download attachment");
+                                }
+                              })();
+                            }}
+                            className="flex max-w-44 items-center gap-1 rounded bg-surface-elevated px-1.5 py-0.5 text-[11px] font-medium text-text-secondary transition-colors hover:text-text"
+                          >
+                            <Paperclip className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{a.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-[11px] font-medium capitalize",
+                        ticketStatusClass(ticket.status),
+                      )}
+                    >
+                      {ticket.status}
+                    </span>
+                    <span
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-[11px] font-medium capitalize",
+                        ticketPriorityClass(ticket.priority),
+                      )}
+                    >
+                      {ticket.priority}
+                    </span>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 const adminOnlyTabs: Tab[] = ["chat", "contact"];
 
 function useCanAccessSupport() {
@@ -562,16 +932,27 @@ function useCanAccessSupport() {
 
 export function HelpScreen() {
   const isAdmin = useCanAccessSupport();
+  const requestedTab = useUIStore((s) => s.helpTab);
+  const setHelpTab = useUIStore((s) => s.setHelpTab);
   const visibleTabs = tabs.filter((tab) =>
     adminOnlyTabs.includes(tab.id) ? isAdmin : true,
   );
-  const [activeTab, setActiveTab] = useState<Tab>("tutorials");
+  const [activeTab, setActiveTab] = useState<Tab>(
+    () => (tabs.some((t) => t.id === requestedTab) ? (requestedTab as Tab) : "tutorials"),
+  );
 
   useEffect(() => {
     if (!visibleTabs.some((tab) => tab.id === activeTab)) {
       setActiveTab(visibleTabs[0]?.id ?? "tutorials");
     }
   }, [visibleTabs, activeTab]);
+
+  // The tickets workspace deep-links here via the store ("Add New Ticket" → tickets).
+  useEffect(() => {
+    if (requestedTab && tabs.some((t) => t.id === requestedTab)) {
+      setActiveTab(requestedTab as Tab);
+    }
+  }, [requestedTab]);
 
   return (
     <div className="flex h-full flex-col">
@@ -586,7 +967,10 @@ export function HelpScreen() {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setHelpTab(tab.id);
+                }}
                 className={cn(
                   "flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   activeTab === tab.id
@@ -603,6 +987,7 @@ export function HelpScreen() {
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           {activeTab === "tutorials" ? <TutorialsPanel /> : null}
           {activeTab === "faqs" ? <FaqsPanel /> : null}
+          {activeTab === "tickets" ? <TicketsPanel /> : null}
           {activeTab === "chat" && isAdmin ? <ChatPanel /> : null}
           {activeTab === "contact" && isAdmin ? <ContactPanel /> : null}
         </main>

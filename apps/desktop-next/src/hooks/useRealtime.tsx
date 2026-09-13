@@ -62,6 +62,7 @@ export interface OutgoingCall {
   meetingId: string;
   kind: "audio" | "video";
   title?: string;
+  channelId?: string;
   userIds: string[];
 }
 
@@ -382,6 +383,17 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
             const handlers = handlersRef.current.get(event);
             if (handlers) handlers.forEach((h) => h(recording));
           }
+          if (
+            event === "meeting.created" ||
+            event === "meeting.started" ||
+            event === "meeting.ended" ||
+            event === "meeting.participant.joined" ||
+            event === "meeting.participant.left" ||
+            event === "voice.room.created"
+          ) {
+            void queryClient.invalidateQueries({ queryKey: ["meetings"] });
+            void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+          }
           const handlers = handlersRef.current.get(event);
           if (handlers) {
             handlers.forEach((h) => h(payload));
@@ -532,7 +544,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         timer,
         stopRingback,
       });
-      setOutgoingCall({ meetingId: ring.meetingId, kind: ring.kind, title: ring.title, userIds: ring.userIds });
+      setOutgoingCall({ meetingId: ring.meetingId, kind: ring.kind, title: ring.title, channelId: ring.channelId, userIds: ring.userIds });
       socketRef.current?.emit("call.ring", ring);
     },
     [],

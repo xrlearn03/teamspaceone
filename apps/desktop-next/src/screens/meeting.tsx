@@ -15,11 +15,10 @@ import {
   joinMeeting,
   leaveMeeting,
   setScreenShare,
-  startMeeting,
   type Meeting,
 } from "@/lib/api";
 import { getUserDisplayName } from "@/lib/utils";
-import { useMe } from "@/hooks/api";
+import { useMe, useStartMeeting } from "@/hooks/api";
 
 export interface MediaJoinOptions {
   audioEnabled: boolean;
@@ -36,6 +35,7 @@ export function MeetingScreen() {
   );
   const { joinRealtimeMeeting, leaveRealtimeMeeting, onRealtimeEvent, sendCallCancel } = useRealtime();
   const { data: user } = useMe();
+  const startMeeting = useStartMeeting();
   const sfu = useSfu();
 
   const [meeting, setMeeting] = useState<Meeting | null>(null);
@@ -81,7 +81,7 @@ export function MeetingScreen() {
       if (payload.id === activeMeetingId) {
         setToken(null);
         setMeeting(null);
-        setActiveView("home");
+        setActiveView("meeting");
       }
     });
 
@@ -94,7 +94,7 @@ export function MeetingScreen() {
         let m = await getMeeting(activeMeetingId!);
         if (m.status === "scheduled") {
           try {
-            m = await startMeeting(activeMeetingId!);
+            m = await startMeeting.mutateAsync(activeMeetingId!);
           } catch {
             m = await getMeeting(activeMeetingId!);
           }
@@ -165,7 +165,7 @@ export function MeetingScreen() {
     setMeeting(null);
     setMediaOptions(null);
     setAudioOutputId(undefined);
-    setActiveView("home");
+    setActiveView("meeting");
   }
 
   async function handleEnd() {
@@ -248,6 +248,7 @@ export function MeetingScreen() {
       title={meeting.title}
       connected={sfu.connected}
       meetingId={meeting.id}
+      meeting={meeting}
       kind="video"
       localStream={sfu.localStream}
       localVideoEnabled={sfu.localVideoEnabled}

@@ -90,7 +90,13 @@ function getIceServers(): RTCIceServer[] {
 }
 
 export interface UseSfuReturn {
-  join: (roomId: string, displayName: string, mediaOptions: MediaOptions, userId?: string) => Promise<void>;
+  join: (
+    roomId: string,
+    displayName: string,
+    mediaOptions: MediaOptions,
+    userId?: string,
+    sfuToken?: string,
+  ) => Promise<void>;
   leave: () => Promise<void>;
   toggleAudio: () => void;
   toggleVideo: () => Promise<void>;
@@ -125,6 +131,7 @@ export function useSfu(): UseSfuReturn {
     displayName: string;
     mediaOptions: MediaOptions;
     userId?: string;
+    sfuToken?: string;
   } | null>(null);
 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -404,13 +411,13 @@ export function useSfu(): UseSfuReturn {
   }, [stopScreenShare]);
 
   const join = useCallback(
-    async (roomId: string, displayName: string, mediaOptions: MediaOptions, userId?: string) => {
+    async (roomId: string, displayName: string, mediaOptions: MediaOptions, userId?: string, sfuToken?: string) => {
       await leave();
       setError(null);
 
       isIntentionalLeaveRef.current = false;
       reconnectTimerRef.current = null;
-      lastJoinArgsRef.current = { roomId, displayName, mediaOptions, userId };
+      lastJoinArgsRef.current = { roomId, displayName, mediaOptions, userId, sfuToken };
 
       let stream: MediaStream | null = mediaOptions.stream ?? null;
       if (!stream || stream.getTracks().length === 0) {
@@ -458,14 +465,16 @@ export function useSfu(): UseSfuReturn {
       setLocalAudioEnabled(stream.getAudioTracks()[0]?.enabled ?? false);
       setLocalVideoEnabled(stream.getVideoTracks()[0]?.enabled ?? false);
 
-      let sfuToken: string;
-      try {
-        const result = await getSfuToken(roomId);
-        sfuToken = result.token;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to get SFU token");
-        await leave();
-        throw err;
+      let token = sfuToken;
+      if (!token) {
+        try {
+          const result = await getSfuToken(roomId);
+          token = result.token;
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to get SFU token");
+          await leave();
+          throw err;
+        }
       }
 
       const pc = new RTCPeerConnection({
@@ -519,7 +528,7 @@ export function useSfu(): UseSfuReturn {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        send({ type: "join", room_id: roomId, display_name: displayName, user_id: userId, token: sfuToken });
+        send({ type: "join", room_id: roomId, display_name: displayName, user_id: userId, token: token! });
       };
 
       ws.onmessage = async (event) => {
@@ -644,8 +653,8 @@ export function useSfu(): UseSfuReturn {
           reconnectTimerRef.current = null;
           const args = lastJoinArgsRef.current;
           if (!args) return;
-          const { roomId, displayName, mediaOptions, userId } = args;
-          void join(roomId, displayName, mediaOptions, userId);
+          const { roomId, displayName, mediaOptions, userId, sfuToken } = args;
+          void join(roomId, displayName, mediaOptions, userId, sfuToken);
         }, delay);
       };
     },

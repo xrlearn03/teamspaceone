@@ -3,5 +3,7 @@ export class CreateMeetingDto {
   description?: string;
   workspaceId?: string;
   scheduledAt?: string;
+  durationMinutes?: number;
+  recurrence?: string;
   inviteeIds?: string[];
 }

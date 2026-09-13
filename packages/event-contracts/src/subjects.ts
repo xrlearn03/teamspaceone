@@ -76,6 +76,10 @@ export const Subjects = {
   APPROVAL_APPROVED: 'teamspace-one.approval.approved',
   APPROVAL_REJECTED: 'teamspace-one.approval.rejected',
   FILE_SHARED_EXTERNALLY: 'teamspace-one.file.shared_externally',
+
+  // Internal support tickets
+  TICKET_CREATED: 'teamspace-one.ticket.created',
+  TICKET_STATUS_CHANGED: 'teamspace-one.ticket.status_changed',
 } as const;
 
 export type Subject = (typeof Subjects)[keyof typeof Subjects];

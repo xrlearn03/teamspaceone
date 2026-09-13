@@ -61,6 +61,27 @@ export class MeetingController {
     return this.meeting.listCalendarEvents(ctx, from, to);
   }
 
+  @Get('calendar/availability')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
+  async listAvailability(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Query('userIds') userIds?: string | string[],
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const ids = Array.isArray(userIds) ? userIds : userIds ? userIds.split(',') : [];
+    return this.meeting.listAvailability(ctx, ids, from, to);
+  }
+
+  @Get('code/:code')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
+  async getByCode(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('code') code: string,
+  ) {
+    return this.meeting.getByCode(ctx, code);
+  }
+
   @Get(':id')
   @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_VIEW)
   async getById(

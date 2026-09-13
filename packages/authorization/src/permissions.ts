@@ -68,6 +68,9 @@ export const COLLABORATION_PERMISSIONS = {
   MEETING_CREATE: 'collaboration.meeting.create',
   MEETING_CONDUCT: 'collaboration.meeting.conduct',
   MEETING_DELETE: 'collaboration.meeting.delete',
+  TICKET_VIEW: 'collaboration.ticket.view',
+  TICKET_CREATE: 'collaboration.ticket.create',
+  TICKET_MANAGE: 'collaboration.ticket.manage',
 } as const;
 
 export const HRMS_PERMISSIONS = {
@@ -150,6 +153,11 @@ export const ADMIN_PERMISSIONS = {
   ORGANIZATION_SETTINGS: 'admin.organization.settings',
   ORGANIZATION_BILLING: 'admin.organization.billing',
   SYSTEM_SETTINGS: 'admin.system.settings',
+  ASSET_VIEW: 'admin.asset.view',
+  ASSET_CREATE: 'admin.asset.create',
+  ASSET_EDIT: 'admin.asset.edit',
+  ASSET_DELETE: 'admin.asset.delete',
+  ASSET_ASSIGN: 'admin.asset.assign',
 } as const;
 
 export const ALL_PERMISSIONS: readonly string[] = Object.freeze([

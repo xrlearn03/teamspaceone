@@ -72,6 +72,7 @@ interface UIState {
   activeMeetingId: string | null;
   activeEmployeeId: string | null;
   hrmsTab: string | null;
+  helpTab: string | null;
   sidebarCollapsed: boolean;
   sidebarWidth: number;
   rightPanelOpen: boolean;
@@ -81,6 +82,7 @@ interface UIState {
   pendingCount: number;
   activeWorkspaceId: string | null;
   pendingActionFilter: string | null;
+  guestMeetingToken: string | null;
   notificationToasts: NotificationToast[];
   setOrganisation: (organisationId: string | null) => void;
   setPendingCount: (count: number) => void;
@@ -88,11 +90,13 @@ interface UIState {
   setTheme: (theme: "light" | "dark" | "system") => void;
   setActiveView: (
     view: View,
-    params?: { channelId?: string; projectId?: string; meetingId?: string; employeeId?: string; hrmsTab?: string },
+    params?: { channelId?: string; projectId?: string; meetingId?: string; employeeId?: string; hrmsTab?: string; helpTab?: string },
   ) => void;
   setHrmsTab: (tab: string | null) => void;
+  setHelpTab: (tab: string | null) => void;
   setActiveMeetingId: (meetingId: string | null) => void;
   setPendingActionFilter: (filter: string | null) => void;
+  setGuestMeetingToken: (token: string | null) => void;
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setSidebarWidth: (width: number) => void;
@@ -113,6 +117,7 @@ export const useUIStore = create<UIState>((set) => ({
   activeMeetingId: null,
   activeEmployeeId: null,
   hrmsTab: null,
+  helpTab: null,
   sidebarCollapsed: false,
   sidebarWidth: getSidebarWidthDefault(),
   rightPanelOpen: false,
@@ -124,6 +129,7 @@ export const useUIStore = create<UIState>((set) => ({
     `teamspace-one:${getActiveOrganisation() ?? "none"}:activeWorkspace`,
   ),
   pendingActionFilter: null,
+  guestMeetingToken: null,
   notificationToasts: [],
   setOrganisation: (organisationId) =>
     set({
@@ -134,6 +140,7 @@ export const useUIStore = create<UIState>((set) => ({
       activeMeetingId: null,
       activeEmployeeId: null,
       hrmsTab: null,
+      helpTab: null,
       rightPanelOpen: false,
       searchOpen: false,
       pendingCount: 0,
@@ -155,10 +162,13 @@ export const useUIStore = create<UIState>((set) => ({
       activeMeetingId: params?.meetingId ?? null,
       activeEmployeeId: params?.employeeId ?? null,
       hrmsTab: params?.hrmsTab ?? (view === "hrms" ? "overview" : null),
+      helpTab: params?.helpTab ?? (view === "help" ? "tutorials" : null),
     }),
   setHrmsTab: (tab) => set({ hrmsTab: tab }),
+  setHelpTab: (tab) => set({ helpTab: tab }),
   setActiveMeetingId: (meetingId) => set({ activeMeetingId: meetingId }),
   setPendingActionFilter: (filter) => set({ pendingActionFilter: filter }),
+  setGuestMeetingToken: (token) => set({ guestMeetingToken: token }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setSidebarWidth: (width) =>

@@ -166,6 +166,24 @@ export class ApiError extends Error {
   }
 }
 
+const FRIENDLY_AUTH_MESSAGES: [RegExp, string][] = [
+  [/invalid credentials|^unauthorized$/i, "Incorrect email or password. If you were invited, use the temporary password from your invite email."],
+  [/current password is incorrect/i, "The password you entered is incorrect."],
+  [/email already in use/i, "An account with this email already exists — try signing in instead."],
+  [/invalid or expired reset code/i, "That code is invalid or has expired — request a new one."],
+  [/password must (be at least|be longer than or equal to|contain at least) 12/i, "Password must be at least 12 characters."],
+  [/must be an email/i, "Enter a valid email address."],
+];
+
+/** Translates raw API/auth error text into a message a user can act on. */
+export function friendlyAuthMessage(err: unknown, fallback = "Something went wrong. Please try again."): string {
+  const raw = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  for (const [pattern, message] of FRIENDLY_AUTH_MESSAGES) {
+    if (pattern.test(raw)) return message;
+  }
+  return raw || fallback;
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -214,14 +232,28 @@ export async function apiRequest<T>(
     }
   }
 
-  const response = await fetch(`${GATEWAY_URL}${path}`, init);
+  let response: Response;
+  try {
+    response = await fetch(`${GATEWAY_URL}${path}`, init);
+  } catch {
+    throw new ApiError(0, "Can't reach the server — check your connection and try again.");
+  }
   if (response.status === 401) {
-    if (retryAfterRefresh && !["/auth/login", "/auth/register", "/auth/refresh", "/auth/logout"].includes(path)) {
-      const refreshed = await refreshAccessToken();
-      if (refreshed) return apiRequest<T>(path, options, false);
+    // Credential and public endpoints carry a useful server message (e.g.
+    // invalid credentials, expired invite); let it fall through to the
+    // generic !response.ok parser instead of masking it as "Unauthorized".
+    const surfaceMessage =
+      !token ||
+      path.includes("/public/") ||
+      ["/auth/login", "/auth/register", "/auth/refresh", "/auth/forgot-password", "/auth/reset-password", "/auth/change-password", "/auth/logout"].includes(path);
+    if (!surfaceMessage) {
+      if (retryAfterRefresh) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) return apiRequest<T>(path, options, false);
+      }
+      await clearAccessToken();
+      throw new Error("Unauthorized");
     }
-    await clearAccessToken();
-    throw new Error("Unauthorized");
   }
   if (response.status === 429) {
     if (rateLimitRetries > 0) {
@@ -572,6 +604,9 @@ export interface FileRecord {
   originalName: string;
   mimeType: string;
   size: number;
+  resourceType?: string | null;
+  resourceId?: string | null;
+  uploaderId?: string;
   status: string;
   url?: string | null;
   downloadUrl?: string | null;
@@ -605,7 +640,15 @@ export interface Meeting {
   type: string;
   isRecording?: boolean;
   createdBy: string;
+  workspaceId?: string | null;
   scheduledAt?: string | null;
+  durationMinutes?: number | null;
+  recurrence?: string | null;
+  seriesId?: string | null;
+  joinCode?: string | null;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  createdAt: string;
   participants?: MeetingParticipant[];
   invitees?: MeetingInvitee[];
 }
@@ -619,6 +662,8 @@ export interface MeetingInvitee {
 export interface MeetingParticipant {
   id: string;
   userId: string;
+  guestName?: string | null;
+  guestEmail?: string | null;
   joinedAt: string;
   leftAt?: string | null;
   isScreenSharing: boolean;
@@ -780,6 +825,7 @@ export interface UserContext {
   isSuperAdmin?: boolean;
   roleName?: string;
   roleCategory?: RoleCategory;
+  roleIds?: string[];
 }
 
 export function getMyContext(organisationId: string) {
@@ -836,6 +882,154 @@ export function deleteRole(organisationId: string, roleId: string) {
 
 export function updateMemberRole(organisationId: string, membershipId: string, roleId: string) {
   return apiRequest<void>(`/organisations/${organisationId}/members/${membershipId}/role`, { method: "PATCH", body: { roleId } });
+}
+
+export type TicketPriority = "low" | "medium" | "high" | "urgent";
+export type TicketStatus = "new" | "open" | "pending" | "solved";
+
+export interface TicketAttachment {
+  fileId: string;
+  name: string;
+  size: number;
+  mimeType: string;
+}
+
+export interface SupportTicket {
+  id: string;
+  organisationId: string;
+  subject: string;
+  description: string;
+  category: string;
+  priority: TicketPriority;
+  status: TicketStatus;
+  requesterId: string;
+  assigneeRoleId: string;
+  attachments: TicketAttachment[];
+  assigneeRole?: { id: string; name: string; description?: string | null };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function getTickets(organisationId: string) {
+  return apiRequest<SupportTicket[]>(`/organisations/${organisationId}/tickets`);
+}
+
+export function createTicket(
+  organisationId: string,
+  body: {
+    subject: string;
+    description: string;
+    category: string;
+    priority: TicketPriority;
+    assigneeRoleId: string;
+    attachments?: TicketAttachment[];
+  },
+) {
+  return apiRequest<SupportTicket>(`/organisations/${organisationId}/tickets`, { method: "POST", body });
+}
+
+export function updateTicketStatus(organisationId: string, ticketId: string, status: TicketStatus) {
+  return apiRequest<SupportTicket>(`/organisations/${organisationId}/tickets/${ticketId}`, {
+    method: "PATCH",
+    body: { status },
+  });
+}
+
+// Assets — served by the organisation service (admin feature, like tickets)
+export interface AssetAssignment {
+  id: string;
+  organisationId: string;
+  assetId: string;
+  assigneeUserId: string;
+  assignedBy?: string | null;
+  assignedAt: string;
+  returnedAt?: string | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export interface Asset {
+  id: string;
+  organisationId: string;
+  name: string;
+  category?: string | null;
+  assetTag?: string | null;
+  serialNumber?: string | null;
+  status: string;
+  purchaseDate?: string | null;
+  purchaseCost?: number | null;
+  warrantyEnd?: string | null;
+  vendor?: string | null;
+  notes?: string | null;
+  currentAssignment?: AssetAssignment | null;
+  assignments?: AssetAssignment[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface AssetListParams {
+  status?: string;
+  category?: string;
+  search?: string;
+  assigneeUserId?: string;
+}
+
+export function getAssets(organisationId: string, params?: AssetListParams) {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.category) query.set("category", params.category);
+  if (params?.search) query.set("search", params.search);
+  if (params?.assigneeUserId) query.set("assigneeUserId", params.assigneeUserId);
+  const qs = query.toString();
+  return apiRequest<Asset[]>(`/organisations/${organisationId}/assets${qs ? `?${qs}` : ""}`);
+}
+
+export function getAsset(organisationId: string, id: string) {
+  return apiRequest<Asset>(`/organisations/${organisationId}/assets/${encodeURIComponent(id)}`);
+}
+
+export interface AssetInput {
+  name?: string;
+  category?: string;
+  assetTag?: string;
+  serialNumber?: string;
+  status?: string;
+  purchaseDate?: string;
+  purchaseCost?: number;
+  warrantyEnd?: string;
+  vendor?: string;
+  notes?: string;
+}
+
+export function createAsset(organisationId: string, body: AssetInput & { name: string }) {
+  return apiRequest<Asset>(`/organisations/${organisationId}/assets`, { method: "POST", body });
+}
+
+export function updateAsset(organisationId: string, id: string, body: AssetInput) {
+  return apiRequest<Asset>(`/organisations/${organisationId}/assets/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body,
+  });
+}
+
+export function deleteAsset(organisationId: string, id: string) {
+  return apiRequest<void>(`/organisations/${organisationId}/assets/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export function assignAsset(organisationId: string, id: string, body: { userId: string; notes?: string }) {
+  return apiRequest<AssetAssignment>(`/organisations/${organisationId}/assets/${encodeURIComponent(id)}/assign`, {
+    method: "POST",
+    body,
+  });
+}
+
+export function returnAsset(organisationId: string, id: string, body?: { notes?: string }) {
+  return apiRequest<AssetAssignment>(`/organisations/${organisationId}/assets/${encodeURIComponent(id)}/return`, {
+    method: "POST",
+    body: body ?? {},
+  });
 }
 
 export function inviteMember(
@@ -1102,8 +1296,12 @@ export function getProjectActivity(projectId: string, cursor?: string) {
 }
 
 // Files
-export function getFiles() {
-  return apiRequest<FileRecord[]>("/files");
+export function getFiles(filters?: { resourceType?: string; resourceId?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.resourceType) params.set("resourceType", filters.resourceType);
+  if (filters?.resourceId) params.set("resourceId", filters.resourceId);
+  const qs = params.toString();
+  return apiRequest<FileRecord[]>(`/files${qs ? `?${qs}` : ""}`);
 }
 
 export function getFile(fileId: string) {
@@ -1284,15 +1482,39 @@ export function createMeeting(
   workspaceId?: string,
   scheduledAt?: string,
   inviteeIds?: string[],
+  durationMinutes?: number,
+  recurrence?: "daily" | "weekly" | "monthly",
 ) {
   return apiRequest<Meeting>("/meetings", {
     method: "POST",
-    body: { title, description, workspaceId, scheduledAt, inviteeIds },
+    body: { title, description, workspaceId, scheduledAt, inviteeIds, durationMinutes, recurrence },
   });
 }
 
-export function createVoiceRoom(title: string, workspaceId?: string) {
-  return apiRequest<Meeting>("/meetings/voice-rooms", { method: "POST", body: { title, workspaceId } });
+export function getMeetingByCode(code: string) {
+  return apiRequest<Meeting>(`/meetings/code/${encodeURIComponent(code.trim().toUpperCase())}`);
+}
+
+export interface MeetingAvailabilityInterval {
+  meetingId: string;
+  startsAt: string;
+  endsAt: string;
+  userIds: string[];
+}
+
+export function getMeetingAvailability(args: { userIds?: string[]; from?: string; to?: string }) {
+  const params = new URLSearchParams();
+  for (const id of args.userIds ?? []) params.append("userIds", id);
+  if (args.from) params.set("from", args.from);
+  if (args.to) params.set("to", args.to);
+  const qs = params.toString();
+  return apiRequest<{ intervals: MeetingAvailabilityInterval[] }>(
+    `/meetings/calendar/availability${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export function createVoiceRoom(title: string, workspaceId?: string, inviteeIds?: string[]) {
+  return apiRequest<Meeting>("/meetings/voice-rooms", { method: "POST", body: { title, workspaceId, inviteeIds } });
 }
 
 export function startMeeting(id: string) {

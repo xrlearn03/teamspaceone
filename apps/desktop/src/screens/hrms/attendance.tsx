@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarCheck,
   ChevronDown,
@@ -35,6 +35,12 @@ import {
 import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { Input } from "@teamspace-one/ui/input";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@teamspace-one/ui/dropdown-menu";
 import type { AttendanceRecord } from "../../lib/api";
 import {
   SectionError,
@@ -43,6 +49,7 @@ import {
   formatDate,
   formatTime,
 } from "./common";
+import { FilterDropdown } from "../hr/common";
 import { cn, getUserDisplayName } from "../../lib/utils";
 
 function todayStr() {
@@ -79,6 +86,22 @@ function hoursMinutesLabel(mins: number | null) {
 function minutesOfDay(iso: string) {
   const d = new Date(iso);
   return d.getHours() * 60 + d.getMinutes();
+}
+
+function useNow(intervalMs = 1000) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
+function timerLabel(totalSecs: number) {
+  const s = Math.max(0, Math.floor(totalSecs));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
 function RequestCorrectionDialog({
@@ -214,6 +237,10 @@ export function AttendanceSection() {
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(PAGE_SIZE);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [range, setRange] = useState("60d");
+  const now = useNow(1000);
 
   if (me.isLoading || attendance.isLoading) return <SectionSkeleton />;
   if (me.isError) return <SectionError onRetry={() => me.refetch()} message={me.error?.message} />;
@@ -233,12 +260,22 @@ export function AttendanceSection() {
   const todayRecord = records.find((r) => r.date.slice(0, 10) === today);
   const canCheckin = can("hrms.attendance.checkin");
   const canCheckout = can("hrms.attendance.checkout");
+  const checkedIn = Boolean(todayRecord?.checkInAt);
+  const checkedOut = Boolean(todayRecord?.checkOutAt);
+  // workedMinutes is only persisted at checkout — tick it live while punched in.
+  const liveWorkedSecs = todayRecord?.checkInAt
+    ? Math.max(0, (now.getTime() - new Date(todayRecord.checkInAt).getTime()) / 1000)
+    : 0;
+  const effectiveWorked = (r: AttendanceRecord) =>
+    r.id === todayRecord?.id && checkedIn && !checkedOut
+      ? liveWorkedSecs / 60
+      : (r.workedMinutes ?? 0);
   const sumRange = (startDate: string, endDate: string) =>
     records
       .filter((r) => r.date.slice(0, 10) >= startDate && r.date.slice(0, 10) <= endDate)
-      .reduce((acc, r) => acc + (r.workedMinutes ?? 0), 0);
+      .reduce((acc, r) => acc + effectiveWorked(r), 0);
 
-  const minsToday = todayRecord?.workedMinutes ?? 0;
+  const minsToday = todayRecord ? effectiveWorked(todayRecord) : 0;
   const minsYesterday = records.find((r) => r.date.slice(0, 10) === daysAgo(1))?.workedMinutes ?? 0;
   const minsWeek = sumRange(daysAgo(7), today);
   const minsPrevWeek = sumRange(daysAgo(14), daysAgo(8));
@@ -265,7 +302,7 @@ export function AttendanceSection() {
   const outMin = todayRecord?.checkOutAt
     ? minutesOfDay(todayRecord.checkOutAt)
     : todayRecord?.checkInAt
-      ? new Date().getHours() * 60 + new Date().getMinutes()
+      ? now.getHours() * 60 + now.getMinutes()
       : null;
   const segStart = inMin != null ? Math.min(Math.max((inMin - axisMin) / axisSpan, 0), 1) : null;
   const segEnd = inMin != null && outMin != null ? Math.min(Math.max((outMin - axisMin) / axisSpan, 0), 1) : null;
@@ -276,17 +313,56 @@ export function AttendanceSection() {
   const spanToday = inMin != null && outMin != null ? outMin - inMin : null;
   const overtimeToday = Math.max(0, minsToday - DAY_TARGET_MIN);
 
-  const filtered = query
-    ? records.filter((r) => r.date.slice(0, 10).includes(query))
-    : records;
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const rows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const statusOptions = [
+    { value: "", label: "All statuses" },
+    ...[...new Set(records.map((r) => r.status))].map((s) => ({
+      value: s,
+      label: s.replace(/_/g, " "),
+    })),
+  ];
+
+  const filtered = records.filter((r) => {
+    if (statusFilter && r.status !== statusFilter) return false;
+    if (query && !r.date.slice(0, 10).includes(query)) return false;
+    return true;
+  });
+  const pages = Math.max(1, Math.ceil(filtered.length / perPage));
+  const rows = filtered.slice((page - 1) * perPage, page * perPage);
+
+  function applyRange(v: string) {
+    setRange(v);
+    setPage(1);
+    if (v === "custom") return;
+    const days = v === "7d" ? 7 : v === "30d" ? 30 : v === "90d" ? 90 : 60;
+    setFrom(daysAgo(days));
+    setTo(todayStr());
+  }
+
+  function exportReport() {
+    const header = ["Date", "Check In", "Check Out", "Status", "Production (min)", "Overtime (min)"];
+    const lines = filtered.map((r) => {
+      const worked = Math.round(effectiveWorked(r));
+      return [
+        r.date.slice(0, 10),
+        r.checkInAt ? new Date(r.checkInAt).toISOString() : "",
+        r.checkOutAt ? new Date(r.checkOutAt).toISOString() : "",
+        r.status,
+        String(worked),
+        String(Math.max(0, worked - DAY_TARGET_MIN)),
+      ].join(",");
+    });
+    const blob = new Blob([[header.join(","), ...lines].join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `attendance-${from}-to-${to}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const firstName = getUserDisplayName(user, "there").split(" ")[0];
-  const hour = new Date().getHours();
+  const hour = now.getHours();
   const greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
-  const checkedIn = Boolean(todayRecord?.checkInAt);
-  const checkedOut = Boolean(todayRecord?.checkOutAt);
   const dayProgress = Math.min(1, minsToday / DAY_TARGET_MIN);
 
   return (
@@ -295,6 +371,7 @@ export function AttendanceSection() {
         <h1 className="text-2xl font-bold text-text">My Attendance</h1>
         <button
           type="button"
+          onClick={exportReport}
           className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
         >
           <FileText className="h-4 w-4" />
@@ -308,8 +385,8 @@ export function AttendanceSection() {
           <div>
             <div className="text-sm text-text-secondary">{greeting}, {firstName}</div>
             <div className="mt-1 text-base font-semibold text-text">
-              {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })},{" "}
-              {new Date().toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" })}
+              {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })},{" "}
+              {now.toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" })}
             </div>
           </div>
 
@@ -329,7 +406,8 @@ export function AttendanceSection() {
           </div>
 
           <span className="rounded bg-primary px-3 py-1 text-xs font-medium text-white">
-            Production : {hoursLabel(minsToday)} hrs
+            Production :{" "}
+            {checkedIn && !checkedOut ? timerLabel(liveWorkedSecs) : `${hoursLabel(minsToday)} hrs`}
           </span>
           <span className="flex items-center gap-1.5 text-xs text-text-secondary">
             <Fingerprint className="h-3.5 w-3.5" />
@@ -438,29 +516,63 @@ export function AttendanceSection() {
             <Input
               type="date"
               value={from}
-              onChange={(e) => { setFrom(e.target.value); setPage(1); }}
+              onChange={(e) => { setFrom(e.target.value); setRange("custom"); setPage(1); }}
               className="h-8 w-36 text-xs"
             />
             <span className="text-text-muted">–</span>
             <Input
               type="date"
               value={to}
-              onChange={(e) => { setTo(e.target.value); setPage(1); }}
+              onChange={(e) => { setTo(e.target.value); setRange("custom"); setPage(1); }}
               className="h-8 w-36 text-xs"
             />
-            <button type="button" className="flex h-8 items-center gap-2 rounded-md border border-border bg-surface px-3 text-xs text-text">
-              Select Status <ChevronDown className="h-3.5 w-3.5 text-text-muted" />
-            </button>
-            <button type="button" className="flex h-8 items-center gap-2 rounded-md border border-border bg-surface px-3 text-xs text-text">
-              Sort By : Last 7 Days <ChevronDown className="h-3.5 w-3.5 text-text-muted" />
-            </button>
+            <FilterDropdown
+              value={statusFilter}
+              onChange={(v) => { setStatusFilter(v); setPage(1); }}
+              options={statusOptions}
+            >
+              Select Status
+            </FilterDropdown>
+            <FilterDropdown
+              label="Sort By : "
+              value={range}
+              onChange={applyRange}
+              options={[
+                { value: "7d", label: "Last 7 days" },
+                { value: "30d", label: "Last 30 days" },
+                { value: "60d", label: "Last 60 days" },
+                { value: "90d", label: "Last 90 days" },
+                { value: "custom", label: "Custom range" },
+              ]}
+            />
           </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
           <div className="flex items-center gap-2 text-sm text-text-secondary">
             <span>Row Per Page</span>
-            <span className="flex h-7 items-center rounded-md border border-border bg-surface px-2.5 text-xs text-text">10</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-xs text-text"
+                >
+                  {perPage}
+                  <ChevronDown className="h-3 w-3 text-text-muted" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {[10, 25, 50].map((n) => (
+                  <DropdownMenuItem
+                    key={n}
+                    onClick={() => { setPerPage(n); setPage(1); }}
+                    className="text-xs"
+                  >
+                    {n}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <span>Entries</span>
           </div>
           <div className="flex h-8 w-full items-center gap-2 rounded-md border border-border bg-surface px-3 sm:w-56">
@@ -500,7 +612,7 @@ export function AttendanceSection() {
                 </thead>
                 <tbody>
                   {rows.map((r) => {
-                    const worked = r.workedMinutes ?? 0;
+                    const worked = effectiveWorked(r);
                     const overtime = Math.max(0, worked - DAY_TARGET_MIN);
                     const good = worked >= 8 * 60;
                     return (
@@ -522,7 +634,9 @@ export function AttendanceSection() {
                             )}
                           >
                             <Clock className="h-3 w-3" />
-                            {hoursLabel(worked)} Hrs
+                            {r.id === todayRecord?.id && checkedIn && !checkedOut
+                              ? timerLabel(liveWorkedSecs)
+                              : `${hoursLabel(worked)} Hrs`}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -547,8 +661,8 @@ export function AttendanceSection() {
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3">
               <span className="text-sm text-text-secondary">
-                Showing {filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
-                {Math.min(filtered.length, page * PAGE_SIZE)} of {filtered.length} entries
+                Showing {filtered.length === 0 ? 0 : (page - 1) * perPage + 1} to{" "}
+                {Math.min(filtered.length, page * perPage)} of {filtered.length} entries
               </span>
               <div className="flex items-center gap-1">
                 <button

@@ -4,12 +4,14 @@ import { useDeleteDepartment, useDepartments } from "../../hooks/api";
 import { usePermissions } from "../../hooks/usePermissions";
 import { DepartmentDialog } from "../hrms/departments";
 import {
+  DATE_RANGE_OPTIONS,
   FilterDropdown,
   PageHeader,
   Pagination,
   PrimaryAction,
   StatusPill,
   TableToolbar,
+  withinDateRange,
 } from "./common";
 import { SectionError, SectionSkeleton } from "../hrms/common";
 import type { Department } from "../../lib/api";
@@ -22,14 +24,20 @@ export function HrDepartmentsScreen() {
   const deleteDepartment = useDeleteDepartment();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(PAGE_SIZE);
+  const [status, setStatus] = useState("");
+  const [range, setRange] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Department | null>(null);
 
   const all = departments.data ?? [];
-  const filtered = query
-    ? all.filter((d) => d.name.toLowerCase().includes(query.toLowerCase()))
-    : all;
-  const rows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const filtered = all.filter((d) => {
+    if (status && (status === "active") !== (d.isActive !== false)) return false;
+    if (!withinDateRange(d.createdAt, range)) return false;
+    if (query) return d.name.toLowerCase().includes(query.toLowerCase());
+    return true;
+  });
+  const rows = filtered.slice((page - 1) * perPage, page * perPage);
   const canManage = can("hrms.department.create") || can("hrms.department.edit");
 
   return (
@@ -44,12 +52,32 @@ export function HrDepartmentsScreen() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold text-text">Department List</h2>
           <div className="flex flex-wrap items-center gap-2">
-            <FilterDropdown>Select Status</FilterDropdown>
-            <FilterDropdown label="Sort By : ">Last 7 Days</FilterDropdown>
+            <FilterDropdown
+              value={status}
+              onChange={(v) => { setStatus(v); setPage(1); }}
+              options={[
+                { value: "", label: "All statuses" },
+                { value: "active", label: "Active" },
+                { value: "inactive", label: "Inactive" },
+              ]}
+            >
+              Select Status
+            </FilterDropdown>
+            <FilterDropdown
+              label="Sort By : "
+              value={range}
+              onChange={(v) => { setRange(v); setPage(1); }}
+              options={DATE_RANGE_OPTIONS}
+            />
           </div>
         </div>
 
-        <TableToolbar query={query} onQuery={(q) => { setQuery(q); setPage(1); }} />
+        <TableToolbar
+          query={query}
+          onQuery={(q) => { setQuery(q); setPage(1); }}
+          perPage={perPage}
+          onPerPage={(n) => { setPerPage(n); setPage(1); }}
+        />
 
         {departments.isLoading ? (
           <div className="p-5">
@@ -119,7 +147,7 @@ export function HrDepartmentsScreen() {
                 </tbody>
               </table>
             </div>
-            <Pagination page={page} total={filtered.length} perPage={PAGE_SIZE} onPage={setPage} />
+            <Pagination page={page} total={filtered.length} perPage={perPage} onPage={setPage} />
           </>
         )}
       </div>

@@ -76,12 +76,18 @@ async function main() {
         });
       }
 
-      const existingRolePermissions = await prisma.rolePermission.count({
+      const existingRolePermissions = await prisma.rolePermission.findMany({
         where: { roleId: role.id },
+        select: { permissionId: true },
       });
-      if (existingRolePermissions === 0 && permissionIds.length > 0) {
+      const existingIds = new Set(existingRolePermissions.map((rp) => rp.permissionId));
+      const missingIds = permissionIds.filter((id) => !existingIds.has(id));
+      // New roles always get the full template. Existing roles are only topped
+      // up when they are system-managed — that is what lets a re-run pick up
+      // permissions added to the catalogue after the role was created.
+      if (missingIds.length > 0 && (role.isSystem || existingRolePermissions.length === 0)) {
         await prisma.rolePermission.createMany({
-          data: permissionIds.map((permissionId) => ({
+          data: missingIds.map((permissionId) => ({
             id: randomUUID(),
             roleId: role.id,
             permissionId,

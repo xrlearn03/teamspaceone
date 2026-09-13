@@ -82,7 +82,9 @@ export function MobileHeader({ onOpenDrawer }: MobileHeaderProps) {
 
       <button
         type="button"
+        onClick={onOpenDrawer}
         className="flex flex-1 items-center justify-center gap-1 overflow-hidden px-2 text-base font-medium text-text"
+        aria-label="Switch workspace"
       >
         <img
           src="/Teamspace%20One_light.svg"

@@ -277,9 +277,58 @@ export class FileStorageService {
     };
   }
 
-  async list(ctx: OrganisationContextValue, folderId?: string): Promise<FileRecordResult[]> {
+  async list(
+    ctx: OrganisationContextValue,
+    folderId?: string,
+    resourceType?: string,
+    resourceId?: string,
+  ): Promise<FileRecordResult[]> {
     const actorId = ctx.actorId;
     if (!actorId) throw new ForbiddenException('Missing actor');
+
+    // Listing the files bound to one resource (e.g. a meeting's recordings)
+    // requires access to that resource, verified once up front.
+    if (resourceId) {
+      await this.assertResourceAccess(ctx, resourceType ?? null, resourceId);
+      const records = await this.prisma.fileRecord.findMany({
+        where: {
+          organisationId: ctx.organisationId,
+          resourceId,
+          ...(resourceType ? { resourceType } : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      return records.map((r) => this.withSignedUrl(r));
+    }
+
+    if (resourceType) {
+      const records = await this.prisma.fileRecord.findMany({
+        where: { organisationId: ctx.organisationId, resourceType },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      });
+      // For resource types with an ACL, check each referenced resource and keep
+      // only the ones the actor can reach; own uploads are always visible.
+      if (!RESOURCE_ACCESS_CHECKS[resourceType]) {
+        return records.map((r) => this.withSignedUrl(r));
+      }
+      const resourceIds = [...new Set(records.map((r) => r.resourceId).filter((id): id is string => Boolean(id)))];
+      const accessible = new Set<string>();
+      await Promise.all(
+        resourceIds.map(async (id) => {
+          try {
+            await this.assertResourceAccess(ctx, resourceType, id);
+            accessible.add(id);
+          } catch {
+            // Inaccessible resource — its files are omitted from the listing.
+          }
+        }),
+      );
+      return records
+        .filter((r) => r.uploaderId === actorId || (r.resourceId ? accessible.has(r.resourceId) : false))
+        .map((r) => this.withSignedUrl(r));
+    }
+
     // Only list files that are not bound to a restricted resource, or that the
     // actor uploaded. Resource-bound files (e.g. private-channel attachments)
     // are reachable through their owning resource, not the global listing.
@@ -568,10 +617,23 @@ export class FileStorageService {
     throw new BadRequestException(`Upload integrity check failed: ${reason}`);
   }
 
-  async upload(ctx: OrganisationContextValue, file: MulterFile): Promise<FileRecordResult> {
+  async upload(
+    ctx: OrganisationContextValue,
+    file: MulterFile,
+    resource?: { resourceType?: string; resourceId?: string },
+  ): Promise<FileRecordResult> {
     const actorId = ctx.actorId;
     if (!actorId) {
       throw new ForbiddenException('Missing actor');
+    }
+
+    const resourceType = resource?.resourceType || null;
+    const resourceId = resource?.resourceId || null;
+    if (resourceType || resourceId) {
+      if (!resourceType || !resourceId) {
+        throw new BadRequestException('resourceType and resourceId must be provided together');
+      }
+      await this.assertResourceAccess(ctx, resourceType, resourceId);
     }
 
     await this.assertQuota(ctx, file.size);
@@ -593,8 +655,8 @@ export class FileStorageService {
       id,
       organisationId: ctx.organisationId,
       workspaceId: null,
-      resourceType: null,
-      resourceId: null,
+      resourceType,
+      resourceId,
       category,
       uploaderId: actorId,
       originalName: file.originalname,
@@ -625,6 +687,8 @@ export class FileStorageService {
           organisationId: ctx.organisationId,
           category,
           uploaderId: actorId,
+          resourceType,
+          resourceId,
           originalName: file.originalname,
           mimeType: file.mimetype,
           size: file.size,

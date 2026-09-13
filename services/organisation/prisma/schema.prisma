@@ -20,6 +20,8 @@ model Organisation {
   invitations   Invitation[]
   roles         Role[]
   workspaces    Workspace[]
+  tickets       Ticket[]
+  assets        Asset[]
   emailProvider OrganisationEmailProvider?
 
   @@index([ownerId])
@@ -60,6 +62,7 @@ model Role {
   rolePermissions RolePermission[]
   userRoles      UserRole[]
   roleScopes     RoleScope[]
+  tickets        Ticket[]
 
   @@unique([organisationId, name])
   @@index([organisationId])
@@ -130,6 +133,69 @@ model Client {
 
   @@index([organisationId])
   @@map("clients")
+}
+
+model Ticket {
+  id             String   @id @default(cuid())
+  organisationId String
+  subject        String
+  description    String
+  category       String
+  priority       String   @default("medium")
+  status         String   @default("new")
+  requesterId    String
+  assigneeRoleId String
+  attachments    Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  assigneeRole   Role     @relation(fields: [assigneeRoleId], references: [id])
+
+  @@index([organisationId])
+  @@index([organisationId, requesterId])
+  @@index([organisationId, assigneeRoleId])
+  @@map("tickets")
+}
+
+model Asset {
+  id             String            @id @default(cuid())
+  organisationId String
+  organisation   Organisation      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  name           String
+  category       String?
+  assetTag       String?
+  serialNumber   String?
+  status         String            @default("available")
+  purchaseDate   DateTime?         @db.Date
+  purchaseCost   Float?
+  warrantyEnd    DateTime?         @db.Date
+  vendor         String?
+  notes          String?
+  assignments    AssetAssignment[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([organisationId])
+  @@index([organisationId, status])
+  @@map("assets")
+}
+
+model AssetAssignment {
+  id             String   @id @default(cuid())
+  organisationId String
+  assetId        String
+  asset          Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  assigneeUserId String
+  assignedBy     String?
+  assignedAt     DateTime @default(now())
+  returnedAt     DateTime?
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  @@index([organisationId])
+  @@index([assetId])
+  @@index([organisationId, assigneeUserId])
+  @@map("asset_assignments")
 }
 
 model OutboxEvent {

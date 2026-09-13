@@ -16,6 +16,7 @@ import { getAccessToken, getMe, getMyContext, getOrganisations, getActiveOrganis
 import { Button } from "@teamspace-one/ui/button";
 import { useUIStore } from "./stores/ui";
 import { UpdateChecker } from "./components/update/update-checker";
+import { Toaster } from "./components/ui/toaster";
 
 const MIN_SPLASH_DURATION_MS = 4000;
 
@@ -241,7 +242,10 @@ function App() {
   // via the `get_deep_link` command, warm start via the plugin's
   // `deep-link://new-url` event) and the manual "join as guest" entry both land
   // here. A non-null value replaces the whole app with the guest join screen.
-  const [guestToken, setGuestToken] = useState<string | null>(null);
+  const [deepLinkToken, setDeepLinkToken] = useState<string | null>(null);
+  const storeGuestToken = useUIStore((s) => s.guestMeetingToken);
+  const setStoreGuestToken = useUIStore((s) => s.setGuestMeetingToken);
+  const guestToken = deepLinkToken ?? storeGuestToken;
 
   useEffect(() => {
     if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return;
@@ -249,7 +253,7 @@ function App() {
       for (const url of Array.isArray(urls) ? urls : [urls]) {
         const token = extractMeetingJoinToken(url);
         if (token) {
-          setGuestToken(token);
+          setDeepLinkToken(token);
           break;
         }
       }
@@ -265,17 +269,24 @@ function App() {
 
   if (guestToken !== null) {
     return (
-      <GuestMeetingScreen
-        initialToken={guestToken || undefined}
-        onExit={() => setGuestToken(null)}
-      />
+      <>
+        <GuestMeetingScreen
+          initialToken={guestToken || undefined}
+          onExit={() => {
+            setDeepLinkToken(null);
+            setStoreGuestToken(null);
+          }}
+        />
+        <Toaster />
+      </>
     );
   }
 
   return (
     <>
-      <AuthGate onJoinAsGuest={() => setGuestToken("")} />
+      <AuthGate onJoinAsGuest={() => setDeepLinkToken("")} />
       <UpdateChecker />
+      <Toaster />
     </>
   );
 }

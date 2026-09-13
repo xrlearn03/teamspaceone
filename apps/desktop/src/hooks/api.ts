@@ -83,6 +83,97 @@ export function useRoles(organisationId?: string) {
   return useQuery({ queryKey: ["roles", organisationId], queryFn: () => api.getRoles(organisationId as string), enabled: Boolean(organisationId) });
 }
 
+export function useTickets(organisationId?: string) {
+  return useQuery({
+    queryKey: ["tickets", organisationId],
+    queryFn: () => api.getTickets(organisationId as string),
+    enabled: Boolean(organisationId),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateTicket() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; subject: string; description: string; category: string; priority: api.TicketPriority; assigneeRoleId: string; attachments?: api.TicketAttachment[] }) =>
+      api.createTicket(args.organisationId, args),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["tickets", args.organisationId] }),
+  });
+}
+
+export function useUpdateTicketStatus() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; ticketId: string; status: api.TicketStatus }) =>
+      api.updateTicketStatus(args.organisationId, args.ticketId, args.status),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["tickets", args.organisationId] }),
+  });
+}
+
+// Assets — served by the organisation service (admin feature, like tickets)
+export function useAssets(organisationId?: string, params?: api.AssetListParams) {
+  return useQuery({
+    queryKey: ["assets", organisationId, params ?? {}],
+    queryFn: () => api.getAssets(organisationId as string, params),
+    enabled: Boolean(organisationId),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useAsset(organisationId?: string, id?: string) {
+  return useQuery({
+    queryKey: ["assets", organisationId, id],
+    queryFn: () => api.getAsset(organisationId as string, id as string),
+    enabled: Boolean(organisationId && id),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateAsset() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; body: api.AssetInput & { name: string } }) =>
+      api.createAsset(args.organisationId, args.body),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["assets", args.organisationId] }),
+  });
+}
+
+export function useUpdateAsset() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; id: string; body: api.AssetInput }) =>
+      api.updateAsset(args.organisationId, args.id, args.body),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["assets", args.organisationId] }),
+  });
+}
+
+export function useDeleteAsset() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; id: string }) =>
+      api.deleteAsset(args.organisationId, args.id),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["assets", args.organisationId] }),
+  });
+}
+
+export function useAssignAsset() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; id: string; userId: string; notes?: string }) =>
+      api.assignAsset(args.organisationId, args.id, { userId: args.userId, notes: args.notes }),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["assets", args.organisationId] }),
+  });
+}
+
+export function useReturnAsset() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { organisationId: string; id: string; notes?: string }) =>
+      api.returnAsset(args.organisationId, args.id, args.notes ? { notes: args.notes } : undefined),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["assets", args.organisationId] }),
+  });
+}
+
 export function usePermissionsList(organisationId?: string) {
   return useQuery({
     queryKey: ["permissions", organisationId],
@@ -725,6 +816,8 @@ export function useCreateMeeting() {
       workspaceId?: string;
       scheduledAt?: string;
       inviteeIds?: string[];
+      durationMinutes?: number;
+      recurrence?: "daily" | "weekly" | "monthly";
     }) =>
       api.createMeeting(
         args.title,
@@ -732,9 +825,37 @@ export function useCreateMeeting() {
         args.workspaceId,
         args.scheduledAt,
         args.inviteeIds,
+        args.durationMinutes,
+        args.recurrence,
       ),
-    onSuccess: () =>
-      client.invalidateQueries({ queryKey: ["meetings", orgId()] }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["meetings", orgId()] });
+      void client.invalidateQueries({ queryKey: ["calendar-events"] });
+    },
+  });
+}
+
+export function useStartMeeting() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.startMeeting(id),
+    onSuccess: (_meeting, id) => {
+      void client.invalidateQueries({ queryKey: ["meetings"] });
+      void client.invalidateQueries({ queryKey: ["meeting", id] });
+      void client.invalidateQueries({ queryKey: ["calendar-events"] });
+    },
+  });
+}
+
+export function useEndMeeting() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.endMeeting(id),
+    onSuccess: (_meeting, id) => {
+      void client.invalidateQueries({ queryKey: ["meetings"] });
+      void client.invalidateQueries({ queryKey: ["meeting", id] });
+      void client.invalidateQueries({ queryKey: ["calendar-events"] });
+    },
   });
 }
 
@@ -751,7 +872,8 @@ export function useMeeting(meetingId?: string) {
 export function useCreateVoiceRoom() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { title: string; workspaceId?: string }) => api.createVoiceRoom(args.title, args.workspaceId),
+    mutationFn: (args: { title: string; workspaceId?: string; inviteeIds?: string[] }) =>
+      api.createVoiceRoom(args.title, args.workspaceId, args.inviteeIds),
     onSuccess: () => client.invalidateQueries({ queryKey: ["meetings", orgId()] }),
   });
 }
@@ -915,10 +1037,31 @@ export function useFile(fileId?: string) {
 export function useFiles() {
   return useQuery({
     queryKey: ["files", orgId()],
-    queryFn: api.getFiles,
+    queryFn: () => api.getFiles(),
     enabled: getActiveOrganisation() !== null,
     staleTime: 60 * 1000,
     retry: 2,
+  });
+}
+
+export function useMeetingRecordings(enabled = true) {
+  return useQuery({
+    queryKey: ["meeting-recordings", orgId()],
+    queryFn: () => api.getFiles({ resourceType: "meeting" }),
+    enabled: enabled && getActiveOrganisation() !== null,
+    staleTime: 30 * 1000,
+    retry: 2,
+  });
+}
+
+export function useMeetingAvailability(args?: { userIds?: string[]; from?: string; to?: string }) {
+  const key = [...(args?.userIds ?? [])].sort().join(",");
+  return useQuery({
+    queryKey: ["meeting-availability", orgId(), key, args?.from ?? null, args?.to ?? null],
+    queryFn: () => api.getMeetingAvailability(args!),
+    enabled: Boolean(args) && getActiveOrganisation() !== null,
+    staleTime: 30 * 1000,
+    retry: 1,
   });
 }
 

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException, UnauthorizedException, Logger } from '@nestjs/common';
-import { randomUUID, createHmac, createHash, timingSafeEqual } from 'node:crypto';
+import { randomUUID, randomInt, createHmac, createHash, timingSafeEqual } from 'node:crypto';
 import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import { type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { Prisma } from '#prisma';
@@ -12,6 +12,29 @@ import { type CreateVoiceRoomDto } from './dto/create-voice-room.dto.js';
 function generateRoomName(organisationId: string, title: string): string {
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   return `org-${organisationId.slice(0, 8)}-${slug}-${randomUUID().slice(0, 8)}`;
+}
+
+/** Unambiguous alphabet for human-typed join codes (no 0/O, 1/I/L). */
+const JOIN_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const JOIN_CODE_LENGTH = 8;
+const VALID_RECURRENCES = new Set(['daily', 'weekly', 'monthly']);
+
+function randomJoinCode(): string {
+  let code = '';
+  for (let i = 0; i < JOIN_CODE_LENGTH; i += 1) {
+    code += JOIN_CODE_ALPHABET[randomInt(JOIN_CODE_ALPHABET.length)];
+  }
+  return code;
+}
+
+function nextOccurrenceAfter(from: Date, recurrence: string, after: Date): Date {
+  const next = new Date(from);
+  while (next.getTime() <= after.getTime()) {
+    if (recurrence === 'daily') next.setDate(next.getDate() + 1);
+    else if (recurrence === 'weekly') next.setDate(next.getDate() + 7);
+    else next.setMonth(next.getMonth() + 1);
+  }
+  return next;
 }
 
 @Injectable()
@@ -33,13 +56,39 @@ export class MeetingService {
     return { organisationId: meeting.organisationId, workspaceId: meeting.workspaceId };
   }
 
+  private async uniqueJoinCode(organisationId: string): Promise<string> {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const code = randomJoinCode();
+      const existing = await this.prisma.meeting.findFirst({
+        where: { organisationId, joinCode: code },
+        select: { id: true },
+      });
+      if (!existing) return code;
+    }
+    throw new ConflictException('Could not allocate a join code');
+  }
+
   async create(ctx: OrganisationContextValue, dto: CreateMeetingDto) {
     const organisationId = ctx.organisationId;
     const createdBy = ctx.actorId;
     if (!createdBy) throw new ForbiddenException('Missing actor');
 
+    if (dto.durationMinutes !== undefined) {
+      if (!Number.isFinite(dto.durationMinutes) || dto.durationMinutes < 5 || dto.durationMinutes > 24 * 60) {
+        throw new BadRequestException('durationMinutes must be between 5 and 1440');
+      }
+    }
+    const recurrence = dto.recurrence?.toLowerCase() || null;
+    if (recurrence && !VALID_RECURRENCES.has(recurrence)) {
+      throw new BadRequestException('recurrence must be one of daily, weekly, monthly');
+    }
+    if (recurrence && !dto.scheduledAt) {
+      throw new BadRequestException('Recurring meetings need a scheduledAt');
+    }
+
     const id = randomUUID();
     const roomName = generateRoomName(organisationId, dto.title);
+    const joinCode = await this.uniqueJoinCode(organisationId);
     const inviteeIds = [...new Set(dto.inviteeIds ?? [])].filter((userId) => userId && userId !== createdBy);
     const payload = {
       id,
@@ -49,6 +98,9 @@ export class MeetingService {
       title: dto.title,
       description: dto.description ?? null,
       scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt).toISOString() : null,
+      durationMinutes: dto.durationMinutes ?? null,
+      recurrence,
+      joinCode,
       inviteeIds,
       type: 'meeting',
       createdBy,
@@ -76,6 +128,10 @@ export class MeetingService {
           description: dto.description,
           type: 'meeting',
           scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
+          durationMinutes: dto.durationMinutes ?? null,
+          recurrence,
+          seriesId: recurrence ? id : null,
+          joinCode,
           createdBy,
           invitees: {
             create: inviteeIds.map((userId) => ({
@@ -99,13 +155,17 @@ export class MeetingService {
 
     const id = randomUUID();
     const roomName = generateRoomName(organisationId, dto.title);
+    const joinCode = await this.uniqueJoinCode(organisationId);
+    const inviteeIds = [...new Set(dto.inviteeIds ?? [])].filter((userId) => userId && userId !== createdBy);
     const payload = {
       id,
       organisationId,
       workspaceId: dto.workspaceId ?? null,
       roomName,
       title: dto.title,
+      inviteeIds,
       type: 'voice_room',
+      joinCode,
       createdBy,
     };
 
@@ -131,8 +191,17 @@ export class MeetingService {
           type: 'voice_room',
           status: 'started',
           startedAt: new Date(),
+          joinCode,
           createdBy,
+          invitees: {
+            create: inviteeIds.map((userId) => ({
+              id: randomUUID(),
+              organisationId,
+              userId,
+            })),
+          },
         },
+        include: { invitees: true },
       });
       await this.outbox.createEvent(tx, envelope, Subjects.VOICE_ROOM_CREATED);
       return meeting;
@@ -222,6 +291,73 @@ export class MeetingService {
     return meeting;
   }
 
+  /** Resolve a human-typed join code (e.g. "K7M2P4NQ") to a meeting. */
+  async getByCode(ctx: OrganisationContextValue, code: string) {
+    const userId = ctx.actorId;
+    if (!userId) throw new ForbiddenException('Missing actor');
+    const normalized = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!normalized) throw new NotFoundException('Meeting not found');
+    const meeting = await this.prisma.meeting.findFirst({
+      where: { organisationId: ctx.organisationId, joinCode: normalized },
+      include: { participants: { where: { leftAt: null } }, invitees: true },
+    });
+    if (!meeting) throw new NotFoundException('Meeting not found');
+    const isParticipant = meeting.participants.some((p) => p.userId === userId);
+    const isInvitee = meeting.invitees.some((i) => i.userId === userId);
+    const isCreator = meeting.createdBy === userId;
+    if (!isParticipant && !isInvitee && !isCreator) throw new NotFoundException('Meeting not found');
+    return meeting;
+  }
+
+  /**
+   * Busy intervals for the given members, for smart scheduling. Only meetings
+   * the actor can see are considered — plus the actor's own meetings so their
+   * own calendar blocks the suggested slots too.
+   */
+  async listAvailability(ctx: OrganisationContextValue, userIds: string[], from?: string, to?: string) {
+    const userId = ctx.actorId;
+    if (!userId) throw new ForbiddenException('Missing actor');
+
+    const ids = [...new Set([userId, ...userIds])].filter(Boolean).slice(0, 50);
+    const fromDate = from ? new Date(from) : new Date();
+    const toDate = to ? new Date(to) : new Date(fromDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()) || fromDate > toDate) {
+      throw new BadRequestException('Invalid availability range');
+    }
+
+    const meetings = await this.prisma.meeting.findMany({
+      where: {
+        organisationId: ctx.organisationId,
+        type: 'meeting',
+        status: { not: 'ended' },
+        scheduledAt: { not: null, lte: toDate },
+        OR: [
+          { createdBy: { in: ids } },
+          { invitees: { some: { userId: { in: ids } } } },
+          { participants: { some: { userId: { in: ids }, leftAt: null } } },
+        ],
+      },
+      include: { invitees: true, participants: { where: { leftAt: null } } },
+      orderBy: { scheduledAt: 'asc' },
+      take: 200,
+    });
+
+    const intervals: { meetingId: string; startsAt: Date; endsAt: Date; userIds: string[] }[] = [];
+    for (const m of meetings) {
+      const start = m.status === 'started' && m.startedAt ? m.startedAt : m.scheduledAt!;
+      const busyEnd = new Date(start.getTime() + (m.durationMinutes ?? (m.status === 'started' ? 60 : 30)) * 60_000);
+      if (busyEnd < fromDate || start > toDate) continue;
+      const attendees = this.attendeeIds(m);
+      intervals.push({
+        meetingId: m.id,
+        startsAt: start,
+        endsAt: busyEnd,
+        userIds: attendees.filter((id) => ids.includes(id)),
+      });
+    }
+    return { intervals };
+  }
+
   private attendeeIds(meeting: { createdBy: string; participants: { userId: string }[]; invitees: { userId: string }[] }) {
     return [
       ...new Set([
@@ -308,7 +444,110 @@ export class MeetingService {
       return updated;
     });
 
+    if (meeting.recurrence && meeting.scheduledAt && meeting.seriesId) {
+      try {
+        await this.scheduleNextOccurrence(meeting);
+      } catch (err) {
+        this.logger.warn(`Failed to schedule next occurrence for ${meeting.id}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
     return updated;
+  }
+
+  /**
+   * Recurring meetings roll forward: when an occurrence ends, create the next
+   * one (same series, invitees and settings) unless a future occurrence is
+   * already scheduled.
+   */
+  private async scheduleNextOccurrence(meeting: {
+    id: string;
+    organisationId: string;
+    workspaceId: string | null;
+    roomName: string;
+    title: string;
+    description: string | null;
+    scheduledAt: Date | null;
+    durationMinutes: number | null;
+    recurrence: string | null;
+    seriesId: string | null;
+    createdBy: string;
+    invitees: { userId: string }[];
+  }) {
+    if (!meeting.scheduledAt || !meeting.recurrence || !meeting.seriesId) return;
+    const now = new Date();
+    const pending = await this.prisma.meeting.findFirst({
+      where: {
+        organisationId: meeting.organisationId,
+        seriesId: meeting.seriesId,
+        status: 'scheduled',
+        scheduledAt: { gt: now },
+      },
+      select: { id: true },
+    });
+    if (pending) return;
+
+    const nextAt = nextOccurrenceAfter(meeting.scheduledAt, meeting.recurrence, now);
+    const id = randomUUID();
+    const roomName = generateRoomName(meeting.organisationId, meeting.title);
+    const joinCode = await this.uniqueJoinCode(meeting.organisationId);
+    const inviteeIds = meeting.invitees.map((i) => i.userId);
+
+    const payload = {
+      id,
+      organisationId: meeting.organisationId,
+      workspaceId: meeting.workspaceId,
+      roomName,
+      title: meeting.title,
+      description: meeting.description,
+      scheduledAt: nextAt.toISOString(),
+      durationMinutes: meeting.durationMinutes,
+      recurrence: meeting.recurrence,
+      joinCode,
+      inviteeIds,
+      type: 'meeting',
+      createdBy: meeting.createdBy,
+      previousMeetingId: meeting.id,
+    };
+
+    const envelope = createEventEnvelope({
+      eventType: Subjects.MEETING_CREATED,
+      organisationId: meeting.organisationId,
+      workspaceId: meeting.workspaceId ?? undefined,
+      actorId: meeting.createdBy,
+      resourceType: 'meeting',
+      resourceId: id,
+      payload,
+    });
+
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const created = await tx.meeting.create({
+        data: {
+          id,
+          organisationId: meeting.organisationId,
+          workspaceId: meeting.workspaceId,
+          roomName,
+          title: meeting.title,
+          description: meeting.description,
+          type: 'meeting',
+          scheduledAt: nextAt,
+          durationMinutes: meeting.durationMinutes,
+          recurrence: meeting.recurrence,
+          seriesId: meeting.seriesId,
+          joinCode,
+          createdBy: meeting.createdBy,
+          invitees: {
+            create: inviteeIds.map((userId) => ({
+              id: randomUUID(),
+              organisationId: meeting.organisationId,
+              userId,
+            })),
+          },
+        },
+      });
+      await this.outbox.createEvent(tx, envelope, Subjects.MEETING_CREATED);
+      return created;
+    });
   }
 
   async join(ctx: OrganisationContextValue, id: string, dto: JoinMeetingDto) {
