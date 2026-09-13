@@ -107,6 +107,8 @@ export function NativeConference({
   audioOutputId,
 }: NativeConferenceProps) {
   const realtime = useRealtime();
+  const realtimeRef = useRef(realtime);
+  realtimeRef.current = realtime;
   const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
   const [messages, setMessages] = useState<MeetingMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -178,13 +180,13 @@ export function NativeConference({
   }, [meetingId]);
 
   useEffect(() => {
-    const unsubChat = realtime.onRealtimeEvent("meeting.chat.created", (msg) => {
+    const unsubChat = realtimeRef.current.onRealtimeEvent("meeting.chat.created", (msg) => {
       addMessageFromEvent(msg);
     });
-    const unsubReaction = realtime.onRealtimeEvent("meeting.reaction.created", (r) => {
+    const unsubReaction = realtimeRef.current.onRealtimeEvent("meeting.reaction.created", (r) => {
       showReaction(r.emoji, r.userId, r.id);
     });
-    const unsubRaise = realtime.onRealtimeEvent("meeting.raise_hand.changed", (payload) => {
+    const unsubRaise = realtimeRef.current.onRealtimeEvent("meeting.raise_hand.changed", (payload) => {
       setRaisedHands((prev) => {
         const next = new Set(prev);
         if (payload.raised) next.add(payload.userId);
@@ -192,10 +194,10 @@ export function NativeConference({
         return next;
       });
     });
-    const unsubRecording = realtime.onRealtimeEvent("meeting.recording.changed", (payload) => {
+    const unsubRecording = realtimeRef.current.onRealtimeEvent("meeting.recording.changed", (payload) => {
       setIsRecording(payload.isRecording);
     });
-    const unsubScreen = realtime.onRealtimeEvent("meeting.screen.shared", (payload) => {
+    const unsubScreen = realtimeRef.current.onRealtimeEvent("meeting.screen.shared", (payload) => {
       setScreenSharingUsers((prev) => {
         const next = new Set(prev);
         if (payload.isScreenSharing) next.add(payload.userId);
@@ -210,7 +212,10 @@ export function NativeConference({
       unsubRecording();
       unsubScreen();
     };
-  }, [realtime, meetingId, participants, user?.id]);
+    // `realtime` is a fresh context object per provider render; depending on it
+    // would resubscribe every handler on each realtime state change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetingId, participants, user?.id]);
 
   async function sendMessage() {
     const content = chatInput.trim();

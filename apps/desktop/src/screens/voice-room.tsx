@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Mic, Loader2 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
@@ -35,6 +35,9 @@ export function VoiceRoomScreen() {
       setError(sfu.error);
     }
   }, [sfu.error]);
+
+  const sfuRef = useRef(sfu);
+  sfuRef.current = sfu;
 
   useEffect(() => {
     if (!activeMeetingId) return;
@@ -78,7 +81,7 @@ export function VoiceRoomScreen() {
       cancelled = true;
       leaveRealtimeMeeting(activeMeetingId);
       unsubscribe();
-      sfu.leave();
+      void sfuRef.current.leave();
     };
   }, [activeMeetingId]);
 

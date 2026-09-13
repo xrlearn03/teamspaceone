@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -30,9 +30,6 @@ import {
   DropdownMenuTrigger,
 } from "@teamspace-one/ui/dropdown-menu";
 import { cn, getUserDisplayName } from "@/lib/utils";
-import { useNativeCamera } from "@/hooks/useNativeCamera";
-import { useNativeMicrophone } from "@/hooks/useNativeMicrophone";
-import { useSfu } from "@/hooks/useSfu";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useMembers, useUsers } from "@/hooks/api";
 import { useUIStore } from "@/stores/ui";
@@ -46,90 +43,68 @@ import {
   type UserDto,
 } from "@/lib/api";
 
+interface QualityStats {
+  audio: { packetsLost: number; jitter?: number; bitrate?: number };
+  video: { packetsLost: number; jitter?: number; bitrate?: number };
+  rtt?: number;
+  timestamp?: number;
+}
+
 interface NativeConferenceProps {
   user?: UserDto | null;
   title?: string;
+  connected?: boolean;
   meetingId: string;
   meeting?: Meeting;
   kind?: "audio" | "video";
+  localStream?: MediaStream | null;
+  localVideoEnabled?: boolean;
+  localAudioEnabled?: boolean;
+  remoteStreams?: { participantId: string; stream: MediaStream }[];
+  participants?: { id: string; displayName: string; userId?: string }[];
+  activeSpeakerId?: string | null;
+  qualityStats?: QualityStats | null;
+  screenShareEnabled?: boolean;
+  isRecording?: boolean;
   isHost?: boolean;
+  audioOutputId?: string;
   onLeave: () => void;
   onEnd?: () => void;
-  [key: string]: any;
+  onToggleAudio?: () => void;
+  onToggleVideo?: () => void;
+  onToggleScreenShare?: () => void;
 }
 
+/**
+ * Presentational conference UI — the owning screen holds the single `useSfu`
+ * instance and feeds all call state in as props. Do not call `useSfu` here:
+ * a second hook instance means a second peer connection (double join).
+ */
 export function NativeConference({
   user,
   title = "Meeting",
+  connected = false,
   meetingId,
   meeting,
   kind = "video",
+  localStream,
+  localVideoEnabled = false,
+  localAudioEnabled = false,
+  remoteStreams = [],
+  participants = [],
+  activeSpeakerId = null,
+  qualityStats = null,
+  screenShareEnabled = false,
   isHost = false,
   onLeave,
   onEnd,
+  onToggleAudio,
+  onToggleVideo,
+  onToggleScreenShare,
 }: NativeConferenceProps) {
-  const camera = useNativeCamera();
-  const microphone = useNativeMicrophone();
-  const sfu = useSfu();
-
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [micOn, setMicOn] = useState(microphone.enabled);
-  const [videoOn, setVideoOn] = useState(camera.enabled);
-  const [screenSharing, setScreenSharing] = useState(false);
-  const [isRecording] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
   const displayName = getUserDisplayName(user, "Guest");
-  const userId = user?.id;
-
-  useEffect(() => {
-    const video = camera.videoStream;
-    const audio = microphone.audioStream;
-    if (!video && !audio) return;
-    const tracks: MediaStreamTrack[] = [];
-    if (video) tracks.push(...video.getTracks());
-    if (audio) tracks.push(...audio.getTracks());
-    const combined = new MediaStream(tracks);
-    setLocalStream(combined);
-    sfu
-      .join(
-        meetingId,
-        displayName,
-        {
-          audioEnabled: microphone.enabled,
-          videoEnabled: camera.enabled,
-          stream: combined,
-        },
-        userId,
-      )
-      .catch((err) => console.error("Failed to join SFU", err));
-
-    return () => {
-      void sfu.leave();
-    };
-  }, [camera.videoStream, microphone.audioStream, meetingId, displayName, userId]);
-
-  const handleToggleAudio = useCallback(() => {
-    sfu.toggleAudio();
-    setMicOn((prev) => !prev);
-  }, [sfu]);
-
-  const handleToggleVideo = useCallback(() => {
-    void sfu.toggleVideo();
-    setVideoOn((prev) => !prev);
-  }, [sfu]);
-
-  const handleToggleScreenShare = useCallback(() => {
-    void sfu
-      .toggleScreenShare()
-      .then(() => setScreenSharing((prev) => !prev))
-      .catch((err) => console.error("Screen share failed", err));
-  }, [sfu]);
-
-  const handleLeave = useCallback(() => {
-    void sfu.leave();
-    onLeave();
-  }, [sfu, onLeave]);
 
   async function copyInviteLink() {
     try {
@@ -142,20 +117,7 @@ export function NativeConference({
     }
   }
 
-  const participantCount = sfu.connected ? 1 + sfu.remoteStreams.length : 0;
-
-  const sortedRemote = useMemo(() => {
-    const base = [...sfu.remoteStreams];
-    const screen = base.filter((s) => s.participantId.startsWith("screen-"));
-    const cameras = base.filter((s) => !s.participantId.startsWith("screen-"));
-    return [...screen, ...cameras];
-  }, [sfu.remoteStreams]);
-
-  const qualityTotal =
-    (sfu.qualityStats?.audio.packetsLost ?? 0) +
-    (sfu.qualityStats?.video.packetsLost ?? 0);
-
-  const aloneInCall = sfu.remoteStreams.length === 0;
+  const aloneInCall = remoteStreams.length === 0;
 
   const roomProps = {
     user,
@@ -164,29 +126,29 @@ export function NativeConference({
     kind,
     meeting,
     meetingId,
-    connected: sfu.connected,
-    localStream: sfu.localStream ?? localStream,
-    micOn,
-    videoOn,
-    screenSharing,
+    connected,
+    localStream,
+    micOn: localAudioEnabled,
+    videoOn: localVideoEnabled,
+    screenSharing: screenShareEnabled,
     isHost,
-    qualityStats: sfu.qualityStats,
-    participants: sfu.participants,
-    remoteStreams: sfu.remoteStreams,
+    qualityStats,
+    participants,
+    remoteStreams,
     copiedLink,
     onCopyInviteLink: copyInviteLink,
-    onLeave: handleLeave,
+    onLeave,
     onEnd,
-    onToggleAudio: handleToggleAudio,
-    onToggleVideo: handleToggleVideo,
-    onToggleScreenShare: handleToggleScreenShare,
+    onToggleAudio,
+    onToggleVideo,
+    onToggleScreenShare,
   };
 
   if (aloneInCall) {
     return <CallWaitingRoom {...roomProps} />;
   }
 
-  return <ActiveCallRoom {...roomProps} activeSpeakerId={sfu.activeSpeakerId} />;
+  return <ActiveCallRoom {...roomProps} activeSpeakerId={activeSpeakerId} />;
 }
 
 /* =========================================================
@@ -279,6 +241,8 @@ function CallWaitingRoom({
   onToggleScreenShare?: () => void;
 }) {
   const realtime = useRealtime();
+  const realtimeRef = useRef(realtime);
+  realtimeRef.current = realtime;
   const [elapsed, setElapsed] = useState(0);
   const [tab, setTab] = useState<"participants" | "chat">("participants");
   const [query, setQuery] = useState("");
@@ -307,13 +271,13 @@ function CallWaitingRoom({
   // Meeting chat: load history and subscribe to live messages.
   useEffect(() => {
     let cancelled = false;
-    realtime.joinRealtimeMeeting(meetingId);
+    realtimeRef.current.joinRealtimeMeeting(meetingId);
     getMeetingMessages(meetingId)
       .then((res) => {
         if (!cancelled) setMessages(res.items);
       })
       .catch(() => {});
-    const unsub = realtime.onRealtimeEvent("meeting.chat.created", (msg) => {
+    const unsub = realtimeRef.current.onRealtimeEvent("meeting.chat.created", (msg) => {
       if (msg.meetingId !== meetingId) return;
       setMessages((prev) =>
         prev.some((m) => m.id === msg.id)
@@ -325,7 +289,10 @@ function CallWaitingRoom({
       cancelled = true;
       unsub();
     };
-  }, [meetingId, realtime]);
+    // realtime returns a fresh context value per provider render — depending on
+    // it would refetch chat and rejoin the socket room on every realtime change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetingId]);
 
   function sendChatMessage() {
     const content = chatInput.trim();
@@ -1078,6 +1045,8 @@ function CallSidePanel({
   setTab?: (tab: "participants" | "chat") => void;
 }) {
   const realtime = useRealtime();
+  const realtimeRef = useRef(realtime);
+  realtimeRef.current = realtime;
   const [internalTab, setInternalTab] = useState<"participants" | "chat">("participants");
   const tab = controlledTab ?? internalTab;
   const setTab = controlledSetTab ?? setInternalTab;
@@ -1098,13 +1067,13 @@ function CallSidePanel({
 
   useEffect(() => {
     let cancelled = false;
-    realtime.joinRealtimeMeeting(meetingId);
+    realtimeRef.current.joinRealtimeMeeting(meetingId);
     getMeetingMessages(meetingId)
       .then((res) => {
         if (!cancelled) setMessages(res.items);
       })
       .catch(() => {});
-    const unsub = realtime.onRealtimeEvent("meeting.chat.created", (msg) => {
+    const unsub = realtimeRef.current.onRealtimeEvent("meeting.chat.created", (msg) => {
       if (msg.meetingId !== meetingId) return;
       setMessages((prev) =>
         prev.some((m) => m.id === msg.id) ? prev : [...prev, { ...msg, updatedAt: msg.createdAt }],
@@ -1114,7 +1083,8 @@ function CallSidePanel({
       cancelled = true;
       unsub();
     };
-  }, [meetingId, realtime]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetingId]);
 
   function sendChatMessage() {
     const content = chatInput.trim();

@@ -116,7 +116,12 @@ export function GuestMeetingScreen({ token }: { token: string }) {
     }
   }, [sfu.localStream, joined]);
 
-  useEffect(() => () => void sfu.leave(), [sfu]);
+  const sfuRef = useRef(sfu);
+  sfuRef.current = sfu;
+  // Leave only on unmount — depending on `sfu` (a fresh object every render)
+  // would tear the call down on each re-render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => void sfuRef.current.leave(), []);
 
   function continueAsMember() {
     if (!memberMeeting) return;

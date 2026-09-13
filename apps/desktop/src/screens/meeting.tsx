@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Video, Loader2 } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
@@ -73,6 +73,9 @@ export function MeetingScreen() {
     }
   }, [sfu.error]);
 
+  const sfuRef = useRef(sfu);
+  sfuRef.current = sfu;
+
   useEffect(() => {
     if (!activeMeetingId) return;
 
@@ -119,9 +122,13 @@ export function MeetingScreen() {
       cancelled = true;
       leaveRealtimeMeeting(activeMeetingId);
       unsubscribe();
-      sfu.leave();
+      void sfuRef.current.leave();
     };
-  }, [activeMeetingId, sfu]);
+    // sfu returns a fresh object each render — depending on it would cancel
+    // and restart fetchMeeting on every re-render (e.g. reconnect churn),
+    // leaving the screen stuck on "Loading meeting..." forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMeetingId]);
 
   async function handleJoin(opts: MediaJoinOptions) {
     if (!activeMeetingId) return;
