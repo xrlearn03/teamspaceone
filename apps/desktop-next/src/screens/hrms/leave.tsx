@@ -29,7 +29,7 @@ import {
   formatDate,
 } from "./common";
 
-function ApplyLeaveDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function ApplyLeaveDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const types = useLeaveTypes();
   const apply = useApplyLeave();
   const [leaveTypeId, setLeaveTypeId] = useState("");

@@ -43,6 +43,14 @@ export type View =
   | "hrms"
   | "interview"
   | "admin"
+  | "assets"
+  | "tickets"
+  | "hr-dashboard"
+  | "employees"
+  | "employee-detail"
+  | "departments"
+  | "designations"
+  | "leaves"
   | "settings"
   | "help";
 
@@ -61,6 +69,8 @@ interface UIState {
   activeChannelId: string | null;
   activeProjectId: string | null;
   activeMeetingId: string | null;
+  activeEmployeeId: string | null;
+  hrmsTab: string | null;
   sidebarCollapsed: boolean;
   sidebarWidth: number;
   rightPanelOpen: boolean;
@@ -77,8 +87,9 @@ interface UIState {
   setTheme: (theme: "light" | "dark" | "system") => void;
   setActiveView: (
     view: View,
-    params?: { channelId?: string; projectId?: string; meetingId?: string },
+    params?: { channelId?: string; projectId?: string; meetingId?: string; employeeId?: string; hrmsTab?: string },
   ) => void;
+  setHrmsTab: (tab: string | null) => void;
   setActiveMeetingId: (meetingId: string | null) => void;
   setPendingActionFilter: (filter: string | null) => void;
   toggleSidebar: () => void;
@@ -99,6 +110,8 @@ export const useUIStore = create<UIState>((set) => ({
   activeChannelId: null,
   activeProjectId: null,
   activeMeetingId: null,
+  activeEmployeeId: null,
+  hrmsTab: null,
   sidebarCollapsed: false,
   sidebarWidth: getSidebarWidthDefault(),
   rightPanelOpen: false,
@@ -121,6 +134,8 @@ export const useUIStore = create<UIState>((set) => ({
       activeChannelId: null,
       activeProjectId: null,
       activeMeetingId: null,
+      activeEmployeeId: null,
+      hrmsTab: null,
       rightPanelOpen: false,
       searchOpen: false,
       pendingCount: 0,
@@ -140,7 +155,10 @@ export const useUIStore = create<UIState>((set) => ({
       activeChannelId: params?.channelId ?? null,
       activeProjectId: params?.projectId ?? null,
       activeMeetingId: params?.meetingId ?? null,
+      activeEmployeeId: params?.employeeId ?? null,
+      hrmsTab: params?.hrmsTab ?? (view === "hrms" ? "overview" : null),
     }),
+  setHrmsTab: (tab) => set({ hrmsTab: tab }),
   setActiveMeetingId: (meetingId) => set({ activeMeetingId: meetingId }),
   setPendingActionFilter: (filter) => set({ pendingActionFilter: filter }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),

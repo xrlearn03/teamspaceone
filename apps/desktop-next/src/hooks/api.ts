@@ -1128,6 +1128,23 @@ export function useCreateDesignation() {
   });
 }
 
+export function useUpdateDesignation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateDesignation>[1] }) =>
+      api.updateDesignation(args.id, args.body),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "designations"] }),
+  });
+}
+
+export function useDeleteDesignation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteDesignation,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "designations"] }),
+  });
+}
+
 export function useOrgChart() {
   return useQuery({
     queryKey: ["hrms", "org-chart", orgId()],
@@ -1142,6 +1159,16 @@ export function useAttendance(params?: { employeeId?: string; from?: string; to?
     queryKey: ["hrms", "attendance", orgId(), params ?? {}],
     queryFn: () => api.getAttendance(params),
     enabled: hrmsEnabled() && Boolean(params?.employeeId),
+    staleTime: 30 * 1000,
+  });
+}
+
+/** Org-scoped attendance listing (HR roles) — no employeeId required. */
+export function useAttendanceAll(params?: { from?: string; to?: string }) {
+  return useQuery({
+    queryKey: ["hrms", "attendance", "all", orgId(), params ?? {}],
+    queryFn: () => api.getAttendance(params),
+    enabled: hrmsEnabled(),
     staleTime: 30 * 1000,
   });
 }

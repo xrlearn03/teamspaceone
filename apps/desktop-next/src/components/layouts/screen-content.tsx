@@ -20,6 +20,14 @@ import { AccessDeniedScreen } from "@/screens/access-denied";
 import { HrmsScreen } from "@/screens/hrms";
 import { InterviewScreen } from "@/screens/interview";
 import { AdminScreen } from "@/screens/admin";
+import { AssetsScreen } from "@/screens/assets";
+import { TicketsScreen } from "@/screens/tickets";
+import { HrDashboardScreen } from "@/screens/hr/dashboard";
+import { HrEmployeesScreen } from "@/screens/hr/employees";
+import { EmployeeDetailScreen } from "@/screens/hr/employee-detail";
+import { HrDepartmentsScreen } from "@/screens/hr/departments";
+import { HrDesignationsScreen } from "@/screens/hr/designations";
+import { HrLeavesScreen } from "@/screens/hr/leaves";
 import { HelpScreen } from "@/screens/help";
 
 const screens: Record<View, React.ComponentType> = {
@@ -38,6 +46,14 @@ const screens: Record<View, React.ComponentType> = {
   hrms: HrmsScreen,
   interview: InterviewScreen,
   admin: AdminScreen,
+  assets: AssetsScreen,
+  tickets: TicketsScreen,
+  "hr-dashboard": HrDashboardScreen,
+  employees: HrEmployeesScreen,
+  "employee-detail": EmployeeDetailScreen,
+  departments: HrDepartmentsScreen,
+  designations: HrDesignationsScreen,
+  leaves: HrLeavesScreen,
   settings: SettingsScreen,
   help: HelpScreen,
 };

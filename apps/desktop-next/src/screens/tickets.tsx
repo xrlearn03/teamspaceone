@@ -11,7 +11,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { FilterDropdown, PageHeader, PrimaryAction } from "./hr/common";
-import { cn } from "../lib/utils";
+import { cn } from "@/lib/utils";
 
 const SPARK = [38, 62, 45, 80, 55, 92, 40, 70, 58, 85, 48, 74];
 

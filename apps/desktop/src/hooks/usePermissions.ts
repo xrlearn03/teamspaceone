@@ -20,19 +20,34 @@ export function useMyContext() {
   });
 }
 
+export type ShellVariant = "admin" | "hr" | "default";
+
 /**
- * True when the caller is an organisation admin or super admin — they get the
- * Figma admin shell (sidebar + header) instead of the collaboration shell.
+ * Which sidebar chrome the caller gets:
+ * - "admin": organisation super admin / org admin (wildcard `*`) and other
+ *   administrative roles — Figma admin menu (Assets / Users / Administrations).
+ * - "hr": HR Admin and HR Manager — Figma HR menu (Employees / Departments /
+ *   Designations / Leaves / Tickets). Detected via the role name or HR-ops
+ *   permissions that only HR roles carry.
+ * - "default": everyone else keeps the collaboration rail + workspace sidebar.
  */
-export function useIsAdminUser() {
+export function useShellVariant(): ShellVariant {
   const { data } = useMyContext();
-  const { user } = usePermissionContext();
-  if (data?.isSuperAdmin || data?.roleCategory === "administrative") return true;
-  // Fallback for backends that don't return role info yet: anyone who can
-  // reach the admin area is treated as an admin.
-  return user
-    ? hasAnyPermission(user, ["admin.user.manage", "admin.role.manage", "admin.organization.settings"])
-    : false;
+  const perms = data?.permissions ?? [];
+  if (data?.isSuperAdmin || perms.includes("*")) return "admin";
+  const roleName = (data?.roleName ?? "").toLowerCase().replace(/[\s_-]+/g, "");
+  const isHr =
+    roleName.includes("hr") ||
+    perms.some(
+      (p) =>
+        p === "hrms.*" ||
+        p === "hrms.employee.*" ||
+        p === "hrms.employee.create" ||
+        p.startsWith("hrms.designation"),
+    );
+  if (isHr) return "hr";
+  if (data?.roleCategory === "administrative") return "admin";
+  return "default";
 }
 
 export function usePermissions() {

@@ -11,9 +11,13 @@ import { IncomingCallOverlay } from "@/components/call/incoming-call";
 import { NotificationToasts } from "@/components/ui/notification-toasts";
 import { TooltipProvider } from "@teamspace-one/ui/tooltip";
 import { ScreenContent } from "./screen-content";
+import { useShellVariant } from "@/hooks/usePermissions";
+import { RoleSidebar } from "@/components/admin/role-sidebar";
+import { TopHeader } from "./top-header";
 
 export function AppShellDesktop() {
   useTheme();
+  const shellVariant = useShellVariant();
 
   const {
     rightPanelOpen,
@@ -95,14 +99,25 @@ export function AppShellDesktop() {
           </div>
         ) : null}
         <div className="flex flex-1 overflow-hidden">
-          <AppRail />
-          <WorkspaceSidebar />
-          <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
-            <ScreenContent />
-          </main>
-          {rightPanelOpen && <RightPanel />}
+          {shellVariant !== "default" ? (
+            <RoleSidebar variant={shellVariant} />
+          ) : (
+            <>
+              <AppRail />
+              <WorkspaceSidebar />
+            </>
+          )}
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <TopHeader />
+            <div className="flex min-h-0 flex-1 overflow-hidden">
+              <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+                <ScreenContent />
+              </main>
+              {rightPanelOpen && <RightPanel />}
+            </div>
+            <StatusBar />
+          </div>
         </div>
-        <StatusBar />
       </div>
       <CommandMenu open={searchOpen} onOpenChange={setSearchOpen} />
       <IncomingCallOverlay />

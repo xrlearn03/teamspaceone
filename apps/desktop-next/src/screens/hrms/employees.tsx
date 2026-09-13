@@ -84,7 +84,7 @@ const EMPTY_FORM: EmployeeFormState = {
   status: "active",
 };
 
-function EmployeeFormDialog({
+export function EmployeeFormDialog({
   open,
   onOpenChange,
   employee,

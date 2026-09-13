@@ -12,7 +12,11 @@ import {
 } from "@teamspace-one/ui/dropdown-menu";
 import { getUserDisplayName } from "../../lib/utils";
 
-export function AdminHeader() {
+const isMac =
+  typeof navigator !== "undefined" &&
+  /mac/i.test(navigator.platform || navigator.userAgent);
+
+export function TopHeader() {
   const { setActiveView, setSearchOpen } = useUIStore(
     useShallow((s) => ({
       setActiveView: s.setActiveView,
@@ -29,26 +33,26 @@ export function AdminHeader() {
   }
 
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-[#e5e7eb] bg-white px-6">
+    <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border bg-surface px-4 sm:px-6">
       <button
         type="button"
         onClick={() => setSearchOpen(true)}
-        className="flex h-7 w-[259px] items-center justify-between rounded-[5px] border border-[#e5e7eb] bg-white px-2.5 text-left"
+        className="flex h-7 min-w-0 max-w-[259px] flex-1 items-center justify-between rounded-md border border-border bg-surface px-2.5 text-left sm:flex-none sm:basis-[259px]"
       >
-        <span className="flex items-center gap-2">
-          <Search className="h-3.5 w-3.5 text-[#9ca3af]" />
-          <span className="text-xs text-[#9ca3af]">Search in HRMS</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <Search className="h-3.5 w-3.5 shrink-0 text-text-muted" />
+          <span className="truncate text-xs text-text-muted">Search</span>
         </span>
-        <span className="rounded-[5px] bg-[#e8e9ea] px-1.5 py-0.5 text-[10px] font-medium text-[#6b7280]">
-          CTRL + /
+        <span className="ml-2 hidden rounded bg-surface-elevated px-1.5 py-0.5 text-[10px] font-medium text-text-secondary sm:block">
+          {isMac ? "⌘ K" : "Ctrl + K"}
         </span>
       </button>
 
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         <button
           type="button"
           onClick={() => setActiveView("settings")}
-          className="flex h-[30px] w-[30px] items-center justify-center rounded-[5px] text-[#6b7280] hover:bg-[#f3f4f6] hover:text-[#111827]"
+          className="flex h-[30px] w-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-elevated hover:text-text"
           aria-label="Settings"
         >
           <Settings className="h-4 w-4" />
@@ -56,14 +60,12 @@ export function AdminHeader() {
         <button
           type="button"
           onClick={() => setActiveView("inbox")}
-          className="relative flex h-[30px] w-[30px] items-center justify-center rounded-[5px] text-[#6b7280] hover:bg-[#f3f4f6] hover:text-[#111827]"
+          className="relative flex h-[30px] w-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-elevated hover:text-text"
           aria-label="Notifications"
         >
           <Bell className="h-4 w-4" />
           {(unread?.count ?? 0) > 0 && (
-            <span className="absolute right-1 top-1 flex h-3 w-3 items-center justify-center rounded-full bg-[#f6cece] p-[3px]">
-              <span className="h-full w-full rounded-full bg-[#e70d0d]" />
-            </span>
+            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-mention ring-2 ring-surface" />
           )}
         </button>
 
@@ -79,7 +81,7 @@ export function AdminHeader() {
                   {userLoading ? "?" : displayName.charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#03c95a]" />
+              <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-surface bg-online" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" sideOffset={8}>

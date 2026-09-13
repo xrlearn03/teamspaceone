@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BarChart3,
   CalendarCheck,
@@ -15,6 +15,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useUIStore } from "@/stores/ui";
 import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { cn } from "@/lib/utils";
 import { HrmsOverviewSection } from "./overview";
@@ -69,6 +70,14 @@ const TABS: Tab[] = [
 export function HrmsScreen() {
   const { can, hasPermissionPrefix } = usePermissions();
   const [tab, setTab] = useState<TabId>("overview");
+  const { hrmsTab, setHrmsTab } = useUIStore();
+
+  // The role sidebar deep-links here via the store (e.g. "My Leaves" → leave).
+  useEffect(() => {
+    if (hrmsTab && TABS.some((t) => t.id === hrmsTab)) {
+      setTab(hrmsTab as TabId);
+    }
+  }, [hrmsTab]);
 
   const hasAnyHrms =
     hasPermissionPrefix("hrms.") || can("hrms.access");
@@ -107,7 +116,10 @@ export function HrmsScreen() {
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setTab(t.id)}
+                onClick={() => {
+                  setTab(t.id);
+                  setHrmsTab(t.id);
+                }}
                 className={cn(
                   "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
                   activeTab === t.id

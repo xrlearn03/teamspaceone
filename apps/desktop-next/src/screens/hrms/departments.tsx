@@ -23,7 +23,7 @@ import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { Input } from "@teamspace-one/ui/input";
 import { SectionError, SectionSkeleton } from "./common";
 
-function DepartmentDialog({
+export function DepartmentDialog({
   open,
   onOpenChange,
   department,
@@ -81,7 +81,7 @@ function DepartmentDialog({
   );
 }
 
-function DesignationDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function DesignationDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [title, setTitle] = useState("");
   const [level, setLevel] = useState("");
   const createDesignation = useCreateDesignation();

@@ -53,6 +53,8 @@ export function StatusBar() {
         ) : null}
         <span className="text-text-muted">·</span>
         <span>{connection === "offline" ? "Not synced" : "Synced"}</span>
+        <span className="hidden text-text-muted md:inline">·</span>
+        <span className="hidden md:inline">© Teamspace One</span>
       </div>
     </div>
   );

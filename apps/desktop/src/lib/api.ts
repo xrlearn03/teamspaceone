@@ -1545,6 +1545,11 @@ export interface Employee {
   employmentType: string;
   status: string;
   employeeNumber?: string | null;
+  dateOfBirth?: string | null;
+  address?: string | null;
+  personalEmail?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
   departmentName?: string | null;
   designationName?: string | null;
   department?: { id: string; name: string } | null;
@@ -1562,6 +1567,7 @@ export interface Department {
   parentDepartmentId?: string | null;
   headEmployeeId?: string | null;
   memberCount?: number;
+  isActive?: boolean;
   createdAt?: string;
 }
 
@@ -1572,6 +1578,7 @@ export interface Designation {
   name?: string;
   level?: string | null;
   departmentId?: string | null;
+  isActive?: boolean;
   createdAt?: string;
 }
 
@@ -1809,6 +1816,14 @@ export function getDesignations() {
 
 export function createDesignation(body: { title: string; level?: string; departmentId?: string }) {
   return apiRequest<Designation>("/hrms/designations", { method: "POST", body });
+}
+
+export function updateDesignation(id: string, body: { title?: string; level?: string | null; departmentId?: string | null; isActive?: boolean }) {
+  return apiRequest<Designation>(`/hrms/designations/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function deleteDesignation(id: string) {
+  return apiRequest<void>(`/hrms/designations/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 export function getOrgChart() {
