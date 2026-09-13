@@ -1266,7 +1266,7 @@ export function deleteTask(taskId: string) {
   return apiRequest<void>(`/tasks/${taskId}`, { method: "DELETE" });
 }
 
-// Personal todos
+// Time tracking
 export interface TimeEntry {
   id: string;
   organisationId: string;
@@ -1332,11 +1332,11 @@ export function createTodo(body: { title: string; notes?: string; dueDate?: stri
 }
 
 export function updateTodo(todoId: string, body: { title?: string; notes?: string | null; dueDate?: string | null; completed?: boolean; position?: number }) {
-  return apiRequest<Todo>(`/todos/${todoId}`, { method: "PATCH", body });
+  return apiRequest<Todo>(`/todos/${encodeURIComponent(todoId)}`, { method: "PATCH", body });
 }
 
 export function deleteTodo(todoId: string) {
-  return apiRequest<void>(`/todos/${todoId}`, { method: "DELETE" });
+  return apiRequest<void>(`/todos/${encodeURIComponent(todoId)}`, { method: "DELETE" });
 }
 
 export function getTaskAttachments(taskId: string) {

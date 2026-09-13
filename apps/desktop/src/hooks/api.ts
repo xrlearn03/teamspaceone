@@ -714,7 +714,7 @@ export function useDeleteTodo() {
 
 export function useTimeEntries(params?: { from?: string; to?: string }) {
   return useQuery({
-    queryKey: ["time-entries", orgId(), params ?? {}],
+    queryKey: ["time-entries", orgId(), params?.from ?? "", params?.to ?? ""],
     queryFn: () => api.getTimeEntries(params),
     enabled: getActiveOrganisation() !== null,
     staleTime: 60 * 1000,
@@ -725,7 +725,7 @@ export function useCreateTimeEntry() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.createTimeEntry,
-    onSuccess: () => client.invalidateQueries({ queryKey: ["time-entries"] }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["time-entries", orgId()] }),
   });
 }
 
@@ -734,7 +734,7 @@ export function useUpdateTimeEntry() {
   return useMutation({
     mutationFn: (args: { id: string; body: Parameters<typeof api.updateTimeEntry>[1] }) =>
       api.updateTimeEntry(args.id, args.body),
-    onSuccess: () => client.invalidateQueries({ queryKey: ["time-entries"] }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["time-entries", orgId()] }),
   });
 }
 
@@ -742,7 +742,7 @@ export function useDeleteTimeEntry() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.deleteTimeEntry,
-    onSuccess: () => client.invalidateQueries({ queryKey: ["time-entries"] }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["time-entries", orgId()] }),
   });
 }
 
