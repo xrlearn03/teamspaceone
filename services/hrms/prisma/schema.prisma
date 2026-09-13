@@ -74,7 +74,7 @@ model Designation {
 model Employee {
   id                    String               @id @default(cuid())
   organisationId        String
-  userId                String
+  userId                String?
   membershipId          String?
   employeeNumber        String?
   firstName             String

@@ -28,7 +28,11 @@ import { EmployeeDetailScreen } from "@/screens/hr/employee-detail";
 import { HrDepartmentsScreen } from "@/screens/hr/departments";
 import { HrDesignationsScreen } from "@/screens/hr/designations";
 import { HrLeavesScreen } from "@/screens/hr/leaves";
+import { HrAttendanceScreen } from "@/screens/hr/attendance";
+import { HrOnboardingScreen } from "@/screens/hr/onboarding";
+import { HrOffboardingScreen } from "@/screens/hr/offboarding";
 import { MyAttendanceScreen } from "@/screens/my-attendance";
+import { MyTimesheetScreen } from "@/screens/my-timesheet";
 import { MyLeavesScreen } from "@/screens/my-leaves";
 import { MyPayrollScreen } from "@/screens/my-payroll";
 import { MyPerformanceScreen } from "@/screens/my-performance";
@@ -58,7 +62,11 @@ const screens: Record<View, React.ComponentType> = {
   departments: HrDepartmentsScreen,
   designations: HrDesignationsScreen,
   leaves: HrLeavesScreen,
+  attendance: HrAttendanceScreen,
+  onboarding: HrOnboardingScreen,
+  offboarding: HrOffboardingScreen,
   "my-attendance": MyAttendanceScreen,
+  "my-timesheet": MyTimesheetScreen,
   "my-leaves": MyLeavesScreen,
   "my-payroll": MyPayrollScreen,
   "my-performance": MyPerformanceScreen,

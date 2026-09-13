@@ -100,7 +100,7 @@ export function EmployeeFormDialog({
   const init = (): EmployeeFormState => {
     if (employee) {
       return {
-        userId: employee.userId,
+        userId: employee.userId ?? "",
         membershipId: "",
         firstName: employee.firstName,
         lastName: employee.lastName,
@@ -152,6 +152,10 @@ export function EmployeeFormDialog({
   }
 
   function pickDraft(userId: string) {
+    if (!userId) {
+      setForm((f) => ({ ...f, userId: "", membershipId: "" }));
+      return;
+    }
     const selected = (availableDrafts ?? []).find((d) => d.userId === userId) ?? draft;
     if (!selected) return;
     setForm({
@@ -186,9 +190,8 @@ export function EmployeeFormDialog({
         { onSuccess: () => onOpenChange(false) },
       );
     } else {
-      if (!form.userId) return;
       const body = {
-        userId: form.userId,
+        userId: form.userId || undefined,
         membershipId: form.membershipId || undefined,
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
@@ -224,13 +227,13 @@ export function EmployeeFormDialog({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 pt-2">
           {selectingMember ? (
             <label className="col-span-2 flex flex-col gap-1">
-              <span className={label}>Member *</span>
+              <span className={label}>Member <span className="text-text-muted">(optional)</span></span>
               <select
                 className="h-9 rounded-md border bg-background px-2 text-sm text-text"
                 value={form.userId}
                 onChange={(e) => pickDraft(e.target.value)}
               >
-                <option value="">Select an invited member…</option>
+                <option value="">No linked member</option>
                 {(availableDrafts ?? []).map((d) => (
                   <option key={d.userId} value={d.userId}>
                     {employeeName(d)} {d.workEmail ? `(${d.workEmail})` : ""}
@@ -336,7 +339,7 @@ export function EmployeeFormDialog({
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
             onClick={submit}
-            disabled={busy || !form.firstName.trim() || !form.lastName.trim() || (!employee && !form.userId)}
+            disabled={busy || !form.firstName.trim() || !form.lastName.trim()}
           >
             {employee ? "Save changes" : "Add employee"}
           </Button>

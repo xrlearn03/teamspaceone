@@ -15,7 +15,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
           onError: (error) => toastError(error),
         }),
         queryCache: new QueryCache({
-          onError: (error) => toastErrorThrottled(error),
+          // Queries can opt out via meta.suppressErrorToast when the screen
+          // already renders its own error state.
+          onError: (error, query) => {
+            if (query.meta?.suppressErrorToast) return;
+            toastErrorThrottled(error);
+          },
         }),
         defaultOptions: {
           queries: {

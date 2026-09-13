@@ -483,7 +483,7 @@ export class LifecycleService {
 
     return this.prisma.offboardingCase.findMany({
       where,
-      include: { employee: { select: { id: true, firstName: true, lastName: true } }, tasks: { orderBy: { sortOrder: 'asc' } } },
+      include: { employee: { select: { id: true, firstName: true, lastName: true, userId: true } }, tasks: { orderBy: { sortOrder: 'asc' } } },
       orderBy: { createdAt: 'desc' },
     });
   }

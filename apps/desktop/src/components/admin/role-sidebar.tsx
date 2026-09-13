@@ -1,8 +1,10 @@
 import {
   Calendar,
   CalendarCheck,
+  CalendarClock,
   CalendarDays,
   Clock,
+  FileClock,
   Folder,
   Hash,
   HelpCircle,
@@ -14,7 +16,10 @@ import {
   ShieldCheck,
   Sun,
   Ticket,
+  Timer,
   TrendingUp,
+  UserMinus,
+  UserPlus,
   UserRound,
   Users,
   Wallet,
@@ -40,6 +45,7 @@ const SHARED_SECTION_1: MenuItem[] = [
 
 const SELF_SERVICE_SECTION: MenuItem[] = [
   { view: "my-attendance", label: "My Attendance", icon: Clock },
+  { view: "my-timesheet", label: "My Timesheet", icon: Timer },
   { view: "my-leaves", label: "My Leaves", icon: CalendarDays },
   { view: "my-payroll", label: "My Payroll", icon: Wallet },
   { view: "my-performance", label: "My Performance", icon: TrendingUp },
@@ -63,12 +69,17 @@ const MENU_SECTIONS: Record<Exclude<ShellVariant, "default">, MenuItem[][]> = {
     FOOTER_SECTION,
   ],
   hr: [
-    [{ ...SHARED_SECTION_1[0], view: "hr-dashboard" }, ...SHARED_SECTION_1.slice(1)],
+    SHARED_SECTION_1,
     [
       { view: "employees", label: "Employees", icon: UserRound },
       { view: "departments", label: "Departments", icon: Network },
       { view: "designations", label: "Designations", icon: CalendarCheck },
       { view: "leaves", label: "Leaves", icon: CalendarDays },
+      { view: "attendance", label: "Overall Attendance", icon: CalendarClock },
+      { view: "timesheets", label: "All Timesheets", icon: FileClock },
+      { view: "hrms", label: "Payroll", icon: Wallet, hrmsTab: "payroll" },
+      { view: "onboarding", label: "Onboarding", icon: UserPlus },
+      { view: "offboarding", label: "Offboarding", icon: UserMinus },
       { view: "tickets", label: "Tickets", icon: Ticket },
     ],
     SELF_SERVICE_SECTION,

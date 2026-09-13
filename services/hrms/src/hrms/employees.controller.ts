@@ -27,7 +27,7 @@ import {
 import { StructureService, type DepartmentInput, type DesignationInput, type HolidayInput } from './structure.service.js';
 
 export class CreateEmployeeDto {
-  userId!: string;
+  userId?: string;
   membershipId?: string;
   employeeNumber?: string;
   firstName!: string;

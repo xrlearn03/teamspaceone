@@ -1,16 +1,26 @@
 import { useMemo, useState } from "react";
 import {
   Briefcase,
+  Eye,
   MoreVertical,
+  Pencil,
   PlusCircle,
   TrendingUp,
   UserCheck,
   UserPlus,
   UserX,
 } from "lucide-react";
-import { useEmployees } from "../../hooks/api";
+import { useEmployees, useTerminateEmployee, useUpdateEmployee } from "../../hooks/api";
+import { usePermissions } from "../../hooks/usePermissions";
 import { useUIStore } from "../../stores/ui";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@teamspace-one/ui/dropdown-menu";
 import { EmployeeFormDialog } from "../hrms/employees";
 import {
   DATE_RANGE_OPTIONS,
@@ -64,6 +74,12 @@ export function HrEmployeesScreen() {
   const [designationId, setDesignationId] = useState("");
   const [range, setRange] = useState("all");
   const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<Employee | null>(null);
+  const { can } = usePermissions();
+  const updateEmployee = useUpdateEmployee();
+  const terminateEmployee = useTerminateEmployee();
+  const canEdit = can("hrms.employee.edit");
+  const canDelete = can("hrms.employee.delete");
 
   const list = employees.data ?? [];
   const designationOptions = useMemo(() => {
@@ -160,14 +176,71 @@ export function HrEmployeesScreen() {
                       onClick={(ev) => ev.stopPropagation()}
                       className="absolute left-4 top-4 h-4 w-4 rounded border-border"
                     />
-                    <button
-                      type="button"
-                      onClick={(ev) => ev.stopPropagation()}
-                      className="absolute right-4 top-4 text-text-muted hover:text-text"
-                      aria-label="More options"
-                    >
-                      <MoreVertical className="h-4 w-4" />
-                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={(ev) => ev.stopPropagation()}
+                          className="absolute right-4 top-4 text-text-muted hover:text-text"
+                          aria-label="More options"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => setActiveView("employee-detail", { employeeId: e.id })}
+                          className="flex items-center gap-2 text-xs"
+                        >
+                          <Eye className="h-3.5 w-3.5" /> View profile
+                        </DropdownMenuItem>
+                        {canEdit && (
+                          <DropdownMenuItem
+                            onClick={() => setEditing(e)}
+                            className="flex items-center gap-2 text-xs"
+                          >
+                            <Pencil className="h-3.5 w-3.5" /> Edit
+                          </DropdownMenuItem>
+                        )}
+                        {canEdit && e.status !== "terminated" && (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              updateEmployee.mutate({
+                                id: e.id,
+                                body: { status: e.status === "active" ? "inactive" : "active" },
+                              })
+                            }
+                            className="flex items-center gap-2 text-xs"
+                          >
+                            {e.status === "active" ? (
+                              <>
+                                <UserX className="h-3.5 w-3.5" /> Deactivate
+                              </>
+                            ) : (
+                              <>
+                                <UserCheck className="h-3.5 w-3.5" /> Activate
+                              </>
+                            )}
+                          </DropdownMenuItem>
+                        )}
+                        {canDelete && e.status !== "terminated" && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => {
+                                const name = `${e.firstName} ${e.lastName}`.trim();
+                                if (window.confirm(`Terminate ${name}? This sets their status to terminated.`)) {
+                                  terminateEmployee.mutate(e.id);
+                                }
+                              }}
+                              className="flex items-center gap-2 text-xs text-error"
+                            >
+                              <UserX className="h-3.5 w-3.5" /> Terminate
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
 
                     <div className="flex flex-col items-center pt-1">
                       <div className="relative">
@@ -223,6 +296,13 @@ export function HrEmployeesScreen() {
       </div>
 
       <EmployeeFormDialog open={addOpen} onOpenChange={setAddOpen} />
+      <EmployeeFormDialog
+        open={Boolean(editing)}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null);
+        }}
+        employee={editing}
+      />
     </div>
   );
 }

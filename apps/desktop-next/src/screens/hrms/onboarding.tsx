@@ -110,7 +110,7 @@ function MemberUserSelect({ value, onChange }: { value: string; onChange: (v: st
   );
 }
 
-function StartOnboardingDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+export function StartOnboardingDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const templates = useOnboardingTemplates();
   const create = useCreateOnboardingInstance();
   const [employeeId, setEmployeeId] = useState("");
@@ -189,7 +189,7 @@ function StartOnboardingDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   );
 }
 
-function ConvertToEmployeeDialog({
+export function ConvertToEmployeeDialog({
   instance,
   open,
   onOpenChange,
@@ -333,7 +333,7 @@ interface TaskRowDraft {
 
 const EMPTY_TASK: TaskRowDraft = { title: "", description: "", category: "", dueDaysOffset: "" };
 
-function TemplateDialog({
+export function TemplateDialog({
   open,
   onOpenChange,
   template,

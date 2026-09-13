@@ -8,7 +8,7 @@ import type { View } from "@/stores/ui";
  * When a view lists multiple permissions, any one of them is sufficient.
  */
 export const VIEW_PERMISSIONS: Partial<Record<View, string[]>> = {
-  home: ["dashboard.view"],
+  home: ["dashboard.view", "hrms.access"],
   channel: ["collaboration.access"],
   dm: ["collaboration.access"],
   project: ["collaboration.project.view"],
@@ -27,7 +27,11 @@ export const VIEW_PERMISSIONS: Partial<Record<View, string[]>> = {
   departments: ["hrms.department.view"],
   designations: ["hrms.designation.view"],
   leaves: ["hrms.leave.view"],
+  attendance: ["hrms.attendance.view"],
+  onboarding: ["hrms.onboarding.view"],
+  offboarding: ["hrms.offboarding.view"],
   "my-attendance": ["hrms.attendance.view", "hrms.attendance.checkin", "hrms.access"],
+  "my-timesheet": ["collaboration.access"],
   "my-leaves": ["hrms.leave.view", "hrms.leave.apply", "hrms.access"],
   "my-payroll": ["hrms.payroll.view", "hrms.access"],
   "my-performance": ["hrms.performance.view", "hrms.access"],

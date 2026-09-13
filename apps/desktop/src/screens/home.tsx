@@ -4,6 +4,9 @@ import { useMe } from "../hooks/api";
 import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { cn, getUserDisplayName } from "../lib/utils";
 import { filterDashboardWidgets } from "../features/dashboard/registry";
+import { useShellVariant } from "../hooks/usePermissions";
+import { AdminHomeScreen } from "./home-admin";
+import { HrDashboardScreen } from "./hr/dashboard";
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -15,11 +18,21 @@ function getGreeting() {
 export function HomeScreen() {
   const { data: user } = useMe();
   const { user: authzUser } = usePermissionContext();
+  const shellVariant = useShellVariant();
   const widgets = filterDashboardWidgets(authzUser);
   const bannerWidgets = widgets.filter((w) => w.banner);
   const gridWidgets = widgets.filter((w) => !w.banner);
 
   const displayName = getUserDisplayName(user, "there");
+
+  // Role shells land on their own dashboard instead of the member
+  // widget grid.
+  if (shellVariant === "admin") {
+    return <AdminHomeScreen />;
+  }
+  if (shellVariant === "hr") {
+    return <HrDashboardScreen />;
+  }
 
   return (
     <div className="mx-auto flex h-full max-w-[1600px] flex-col overflow-y-auto">

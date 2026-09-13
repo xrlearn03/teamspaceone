@@ -90,7 +90,7 @@ function tryParseDigestJson(text: string): { title: string; items: string[] }[] 
   return null;
 }
 
-function normalizeDigest(result: unknown): DailyDigestResult {
+export function normalizeDigest(result: unknown): DailyDigestResult {
   if (!result || typeof result !== "object") {
     return { sections: [{ title: "Daily brief", items: ["Failed to load daily brief."] }], model: "none" };
   }

@@ -31,7 +31,7 @@ function caseName(c: OffboardingCase) {
   return `${c.employee.firstName} ${c.employee.lastName}`.trim();
 }
 
-function InitiateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+export function InitiateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const employees = useEmployees({});
   const create = useCreateOffboardingCase();
   const [employeeId, setEmployeeId] = useState("");

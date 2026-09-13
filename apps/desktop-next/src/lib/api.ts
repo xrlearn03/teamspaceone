@@ -461,6 +461,19 @@ export interface TaskDependency {
   createdAt: string;
 }
 
+export interface Todo {
+  id: string;
+  organisationId: string;
+  userId: string;
+  title: string;
+  notes?: string | null;
+  dueDate?: string | null;
+  completedAt?: string | null;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TaskAttachment {
   id: string;
   taskId: string;
@@ -1202,6 +1215,79 @@ export function deleteTask(taskId: string) {
   return apiRequest<void>(`/tasks/${taskId}`, { method: "DELETE" });
 }
 
+// Personal todos
+export interface TimeEntry {
+  id: string;
+  organisationId: string;
+  userId: string;
+  projectId?: string | null;
+  taskId?: string | null;
+  label?: string | null;
+  description?: string | null;
+  date: string;
+  minutes: number;
+  billable: boolean;
+  createdAt: string;
+  updatedAt: string;
+  project?: { id: string; name: string } | null;
+  task?: { id: string; title: string } | null;
+}
+
+export function getTimeEntries(params?: { from?: string; to?: string }) {
+  const query = new URLSearchParams();
+  if (params?.from) query.set("from", params.from);
+  if (params?.to) query.set("to", params.to);
+  const qs = query.toString();
+  return apiRequest<TimeEntry[]>(`/time-entries${qs ? `?${qs}` : ""}`);
+}
+
+export function createTimeEntry(body: {
+  projectId?: string;
+  taskId?: string;
+  label?: string;
+  description?: string;
+  date: string;
+  minutes: number;
+  billable?: boolean;
+}) {
+  return apiRequest<TimeEntry>("/time-entries", { method: "POST", body });
+}
+
+export function updateTimeEntry(
+  entryId: string,
+  body: Partial<{
+    projectId: string | null;
+    taskId: string | null;
+    label: string | null;
+    description: string | null;
+    date: string;
+    minutes: number;
+    billable: boolean;
+  }>,
+) {
+  return apiRequest<TimeEntry>(`/time-entries/${encodeURIComponent(entryId)}`, { method: "PATCH", body });
+}
+
+export function deleteTimeEntry(entryId: string) {
+  return apiRequest<void>(`/time-entries/${encodeURIComponent(entryId)}`, { method: "DELETE" });
+}
+
+export function getTodos() {
+  return apiRequest<Todo[]>("/todos");
+}
+
+export function createTodo(body: { title: string; notes?: string; dueDate?: string; position?: number }) {
+  return apiRequest<Todo>("/todos", { method: "POST", body });
+}
+
+export function updateTodo(todoId: string, body: { title?: string; notes?: string | null; dueDate?: string | null; completed?: boolean; position?: number }) {
+  return apiRequest<Todo>(`/todos/${todoId}`, { method: "PATCH", body });
+}
+
+export function deleteTodo(todoId: string) {
+  return apiRequest<void>(`/todos/${todoId}`, { method: "DELETE" });
+}
+
 export function getTaskAttachments(taskId: string) {
   return apiRequest<TaskAttachment[]>(`/tasks/${taskId}/attachments`);
 }
@@ -1634,6 +1720,26 @@ export function setNotificationPreference(eventType: string, body: Partial<Pick<
   return apiRequest<NotificationPreference>(`/notifications/preferences/${encodeURIComponent(eventType)}`, { method: "POST", body });
 }
 
+// Audit — served by the audit service (requires admin.audit.view)
+export interface AuditEvent {
+  id: string;
+  eventId: string;
+  eventType: string;
+  subject: string;
+  payload?: Record<string, unknown> | null;
+  organisationId?: string | null;
+  actorId?: string | null;
+  resourceType?: string | null;
+  resourceId?: string | null;
+  correlationId?: string | null;
+  timestamp: string;
+  storedAt: string;
+}
+
+export function getAuditEvents(take = 50) {
+  return apiRequest<AuditEvent[]>(`/audit/events?take=${take}`);
+}
+
 // AI
 export function summarize(prompt: string, sourceText?: string) {
   return apiRequest<{ result: string; model: string }>("/ai/summarize", {
@@ -1701,7 +1807,7 @@ export function declineAIAction(id: string) {
 export interface Employee {
   id: string;
   organisationId: string;
-  userId: string;
+  userId: string | null;
   firstName: string;
   lastName: string;
   workEmail?: string | null;
@@ -1931,7 +2037,7 @@ export function getEmployee(id: string) {
 }
 
 export function createEmployee(body: {
-  userId: string;
+  userId?: string;
   membershipId?: string;
   firstName: string;
   lastName: string;
@@ -1967,6 +2073,11 @@ export function updateEmployee(
     method: "PATCH",
     body,
   });
+}
+
+/** DELETE terminates the employee (sets status to 'terminated'). */
+export function terminateEmployee(id: string) {
+  return apiRequest<void>(`/hrms/employees/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 export function getDepartments() {
@@ -2582,9 +2693,13 @@ export function cancelOnboardingInstance(id: string) {
 export interface OffboardingTask {
   id: string;
   title: string;
+  description?: string | null;
   category?: string | null;
+  assigneeUserId?: string | null;
   status: string;
   completedAt?: string | null;
+  completedBy?: string | null;
+  sortOrder?: number;
 }
 
 export interface OffboardingCase {
@@ -2597,7 +2712,9 @@ export interface OffboardingCase {
   settlementNotes?: string | null;
   initiatedBy?: string | null;
   completedAt?: string | null;
-  employee: { id: string; firstName: string; lastName: string };
+  createdAt?: string;
+  updatedAt?: string;
+  employee: { id: string; firstName: string; lastName: string; userId?: string | null };
   tasks: OffboardingTask[];
 }
 

@@ -39,9 +39,9 @@ APP_URL=http://${external_ip}:3000
 %{ endif }
 WEB_DOMAIN=${domain}
 %{ if domain != "" }
-CORS_ORIGINS=tauri://localhost,http://tauri.localhost,http://localhost:1420,http://localhost:5173,https://${domain},https://app.${domain},https://api.${domain},https://realtime.${domain},https://sfu.${domain}
+CORS_ORIGINS=tauri://localhost,http://tauri.localhost,http://localhost:1420,http://localhost:3002,http://localhost:5173,https://${domain},https://app.${domain},https://api.${domain},https://realtime.${domain},https://sfu.${domain}
 %{ else }
-CORS_ORIGINS=tauri://localhost,http://tauri.localhost,http://localhost:1420,http://localhost:5173,http://${external_ip}:3000
+CORS_ORIGINS=tauri://localhost,http://tauri.localhost,http://localhost:1420,http://localhost:3002,http://localhost:5173,http://${external_ip}:3000
 %{ endif }
 OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 OTEL_SERVICE_NAME=teamspace-one

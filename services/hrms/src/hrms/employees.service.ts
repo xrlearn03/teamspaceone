@@ -18,7 +18,7 @@ export interface RequestContextInput {
 }
 
 export interface CreateEmployeeInput extends RequestContextInput {
-  userId: string;
+  userId?: string;
   membershipId?: string;
   employeeNumber?: string;
   firstName: string;
@@ -175,9 +175,10 @@ export class EmployeesService {
   }
 
   async syncProfile(
-    employee: { userId: string; firstName: string; lastName: string; avatarFileId?: string | null },
+    employee: { userId: string | null; firstName: string; lastName: string; avatarFileId?: string | null },
     correlationId?: string,
   ) {
+    if (!employee.userId) return;
     await this.authProfiles.updateUserProfile(
       employee.userId,
       {
@@ -191,15 +192,17 @@ export class EmployeesService {
 
   async create(input: CreateEmployeeInput, tx?: Prisma.TransactionClient) {
     const run = async (t: Prisma.TransactionClient) => {
-      const existing = await t.employee.findUnique({
-        where: { organisationId_userId: { organisationId: input.organisationId, userId: input.userId } },
-      });
-      if (existing) return existing;
+      if (input.userId) {
+        const existing = await t.employee.findUnique({
+          where: { organisationId_userId: { organisationId: input.organisationId, userId: input.userId } },
+        });
+        if (existing) return existing;
+      }
 
       const created = await t.employee.create({
         data: {
           organisationId: input.organisationId,
-          userId: input.userId,
+          userId: input.userId ?? null,
           membershipId: input.membershipId,
           employeeNumber: input.employeeNumber,
           firstName: input.firstName,
@@ -304,6 +307,7 @@ export class EmployeesService {
     }
 
     if (Object.keys(data).length === 0) {
+      if (!existing.userId) return sanitizeEmployee(existing, user);
       await this.authProfiles.updateUserProfile(
         existing.userId,
         {
@@ -349,7 +353,7 @@ export class EmployeesService {
     if ('firstName' in data) profile.firstName = employee.firstName;
     if ('lastName' in data) profile.lastName = employee.lastName;
     if ('avatarFileId' in data) profile.avatarFileId = employee.avatarFileId;
-    if (Object.keys(profile).length > 0) {
+    if (Object.keys(profile).length > 0 && employee.userId) {
       await this.authProfiles.updateUserProfile(employee.userId, profile, ctx.correlationId);
     }
 

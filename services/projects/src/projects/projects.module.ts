@@ -10,10 +10,14 @@ import { PrismaModule } from '../prisma/prisma.module.js';
 import { AuthorizationClientService } from './authorization.client.js';
 import { ProjectsService } from './projects.service.js';
 import { ProjectsController } from './projects.controller.js';
+import { TodosService } from './todos.service.js';
+import { TodosController } from './todos.controller.js';
+import { TimeEntriesService } from './time-entries.service.js';
+import { TimeEntriesController } from './time-entries.controller.js';
 
 @Module({
   imports: [OutboxModule, PrismaModule],
-  controllers: [ProjectsController],
+  controllers: [ProjectsController, TodosController, TimeEntriesController],
   providers: [
     {
       provide: AUTHORIZATION_OPTIONS,
@@ -27,6 +31,8 @@ import { ProjectsController } from './projects.controller.js';
     RemotePermissionGuard,
     AuthorizationClientService,
     ProjectsService,
+    TodosService,
+    TimeEntriesService,
   ],
   exports: [ProjectsService],
 })

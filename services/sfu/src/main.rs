@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+#[cfg(not(feature = "rtc"))]
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration as StdDuration, Instant, SystemTime, UNIX_EPOCH};
@@ -32,6 +34,7 @@ const MAX_CANDIDATE_BYTES: usize = 65536;
 use interceptor::nack::generator::GeneratorBuilder;
 use interceptor::nack::responder::ResponderBuilder;
 use interceptor::registry::Registry;
+use webrtc::api::media_engine::MediaEngine;
 use webrtc::api::setting_engine::SettingEngine;
 use webrtc::api::{APIBuilder, API};
 use webrtc::ice::udp_mux::{UDPMuxDefault, UDPMuxParams};
@@ -257,8 +260,14 @@ async fn main() -> Result<()> {
     let mut interceptor_registry = Registry::new();
     interceptor_registry.add(Box::new(GeneratorBuilder::default()));
     interceptor_registry.add(Box::new(ResponderBuilder::default()));
+    // The MediaEngine must have codecs registered: without them, offers are
+    // generated with rejected (port 0, attribute-less) m-lines and create_offer
+    // never converges, failing every join with ErrExcessiveRetries.
+    let mut media_engine = MediaEngine::default();
+    media_engine.register_default_codecs()?;
     let api = Arc::new(
         APIBuilder::new()
+            .with_media_engine(media_engine)
             .with_setting_engine(setting_engine)
             .with_interceptor_registry(interceptor_registry)
             .build(),
@@ -726,6 +735,43 @@ async fn process_signal(
 
             let pc = Arc::new(pc);
 
+            // Register the renegotiation handler before any tracks or
+            // transceivers are added. Each add enqueues webrtc-rs's
+            // negotiation-needed check, and if it runs before a handler exists
+            // the internal state machine wedges and re-offers are never sent
+            // again — subscribers would never see tracks published after they
+            // joined. `offer_ready` keeps the handler from racing the explicit
+            // create_offer below.
+            let offer_ready = Arc::new(AtomicBool::new(false));
+            let pc_for_neg = Arc::clone(&pc);
+            let negotiation_tx = tx.clone();
+            let negotiation_peer = peer_id.to_string();
+            let negotiation_ready = Arc::clone(&offer_ready);
+            pc.on_negotiation_needed(Box::new(move || {
+                let pc = Arc::clone(&pc_for_neg);
+                let tx = negotiation_tx.clone();
+                let peer = negotiation_peer.clone();
+                let ready = Arc::clone(&negotiation_ready);
+                Box::pin(async move {
+                    if !ready.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    match pc.create_offer(None).await {
+                        Ok(offer) => {
+                            if let Err(e) = pc.set_local_description(offer.clone()).await {
+                                warn!("set_local_description failed for {}: {}", peer, e);
+                                return;
+                            }
+                            let _ = tx.send(Event::Offer {
+                                from: SFU_ID.to_string(),
+                                sdp: offer.sdp,
+                            });
+                        }
+                        Err(e) => warn!("create_offer failed for {}: {}", peer, e),
+                    }
+                })
+            }));
+
             // Add tracks from publishers that are already in the room.
             let existing_tracks = {
                 let s = state.read().await;
@@ -757,30 +803,7 @@ async fn process_signal(
 
             let offer = pc.create_offer(None).await?;
             pc.set_local_description(offer.clone()).await?;
-
-            let pc_for_neg = Arc::clone(&pc);
-            let negotiation_tx = tx.clone();
-            let negotiation_peer = peer_id.to_string();
-            pc.on_negotiation_needed(Box::new(move || {
-                let pc = Arc::clone(&pc_for_neg);
-                let tx = negotiation_tx.clone();
-                let peer = negotiation_peer.clone();
-                Box::pin(async move {
-                    match pc.create_offer(None).await {
-                        Ok(offer) => {
-                            if let Err(e) = pc.set_local_description(offer.clone()).await {
-                                warn!("set_local_description failed for {}: {}", peer, e);
-                                return;
-                            }
-                            let _ = tx.send(Event::Offer {
-                                from: SFU_ID.to_string(),
-                                sdp: offer.sdp,
-                            });
-                        }
-                        Err(e) => warn!("create_offer failed for {}: {}", peer, e),
-                    }
-                })
-            }));
+            offer_ready.store(true, Ordering::Relaxed);
 
             let (tx, joined_peer) = {
                 let s = &mut *state.write().await;

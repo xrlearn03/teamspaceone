@@ -14,13 +14,7 @@ import { Subjects } from '@teamspace-one/event-contracts';
 import { AccessService } from './access.service.js';
 import { PresenceService } from './presence.service.js';
 
-const DEFAULT_CORS_ORIGINS = [
-  'http://localhost:1420',
-  'http://localhost:3002',
-  'http://localhost:5173',
-  'http://tauri.localhost',
-  'tauri://localhost',
-];
+const LOOPBACK_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
 const corsOrigins = (process.env.CORS_ORIGINS ?? '')
   .split(',')
@@ -29,7 +23,7 @@ const corsOrigins = (process.env.CORS_ORIGINS ?? '')
 
 @WebSocketGateway({
   cors: {
-    origin: corsOrigins.length ? corsOrigins : DEFAULT_CORS_ORIGINS,
+    origin: [LOOPBACK_ORIGIN, 'http://tauri.localhost', 'tauri://localhost', ...corsOrigins],
     credentials: true,
   },
   namespace: '/realtime',
