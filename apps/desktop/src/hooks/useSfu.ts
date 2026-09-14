@@ -123,6 +123,13 @@ export function useSfu() {
   const nativeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const trackIdToParticipantRef = useRef<Record<string, string>>({});
   const roomEventHandlersRef = useRef<Set<(event: SfuRoomEvent) => void>>(new Set());
+  // Serializes every signaling op (remote offers/answers, local offers) so two
+  // overlapping negotiations can't interleave setRemote/setLocal calls — that
+  // race produced "no pending remote description" crashes.
+  const signalQueueRef = useRef<Promise<void>>(Promise.resolve());
+  // Set when we have local changes to negotiate while a negotiation is already
+  // in flight (e.g. an SFU re-offer arrived first). Re-offered once stable.
+  const pendingLocalOfferRef = useRef(false);
 
   const isIntentionalLeaveRef = useRef(false);
   const reconnectAttemptRef = useRef(0);
@@ -268,6 +275,24 @@ export function useSfu() {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(msg));
     }
+  }
+
+  function enqueueSignal(fn: () => Promise<void>) {
+    signalQueueRef.current = signalQueueRef.current
+      .then(fn)
+      .catch((err) => console.error("SFU signaling op failed", err));
+  }
+
+  function makeLocalOffer(pc: RTCPeerConnection) {
+    enqueueSignal(async () => {
+      if (pc.signalingState !== "stable") {
+        pendingLocalOfferRef.current = true;
+        return;
+      }
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      send({ type: "offer", target: "sfu", sdp: offer.sdp! });
+    });
   }
 
   const stopScreenShare = useCallback(async () => {
@@ -608,9 +633,23 @@ export function useSfu() {
         throw err;
       }
 
-      const pc = new RTCPeerConnection({
-        iceServers: getIceServers(),
-      });
+      let pc: RTCPeerConnection;
+      try {
+        pc = new RTCPeerConnection({
+          iceServers: getIceServers(),
+        });
+      } catch (err) {
+        // Include the security context so a webview-side SecurityError is
+        // diagnosable from the error screen alone (release builds have no
+        // devtools).
+        const message = err instanceof Error ? err.message : String(err);
+        const wrapped = new Error(
+          `${message} (isSecureContext=${window.isSecureContext}, origin=${window.location.origin}, tauri=${isTauri})`,
+        );
+        setError(wrapped.message);
+        await leave();
+        throw wrapped;
+      }
       pcRef.current = pc;
 
       pc.onconnectionstatechange = () => {
@@ -623,14 +662,14 @@ export function useSfu() {
         }
       };
 
-      pc.onnegotiationneeded = async () => {
-        try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          send({ type: "offer", target: "sfu", sdp: offer.sdp! });
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Negotiation failed");
+      pc.onnegotiationneeded = () => {
+        // Perfect negotiation: the client is the polite peer. Never offer while
+        // a negotiation is in flight — the change is re-offered once stable.
+        if (pc.signalingState !== "stable") {
+          pendingLocalOfferRef.current = true;
+          return;
         }
+        makeLocalOffer(pc);
       };
 
       pc.onicecandidate = (e) => {
@@ -707,35 +746,55 @@ export function useSfu() {
             break;
 
           case "offer": {
-            try {
-              await pc.setRemoteDescription({ type: "offer", sdp: msg.sdp! });
-
-              // Only attach local tracks on the initial offer; on renegotiation
-              // the senders are already set and should not be re-added.
-              const hasLocalTracks = pc.getSenders().some((s) => s.track);
-              if (!hasLocalTracks) {
-                const tracks = stream!.getTracks();
-                for (const track of tracks) {
-                  const transceiver = pc.getTransceivers().find(
-                    (tr) =>
-                      tr.receiver.track.kind === track.kind &&
-                      tr.direction === "sendonly" &&
-                      tr.sender.track === null,
-                  );
-                  if (transceiver) {
-                    await transceiver.sender.replaceTrack(track);
-                  } else {
-                    pc.addTrack(track, stream!);
+            // Serialized so a second SFU offer can't interleave with the one
+            // currently being processed.
+            enqueueSignal(async () => {
+              try {
+                // Polite side of glare resolution: if our own offer is still
+                // outstanding, roll it back and accept the SFU's offer. The
+                // rolled-back changes are re-offered once we're stable again.
+                if (pc.signalingState === "have-local-offer") {
+                  pendingLocalOfferRef.current = true;
+                  try {
+                    await pc.setRemoteDescription({ type: "rollback" });
+                  } catch {
+                    // Rollback unsupported — proceed and let the offer apply.
                   }
                 }
-              }
+                await pc.setRemoteDescription({ type: "offer", sdp: msg.sdp! });
 
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-              send({ type: "answer", target: "sfu", sdp: answer.sdp! });
-            } catch (err) {
-              setError(err instanceof Error ? err.message : "Failed to handle SFU offer");
-            }
+                // Only attach local tracks on the initial offer; on renegotiation
+                // the senders are already set and should not be re-added.
+                const hasLocalTracks = pc.getSenders().some((s) => s.track);
+                if (!hasLocalTracks) {
+                  const tracks = stream!.getTracks();
+                  for (const track of tracks) {
+                    const transceiver = pc.getTransceivers().find(
+                      (tr) =>
+                        tr.receiver.track.kind === track.kind &&
+                        tr.direction === "sendonly" &&
+                        tr.sender.track === null,
+                    );
+                    if (transceiver) {
+                      await transceiver.sender.replaceTrack(track);
+                    } else {
+                      pc.addTrack(track, stream!);
+                    }
+                  }
+                }
+
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                send({ type: "answer", target: "sfu", sdp: answer.sdp! });
+
+                if (pendingLocalOfferRef.current && pc.signalingState === "stable") {
+                  pendingLocalOfferRef.current = false;
+                  makeLocalOffer(pc);
+                }
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Failed to handle SFU offer");
+              }
+            });
             break;
           }
 
@@ -743,11 +802,18 @@ export function useSfu() {
             // Reply to a client-initiated offer (e.g. screen-share or camera
             // started mid-call via onnegotiationneeded). Without this the pc
             // stays stuck in have-local-offer and the track never flows.
-            try {
-              await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp! });
-            } catch (err) {
-              console.error("Failed to apply SFU answer", err);
-            }
+            enqueueSignal(async () => {
+              try {
+                await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp! });
+              } catch (err) {
+                // Stale answer (our offer was rolled back for an SFU offer).
+                console.error("Failed to apply SFU answer", err);
+              }
+              if (pendingLocalOfferRef.current && pc.signalingState === "stable") {
+                pendingLocalOfferRef.current = false;
+                makeLocalOffer(pc);
+              }
+            });
             break;
           }
 

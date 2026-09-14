@@ -45,6 +45,7 @@ use webrtc::ice_transport::ice_candidate_type::RTCIceCandidateType;
 use webrtc::ice_transport::ice_server::RTCIceServer;
 #[cfg(not(feature = "rtc"))]
 use webrtc::peer_connection::configuration::RTCConfiguration;
+use webrtc::peer_connection::signaling_state::RTCSignalingState;
 #[cfg(not(feature = "rtc"))]
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use webrtc::peer_connection::RTCPeerConnection;
@@ -767,6 +768,23 @@ async fn process_signal(
                     if !ready.load(Ordering::Relaxed) {
                         return;
                     }
+                    // Wait for any in-flight negotiation to finish — offering
+                    // while have-remote-offer/have-local-offer fails and drops
+                    // the pending track add silently.
+                    for _ in 0..20 {
+                        if pc.signaling_state() == RTCSignalingState::Stable {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    }
+                    if pc.signaling_state() != RTCSignalingState::Stable {
+                        warn!(
+                            "negotiation-needed skipped for {}: signaling state still {:?}",
+                            peer,
+                            pc.signaling_state()
+                        );
+                        return;
+                    }
                     match pc.create_offer(None).await {
                         Ok(offer) => {
                             if let Err(e) = pc.set_local_description(offer.clone()).await {
@@ -891,6 +909,20 @@ async fn process_signal(
                         .ok_or(anyhow!("peer has no connection: {}", peer_id))?,
                 )
             };
+            // The SFU is the impolite peer in glare resolution: if a
+            // negotiation is already in flight (our offer outstanding, or
+            // another client offer being answered), drop this colliding offer
+            // instead of erroring — a failed set_remote_description surfaces as
+            // an error event and drops the call. The client rolls back, answers
+            // the in-flight negotiation, then re-offers once stable.
+            if pc.signaling_state() != RTCSignalingState::Stable {
+                warn!(
+                    "Dropping colliding client offer from {} (signaling state {:?})",
+                    peer_id,
+                    pc.signaling_state()
+                );
+                return Ok(());
+            }
             let offer = RTCSessionDescription::offer(sdp)?;
             pc.set_remote_description(offer).await?;
             let answer = pc.create_answer(None).await?;
@@ -940,6 +972,18 @@ async fn process_signal(
                     .clone()
                     .ok_or(anyhow!("peer has no connection: {}", peer_id))?
             };
+            // An answer is only valid while a local offer is outstanding. A
+            // stale answer (the peer answered an already-resolved offer, or a
+            // duplicate arrives) must not become an error event — that drops
+            // the whole call for the client.
+            if pc.signaling_state() != RTCSignalingState::HaveLocalOffer {
+                warn!(
+                    "Ignoring stale answer from {} (signaling state {:?})",
+                    peer_id,
+                    pc.signaling_state()
+                );
+                return Ok(());
+            }
             let answer = RTCSessionDescription::answer(sdp)?;
             pc.set_remote_description(answer).await?;
         }
