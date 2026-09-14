@@ -164,7 +164,20 @@ export function useGuestSfu() {
       setAudioEnabled(args.stream.getAudioTracks()[0]?.enabled ?? false);
       setVideoEnabled(args.stream.getVideoTracks()[0]?.enabled ?? false);
 
-      const pc = new RTCPeerConnection({ iceServers: getIceServers() });
+      let pc: RTCPeerConnection;
+      try {
+        pc = new RTCPeerConnection({ iceServers: getIceServers() });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn("RTCPeerConnection with ice servers failed:", message);
+        try {
+          pc = new RTCPeerConnection();
+        } catch (err2) {
+          const message2 = err2 instanceof Error ? err2.message : String(err2);
+          setError(`${message2} (fallback RTCPeerConnection)`);
+          throw err2;
+        }
+      }
       pcRef.current = pc;
 
       pc.onconnectionstatechange = () => {
@@ -211,7 +224,14 @@ export function useGuestSfu() {
         ]);
       };
 
-      const ws = new WebSocket(args.url);
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(args.url);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(`WebSocket(${args.url}) failed: ${message}`);
+        throw err;
+      }
       wsRef.current = ws;
 
       ws.onopen = () => {

@@ -12,10 +12,10 @@ const TOKEN_ORG = "__auth__";
 const isTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-// Packaged builds use Tauri's bundled HTTPS app origin. Auth tokens still live
-// in the OS keychain and SQLite so they remain independent of WebView storage,
-// with localStorage as a fallback for plain browser development. An in-memory
-// mirror avoids a keychain read per request.
+// The webview is served from http://localhost:<random port> in packaged
+// builds, so localStorage does not survive app restarts. Auth tokens live
+// in the OS keychain instead, with localStorage as a fallback for plain
+// browser dev. An in-memory mirror avoids a keychain read per request.
 let accessTokenCache: string | null | undefined;
 let refreshTokenCache: string | null | undefined;
 
