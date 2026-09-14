@@ -36,7 +36,7 @@ import {
   useTodos,
 } from "../../hooks/api";
 import { getActiveOrganisation, type DailyDigestResult, type Employee, type LeaveRequest } from "../../lib/api";
-import { normalizeDigest } from "../../features/dashboard/widgets";
+import { normalizeDigest, QuickCheckInCard } from "../../features/dashboard/widgets";
 import { useUIStore, type View } from "../../stores/ui";
 import { cn, getUserDisplayName } from "../../lib/utils";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
@@ -212,7 +212,7 @@ function LegendRow({ color, label, value }: { color: string; label: string; valu
    AI DAILY BRIEF
 ========================================================= */
 
-const BRIEF_DOT_COLORS = ["bg-mention", "bg-warning", "bg-info", "bg-success", "bg-primary"];
+const BRIEF_DOT_COLORS = ["bg-rose-400", "bg-amber-300", "bg-sky-400", "bg-emerald-400", "bg-indigo-300"];
 
 function AiDailyBrief({
   fallbackPoints,
@@ -246,7 +246,16 @@ function AiDailyBrief({
   const points = usableDigest.length > 0 ? usableDigest : fallbackPoints;
 
   return (
-    <div className="relative min-h-[310px] overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-surface via-primary-subtle/60 to-info/10 p-6">
+    <div className="relative min-h-[310px] overflow-hidden rounded-xl border border-white/10 bg-[#020b19] p-6">
+      {/* Background */}
+      <div className="pointer-events-none absolute inset-0">
+        <img
+          src="/about-background-image.png"
+          alt=""
+          className="h-full w-full object-cover object-right"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#020b19]/90 via-[#020b19]/60 to-[#020b19]/20" />
+      </div>
       {/* Background decoration */}
       <div className="pointer-events-none absolute -right-20 -top-16 h-64 w-64 rounded-full bg-info/10 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-20 right-[-40px] h-56 w-96 rotate-[-18deg] rounded-[50%] bg-primary/10 blur-2xl" />
@@ -254,24 +263,24 @@ function AiDailyBrief({
       <div className="relative z-10">
         {/* Header */}
         <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/10 text-indigo-300">
             <Sparkles size={22} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-[21px] font-semibold text-text">AI Daily Brief</h2>
-              <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-semibold text-primary">
+              <h2 className="text-[21px] font-semibold text-white">AI Daily Brief</h2>
+              <span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-indigo-200">
                 Beta
               </span>
             </div>
-            <p className="mt-1 text-xs text-text-secondary">Key updates and actions for today</p>
+            <p className="mt-1 text-xs text-white/70">Key updates and actions for today</p>
           </div>
         </div>
 
         {/* AI insights */}
         <div className="mt-5 space-y-3">
           {dailyDigest.isPending && fallbackPoints.length === 0 ? (
-            <p className="text-[13px] leading-5 text-text-secondary">Generating daily brief…</p>
+            <p className="text-[13px] leading-5 text-white/70">Generating daily brief…</p>
           ) : points.length > 0 ? (
             points.map((point, index) => (
               <div key={index} className="flex items-start gap-4">
@@ -281,11 +290,11 @@ function AiDailyBrief({
                     BRIEF_DOT_COLORS[index % BRIEF_DOT_COLORS.length],
                   )}
                 />
-                <p className="text-[13px] leading-5 text-text-secondary">{point}</p>
+                <p className="text-[13px] leading-5 text-white/75">{point}</p>
               </div>
             ))
           ) : (
-            <p className="text-[13px] leading-5 text-text-secondary">You're all caught up — nothing needs attention.</p>
+            <p className="text-[13px] leading-5 text-white/70">You're all caught up — nothing needs attention.</p>
           )}
         </div>
 
@@ -645,6 +654,55 @@ export function HrDashboardScreen() {
           <QuickActions />
         </section>
 
+        {/* MY ATTENDANCE + TASKS */}
+        <section className="mt-4 grid gap-4 xl:grid-cols-2">
+          <QuickCheckInCard />
+
+          {/* Upcoming HR Tasks */}
+          <Card
+            title="Upcoming HR Tasks"
+            icon={
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-info/10 text-info">
+                <ClipboardCheck size={16} />
+              </div>
+            }
+          >
+            {todos.isLoading ? (
+              <SectionSkeleton rows={3} />
+            ) : todos.isError ? (
+              <SectionError onRetry={() => todos.refetch()} />
+            ) : openTodos.length === 0 ? (
+              <p className="py-8 text-center text-xs text-text-muted">No open tasks.</p>
+            ) : (
+              <div className="mt-3">
+                {openTodos.map((task) => {
+                  const title = task.title.toLowerCase();
+                  const meta = title.includes("payroll")
+                    ? { icon: Wallet, cls: "bg-info/10 text-info" }
+                    : title.includes("review") || title.includes("performance")
+                      ? { icon: ClipboardCheck, cls: "bg-success/10 text-success" }
+                      : title.includes("policy") || title.includes("document")
+                        ? { icon: FileText, cls: "bg-warning/10 text-warning" }
+                        : title.includes("survey") || title.includes("send")
+                          ? { icon: Send, cls: "bg-primary/10 text-primary" }
+                          : { icon: CalendarDays, cls: "bg-surface-elevated text-text-secondary" };
+                  return (
+                    <div key={task.id} className="flex w-full items-center gap-3 border-b border-border py-2.5 last:border-0">
+                      <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", meta.cls)}>
+                        <meta.icon size={15} />
+                      </div>
+                      <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-text">{task.title}</span>
+                      <span className="shrink-0 text-[10px] text-text-muted">
+                        {task.dueDate ? formatDate(task.dueDate) : "No date"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        </section>
+
         {/* KPI CARDS */}
         <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
           <KpiCard
@@ -789,7 +847,7 @@ export function HrDashboardScreen() {
         </section>
 
         {/* BOTTOM */}
-        <section className="mt-4 grid gap-4 xl:grid-cols-[1.25fr_.9fr_1fr]">
+        <section className="mt-4 grid gap-4 xl:grid-cols-[1.25fr_1fr]">
           {/* Pending Approvals */}
           <Card
             title="Pending Approvals"
@@ -860,50 +918,6 @@ export function HrDashboardScreen() {
                     )}
                   </tbody>
                 </table>
-              </div>
-            )}
-          </Card>
-
-          {/* Upcoming HR Tasks */}
-          <Card
-            title="Upcoming HR Tasks"
-            icon={
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-info/10 text-info">
-                <ClipboardCheck size={16} />
-              </div>
-            }
-          >
-            {todos.isLoading ? (
-              <SectionSkeleton rows={3} />
-            ) : todos.isError ? (
-              <SectionError onRetry={() => todos.refetch()} />
-            ) : openTodos.length === 0 ? (
-              <p className="py-8 text-center text-xs text-text-muted">No open tasks.</p>
-            ) : (
-              <div className="mt-3">
-                {openTodos.map((task) => {
-                  const title = task.title.toLowerCase();
-                  const meta = title.includes("payroll")
-                    ? { icon: Wallet, cls: "bg-info/10 text-info" }
-                    : title.includes("review") || title.includes("performance")
-                      ? { icon: ClipboardCheck, cls: "bg-success/10 text-success" }
-                      : title.includes("policy") || title.includes("document")
-                        ? { icon: FileText, cls: "bg-warning/10 text-warning" }
-                        : title.includes("survey") || title.includes("send")
-                          ? { icon: Send, cls: "bg-primary/10 text-primary" }
-                          : { icon: CalendarDays, cls: "bg-surface-elevated text-text-secondary" };
-                  return (
-                    <div key={task.id} className="flex w-full items-center gap-3 border-b border-border py-2.5 last:border-0">
-                      <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", meta.cls)}>
-                        <meta.icon size={15} />
-                      </div>
-                      <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-text">{task.title}</span>
-                      <span className="shrink-0 text-[10px] text-text-muted">
-                        {task.dueDate ? formatDate(task.dueDate) : "No date"}
-                      </span>
-                    </div>
-                  );
-                })}
               </div>
             )}
           </Card>

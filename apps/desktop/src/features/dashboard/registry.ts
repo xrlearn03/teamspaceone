@@ -8,7 +8,7 @@ import {
   InterviewsTodayWidget,
   OpenPositionsWidget,
   PendingEvaluationsWidget,
-  MyAttendanceWidget,
+  QuickCheckInCard,
   MyLeaveWidget,
   MyTasksWidget,
   PendingHrApprovalsWidget,
@@ -43,16 +43,23 @@ export interface DashboardWidget {
 
 export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   {
+    id: "daily-brief",
+    title: "AI daily brief",
+    gridClass: "md:col-span-2 xl:col-span-1",
+    permissions: ["dashboard.widget.view"],
+    component: DailyBriefWidget,
+  },
+  {
+    id: "my-attendance",
+    title: "Quick check in",
+    permissions: ["hrms.attendance.view"],
+    component: QuickCheckInCard,
+  },
+  {
     id: "my-tasks",
     title: "My tasks",
     permissions: ["collaboration.task.view"],
     component: MyTasksWidget,
-  },
-  {
-    id: "my-attendance",
-    title: "My attendance",
-    permissions: ["hrms.attendance.view"],
-    component: MyAttendanceWidget,
   },
   {
     id: "my-leave",
@@ -121,13 +128,6 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
     title: "People",
     permissions: ["hrms.employee.view"],
     component: PeopleWidget,
-  },
-  {
-    id: "daily-brief",
-    title: "AI daily brief",
-    gridClass: "md:col-span-2 xl:col-span-1",
-    permissions: ["dashboard.widget.view"],
-    component: DailyBriefWidget,
   },
 ];
 

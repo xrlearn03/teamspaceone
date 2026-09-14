@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
+  ArrowRight,
+  Award,
   Bell,
+  BookOpen,
   Bot,
   Briefcase,
   Camera,
+  CircleHelp,
   Code,
   Command,
   CreditCard,
+  FileText,
   HardDrive,
   Info,
   Key,
@@ -16,7 +22,11 @@ import {
   Moon,
   Palette,
   Plug,
+  RefreshCw,
+  Scale,
+  ScrollText,
   Shield,
+  ShieldCheck,
   Sun,
   Trash2,
   User,
@@ -52,7 +62,13 @@ import { UserAvatar } from "../components/user-avatar";
 import { Badge } from "@teamspace-one/ui/badge";
 import { cn, getUserDisplayName } from "../lib/utils";
 import { copyToClipboard } from "../lib/desktop";
-import { canUseDesktopUpdater, requestUpdateCheck } from "../components/update/update-checker";
+import {
+  canUseDesktopUpdater,
+  requestUpdateCheck,
+  UPDATE_CHECK_RESULT_EVENT,
+  type UpdateCheckResult,
+} from "../components/update/update-checker";
+import { LegalDocumentScreen, type LegalDocumentId } from "../components/about/legal-document";
 
 const sections = [
   { id: "account", label: "My account", icon: User },
@@ -87,7 +103,7 @@ export function SettingsScreen() {
       <header className="flex h-14 items-center border-b px-3 sm:px-6"><h1 className="text-lg font-semibold text-text">Settings</h1></header>
       <div className="flex flex-1 flex-col overflow-hidden sm:flex-row">
         <div className="h-48 w-full shrink-0 overflow-y-auto border-r bg-surface p-2 sm:h-auto sm:w-56">{sections.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => setSection(item.id)} className={cn("flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors", section === item.id ? "bg-primary-subtle text-primary" : "text-text-secondary hover:bg-surface-elevated hover:text-text")}><Icon className="h-4 w-4" />{item.label}</button>; })}</div>
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
+        <div className={cn("flex-1 overflow-y-auto", section === "about" ? "" : "p-3 sm:p-4 lg:p-6")}>
           {section === "account" ? <AccountSettings user={user} /> : null}
           {section === "appearance" ? <AppearanceSettings theme={theme} setTheme={setTheme} /> : null}
           {section === "notifications" ? <NotificationSettings /> : null}
@@ -333,6 +349,15 @@ function ClientSettings({ organisationId }: { organisationId: string | null }) {
 
 function AboutSettings() {
   const [version, setVersion] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<"idle" | UpdateCheckResult>("idle");
+  const [legalDoc, setLegalDoc] = useState<LegalDocumentId | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const setActiveView = useUIStore((state) => state.setActiveView);
+
+  useEffect(() => {
+    if (!legalDoc) rootRef.current?.scrollIntoView({ block: "start" });
+  }, [legalDoc]);
 
   useEffect(() => {
     let mounted = true;
@@ -348,25 +373,278 @@ function AboutSettings() {
     };
   }, []);
 
+  useEffect(() => {
+    const onResult = (event: Event) => {
+      setChecking(false);
+      setUpdateStatus((event as CustomEvent<UpdateCheckResult>).detail);
+    };
+    window.addEventListener(UPDATE_CHECK_RESULT_EVENT, onResult);
+    return () => window.removeEventListener(UPDATE_CHECK_RESULT_EVENT, onResult);
+  }, []);
+
+  useEffect(() => {
+    if (!checking) return;
+    const timer = setTimeout(() => setChecking(false), 15000);
+    return () => clearTimeout(timer);
+  }, [checking]);
+
+  function checkForUpdates() {
+    if (!canUseDesktopUpdater()) return;
+    setChecking(true);
+    setUpdateStatus("idle");
+    requestUpdateCheck();
+  }
+
+  function openWhatsNew() {
+    // Release notes ship in the updater manifest, so a manual check surfaces
+    // them via the update dialog; outside release builds fall back to the site.
+    if (canUseDesktopUpdater()) checkForUpdates();
+    else void openUrl("https://teamspaceone.in");
+  }
+
+  const versionStatus = checking
+    ? "Checking for updates…"
+    : updateStatus === "latest"
+      ? "You are on the latest version"
+      : updateStatus === "available"
+        ? "A new version is available"
+        : updateStatus === "error"
+          ? "Could not check for updates"
+          : "Check for the latest updates";
+
+  if (legalDoc) {
+    return (
+      <LegalDocumentScreen key={legalDoc} document={legalDoc} onBack={() => setLegalDoc(null)} />
+    );
+  }
+
   return (
-    <SettingsSection title="About">
-      <div className="max-w-lg space-y-2 text-sm text-text-secondary">
-        <p><strong className="text-text">Teamspace One</strong></p>
-        <p>Version {version ?? "…"}</p>
-        <p>
-          Teamspace One brings your team&apos;s conversations, projects, and files together in one
-          secure desktop workspace — so you can chat, collaborate, and stay organised without
-          switching between apps.
-        </p>
-        {canUseDesktopUpdater() ? (
-          <div className="pt-1">
-            <Button variant="secondary" size="sm" onClick={() => requestUpdateCheck()}>
-              Check for updates
-            </Button>
-          </div>
-        ) : null}
+    <div ref={rootRef} className="relative min-h-full overflow-hidden bg-[#020b19] text-white">
+      {/* Ambient glows */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute left-[18%] top-[10%] h-[500px] w-[500px] rounded-full bg-blue-700/10 blur-[140px]" />
+        <div className="absolute bottom-0 left-[40%] h-[400px] w-[400px] rounded-full bg-indigo-700/10 blur-[150px]" />
       </div>
-    </SettingsSection>
+
+      {/* Hero */}
+      <section className="relative overflow-hidden border-b border-blue-900/40">
+        <div className="pointer-events-none absolute inset-0">
+          <img
+            src="/about-background-image.png"
+            alt=""
+            className="h-full w-full object-cover object-right"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#020b19]/90 via-[#020b19]/55 to-[#020b19]/15" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#020b19] via-transparent to-transparent" />
+        </div>
+        <div className="relative z-10 mx-auto max-w-[1400px] px-6 pb-10 pt-12 lg:px-8">
+          <div>
+            <img
+              src="/Teamspace-dark-logo.png"
+              alt="Teamspace One"
+              className="h-24 w-auto"
+            />
+            <div className="mt-3 text-[13px] font-medium tracking-[3px] text-white/90">
+              PEOPLE. PROJECTS. INTELLIGENCE
+            </div>
+          </div>
+
+          <div className="mt-14 max-w-[700px]">
+            <h1 className="text-[28px] font-bold tracking-tight text-white md:text-[30px]">
+              Build. Collaborate. Achieve.
+            </h1>
+            <p className="mt-4 max-w-[680px] text-[17px] leading-7 text-blue-100/80">
+              Teamspace One is an intelligent project and team collaboration platform that brings
+              people, projects and knowledge together — helping organizations work smarter and
+              achieve more.
+            </p>
+          </div>
+
+          {/* Right vertical statement */}
+          <div className="absolute right-[8%] top-[178px] hidden xl:block">
+            <div className="space-y-3 text-[18px] font-medium tracking-[5px] text-white/90">
+              <div>PEOPLE</div>
+              <div>PROJECTS</div>
+              <div>INTELLIGENCE</div>
+              <div>A BRIGHTER</div>
+              <div>TOMORROW</div>
+            </div>
+            <div className="ml-auto mt-6 h-[2px] w-10 bg-cyan-300" />
+          </div>
+
+          {/* Version */}
+          <div className="mt-12 flex flex-col gap-7 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-5">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-950/40 text-blue-200">
+                <RefreshCw size={29} />
+              </div>
+              <div>
+                <div className="text-[17px] font-bold">Version {version ?? "…"}</div>
+                <div className="mt-1 text-[14px] text-white/60">{versionStatus}</div>
+              </div>
+            </div>
+
+            {canUseDesktopUpdater() ? (
+              <button
+                type="button"
+                onClick={checkForUpdates}
+                disabled={checking}
+                className="group flex h-14 items-center justify-center gap-3 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 px-7 text-[16px] font-medium shadow-[0_8px_30px_rgba(50,70,255,.3)] transition hover:scale-[1.02] hover:from-indigo-500 hover:to-blue-500 disabled:cursor-wait disabled:opacity-80"
+              >
+                <RefreshCw
+                  size={20}
+                  className={
+                    checking ? "animate-spin" : "transition-transform group-hover:rotate-180"
+                  }
+                />
+                {checking ? "Checking..." : "Check for Updates"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      {/* Resource cards */}
+      <section className="relative z-10 mx-auto max-w-[1400px] px-6 py-7 lg:px-8">
+        <div className="grid gap-6 md:grid-cols-3">
+          <AboutResourceCard
+            icon={<FileText size={30} />}
+            iconClass="bg-blue-600/25 text-blue-300"
+            title="What's New"
+            description={
+              <>
+                See the latest features,
+                <br />
+                improvements and fixes.
+              </>
+            }
+            action="View Release Notes"
+            onClick={openWhatsNew}
+          />
+          <AboutResourceCard
+            icon={<BookOpen size={30} />}
+            iconClass="bg-violet-600/25 text-violet-300"
+            title="Documentation"
+            description={
+              <>
+                Learn how to get the most
+                <br />
+                out of Teamspace One.
+              </>
+            }
+            action="Open Docs"
+            onClick={() => setActiveView("help", { helpTab: "tutorials" })}
+          />
+          <AboutResourceCard
+            icon={<CircleHelp size={30} />}
+            iconClass="bg-emerald-500/20 text-emerald-300"
+            title="Support"
+            description={
+              <>
+                Need help? Our team
+                <br />
+                is here for you.
+              </>
+            }
+            action="Get Support"
+            onClick={() => setActiveView("help", { helpTab: "contact" })}
+          />
+          <AboutResourceCard
+            icon={<ShieldCheck size={30} />}
+            iconClass="bg-cyan-600/25 text-cyan-300"
+            title="Privacy Policy"
+            description={
+              <>
+                How we collect, use, and
+                <br />
+                protect your data.
+              </>
+            }
+            action="Read Policy"
+            onClick={() => setLegalDoc("privacy")}
+          />
+          <AboutResourceCard
+            icon={<ScrollText size={30} />}
+            iconClass="bg-amber-600/25 text-amber-300"
+            title="Terms of Service"
+            description={
+              <>
+                The rules that govern use
+                <br />
+                of Teamspace One.
+              </>
+            }
+            action="Read Terms"
+            onClick={() => setLegalDoc("terms")}
+          />
+          <AboutResourceCard
+            icon={<Scale size={30} />}
+            iconClass="bg-sky-600/25 text-sky-300"
+            title="Licenses"
+            description={
+              <>
+                Open-source licenses for
+                <br />
+                bundled software.
+              </>
+            }
+            action="View Licenses"
+            onClick={() => setLegalDoc("licenses")}
+          />
+          <AboutResourceCard
+            icon={<Award size={30} />}
+            iconClass="bg-rose-600/25 text-rose-300"
+            title="Acknowledgments"
+            description={
+              <>
+                The projects and people that
+                <br />
+                make Teamspace One possible.
+              </>
+            }
+            action="View Credits"
+            onClick={() => setLegalDoc("acknowledgments")}
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AboutResourceCard({
+  icon,
+  iconClass,
+  title,
+  description,
+  action,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  iconClass: string;
+  title: string;
+  description: React.ReactNode;
+  action: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group relative overflow-hidden rounded-xl border border-blue-900/50 bg-gradient-to-br from-[#0d2038] via-[#0b1b30] to-[#08182b] p-6 text-left shadow-[0_10px_40px_rgba(0,0,0,.15)] transition duration-300 hover:-translate-y-1 hover:border-blue-700/70 hover:bg-[#10243e] hover:shadow-[0_15px_45px_rgba(20,80,180,.18)]"
+    >
+      <div className="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-blue-500/10 blur-3xl transition group-hover:bg-blue-500/20" />
+      <div className="relative">
+        <div className={`flex h-[66px] w-[66px] items-center justify-center rounded-xl ${iconClass}`}>
+          {icon}
+        </div>
+        <h2 className="mt-5 text-[20px] font-bold tracking-tight text-white">{title}</h2>
+        <p className="mt-3 text-[16px] leading-6 text-blue-100/65">{description}</p>
+        <div className="mt-6 flex items-center gap-2 text-[16px] font-medium text-blue-400 transition group-hover:text-blue-300">
+          {action}
+          <ArrowRight size={19} className="transition-transform duration-300 group-hover:translate-x-1" />
+        </div>
+      </div>
+    </button>
   );
 }
 

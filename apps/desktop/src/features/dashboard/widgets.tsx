@@ -5,8 +5,10 @@ import {
   Calendar,
   CalendarCheck,
   CalendarClock,
+  CheckCircle2,
   CheckSquare,
   ClipboardCheck,
+  Clock,
   Coffee,
   DoorOpen,
   Folder,
@@ -53,7 +55,7 @@ import { Button } from "@teamspace-one/ui/button";
 import { Badge } from "@teamspace-one/ui/badge";
 import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { UserAvatar } from "../../components/user-avatar";
-import { getUserDisplayName } from "../../lib/utils";
+import { cn, getUserDisplayName } from "../../lib/utils";
 
 function formatTime(iso: string) {
   const d = new Date(iso);
@@ -397,14 +399,22 @@ export function DailyBriefWidget() {
   }, [digest, dailyDigest]);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>AI daily brief</CardTitle>
-        <Sparkles className="h-4 w-4 text-primary" />
+    <Card className="relative overflow-hidden border-white/10 bg-[#020b19]">
+      <div className="pointer-events-none absolute inset-0">
+        <img
+          src="/about-background-image.png"
+          alt=""
+          className="h-full w-full object-cover object-right"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#020b19]/90 via-[#020b19]/60 to-[#020b19]/25" />
+      </div>
+      <CardHeader className="relative">
+        <CardTitle className="text-white">AI daily brief</CardTitle>
+        <Sparkles className="h-4 w-4 text-indigo-300" />
       </CardHeader>
-      <CardContent>
+      <CardContent className="relative text-white/75">
         {dailyDigest.isPending ? (
-          <p className="text-sm leading-relaxed text-text-secondary">Generating daily brief...</p>
+          <p className="text-sm leading-relaxed text-white/70">Generating daily brief...</p>
         ) : digest ? (
           <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
             {digest.sections.slice(0, 1).map((section) => (
@@ -419,7 +429,7 @@ export function DailyBriefWidget() {
             ))}
           </div>
         ) : (
-          <p className="text-sm leading-relaxed text-text-secondary">
+          <p className="text-sm leading-relaxed text-white/70">
             {unread.length > 0
               ? `You have ${unread.length} unread notification${unread.length === 1 ? "" : "s"}. Open the Inbox to review them.`
               : "No new notifications. You're all caught up."}
@@ -525,14 +535,15 @@ const PRESENCE_STATUSES = [
   { key: "out_of_office", label: "Out of office", icon: DoorOpen },
 ] as const;
 
-export function MyAttendanceWidget() {
-  const { data: me, isLoading: meLoading, isError: meError, error: meErrorDetail } = useMyEmployee();
+export function QuickCheckInCard() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const { data: me, isLoading: meLoading, isError: meError } = useMyEmployee();
   const today = new Date().toISOString().slice(0, 10);
-  const {
-    data: records,
-    isLoading: attendanceLoading,
-    isError: attendanceError,
-  } = useAttendance({ employeeId: me?.id, from: today, to: today });
+  const { data: records, isLoading: attendanceLoading, isError: attendanceError } = useAttendance({
+    employeeId: me?.id,
+    from: today,
+    to: today,
+  });
   const checkin = useAttendanceCheckin();
   const checkout = useAttendanceCheckout();
   const presence = useAttendancePresence();
@@ -542,78 +553,118 @@ export function MyAttendanceWidget() {
   const canSetPresence = Boolean(me?.id && record?.checkInAt && !record?.checkOutAt);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>My attendance</CardTitle>
-        <div className="flex items-center gap-1.5">
-          {presenceLabel ? <Badge variant="warning">{presenceLabel}</Badge> : null}
-          {record ? <Badge variant={record.status === "present" ? "success" : "secondary"}>{record.status}</Badge> : null}
+    <div className="overflow-hidden rounded-xl border border-border bg-surface p-5 shadow-[0_3px_18px_rgba(20,50,90,.035)]">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-success/10 text-success">
+            <Clock size={15} />
+          </div>
+          <h2 className="text-base font-semibold text-text">Quick Check In</h2>
+          {presenceLabel ? (
+            <span className="rounded-full bg-warning/10 px-2.5 py-1 text-[10px] font-semibold text-warning">
+              {presenceLabel}
+            </span>
+          ) : record ? (
+            <span className="rounded-full bg-success/10 px-2.5 py-1 text-[10px] font-semibold capitalize text-success">
+              {record.status}
+            </span>
+          ) : null}
         </div>
-      </CardHeader>
-      <CardContent>
+        <button
+          type="button"
+          onClick={() => setActiveView("my-attendance")}
+          className="text-xs font-medium text-primary hover:underline"
+        >
+          View All
+        </button>
+      </div>
+      <div className="mt-4">
         {meLoading || attendanceLoading ? (
           <p className="text-sm text-text-secondary">Loading…</p>
-        ) : meError ? (
-          <p className="text-sm text-error">{meErrorDetail?.message ?? "Couldn’t load employee record."}</p>
-        ) : attendanceError ? (
-          <p className="text-sm text-error">Couldn’t load today&apos;s attendance.</p>
+        ) : meError || attendanceError ? (
+          <p className="text-sm text-text-muted">Couldn't load today's attendance.</p>
         ) : (
-          <div className="space-y-1 text-sm text-text-secondary">
-            <p>
-              Checked in:{" "}
-              <span className="text-text">{record?.checkInAt ? formatTime(record.checkInAt) : "—"}</span>
-            </p>
-            <p>
-              Checked out:{" "}
-              <span className="text-text">{record?.checkOutAt ? formatTime(record.checkOutAt) : "—"}</span>
-            </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-border bg-surface-elevated/50 px-4 py-3">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Checked in</p>
+              <p className="mt-1 text-lg font-semibold text-text">
+                {record?.checkInAt ? formatTime(record.checkInAt) : "—"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-surface-elevated/50 px-4 py-3">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Checked out</p>
+              <p className="mt-1 text-lg font-semibold text-text">
+                {record?.checkOutAt ? formatTime(record.checkOutAt) : "—"}
+              </p>
+            </div>
           </div>
         )}
+
         {checkin.error ? <p className="mt-2 text-xs text-error">{checkin.error.message}</p> : null}
         {checkout.error ? <p className="mt-2 text-xs text-error">{checkout.error.message}</p> : null}
         {presence.error ? <p className="mt-2 text-xs text-error">{presence.error.message}</p> : null}
-        <div className="mt-4 flex flex-col gap-3">
-          <div className="flex flex-wrap gap-2">
-            <PermissionGate permission="hrms.attendance.checkin">
-              {me?.id && !record?.checkInAt ? (
-                <Button size="sm" disabled={checkin.isPending} onClick={() => checkin.mutate()}>
-                  <LogIn className="mr-1.5 h-4 w-4" />
-                  Check in
-                </Button>
-              ) : null}
-            </PermissionGate>
-            <PermissionGate permission="hrms.attendance.checkout">
-              {me?.id && record?.checkInAt && !record?.checkOutAt ? (
-                <Button variant="secondary" size="sm" disabled={checkout.isPending} onClick={() => checkout.mutate()}>
-                  <LogOut className="mr-1.5 h-4 w-4" />
-                  Check out
-                </Button>
-              ) : null}
-            </PermissionGate>
-          </div>
-          {canSetPresence ? (
-            <div className="grid grid-cols-3 gap-2">
-              {PRESENCE_STATUSES.map(({ key, label, icon: Icon }) => {
-                const active = presenceStatus === key;
-                return (
-                  <Button
-                    key={key}
-                    variant={active ? "secondary" : "ghost"}
-                    size="sm"
-                    className="w-full justify-start"
-                    disabled={presence.isPending}
-                    onClick={() => presence.mutate(active ? null : key)}
-                  >
-                    <Icon className="mr-1.5 h-4 w-4 shrink-0" />
-                    <span className="truncate">{label}</span>
-                  </Button>
-                );
-              })}
-            </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <PermissionGate permission="hrms.attendance.checkin">
+            {me?.id && !record?.checkInAt ? (
+              <button
+                type="button"
+                disabled={checkin.isPending}
+                onClick={() => checkin.mutate()}
+                className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-[11px] font-semibold text-white transition hover:bg-primary-hover disabled:opacity-50"
+              >
+                <LogIn size={13} />
+                {checkin.isPending ? "Checking in…" : "Check in"}
+              </button>
+            ) : null}
+          </PermissionGate>
+          <PermissionGate permission="hrms.attendance.checkout">
+            {me?.id && record?.checkInAt && !record?.checkOutAt ? (
+              <button
+                type="button"
+                disabled={checkout.isPending}
+                onClick={() => checkout.mutate()}
+                className="flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-[11px] font-semibold text-text transition hover:bg-surface-elevated disabled:opacity-50"
+              >
+                <LogOut size={13} />
+                {checkout.isPending ? "Checking out…" : "Check out"}
+              </button>
+            ) : null}
+          </PermissionGate>
+          {me?.id && record?.checkOutAt ? (
+            <span className="flex items-center gap-2 text-[11px] text-text-muted">
+              <CheckCircle2 size={13} className="text-success" />
+              Done for today
+            </span>
           ) : null}
         </div>
-      </CardContent>
-    </Card>
+
+        {canSetPresence ? (
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {PRESENCE_STATUSES.map(({ key, label, icon: Icon }) => {
+              const active = presenceStatus === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  disabled={presence.isPending}
+                  onClick={() => presence.mutate(active ? null : key)}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-[10px] font-medium transition disabled:opacity-50",
+                    active
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-border bg-surface text-text-secondary hover:bg-surface-elevated",
+                  )}
+                >
+                  <Icon size={12} className="shrink-0" />
+                  <span className="truncate">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

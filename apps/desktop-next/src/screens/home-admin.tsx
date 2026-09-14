@@ -7,14 +7,9 @@ import {
   CheckCircle2,
   CheckSquare,
   ChevronRight,
-  Clock,
   Clock3,
-  Coffee,
-  DoorOpen,
   Hash,
   ListTodo,
-  LogIn,
-  LogOut,
   Package,
   Plus,
   ShieldAlert,
@@ -26,16 +21,11 @@ import {
   UserCheck,
   UserPlus,
   Users,
-  UtensilsCrossed,
   X,
   type LucideIcon,
 } from "lucide-react";
 import {
   useAssets,
-  useAttendance,
-  useAttendanceCheckin,
-  useAttendanceCheckout,
-  useAttendancePresence,
   useAuditEvents,
   useChannels,
   useCreateTodo,
@@ -44,7 +34,6 @@ import {
   useMe,
   useMeetings,
   useMembers,
-  useMyEmployee,
   useNotifications,
   useOffboardingCases,
   useOnboardingInstances,
@@ -54,12 +43,11 @@ import {
   useUpdateTodo,
   useUsers,
 } from "@/hooks/api";
-import { PermissionGate } from "@teamspace-one/authorization/react";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Button } from "@teamspace-one/ui/button";
 import { Input } from "@teamspace-one/ui/input";
 import { getActiveOrganisation, type AuditEvent, type DailyDigestResult, type TimeEntry } from "@/lib/api";
-import { normalizeDigest } from "@/features/dashboard/widgets";
+import { normalizeDigest, QuickCheckInCard } from "@/features/dashboard/widgets";
 import { useUIStore, type View } from "@/stores/ui";
 import { cn, getUserDisplayName } from "@/lib/utils";
 import { DATE_RANGE_OPTIONS, FilterDropdown, withinDateRange } from "./hr/common";
@@ -74,10 +62,6 @@ function getGreeting() {
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
   return "Good evening";
-}
-
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function formatRelative(iso: string) {
@@ -330,7 +314,7 @@ function DashboardCard({
    AI DAILY BRIEF
 ========================================================= */
 
-const BRIEF_DOT_COLORS = ["bg-success", "bg-error", "bg-info", "bg-warning", "bg-primary"];
+const BRIEF_DOT_COLORS = ["bg-emerald-400", "bg-rose-400", "bg-sky-400", "bg-amber-300", "bg-indigo-300"];
 
 function AiDailyBrief() {
   const setActiveView = useUIStore((s) => s.setActiveView);
@@ -357,29 +341,37 @@ function AiDailyBrief() {
   );
 
   return (
-    <div className="relative min-h-[310px] overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-surface via-primary-subtle/50 to-info/10 p-6">
+    <div className="relative min-h-[310px] overflow-hidden rounded-xl border border-white/10 bg-[#020b19] p-6">
+      <div className="pointer-events-none absolute inset-0">
+        <img
+          src="/about-background-image.png"
+          alt=""
+          className="h-full w-full object-cover object-right"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#020b19]/90 via-[#020b19]/60 to-[#020b19]/20" />
+      </div>
       <div className="pointer-events-none absolute -right-20 -top-16 h-64 w-64 rounded-full bg-info/10 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-20 right-[-40px] h-56 w-96 rotate-[-18deg] rounded-[50%] bg-primary/10 blur-2xl" />
 
       <div className="relative z-10">
         <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 text-indigo-300">
             <Sparkles size={22} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-[21px] font-semibold text-text">AI Daily Brief</h2>
-              <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-semibold text-primary">
+              <h2 className="text-[21px] font-semibold text-white">AI Daily Brief</h2>
+              <span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-indigo-200">
                 Beta
               </span>
             </div>
-            <p className="mt-1 text-xs text-text-secondary">Key updates and actions for today</p>
+            <p className="mt-1 text-xs text-white/70">Key updates and actions for today</p>
           </div>
         </div>
 
         <div className="mt-5 space-y-3">
           {dailyDigest.isPending ? (
-            <p className="text-[13px] leading-5 text-text-secondary">Generating daily brief…</p>
+            <p className="text-[13px] leading-5 text-white/70">Generating daily brief…</p>
           ) : points.length > 0 ? (
             points.map((point, index) => (
               <div key={index} className="flex items-start gap-4">
@@ -389,11 +381,11 @@ function AiDailyBrief() {
                     BRIEF_DOT_COLORS[index % BRIEF_DOT_COLORS.length],
                   )}
                 />
-                <p className="text-[13px] leading-5 text-text-secondary">{point}</p>
+                <p className="text-[13px] leading-5 text-white/75">{point}</p>
               </div>
             ))
           ) : (
-            <p className="text-[13px] leading-5 text-text-secondary">
+            <p className="text-[13px] leading-5 text-white/70">
               No activity to summarize. You're all caught up.
             </p>
           )}
@@ -411,7 +403,7 @@ function AiDailyBrief() {
           <button
             type="button"
             onClick={() => setActiveView("ai")}
-            className="hidden text-right text-sm font-semibold text-primary hover:underline sm:block"
+            className="hidden text-right text-sm font-semibold text-indigo-300 hover:underline sm:block"
           >
             A more productive workspace
             <br />
@@ -616,144 +608,6 @@ function RecentActivity({ range }: { range: string }) {
             );
           })
         )}
-      </div>
-    </DashboardCard>
-  );
-}
-
-/* =========================================================
-   QUICK CHECK IN / OUT
-========================================================= */
-
-const PRESENCE_STATUSES = [
-  { key: "lunch", label: "Lunch", icon: UtensilsCrossed },
-  { key: "tea_break", label: "Tea break", icon: Coffee },
-  { key: "out_of_office", label: "Out of office", icon: DoorOpen },
-] as const;
-
-function QuickCheckInCard() {
-  const setActiveView = useUIStore((s) => s.setActiveView);
-  const { data: me, isLoading: meLoading, isError: meError } = useMyEmployee();
-  const today = new Date().toISOString().slice(0, 10);
-  const { data: records, isLoading: attendanceLoading, isError: attendanceError } = useAttendance({
-    employeeId: me?.id,
-    from: today,
-    to: today,
-  });
-  const checkin = useAttendanceCheckin();
-  const checkout = useAttendanceCheckout();
-  const presence = useAttendancePresence();
-  const record = me?.id ? records?.[0] : undefined;
-  const presenceStatus = record?.presenceStatus ?? null;
-  const presenceLabel = PRESENCE_STATUSES.find((s) => s.key === presenceStatus)?.label;
-  const canSetPresence = Boolean(me?.id && record?.checkInAt && !record?.checkOutAt);
-
-  return (
-    <DashboardCard
-      title="Quick Check In"
-      icon={
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-success/10 text-success">
-          <Clock size={15} />
-        </div>
-      }
-      badge={
-        presenceLabel ? (
-          <span className="rounded-full bg-warning/10 px-2.5 py-1 text-[10px] font-semibold text-warning">
-            {presenceLabel}
-          </span>
-        ) : record ? (
-          <span className="rounded-full bg-success/10 px-2.5 py-1 text-[10px] font-semibold capitalize text-success">
-            {record.status}
-          </span>
-        ) : undefined
-      }
-      onViewAll={() => setActiveView("my-attendance")}
-    >
-      <div className="mt-4">
-        {meLoading || attendanceLoading ? (
-          <p className="text-sm text-text-secondary">Loading…</p>
-        ) : meError || attendanceError ? (
-          <p className="text-sm text-text-muted">Couldn't load today's attendance.</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-border bg-surface-elevated/50 px-4 py-3">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Checked in</p>
-              <p className="mt-1 text-lg font-semibold text-text">
-                {record?.checkInAt ? formatTime(record.checkInAt) : "—"}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border bg-surface-elevated/50 px-4 py-3">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Checked out</p>
-              <p className="mt-1 text-lg font-semibold text-text">
-                {record?.checkOutAt ? formatTime(record.checkOutAt) : "—"}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {checkin.error ? <p className="mt-2 text-xs text-error">{checkin.error.message}</p> : null}
-        {checkout.error ? <p className="mt-2 text-xs text-error">{checkout.error.message}</p> : null}
-        {presence.error ? <p className="mt-2 text-xs text-error">{presence.error.message}</p> : null}
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <PermissionGate permission="hrms.attendance.checkin">
-            {me?.id && !record?.checkInAt ? (
-              <button
-                type="button"
-                disabled={checkin.isPending}
-                onClick={() => checkin.mutate()}
-                className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-[11px] font-semibold text-white transition hover:bg-primary-hover disabled:opacity-50"
-              >
-                <LogIn size={13} />
-                {checkin.isPending ? "Checking in…" : "Check in"}
-              </button>
-            ) : null}
-          </PermissionGate>
-          <PermissionGate permission="hrms.attendance.checkout">
-            {me?.id && record?.checkInAt && !record?.checkOutAt ? (
-              <button
-                type="button"
-                disabled={checkout.isPending}
-                onClick={() => checkout.mutate()}
-                className="flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-[11px] font-semibold text-text transition hover:bg-surface-elevated disabled:opacity-50"
-              >
-                <LogOut size={13} />
-                {checkout.isPending ? "Checking out…" : "Check out"}
-              </button>
-            ) : null}
-          </PermissionGate>
-          {me?.id && record?.checkOutAt ? (
-            <span className="flex items-center gap-2 text-[11px] text-text-muted">
-              <CheckCircle2 size={13} className="text-success" />
-              Done for today
-            </span>
-          ) : null}
-        </div>
-
-        {canSetPresence ? (
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {PRESENCE_STATUSES.map(({ key, label, icon: Icon }) => {
-              const active = presenceStatus === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  disabled={presence.isPending}
-                  onClick={() => presence.mutate(active ? null : key)}
-                  className={cn(
-                    "flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-[10px] font-medium transition disabled:opacity-50",
-                    active
-                      ? "border-primary/40 bg-primary/10 text-primary"
-                      : "border-border bg-surface text-text-secondary hover:bg-surface-elevated",
-                  )}
-                >
-                  <Icon size={12} className="shrink-0" />
-                  <span className="truncate">{label}</span>
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
       </div>
     </DashboardCard>
   );
@@ -1127,6 +981,13 @@ export function AdminHomeScreen() {
           <NeedsAttention items={attentionItems} />
         </section>
 
+        {/* ATTENDANCE + PERSONAL */}
+        <section className="mt-4 grid gap-4 xl:grid-cols-3">
+          <QuickCheckInCard />
+          <PersonalTodosCard />
+          <TimeTrackingCard />
+        </section>
+
         {/* KPI CARDS */}
         <section className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <KpiCard
@@ -1179,8 +1040,7 @@ export function AdminHomeScreen() {
         </section>
 
         {/* ANALYTICS */}
-        <section className="mt-4 grid gap-4 xl:grid-cols-3">
-          <QuickCheckInCard />
+        <section className="mt-4 grid gap-4 xl:grid-cols-2">
           <StatDonutCard
             title="Assets Overview"
             data={assetData}
@@ -1195,12 +1055,6 @@ export function AdminHomeScreen() {
             centerTitle="Total Tickets"
             onViewAll={() => useUIStore.getState().setActiveView("tickets")}
           />
-        </section>
-
-        {/* PERSONAL PRODUCTIVITY */}
-        <section className="mt-4 grid gap-4 xl:grid-cols-2">
-          <PersonalTodosCard />
-          <TimeTrackingCard />
         </section>
 
         {/* BOTTOM */}

@@ -32,6 +32,7 @@ import {
   usePendingEvaluations,
 } from "@/hooks/api";
 import { usePermissions } from "@/hooks/usePermissions";
+import { QuickCheckInCard } from "@/features/dashboard/widgets";
 import { useUIStore } from "@/stores/ui";
 import { cn } from "@/lib/utils";
 import { Badge } from "@teamspace-one/ui/badge";
@@ -948,6 +949,7 @@ export function RecruiterHomeScreen() {
 
         {/* Right sidebar */}
         <aside className="space-y-4">
+          <QuickCheckInCard />
           <SchedulePanel sessions={sessions.data ?? []} />
           <RecentActivity
             candidates={candidateList}

@@ -16,6 +16,19 @@ const RECHECK_INTERVAL_MS = 30 * 60 * 1000;
 const MANUAL_CHECK_EVENT = "teamspace-one:check-for-updates";
 
 /**
+ * Fired on `window` when an interactive update check settles, so callers like
+ * Settings → About can reflect the outcome even when no dialog opens (e.g.
+ * when the app is already on the latest version).
+ */
+export const UPDATE_CHECK_RESULT_EVENT = "teamspace-one:update-check-result";
+
+export type UpdateCheckResult = "latest" | "available" | "error";
+
+function reportUpdateCheckResult(result: UpdateCheckResult) {
+  window.dispatchEvent(new CustomEvent<UpdateCheckResult>(UPDATE_CHECK_RESULT_EVENT, { detail: result }));
+}
+
+/**
  * Triggers an interactive update check from anywhere in the app (e.g. the
  * Settings → About "Check for updates" button). Unlike the background poll,
  * failures surface in the update dialog instead of being logged and dropped.
@@ -88,6 +101,7 @@ export function UpdateChecker() {
       const result = await check();
       if (!result) {
         setPhase("idle");
+        if (interactive) reportUpdateCheckResult("latest");
         return;
       }
       if (dismissedVersion.current === result.version && !interactive) {
@@ -96,6 +110,7 @@ export function UpdateChecker() {
       }
       setUpdate(result);
       setPhase("available");
+      if (interactive) reportUpdateCheckResult("available");
     } catch (err) {
       // Network blips shouldn't surface as modal errors unless the user
       // explicitly asked for a check.
@@ -103,6 +118,7 @@ export function UpdateChecker() {
       if (interactive) {
         setError(err instanceof Error ? err.message : String(err));
         setPhase("error");
+        reportUpdateCheckResult("error");
       } else {
         console.warn("[updater] update check failed:", err);
       }

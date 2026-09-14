@@ -6,7 +6,6 @@ import {
   CalendarDays,
   Check,
   ChevronRight,
-  Clock3,
   FileText,
   Mail,
   Megaphone,
@@ -18,7 +17,6 @@ import {
 } from "lucide-react";
 import {
   useAttendance,
-  useAttendanceCheckin,
   useDailyDigest,
   useEmployeeBirthdays,
   useMe,
@@ -32,8 +30,7 @@ import {
 } from "@/hooks/api";
 import * as api from "@/lib/api";
 import type { DailyDigestResult, Meeting, Todo } from "@/lib/api";
-import { usePermissions } from "@/hooks/usePermissions";
-import { normalizeDigest } from "@/features/dashboard/widgets";
+import { normalizeDigest, QuickCheckInCard } from "@/features/dashboard/widgets";
 import { useUIStore } from "@/stores/ui";
 import { cn, getUserDisplayName } from "@/lib/utils";
 import { formatMinutes, formatTime } from "@/screens/hrms/common";
@@ -125,10 +122,10 @@ function dailyQuote() {
 ========================================================= */
 
 const BRIEF_ICONS = [
-  { icon: Check, iconClass: "bg-success/10 text-success" },
-  { icon: CalendarDays, iconClass: "bg-primary/10 text-primary" },
-  { icon: Mail, iconClass: "bg-warning/10 text-warning" },
-  { icon: Sparkles, iconClass: "bg-mention/10 text-mention" },
+  { icon: Check, iconClass: "bg-white/10 text-emerald-300" },
+  { icon: CalendarDays, iconClass: "bg-white/10 text-indigo-300" },
+  { icon: Mail, iconClass: "bg-white/10 text-amber-300" },
+  { icon: Sparkles, iconClass: "bg-white/10 text-rose-300" },
 ];
 
 function AIDailyBrief({
@@ -151,29 +148,37 @@ function AIDailyBrief({
   }, [digest, fallbackItems]);
 
   return (
-    <section className="relative min-h-[300px] overflow-hidden rounded-xl border border-border bg-surface p-6">
+    <section className="relative min-h-[300px] overflow-hidden rounded-xl border border-white/10 bg-[#020b19] p-6">
+      <div className="pointer-events-none absolute inset-0">
+        <img
+          src="/about-background-image.png"
+          alt=""
+          className="h-full w-full object-cover object-right"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#020b19]/90 via-[#020b19]/60 to-[#020b19]/20" />
+      </div>
       <div className="pointer-events-none absolute -right-8 -top-16 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
       <div className="pointer-events-none absolute bottom-0 right-8 h-48 w-48 rounded-full bg-info/10 blur-3xl" />
 
       <div className="relative z-10 max-w-[70%] lg:max-w-[62%]">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-indigo-300">
             <Sparkles size={22} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold text-text">AI Daily Brief</h2>
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+              <h2 className="text-base font-semibold text-white">AI Daily Brief</h2>
+              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-indigo-200">
                 Beta
               </span>
             </div>
-            <p className="text-xs text-text-secondary">Your personalized update for today</p>
+            <p className="text-xs text-white/70">Your personalized update for today</p>
           </div>
         </div>
 
         <div className="mt-6 space-y-4">
           {loading ? (
-            <p className="text-xs leading-5 text-text-secondary">Generating daily brief…</p>
+            <p className="text-xs leading-5 text-white/70">Generating daily brief…</p>
           ) : (
             items.map((item, i) => {
               const preset = BRIEF_ICONS[i % BRIEF_ICONS.length];
@@ -193,7 +198,7 @@ function AIDailyBrief({
 
         <button
           onClick={() => setActiveView("ai")}
-          className="mt-5 flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-xs font-semibold text-primary transition hover:border-primary/40"
+          className="mt-5 flex items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/15"
         >
           View Details
           <ArrowRight size={13} />
@@ -203,13 +208,13 @@ function AIDailyBrief({
       {/* AI Orb */}
       <div className="absolute right-[6%] top-[26%] hidden lg:block">
         <div className="relative flex h-36 w-36 items-center justify-center rounded-full bg-primary/10 shadow-[0_0_60px_rgba(99,102,241,0.15)]">
-          <div className="absolute inset-5 rounded-full border border-surface/70" />
-          <div className="absolute inset-10 rounded-full border border-surface/80" />
-          <Sparkles size={34} className="text-primary" />
+          <div className="absolute inset-5 rounded-full border border-white/40" />
+          <div className="absolute inset-10 rounded-full border border-white/50" />
+          <Sparkles size={34} className="text-indigo-300" />
         </div>
         <div className="mt-4 text-center">
-          <p className="text-xs font-semibold text-text">Stay focused.</p>
-          <p className="text-xs font-semibold text-text">You're on track!</p>
+          <p className="text-xs font-semibold text-white/90">Stay focused.</p>
+          <p className="text-xs font-semibold text-white/90">You're on track!</p>
         </div>
       </div>
     </section>
@@ -233,8 +238,8 @@ function BriefItem({
         {icon}
       </div>
       <div className="min-w-0">
-        <p className="truncate text-xs font-semibold text-text">{title}</p>
-        <p className="mt-0.5 truncate text-[11px] text-text-muted">{description}</p>
+        <p className="truncate text-xs font-semibold text-white">{title}</p>
+        <p className="mt-0.5 truncate text-[11px] text-white/60">{description}</p>
       </div>
     </div>
   );
@@ -718,7 +723,6 @@ function MotivationBanner() {
 
 export function EmployeeHomeScreen() {
   const { data: user } = useMe();
-  const { can } = usePermissions();
   const setActiveView = useUIStore((s) => s.setActiveView);
   const now = useNow(30_000);
 
@@ -726,7 +730,6 @@ export function EmployeeHomeScreen() {
   const todos = useTodos();
   const meetings = useMeetings();
   const notifications = useNotifications();
-  const checkin = useAttendanceCheckin();
 
   const today = todayStr();
   const week = useMemo(weekRange, []);
@@ -760,9 +763,6 @@ export function EmployeeHomeScreen() {
     () => (attendance.data ?? []).find((r) => r.date.slice(0, 10) === today),
     [attendance.data, today],
   );
-  const checkedIn = Boolean(todayRecord?.checkInAt);
-  const checkedOut = Boolean(todayRecord?.checkOutAt);
-
   // workedMinutes is only persisted at checkout — tick it live while punched in.
   const workedTodayMin = useMemo(() => {
     if (!todayRecord) return 0;
@@ -881,43 +881,16 @@ export function EmployeeHomeScreen() {
       </section>
 
       {/* =================================================
+          ATTENDANCE
+      ================================================= */}
+      <section className="mt-4">
+        <QuickCheckInCard />
+      </section>
+
+      {/* =================================================
           PERSONAL METRICS
       ================================================= */}
-      <section className="mt-4 grid gap-3 md:grid-cols-3">
-        <MetricCard
-          icon={<Clock3 size={22} />}
-          iconClass="bg-success/10 text-success"
-          title="Check-in"
-          value={checkedIn ? formatTime(todayRecord?.checkInAt) : "—"}
-          subtitle={
-            me.data?.department?.name ??
-            me.data?.departmentName ??
-            (me.data ? "Office" : "No employee record")
-          }
-          badge={
-            checkedIn ? (
-              <span className="rounded-md bg-success/10 px-2 py-1 text-[10px] font-medium text-success">
-                {checkedOut ? "Checked out" : (todayRecord?.presenceStatus ?? "Present")}
-              </span>
-            ) : undefined
-          }
-          action={
-            !checkedIn && can("hrms.attendance.checkin") && me.data ? (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  checkin.mutate();
-                }}
-                disabled={checkin.isPending}
-                className="rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-primary-hover disabled:opacity-50"
-              >
-                {checkin.isPending ? "…" : "Check in"}
-              </button>
-            ) : undefined
-          }
-          onClick={() => setActiveView("my-attendance")}
-        />
-
+      <section className="mt-4 grid gap-3 md:grid-cols-2">
         <MetricCard
           icon={<Users size={22} />}
           iconClass="bg-primary/10 text-primary"
