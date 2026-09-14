@@ -135,6 +135,10 @@ export function useSfu(): UseSfuReturn {
   const screenShareSenderRef = useRef<RTCRtpSender | null>(null);
   const trackIdToParticipantRef = useRef<Record<string, string>>({});
   const roomEventHandlersRef = useRef<Set<(event: SfuRoomEvent) => void>>(new Set());
+  // Serializes every signaling op so overlapping negotiations can't interleave
+  // setRemote/setLocal calls (the "no pending remote description" race).
+  const signalQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingLocalOfferRef = useRef(false);
 
   const isIntentionalLeaveRef = useRef(false);
   const reconnectAttemptRef = useRef(0);
@@ -270,6 +274,24 @@ export function useSfu(): UseSfuReturn {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(msg));
     }
+  }
+
+  function enqueueSignal(fn: () => Promise<void>) {
+    signalQueueRef.current = signalQueueRef.current
+      .then(fn)
+      .catch((err) => console.error("SFU signaling op failed", err));
+  }
+
+  function makeLocalOffer(pc: RTCPeerConnection) {
+    enqueueSignal(async () => {
+      if (pc.signalingState !== "stable") {
+        pendingLocalOfferRef.current = true;
+        return;
+      }
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      send({ type: "offer", target: "sfu", sdp: offer.sdp! });
+    });
   }
 
   const stopScreenShare = useCallback(async () => {
@@ -527,14 +549,14 @@ export function useSfu(): UseSfuReturn {
         }
       };
 
-      pc.onnegotiationneeded = async () => {
-        try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          send({ type: "offer", target: "sfu", sdp: offer.sdp! });
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Negotiation failed");
+      pc.onnegotiationneeded = () => {
+        // Perfect negotiation: the client is the polite peer. Never offer while
+        // a negotiation is in flight — the change is re-offered once stable.
+        if (pc.signalingState !== "stable") {
+          pendingLocalOfferRef.current = true;
+          return;
         }
+        makeLocalOffer(pc);
       };
 
       pc.onicecandidate = (e) => {
@@ -611,33 +633,50 @@ export function useSfu(): UseSfuReturn {
             break;
 
           case "offer": {
-            try {
-              await pc.setRemoteDescription({ type: "offer", sdp: msg.sdp! });
-
-              const hasLocalTracks = pc.getSenders().some((s) => s.track);
-              if (!hasLocalTracks) {
-                const tracks = stream!.getTracks();
-                for (const track of tracks) {
-                  const transceiver = pc.getTransceivers().find(
-                    (tr) =>
-                      tr.receiver.track.kind === track.kind &&
-                      tr.direction === "sendonly" &&
-                      tr.sender.track === null,
-                  );
-                  if (transceiver) {
-                    await transceiver.sender.replaceTrack(track);
-                  } else {
-                    pc.addTrack(track, stream!);
+            enqueueSignal(async () => {
+              try {
+                // Polite side of glare: roll back an outstanding local offer and
+                // accept the SFU's; re-offer our changes once stable.
+                if (pc.signalingState === "have-local-offer") {
+                  pendingLocalOfferRef.current = true;
+                  try {
+                    await pc.setRemoteDescription({ type: "rollback" });
+                  } catch {
+                    // Rollback unsupported — proceed and let the offer apply.
                   }
                 }
-              }
+                await pc.setRemoteDescription({ type: "offer", sdp: msg.sdp! });
 
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-              send({ type: "answer", target: "sfu", sdp: answer.sdp! });
-            } catch (err) {
-              setError(err instanceof Error ? err.message : "Failed to handle SFU offer");
-            }
+                const hasLocalTracks = pc.getSenders().some((s) => s.track);
+                if (!hasLocalTracks) {
+                  const tracks = stream!.getTracks();
+                  for (const track of tracks) {
+                    const transceiver = pc.getTransceivers().find(
+                      (tr) =>
+                        tr.receiver.track.kind === track.kind &&
+                        tr.direction === "sendonly" &&
+                        tr.sender.track === null,
+                    );
+                    if (transceiver) {
+                      await transceiver.sender.replaceTrack(track);
+                    } else {
+                      pc.addTrack(track, stream!);
+                    }
+                  }
+                }
+
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                send({ type: "answer", target: "sfu", sdp: answer.sdp! });
+
+                if (pendingLocalOfferRef.current && pc.signalingState === "stable") {
+                  pendingLocalOfferRef.current = false;
+                  makeLocalOffer(pc);
+                }
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Failed to handle SFU offer");
+              }
+            });
             break;
           }
 
@@ -645,11 +684,18 @@ export function useSfu(): UseSfuReturn {
             // Reply to a client-initiated offer (e.g. screen-share or camera
             // started mid-call via onnegotiationneeded). Without this the pc
             // stays stuck in have-local-offer and the track never flows.
-            try {
-              await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp! });
-            } catch (err) {
-              console.error("Failed to apply SFU answer", err);
-            }
+            enqueueSignal(async () => {
+              try {
+                await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp! });
+              } catch (err) {
+                // Stale answer (our offer was rolled back for an SFU offer).
+                console.error("Failed to apply SFU answer", err);
+              }
+              if (pendingLocalOfferRef.current && pc.signalingState === "stable") {
+                pendingLocalOfferRef.current = false;
+                makeLocalOffer(pc);
+              }
+            });
             break;
           }
 
