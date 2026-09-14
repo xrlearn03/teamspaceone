@@ -108,6 +108,10 @@ enum Signal {
         track_id: String,
         rid: Option<String>,
     },
+    /// Ephemeral room-level event (raise hand, reaction, …) broadcast to every
+    /// other peer in the sender's room. The payload is opaque to the SFU.
+    #[serde(rename = "room_event")]
+    RoomEvent { data: serde_json::Value },
 }
 
 /// Messages sent from the SFU to the client.
@@ -142,6 +146,13 @@ enum Event {
     },
     #[serde(rename = "error")]
     Error { message: String },
+    #[serde(rename = "room_event")]
+    RoomEvent {
+        from: PeerId,
+        display_name: String,
+        user_id: Option<String>,
+        data: serde_json::Value,
+    },
 }
 
 #[derive(Clone)]
@@ -1028,6 +1039,33 @@ async fn process_signal(
                 rid
             ));
         }
+        Signal::RoomEvent { data } => {
+            // Ephemeral room-scoped event (raise hand, reaction, …). Broadcast
+            // to every other peer in the room; the payload is opaque.
+            let s = state.read().await;
+            let Some(sender) = s.peers.get(peer_id) else {
+                return Err(anyhow!("peer not found: {}", peer_id));
+            };
+            let Some(room_id) = sender.room_id.clone() else {
+                return Err(anyhow!("peer not in a room"));
+            };
+            let Some(room) = s.rooms.get(&room_id) else {
+                return Err(anyhow!("room not found: {}", room_id));
+            };
+            for participant_id in room.participants.keys() {
+                if participant_id == peer_id {
+                    continue;
+                }
+                if let Some(peer) = s.peers.get(participant_id) {
+                    let _ = peer.tx.send(Event::RoomEvent {
+                        from: peer_id.to_string(),
+                        display_name: sender.display_name.clone(),
+                        user_id: sender.user_id.clone(),
+                        data: data.clone(),
+                    });
+                }
+            }
+        }
     }
 
     #[cfg(not(feature = "rtc"))]
@@ -1108,7 +1146,14 @@ async fn handle_track(
     // If the room is already recording, attach a writer for this new track and
     // ask the publisher for a keyframe so the file starts cleanly.
     if let Some(rec) = active_recording.clone() {
-        recording::attach_track_writer(&rec, &rt.recorder, &room_id, &publisher, &track_id, &track);
+        let speaker = participants.get(&publisher).map(|p| {
+            if p.display_name.is_empty() {
+                p.user_id.clone().unwrap_or_else(|| publisher.clone())
+            } else {
+                p.display_name.clone()
+            }
+        });
+        recording::attach_track_writer(&rec, &rt.recorder, &room_id, &publisher, &track_id, &track, speaker);
         if kind == RTPCodecType::Video {
             if let Some(pc) = publisher_pc.clone() {
                 let ssrc = track.ssrc();
@@ -1131,7 +1176,7 @@ async fn handle_track(
         loop {
             match track.read_rtp().await {
                 Ok((pkt, _)) => {
-                    if let Some((writer, _)) = track_recorder.lock().await.as_mut() {
+                    if let Some((writer, ..)) = track_recorder.lock().await.as_mut() {
                         writer.write_rtp(&pkt);
                     }
                     // Snapshot the sender channels while holding the lock, then

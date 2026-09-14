@@ -236,7 +236,7 @@ async fn test_recording_tee_writes_vp8_file() {
         sdp_fmtp_line: "".to_string(),
         rtcp_feedback: vec![],
     };
-    recording::attach_rtc_track_writer(&rec, &slot, "room1", "pub1", "track1", Some(&codec));
+    recording::attach_rtc_track_writer(&rec, &slot, "room1", "pub1", "track1", Some(&codec), Some("speaker1".to_string()));
 
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
     while slot.lock().await.is_none() {
@@ -255,14 +255,14 @@ async fn test_recording_tee_writes_vp8_file() {
 
     {
         let mut guard = slot.lock().await;
-        let (writer, path) = guard.as_mut().unwrap();
+        let (writer, path, _) = guard.as_mut().unwrap();
         assert_eq!(path.extension().and_then(|e| e.to_str()), Some("ivf"));
         writer.write_rtp(&pkt);
     }
 
     recording::finish_track_writer(&rec, &slot).await;
-    let paths = recording::collect_recording_files(&rec, Vec::new()).await;
-    assert!(!paths.is_empty());
+    let files = recording::collect_recording_files(&rec, Vec::new()).await;
+    assert!(!files.is_empty());
 
     let _ = std::fs::remove_dir_all(&dir);
 }

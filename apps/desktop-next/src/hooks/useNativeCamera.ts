@@ -68,8 +68,11 @@ export function useNativeCamera(): UseNativeCameraReturn {
 
   const start = useCallback(
     async (index: number) => {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setError("Camera access is not supported in this browser.");
+      if (
+        typeof navigator.mediaDevices?.getUserMedia !== "function" ||
+        window.isSecureContext === false
+      ) {
+        setError("Camera access needs a secure (HTTPS) context.");
         return;
       }
       stop();
@@ -112,7 +115,7 @@ export function useNativeCamera(): UseNativeCameraReturn {
   );
 
   useEffect(() => {
-    if (!navigator.mediaDevices?.enumerateDevices) return;
+    if (!navigator.mediaDevices?.enumerateDevices || window.isSecureContext === false) return;
     let mounted = true;
     navigator.mediaDevices
       .enumerateDevices()

@@ -116,7 +116,7 @@ export function HrEmployeesScreen() {
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="Employee" crumbs={["Employee", "Employee Grid"]}>
+      <PageHeader title="Employee">
         <PrimaryAction icon={PlusCircle} label="Add New Employee" onClick={() => setAddOpen(true)} />
       </PageHeader>
 

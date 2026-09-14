@@ -4,8 +4,9 @@ import { useMe } from "@/hooks/api";
 import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { cn, getUserDisplayName } from "@/lib/utils";
 import { filterDashboardWidgets } from "@/features/dashboard/registry";
-import { useShellVariant } from "@/hooks/usePermissions";
+import { useMyContext, useShellVariant } from "@/hooks/usePermissions";
 import { AdminHomeScreen } from "./home-admin";
+import { EmployeeHomeScreen } from "./home-employee";
 import { HrDashboardScreen } from "@/screens/hr/dashboard";
 
 function getGreeting() {
@@ -18,6 +19,7 @@ function getGreeting() {
 export function HomeScreen() {
   const { data: user } = useMe();
   const { user: authzUser } = usePermissionContext();
+  const { data: context } = useMyContext();
   const shellVariant = useShellVariant();
   const widgets = filterDashboardWidgets(authzUser);
   const bannerWidgets = widgets.filter((w) => w.banner);
@@ -32,6 +34,14 @@ export function HomeScreen() {
   }
   if (shellVariant === "hr") {
     return <HrDashboardScreen />;
+  }
+
+  // Everyone else lands on the employee home — except external-facing
+  // roles (clients/guests and interview candidates), who keep the
+  // permission-filtered widget grid.
+  const roleCategory = context?.roleCategory ?? null;
+  if (roleCategory !== "guest" && roleCategory !== "external" && roleCategory !== "candidate") {
+    return <EmployeeHomeScreen />;
   }
 
   return (

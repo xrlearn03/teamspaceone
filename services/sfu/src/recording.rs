@@ -168,7 +168,15 @@ impl TrackWriter {
     }
 }
 
-pub type SharedTrackWriter = Arc<Mutex<Option<(TrackWriter, PathBuf)>>>;
+/// A finalized recording file plus the display name of the participant who
+/// published the track, used downstream to label transcript speakers.
+#[derive(Clone)]
+pub struct FinishedFile {
+    pub path: PathBuf,
+    pub speaker: Option<String>,
+}
+
+pub type SharedTrackWriter = Arc<Mutex<Option<(TrackWriter, PathBuf, Option<String>)>>>;
 
 pub fn new_track_writer_slot() -> SharedTrackWriter {
     Arc::new(Mutex::new(None))
@@ -184,7 +192,7 @@ pub struct Recorder {
     pub actor_id: String,
     /// Tracks whose writers already ended mid-recording (camera off, screenshare
     /// stopped, peer left). Their files are closed and awaiting upload.
-    pub finished_files: Mutex<Vec<PathBuf>>,
+    pub finished_files: Mutex<Vec<FinishedFile>>,
 }
 
 pub fn recording_base_dir() -> PathBuf {
@@ -220,6 +228,7 @@ pub fn attach_track_writer(
     publisher: &str,
     track_id: &str,
     remote: &TrackRemote,
+    speaker: Option<String>,
 ) {
     match TrackWriter::create(&rec.dir, room_id, publisher, track_id, remote) {
         Ok(Some(w)) => {
@@ -231,7 +240,7 @@ pub fn attach_track_writer(
             );
             let slot = slot.clone();
             tokio::spawn(async move {
-                *slot.lock().await = Some(w);
+                *slot.lock().await = Some((w.0, w.1, speaker));
             });
         }
         Ok(None) => {
@@ -253,6 +262,7 @@ pub fn attach_rtc_track_writer(
     publisher: &str,
     track_id: &str,
     codec: Option<&RTCRtpCodec>,
+    speaker: Option<String>,
 ) {
     if let Some(codec) = codec {
         match TrackWriter::create_from_rtc_codec(&rec.dir, room_id, publisher, track_id, codec) {
@@ -265,7 +275,7 @@ pub fn attach_rtc_track_writer(
                 );
                 let slot = slot.clone();
                 tokio::spawn(async move {
-                    *slot.lock().await = Some(w);
+                    *slot.lock().await = Some((w.0, w.1, speaker));
                 });
             }
             Ok(None) => {
@@ -289,9 +299,12 @@ pub fn attach_rtc_track_writer(
 
 /// Closes a track's writer and moves its file to the finished list for upload.
 pub async fn finish_track_writer(rec: &Recorder, slot: &SharedTrackWriter) {
-    if let Some((writer, path)) = slot.lock().await.take() {
+    if let Some((writer, path, speaker)) = slot.lock().await.take() {
         writer.close();
-        rec.finished_files.lock().await.push(path);
+        rec.finished_files
+            .lock()
+            .await
+            .push(FinishedFile { path, speaker });
     }
 }
 
@@ -301,13 +314,14 @@ pub async fn upload_files(
     file_storage_url: &str,
     internal_api_key: &str,
     rec: &Recorder,
-    paths: Vec<PathBuf>,
+    files: Vec<FinishedFile>,
 ) -> Vec<serde_json::Value> {
     let client = reqwest::Client::new();
     let url = format!("{}/files/upload", file_storage_url.trim_end_matches('/'));
     let mut uploaded = Vec::new();
 
-    for path in paths {
+    for finished in files {
+        let path = finished.path;
         let file_name = path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
@@ -323,10 +337,16 @@ pub async fn upload_files(
             let part = reqwest::multipart::Part::stream(reqwest::Body::from(file))
                 .file_name(file_name.clone())
                 .mime_str(mime)?;
-            let form = reqwest::multipart::Form::new()
+            let mut form = reqwest::multipart::Form::new()
                 .part("file", part)
                 .text("resourceType", "meeting".to_string())
                 .text("resourceId", rec.room_id.clone());
+            if let Some(speaker) = &finished.speaker {
+                form = form.text(
+                    "metadata",
+                    json!({ "speaker": speaker, "source": "sfu-recording" }).to_string(),
+                );
+            }
             let resp = client
                 .post(&url)
                 .header("x-internal-api-key", internal_api_key)
@@ -363,29 +383,30 @@ pub async fn upload_files(
     uploaded
 }
 
-/// Stops recording for a room: closes every track writer and returns the file
-/// paths plus the recorder so the caller can upload them.
+/// Stops recording for a room: closes every track writer and returns the
+/// finished files plus the recorder so the caller can upload them.
 pub async fn collect_recording_files(
     rec: &Arc<Recorder>,
     writer_slots: Vec<SharedTrackWriter>,
-) -> Vec<PathBuf> {
-    let mut paths = rec.finished_files.lock().await.clone();
+) -> Vec<FinishedFile> {
+    let mut files = rec.finished_files.lock().await.clone();
     for slot in writer_slots {
-        if let Some((writer, path)) = slot.lock().await.take() {
+        if let Some((writer, path, speaker)) = slot.lock().await.take() {
             writer.close();
-            paths.push(path);
+            files.push(FinishedFile { path, speaker });
         }
     }
-    paths
+    files
 }
 
 /// Build JSON records for finalized recording files that are staying local
 /// because upload is disabled or failed. This lets the `stop` endpoint still
 /// report what was produced on disk.
-pub fn local_file_records(paths: &[PathBuf]) -> Vec<serde_json::Value> {
-    paths
+pub fn local_file_records(files: &[FinishedFile]) -> Vec<serde_json::Value> {
+    files
         .iter()
-        .map(|path| {
+        .map(|f| {
+            let path = &f.path;
             let file_name = path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
@@ -403,6 +424,7 @@ pub fn local_file_records(paths: &[PathBuf]) -> Vec<serde_json::Value> {
                 "path": path.to_string_lossy(),
                 "mimeType": mime,
                 "size": size,
+                "speaker": f.speaker,
                 "status": "local",
             })
         })

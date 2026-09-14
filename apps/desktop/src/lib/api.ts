@@ -1742,6 +1742,10 @@ export function createMeetingMessage(id: string, content: string) {
   return apiRequest<MeetingMessage>(`/meetings/${id}/messages`, { method: "POST", body: { content } });
 }
 
+export function postMeetingTranscriptLines(id: string, lines: { text: string; speaker?: string }[]) {
+  return apiRequest<{ inserted: number }>(`/meetings/${id}/transcript-lines`, { method: "POST", body: { lines } });
+}
+
 export function getMeetingReactions(id: string) {
   return apiRequest<MeetingReaction[]>(`/meetings/${id}/reactions`);
 }
@@ -1874,6 +1878,10 @@ export function declineAIAction(id: string) {
   return apiRequest<AIPendingAction>(`/ai/actions/${encodeURIComponent(id)}/decline`, { method: "POST" });
 }
 
+export function createScribeToken() {
+  return apiRequest<{ token: string }>("/ai/scribe-token", { method: "POST" });
+}
+
 // ---------------------------------------------------------------------------
 // HRMS (Phase 4)
 // ---------------------------------------------------------------------------
@@ -1892,6 +1900,8 @@ export interface Employee {
   managerEmployeeId?: string | null;
   joiningDate?: string | null;
   employmentType: string;
+  /** Compensation JSON — only returned to callers with hrms.payroll.view. */
+  salary?: { base?: number; currency?: string } | null;
   status: string;
   employeeNumber?: string | null;
   dateOfBirth?: string | null;
@@ -2123,6 +2133,7 @@ export function createEmployee(body: {
   joiningDate?: string;
   employmentType?: string;
   employeeNumber?: string;
+  salary?: { base: number; currency?: string };
 }) {
   return apiRequest<Employee>("/hrms/employees", { method: "POST", body });
 }
@@ -2141,6 +2152,7 @@ export function updateEmployee(
     employmentType: string;
     status: string;
     employeeNumber: string | null;
+    salary: { base: number; currency?: string } | null;
   }>,
 ) {
   return apiRequest<Employee>(`/hrms/employees/${encodeURIComponent(id)}`, {
@@ -2972,6 +2984,10 @@ export function getHrmsAnalytics() {
 }
 
 // Payroll additions
+
+export function createPayrollPeriod(body: { name: string; startDate: string; endDate: string }) {
+  return apiRequest<PayrollPeriod>("/hrms/payroll/periods", { method: "POST", body: JSON.stringify(body) });
+}
 
 export function processPayrollPeriod(id: string) {
   return apiRequest<PayrollPeriod>(`/hrms/payroll/periods/${encodeURIComponent(id)}/process`, { method: "POST" });

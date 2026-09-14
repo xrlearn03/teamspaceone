@@ -107,7 +107,7 @@ export function HrLeavesScreen() {
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="Leaves" crumbs={["Employee", "Leaves"]}>
+      <PageHeader title="Leaves">
         {can("hrms.leave.apply") && (
           <PrimaryAction icon={PlusCircle} label="Add New Leave" onClick={() => setApplyOpen(true)} />
         )}

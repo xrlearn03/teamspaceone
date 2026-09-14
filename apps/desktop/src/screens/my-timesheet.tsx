@@ -383,7 +383,7 @@ export function MyTimesheetScreen() {
   if (entries.isLoading) {
     return (
       <div className="p-4 sm:p-6">
-        <PageHeader title="My Timesheet" crumbs={["My Timesheet"]} />
+        <PageHeader title="My Timesheet" />
         <div className="mt-6"><SectionSkeleton rows={8} /></div>
       </div>
     );
@@ -391,7 +391,7 @@ export function MyTimesheetScreen() {
   if (entries.isError) {
     return (
       <div className="p-4 sm:p-6">
-        <PageHeader title="My Timesheet" crumbs={["My Timesheet"]} />
+        <PageHeader title="My Timesheet" />
         <div className="mt-6"><SectionError onRetry={() => entries.refetch()} /></div>
       </div>
     );
@@ -399,7 +399,7 @@ export function MyTimesheetScreen() {
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="My Timesheet" crumbs={["My Timesheet"]}>
+      <PageHeader title="My Timesheet">
         <div className="flex items-center gap-2">
           <button
             type="button"

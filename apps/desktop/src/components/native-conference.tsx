@@ -31,7 +31,10 @@ import {
   DropdownMenuTrigger,
 } from "@teamspace-one/ui/dropdown-menu";
 import { cn, getUserDisplayName } from "../lib/utils";
+import { toast } from "../lib/toast";
 import { useRealtime } from "../hooks/useRealtime";
+import { useLiveTranscription } from "../hooks/useLiveTranscription";
+import type { SfuRoomEvent } from "../hooks/useSfu";
 import { useUIStore } from "../stores/ui";
 import { useMembers, useUsers } from "../hooks/api";
 import { UserAvatar } from "./user-avatar";
@@ -79,6 +82,8 @@ interface NativeConferenceProps {
   onToggleAudio?: () => void;
   onToggleVideo?: () => void;
   onToggleScreenShare?: () => void;
+  sendRoomEvent?: (data: unknown) => void;
+  onRoomEvent?: (handler: (event: SfuRoomEvent) => void) => () => void;
 }
 
 export function NativeConference({
@@ -104,6 +109,8 @@ export function NativeConference({
   onToggleAudio,
   onToggleVideo,
   onToggleScreenShare,
+  sendRoomEvent,
+  onRoomEvent,
   audioOutputId,
 }: NativeConferenceProps) {
   const realtime = useRealtime();
@@ -120,6 +127,16 @@ export function NativeConference({
   const joinedAtRef = useRef(Date.now());
 
   const displayName = getUserDisplayName(user, "Guest");
+
+  // Streams the local mic to ElevenLabs Scribe; committed lines are stored on
+  // the meeting and merged into the MOM transcript on end. No-ops when the
+  // transcription provider isn't configured (or for guests without JWT).
+  useLiveTranscription({
+    meetingId,
+    stream: localStream ?? null,
+    speaker: displayName,
+    enabled: connected,
+  });
 
   const participantUserIds = useMemo(() => {
     const ids = new Set<string>();
@@ -217,6 +234,38 @@ export function NativeConference({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingId, participants, user?.id]);
 
+  // Ephemeral room events relayed over the SFU channel — this is how link
+  // guests (who have no realtime socket) raise hands and send reactions.
+  useEffect(() => {
+    if (!onRoomEvent) return;
+    return onRoomEvent((event) => {
+      const data = event.data as {
+        kind?: string;
+        userId?: string;
+        raised?: boolean;
+        emoji?: string;
+        id?: string;
+      } | null;
+      if (!data || typeof data !== "object") return;
+      const actorId = data.userId ?? event.userId;
+      if (data.kind === "raise_hand" && actorId) {
+        setRaisedHands((prev) => {
+          const next = new Set(prev);
+          if (data.raised) next.add(actorId);
+          else next.delete(actorId);
+          return next;
+        });
+      } else if (data.kind === "reaction" && data.emoji) {
+        showReaction(
+          data.emoji,
+          actorId ?? "",
+          data.id ?? `room-${event.from}-${Date.now()}`,
+        );
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onRoomEvent, participants]);
+
   async function sendMessage() {
     const content = chatInput.trim();
     if (!content) return;
@@ -233,8 +282,13 @@ export function NativeConference({
     try {
       const reaction = await createMeetingReaction(meetingId, emoji);
       showReaction(reaction.emoji, reaction.userId, reaction.id);
+      // Relay over the SFU room channel too so link guests (no realtime
+      // socket) see the float. Carrying the server id keeps it dedupe-safe
+      // for members who also receive the realtime event.
+      sendRoomEvent?.({ kind: "reaction", emoji: reaction.emoji, userId: reaction.userId, id: reaction.id });
     } catch (err) {
       console.error("Failed to send reaction", err);
+      toast.error("Couldn't send reaction");
     }
   }
 
@@ -243,15 +297,19 @@ export function NativeConference({
     const next = !raisedHands.has(user.id);
     try {
       await updateMeetingRaiseHand(meetingId, next);
-      setRaisedHands((prev) => {
-        const s = new Set(prev);
-        if (next) s.add(user.id);
-        else s.delete(user.id);
-        return s;
-      });
     } catch (err) {
       console.error("Failed to update raise hand", err);
+      toast.error("Couldn't update raise hand");
+      return;
     }
+    setRaisedHands((prev) => {
+      const s = new Set(prev);
+      if (next) s.add(user.id);
+      else s.delete(user.id);
+      return s;
+    });
+    // Relay to link guests over the SFU room channel.
+    sendRoomEvent?.({ kind: "raise_hand", userId: user.id, raised: next });
   }
 
   async function toggleRecording() {
@@ -260,6 +318,7 @@ export function NativeConference({
       await setMeetingRecording(meetingId, !isRecording);
     } catch (err) {
       console.error("Failed to update recording state", err);
+      toast.error(err instanceof Error ? err.message : "Couldn't update recording");
     }
   }
 

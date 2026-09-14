@@ -75,7 +75,7 @@ const MENU_SECTIONS: Record<Exclude<ShellVariant, "default">, MenuItem[][]> = {
       { view: "designations", label: "Designations", icon: CalendarCheck },
       { view: "leaves", label: "Leaves", icon: CalendarDays },
       { view: "attendance", label: "Overall Attendance", icon: CalendarClock },
-      { view: "hrms", label: "Payroll", icon: Wallet, hrmsTab: "payroll" },
+      { view: "payroll", label: "Payroll", icon: Wallet },
       { view: "onboarding", label: "Onboarding", icon: UserPlus },
       { view: "offboarding", label: "Offboarding", icon: UserMinus },
       { view: "tickets", label: "Tickets", icon: Ticket },

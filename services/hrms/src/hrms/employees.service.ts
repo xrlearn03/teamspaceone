@@ -174,6 +174,54 @@ export class EmployeesService {
     return sanitizeEmployee(actorEmployee, user);
   }
 
+  /**
+   * Upcoming birthdays within `days`. Deliberately NOT data-scope filtered:
+   * birthdays are org-directory information, and only non-sensitive fields
+   * (name, department, day/month — never the birth year) are returned.
+   */
+  async listBirthdays(ctx: RequestContextInput, days = 7) {
+    const windowDays = Math.min(Math.max(Math.floor(days) || 7, 1), 62);
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        organisationId: ctx.organisationId,
+        dateOfBirth: { not: null },
+        status: 'active',
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        avatarFileId: true,
+        dateOfBirth: true,
+        department: { select: { name: true } },
+      },
+    });
+
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const upcoming = employees
+      .map((e) => {
+        const dob = e.dateOfBirth as Date;
+        let next = new Date(start.getFullYear(), dob.getMonth(), dob.getDate());
+        if (next.getTime() < start.getTime()) {
+          next = new Date(start.getFullYear() + 1, dob.getMonth(), dob.getDate());
+        }
+        const daysUntil = Math.round((next.getTime() - start.getTime()) / 86400000);
+        return {
+          id: e.id,
+          firstName: e.firstName,
+          lastName: e.lastName,
+          avatarFileId: e.avatarFileId,
+          departmentName: e.department?.name ?? null,
+          date: next.toISOString().slice(0, 10),
+          daysUntil,
+        };
+      })
+      .filter((e) => e.daysUntil <= windowDays)
+      .sort((a, b) => a.daysUntil - b.daysUntil || a.firstName.localeCompare(b.firstName));
+    return upcoming;
+  }
+
   async syncProfile(
     employee: { userId: string | null; firstName: string; lastName: string; avatarFileId?: string | null },
     correlationId?: string,

@@ -62,7 +62,7 @@ export function HrDesignationsScreen() {
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="Designations" crumbs={["Employee", "Designations"]}>
+      <PageHeader title="Designations">
         {can("hrms.designation.create") && (
           <PrimaryAction icon={PlusCircle} label="Add New Designation" onClick={() => setCreateOpen(true)} />
         )}

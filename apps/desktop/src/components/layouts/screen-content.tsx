@@ -8,6 +8,7 @@ import { InboxScreen } from "../../screens/inbox";
 import { ChannelScreen } from "../../screens/channel";
 import { DirectMessageScreen } from "../../screens/direct-message";
 import { ProjectScreen } from "../../screens/project";
+import { MyProjectsScreen } from "../../screens/my-projects";
 import { MeetingView } from "../../screens/meetings";
 import { VoiceRoomScreen } from "../../screens/voice-room";
 import { FileBrowserScreen } from "../../screens/file-browser";
@@ -18,6 +19,7 @@ import { DraftsScreen } from "../../screens/drafts";
 import { SettingsScreen } from "../../screens/settings";
 import { AccessDeniedScreen } from "../../screens/access-denied";
 import { HrmsScreen } from "../../screens/hrms";
+import { HrPayrollScreen } from "../../screens/hr/payroll";
 import { InterviewScreen } from "../../screens/interview";
 import { AdminScreen } from "../../screens/admin";
 import { AssetsScreen } from "../../screens/assets";
@@ -45,6 +47,7 @@ const screens: Record<View, React.ComponentType> = {
   channel: ChannelScreen,
   dm: DirectMessageScreen,
   project: ProjectScreen,
+  "my-projects": MyProjectsScreen,
   meeting: MeetingView,
   voice: VoiceRoomScreen,
   files: FileBrowserScreen,
@@ -53,6 +56,7 @@ const screens: Record<View, React.ComponentType> = {
   saved: SavedItemsScreen,
   drafts: DraftsScreen,
   hrms: HrmsScreen,
+  payroll: HrPayrollScreen,
   interview: InterviewScreen,
   admin: AdminScreen,
   assets: AssetsScreen,

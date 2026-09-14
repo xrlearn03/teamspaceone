@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import { CurrentOrganisation, type OrganisationContextValue } from '@teamspace-one/organisation-context';
 import { RemotePermissionGuard, RequirePermissions } from '@teamspace-one/authorization/nest';
 import { COLLABORATION_PERMISSIONS } from '@teamspace-one/authorization';
@@ -77,6 +77,14 @@ export class AiController {
     @Body() dto: ExtractDto,
   ) {
     return this.ai.extractDecisions(ctx, dto.text, dto.sourceType ?? 'manual', dto.sourceId);
+  }
+
+  @Post('scribe-token')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.ACCESS)
+  async scribeToken() {
+    const token = await this.ai.createScribeToken();
+    if (!token) throw new ServiceUnavailableException('Transcription is not configured');
+    return token;
   }
 
   @Post('daily-digest')

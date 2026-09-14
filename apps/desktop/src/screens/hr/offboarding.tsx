@@ -1018,7 +1018,7 @@ export function HrOffboardingScreen() {
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="Employee Offboarding" crumbs={["People", "Offboarding"]}>
+      <PageHeader title="Employee Offboarding">
         <button
           type="button"
           onClick={exportCsv}

@@ -140,6 +140,15 @@ export class EmployeesController {
     return this.employees.getMe(toCtx(org), user);
   }
 
+  @Get('birthdays')
+  @RequirePermissions('hrms.employee.view')
+  birthdays(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @Query('days') days?: string,
+  ) {
+    return this.employees.listBirthdays(toCtx(org), days ? Number(days) : undefined);
+  }
+
   @Get(':id')
   @RequirePermissions('hrms.employee.view')
   get(

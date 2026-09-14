@@ -3,7 +3,6 @@ import {
   Building2,
   CalendarDays,
   Check,
-  ChevronRight,
   Eye,
   FileText,
   LayoutGrid,
@@ -1325,14 +1324,7 @@ export function MemberDirectoryScreen() {
     <div className="flex h-full min-h-0 flex-col overflow-y-auto">
       {/* Header */}
       <header className="shrink-0 px-4 pb-3 pt-4 sm:px-6">
-        <div className="flex items-center gap-1.5 text-xs text-text-muted">
-          <Building2 className="h-3.5 w-3.5" />
-          <span>Administration</span>
-          <ChevronRight className="h-3 w-3" />
-          <span className="text-text">Users</span>
-        </div>
-
-        <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-text">
               Users

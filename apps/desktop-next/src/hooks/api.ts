@@ -1245,6 +1245,18 @@ export function useMyEmployee() {
     enabled: hrmsEnabled(),
     staleTime: 60 * 1000,
     retry: 1,
+    meta: { suppressErrorToast: true },
+  });
+}
+
+export function useEmployeeBirthdays(days = 7) {
+  return useQuery({
+    queryKey: ["hrms", "employee-birthdays", orgId(), days],
+    queryFn: () => api.getEmployeeBirthdays(days),
+    enabled: hrmsEnabled(),
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+    meta: { suppressErrorToast: true },
   });
 }
 
@@ -2136,6 +2148,14 @@ function invalidatePayroll(client: ReturnType<typeof useQueryClient>) {
   client.invalidateQueries({ queryKey: ["hrms", "payslips"] });
   client.invalidateQueries({ queryKey: ["hrms", "overview"] });
   client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+}
+
+export function useCreatePayrollPeriod() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createPayrollPeriod,
+    onSuccess: () => invalidatePayroll(client),
+  });
 }
 
 export function useProcessPayrollPeriod() {

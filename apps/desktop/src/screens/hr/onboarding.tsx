@@ -367,7 +367,7 @@ export function HrOnboardingScreen() {
   if (instances.isLoading) {
     return (
       <div className="p-4 sm:p-6">
-        <PageHeader title="Employee Onboarding" crumbs={["People", "Onboarding"]} />
+        <PageHeader title="Employee Onboarding" />
         <div className="mt-6">
           <SectionSkeleton rows={8} />
         </div>
@@ -377,7 +377,7 @@ export function HrOnboardingScreen() {
   if (instances.isError) {
     return (
       <div className="p-4 sm:p-6">
-        <PageHeader title="Employee Onboarding" crumbs={["People", "Onboarding"]} />
+        <PageHeader title="Employee Onboarding" />
         <div className="mt-6">
           <SectionError onRetry={() => instances.refetch()} />
         </div>
@@ -391,10 +391,7 @@ export function HrOnboardingScreen() {
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader
-        title="Employee Onboarding"
-        crumbs={["People", "Onboarding"]}
-      >
+      <PageHeader title="Employee Onboarding">
         <Button variant="secondary" onClick={() => setTemplatesOpen(true)}>
           <FileText className="mr-1.5 h-4 w-4" /> Templates
         </Button>

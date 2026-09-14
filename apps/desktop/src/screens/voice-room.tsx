@@ -217,6 +217,8 @@ export function VoiceRoomScreen() {
       onToggleAudio={sfu.toggleAudio}
       onToggleVideo={sfu.toggleVideo}
       onToggleScreenShare={handleToggleScreenShare}
+      sendRoomEvent={sfu.sendRoomEvent}
+      onRoomEvent={sfu.onRoomEvent}
     />
   );
 }

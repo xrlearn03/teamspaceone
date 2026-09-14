@@ -620,7 +620,7 @@ export class FileStorageService {
   async upload(
     ctx: OrganisationContextValue,
     file: MulterFile,
-    resource?: { resourceType?: string; resourceId?: string },
+    resource?: { resourceType?: string; resourceId?: string; metadata?: Record<string, unknown> },
   ): Promise<FileRecordResult> {
     const actorId = ctx.actorId;
     if (!actorId) {
@@ -668,6 +668,7 @@ export class FileStorageService {
       checksumSha256,
       url: publicUrl,
       status: 'uploaded',
+      metadata: resource?.metadata ?? null,
     };
 
     const envelope = createEventEnvelope({
@@ -698,6 +699,7 @@ export class FileStorageService {
           checksumSha256,
           url: publicUrl,
           status: 'uploaded',
+          metadata: (resource?.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
         },
       });
       await this.outbox.createEvent(tx, envelope, Subjects.FILE_UPLOADED);

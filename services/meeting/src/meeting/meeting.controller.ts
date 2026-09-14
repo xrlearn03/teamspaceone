@@ -8,6 +8,7 @@ import { type CreateVoiceRoomDto } from './dto/create-voice-room.dto.js';
 import { type JoinMeetingDto } from './dto/join-meeting.dto.js';
 import { type UpdateScreenShareDto } from './dto/update-screen-share.dto.js';
 import { type CreateMeetingMessageDto } from './dto/create-meeting-message.dto.js';
+import { type CreateTranscriptLinesDto } from './dto/create-transcript-lines.dto.js';
 import { type CreateMeetingReactionDto } from './dto/create-meeting-reaction.dto.js';
 import { type UpdateMeetingRaiseHandDto } from './dto/update-meeting-raise-hand.dto.js';
 import { type UpdateMeetingRecordingDto } from './dto/update-meeting-recording.dto.js';
@@ -164,6 +165,16 @@ export class MeetingController {
     @Body() dto: CreateMeetingMessageDto,
   ) {
     return this.meeting.createMeetingMessage(ctx, id, dto.content);
+  }
+
+  @Post(':id/transcript-lines')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.MEETING_CONDUCT)
+  async createTranscriptLines(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @Param('id') id: string,
+    @Body() dto: CreateTranscriptLinesDto,
+  ) {
+    return this.meeting.createTranscriptLines(ctx, id, dto.lines);
   }
 
   @Get(':id/messages')

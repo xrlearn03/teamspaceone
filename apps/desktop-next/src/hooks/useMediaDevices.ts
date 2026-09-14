@@ -74,8 +74,11 @@ export function useMediaDevices(options: UseMediaDevicesOptions = {}) {
         video: videoEnabled ? buildTrackConstraints(videoDeviceId) : false,
       };
 
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setError("Media devices are not supported in this environment.");
+      if (
+        typeof navigator.mediaDevices?.getUserMedia !== "function" ||
+        window.isSecureContext === false
+      ) {
+        setError("Media devices need a secure (HTTPS) context.");
         return;
       }
 
@@ -109,7 +112,7 @@ export function useMediaDevices(options: UseMediaDevicesOptions = {}) {
   );
 
   const enumerate = useCallback(async () => {
-    if (!navigator.mediaDevices?.enumerateDevices) return;
+    if (!navigator.mediaDevices?.enumerateDevices || window.isSecureContext === false) return;
     try {
       const infos = await navigator.mediaDevices.enumerateDevices();
       const mapped = infos

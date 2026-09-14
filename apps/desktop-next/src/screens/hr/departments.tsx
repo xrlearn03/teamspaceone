@@ -42,7 +42,7 @@ export function HrDepartmentsScreen() {
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="Departments" crumbs={["Employee", "Departments"]}>
+      <PageHeader title="Departments">
         {can("hrms.department.create") && (
           <PrimaryAction icon={PlusCircle} label="Add New Department" onClick={() => setCreateOpen(true)} />
         )}

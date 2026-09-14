@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Hand,
   Mic,
   MicOff,
   Monitor,
   MonitorOff,
   PhoneOff,
+  Smile,
   Users,
   Video,
   VideoOff,
@@ -49,6 +51,7 @@ function ConferenceTile({
   isScreen,
   videoEnabled,
   audioOn,
+  raisedHand,
   onToggleMic,
   onToggleCamera,
 }: {
@@ -59,6 +62,7 @@ function ConferenceTile({
   isScreen?: boolean;
   videoEnabled: boolean;
   audioOn: boolean;
+  raisedHand?: boolean;
   onToggleMic?: () => void;
   onToggleCamera?: () => void;
 }) {
@@ -99,6 +103,12 @@ function ConferenceTile({
       {/* Remote audio when no video element carries it */}
       {!isLocal && stream && !showVideo ? (
         <audio ref={audioRef} autoPlay playsInline className="hidden" />
+      ) : null}
+
+      {raisedHand ? (
+        <span className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-amber-400 text-slate-900 shadow-lg">
+          <Hand size={16} />
+        </span>
       ) : null}
 
       {/* Bottom info */}
@@ -203,6 +213,11 @@ export function GuestJoinPage({ token }: { token: string }) {
   const [joinedAt, setJoinedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [showParticipants, setShowParticipants] = useState(false);
+  const [showReactions, setShowReactions] = useState(false);
+  const [handRaised, setHandRaised] = useState(false);
+  const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
+  const [reactions, setReactions] = useState<{ id: string; emoji: string; name: string }[]>([]);
+  const processedReactions = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -289,6 +304,69 @@ export function GuestJoinPage({ token }: { token: string }) {
     setLeft(true);
   }
 
+  function pushReaction(emoji: string, name: string, id: string) {
+    if (processedReactions.current.has(id)) return;
+    processedReactions.current.add(id);
+    setReactions((prev) => [...prev, { id, emoji, name }]);
+    window.setTimeout(() => {
+      setReactions((prev) => prev.filter((r) => r.id !== id));
+      processedReactions.current.delete(id);
+    }, 2500);
+  }
+
+  // In-room events relayed over the SFU channel (raise hand / reactions) —
+  // guests have no realtime socket, so this is the shared channel with the
+  // in-app conference.
+  useEffect(() => {
+    return sfu.onRoomEvent((event) => {
+      const data = event.data as {
+        kind?: string;
+        userId?: string;
+        raised?: boolean;
+        emoji?: string;
+        id?: string;
+      } | null;
+      if (!data || typeof data !== "object") return;
+      const actorId = data.userId ?? event.userId;
+      if (data.kind === "raise_hand" && actorId) {
+        setRaisedHands((prev) => {
+          const next = new Set(prev);
+          if (data.raised) next.add(actorId);
+          else next.delete(actorId);
+          return next;
+        });
+      } else if (data.kind === "reaction" && data.emoji) {
+        pushReaction(
+          data.emoji,
+          event.displayName,
+          data.id ?? `room-${event.from}-${Date.now()}`,
+        );
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sfu.onRoomEvent]);
+
+  function toggleRaiseHand() {
+    if (!joined) return;
+    const next = !handRaised;
+    setHandRaised(next);
+    setRaisedHands((prev) => {
+      const s = new Set(prev);
+      if (next) s.add(joined.userId);
+      else s.delete(joined.userId);
+      return s;
+    });
+    sfu.sendRoomEvent({ kind: "raise_hand", userId: joined.userId, raised: next });
+  }
+
+  function sendReaction(emoji: string) {
+    if (!joined) return;
+    const id = `guest-${joined.userId}-${Date.now()}`;
+    pushReaction(emoji, joined.displayName, id);
+    sfu.sendRoomEvent({ kind: "reaction", emoji, userId: joined.userId, id });
+    setShowReactions(false);
+  }
+
   if (infoError) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
@@ -332,7 +410,13 @@ export function GuestJoinPage({ token }: { token: string }) {
       isScreen?: boolean;
       videoEnabled: boolean;
       audioOn: boolean;
+      raisedHand?: boolean;
     }
+
+    const handFor = (participantId: string) => {
+      const userId = sfu.participants.find((p) => p.id === baseId(participantId))?.userId;
+      return userId ? raisedHands.has(userId) : false;
+    };
 
     const tiles: TileData[] = [
       ...screenStreams.map((s) => ({
@@ -351,6 +435,7 @@ export function GuestJoinPage({ token }: { token: string }) {
         isLocal: true,
         videoEnabled: sfu.videoEnabled,
         audioOn: sfu.audioEnabled,
+        raisedHand: handRaised,
       },
       ...cameraStreams.map((s) => ({
         key: s.participantId,
@@ -358,6 +443,7 @@ export function GuestJoinPage({ token }: { token: string }) {
         stream: s.stream,
         videoEnabled: trackLive(s.stream, "video"),
         audioOn: trackLive(s.stream, "audio"),
+        raisedHand: handFor(s.participantId),
       })),
     ];
 
@@ -372,6 +458,7 @@ export function GuestJoinPage({ token }: { token: string }) {
         name: `${joined.displayName} (You)`,
         audioOn: sfu.audioEnabled,
         videoOn: sfu.videoEnabled,
+        raisedHand: handRaised,
       },
       ...sfu.participants
         .filter((p) => p.id !== joined.participantId)
@@ -382,6 +469,7 @@ export function GuestJoinPage({ token }: { token: string }) {
             name: p.displayName,
             audioOn: trackLive(stream, "audio"),
             videoOn: trackLive(stream, "video"),
+            raisedHand: p.userId ? raisedHands.has(p.userId) : false,
           };
         }),
     ];
@@ -459,12 +547,25 @@ export function GuestJoinPage({ token }: { token: string }) {
                   isScreen={t.isScreen}
                   videoEnabled={t.videoEnabled}
                   audioOn={t.audioOn}
+                  raisedHand={t.raisedHand}
                   onToggleMic={t.isLocal ? sfu.toggleAudio : undefined}
                   onToggleCamera={t.isLocal && !isVoice ? sfu.toggleVideo : undefined}
                 />
               ))}
             </div>
           )}
+
+          {/* Floating reactions, same as the in-app conference overlay */}
+          {reactions.length > 0 ? (
+            <div className="pointer-events-none absolute bottom-4 right-6 flex flex-col items-end gap-1">
+              {reactions.map((r) => (
+                <div key={r.id} className="flex items-center gap-2">
+                  <span className="animate-bounce text-2xl">{r.emoji}</span>
+                  <span className="text-xs text-slate-300">{r.name}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </main>
 
         {/* Controls — same icon style as the in-app conference */}
@@ -490,6 +591,33 @@ export function GuestJoinPage({ token }: { token: string }) {
               active={sfu.screenShareEnabled}
               onClick={() => void sfu.toggleScreenShare()}
             />
+            <ControlButton
+              icon={<Hand size={21} />}
+              label={handRaised ? "Lower hand" : "Raise hand"}
+              active={!handRaised}
+              onClick={toggleRaiseHand}
+            />
+            <div className="group relative flex flex-col items-center">
+              <ControlButton
+                icon={<Smile size={21} />}
+                label="Reactions"
+                active={showReactions}
+                onClick={() => setShowReactions((v) => !v)}
+              />
+              {showReactions ? (
+                <div className="absolute bottom-full mb-3 flex gap-1 rounded-full border border-white/[0.08] bg-[#0d1c2c] p-2 shadow-2xl">
+                  {["👍", "❤️", "😂", "🎉", "👏"].map((emoji) => (
+                    <button
+                      key={emoji}
+                      onClick={() => sendReaction(emoji)}
+                      className="flex h-10 w-10 items-center justify-center rounded-full text-xl transition hover:bg-white/10"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <ControlButton
               icon={<Users size={21} />}
               label="Participants"
@@ -534,6 +662,11 @@ export function GuestJoinPage({ token }: { token: string }) {
                     {r.name.charAt(0).toUpperCase() || "?"}
                   </div>
                   <span className="min-w-0 flex-1 truncate text-sm text-slate-200">{r.name}</span>
+                  {r.raisedHand ? (
+                    <span className="text-amber-400">
+                      <Hand size={15} />
+                    </span>
+                  ) : null}
                   <span className={r.audioOn ? "text-slate-300" : "text-red-400"}>
                     {r.audioOn ? <Mic size={15} /> : <MicOff size={15} />}
                   </span>

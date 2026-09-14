@@ -41,6 +41,7 @@ export type View =
   | "saved"
   | "drafts"
   | "hrms"
+  | "payroll"
   | "interview"
   | "admin"
   | "assets"

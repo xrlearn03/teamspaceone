@@ -20,16 +20,19 @@ interface Signal {
     | "offer"
     | "answer"
     | "ice"
-    | "error";
+    | "error"
+    | "room_event";
   participant_id?: string;
   participants?: { id: string; display_name: string; user_id?: string }[];
   display_name?: string;
   user_id?: string;
+  from?: string;
   sdp?: string;
   candidate?: string;
   sdp_m_line_index?: number;
   sdp_mid?: string;
   message?: string;
+  data?: unknown;
 }
 
 type SendSignal =
@@ -42,7 +45,15 @@ type SendSignal =
       candidate: string;
       sdp_m_line_index: number;
       sdp_mid?: string;
-    };
+    }
+  | { type: "room_event"; data: unknown };
+
+export interface SfuRoomEvent {
+  from: string;
+  displayName: string;
+  userId?: string;
+  data: unknown;
+}
 
 const FALLBACK_ICE: RTCIceServer[] = [{ urls: ["stun:stun.l.google.com:19302"] }];
 
@@ -82,6 +93,7 @@ export function useGuestSfu() {
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const roomEventHandlersRef = useRef<Set<(event: SfuRoomEvent) => void>>(new Set());
 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<SfuRemoteStream[]>([]);
@@ -279,6 +291,19 @@ export function useGuestSfu() {
           case "error":
             setError(msg.message ?? "SFU error");
             break;
+
+          case "room_event": {
+            // Ephemeral in-room event broadcast by the SFU on behalf of
+            // another participant (raise hand, reaction, …).
+            const roomEvent: SfuRoomEvent = {
+              from: msg.from ?? "",
+              displayName: msg.display_name ?? "Participant",
+              userId: msg.user_id,
+              data: msg.data,
+            };
+            roomEventHandlersRef.current.forEach((h) => h(roomEvent));
+            break;
+          }
         }
       };
 
@@ -322,6 +347,15 @@ export function useGuestSfu() {
   const acquireTrack = useCallback(
     async (kind: "audio" | "video") => {
       if (acquiringRef.current) return;
+      if (
+        typeof navigator.mediaDevices?.getUserMedia !== "function" ||
+        window.isSecureContext === false
+      ) {
+        setError(
+          `${kind === "audio" ? "Microphone" : "Camera"} access needs a secure (HTTPS) connection.`,
+        );
+        return;
+      }
       acquiringRef.current = true;
       try {
         const media = await navigator.mediaDevices.getUserMedia(
@@ -392,6 +426,14 @@ export function useGuestSfu() {
       return;
     }
 
+    if (
+      typeof navigator.mediaDevices?.getDisplayMedia !== "function" ||
+      window.isSecureContext === false
+    ) {
+      setError("Screen sharing needs a secure (HTTPS) connection.");
+      return;
+    }
+
     try {
       const display = await navigator.mediaDevices.getDisplayMedia({ video: true });
       const track = display.getVideoTracks()[0];
@@ -418,6 +460,19 @@ export function useGuestSfu() {
     }
   }, []);
 
+  // Ephemeral room-scoped events (raise hand, reactions, …) shared with every
+  // participant over the SFU signaling channel.
+  const sendRoomEvent = useCallback((data: unknown) => {
+    send({ type: "room_event", data });
+  }, []);
+
+  const onRoomEvent = useCallback((handler: (event: SfuRoomEvent) => void) => {
+    roomEventHandlersRef.current.add(handler);
+    return () => {
+      roomEventHandlersRef.current.delete(handler);
+    };
+  }, []);
+
   return {
     join,
     leave,
@@ -425,6 +480,8 @@ export function useGuestSfu() {
     toggleVideo,
     toggleScreenShare,
     screenShareEnabled,
+    sendRoomEvent,
+    onRoomEvent,
     localStream,
     remoteStreams,
     participants,

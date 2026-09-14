@@ -182,7 +182,7 @@ export class FileStorageController {
   async upload(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @UploadedFile() file: any,
-    @Body() body: { resourceType?: string; resourceId?: string },
+    @Body() body: { resourceType?: string; resourceId?: string; metadata?: string },
   ) {
     if (!file || !file.size || file.size <= 0) {
       throw new BadRequestException('File payload is empty');
@@ -190,9 +190,21 @@ export class FileStorageController {
     if (file.size > MAX_UPLOAD_BYTES) {
       throw new BadRequestException(`File exceeds the maximum upload size of ${MAX_UPLOAD_BYTES} bytes`);
     }
+    let metadata: Record<string, unknown> | undefined;
+    if (body?.metadata) {
+      try {
+        const parsed = JSON.parse(body.metadata) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
+        if (JSON.stringify(parsed).length > 8192) throw new Error('too large');
+        metadata = parsed as Record<string, unknown>;
+      } catch {
+        throw new BadRequestException('metadata must be a JSON object of at most 8KB');
+      }
+    }
     return this.fileStorage.upload(ctx, file, {
       resourceType: body?.resourceType,
       resourceId: body?.resourceId,
+      metadata,
     });
   }
 

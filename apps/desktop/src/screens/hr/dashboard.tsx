@@ -4,7 +4,6 @@ import {
   BarChart3,
   CalendarCheck,
   CalendarDays,
-  CheckCircle2,
   ClipboardCheck,
   Clock3,
   FileText,
@@ -333,7 +332,7 @@ function QuickActions() {
   const setActiveView = useUIStore((s) => s.setActiveView);
   const actions: { title: string; icon: LucideIcon; className: string; view: View; hrmsTab?: string }[] = [
     { title: "Approve Leave", icon: CalendarCheck, className: "bg-mention/10 text-mention hover:bg-mention/20", view: "leaves" },
-    { title: "Run Payroll", icon: Wallet, className: "bg-primary/10 text-primary hover:bg-primary/20", view: "hrms", hrmsTab: "payroll" },
+    { title: "Run Payroll", icon: Wallet, className: "bg-primary/10 text-primary hover:bg-primary/20", view: "payroll" },
     { title: "Start Review Cycle", icon: BarChart3, className: "bg-info/10 text-info hover:bg-info/20", view: "hrms", hrmsTab: "performance" },
     { title: "Add Employee", icon: UserPlus, className: "bg-success/10 text-success hover:bg-success/20", view: "employees" },
     { title: "Manage Policies", icon: FileText, className: "bg-warning/10 text-warning hover:bg-warning/20", view: "leaves" },
@@ -620,13 +619,6 @@ export function HrDashboardScreen() {
 
   const displayName = getUserDisplayName(user, "there");
   const todayLabel = new Date().toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  const lastUpdated = Math.max(
-    employees.dataUpdatedAt,
-    leaveRequests.dataUpdatedAt,
-    overview.dataUpdatedAt,
-    analytics.dataUpdatedAt,
-  );
-
   return (
     <div className="h-full overflow-y-auto bg-background text-text">
       <div className="mx-auto max-w-[1500px] px-5 py-6 lg:px-7">
@@ -945,18 +937,6 @@ export function HrDashboardScreen() {
             )}
           </Card>
         </section>
-
-        {/* FOOTER */}
-        <footer className="mt-5 flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 text-[10px] text-text-muted">
-            <CheckCircle2 size={13} className="text-success" />
-            HR systems operational
-          </div>
-          <div className="flex items-center gap-2 text-[10px] text-text-muted">
-            <Clock3 size={13} />
-            {lastUpdated ? `Last updated ${formatRelative(new Date(lastUpdated).toISOString())}` : "Last updated just now"}
-          </div>
-        </footer>
       </div>
     </div>
   );

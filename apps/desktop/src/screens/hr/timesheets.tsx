@@ -739,7 +739,7 @@ export function HrTimesheetsScreen() {
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="Timesheets" crumbs={["HRMS", "Timesheets"]}>
+      <PageHeader title="Timesheets">
         <button
           type="button"
           className="flex h-9 items-center gap-2 rounded-md border border-border bg-surface px-3 text-xs font-medium text-text"

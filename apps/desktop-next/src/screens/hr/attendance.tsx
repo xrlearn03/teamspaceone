@@ -791,7 +791,7 @@ export function HrAttendanceScreen() {
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="Overall Attendance" crumbs={["Attendance", "Overall Attendance"]}>
+      <PageHeader title="Overall Attendance">
         <FilterDropdown onChange={(v) => setRange(v as RangeId)} options={RANGE_OPTIONS}>
           {`${fmtRangeDay(from)} – ${fmtRangeDay(to)}`}
         </FilterDropdown>

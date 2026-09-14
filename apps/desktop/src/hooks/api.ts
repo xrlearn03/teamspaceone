@@ -1124,6 +1124,17 @@ export function useFiles() {
   });
 }
 
+/** Files bound to projects the caller can access (ACL'd via resourceType=project). */
+export function useProjectFiles() {
+  return useQuery({
+    queryKey: ["files", orgId(), "resource:project"],
+    queryFn: () => api.getFiles({ resourceType: "project" }),
+    enabled: getActiveOrganisation() !== null,
+    staleTime: 60 * 1000,
+    retry: 2,
+  });
+}
+
 export function useMeetingRecordings(enabled = true) {
   return useQuery({
     queryKey: ["meeting-recordings", orgId()],
@@ -2154,6 +2165,14 @@ function invalidatePayroll(client: ReturnType<typeof useQueryClient>) {
   client.invalidateQueries({ queryKey: ["hrms", "payslips"] });
   client.invalidateQueries({ queryKey: ["hrms", "overview"] });
   client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+}
+
+export function useCreatePayrollPeriod() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createPayrollPeriod,
+    onSuccess: () => invalidatePayroll(client),
+  });
 }
 
 export function useProcessPayrollPeriod() {
