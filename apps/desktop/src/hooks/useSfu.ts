@@ -749,6 +749,7 @@ export function useSfu() {
             // Serialized so a second SFU offer can't interleave with the one
             // currently being processed.
             enqueueSignal(async () => {
+              let stage = "receive offer";
               try {
                 // Polite side of glare resolution: if our own offer is still
                 // outstanding, roll it back and accept the SFU's offer. The
@@ -756,11 +757,13 @@ export function useSfu() {
                 if (pc.signalingState === "have-local-offer") {
                   pendingLocalOfferRef.current = true;
                   try {
+                    stage = "rollback local offer";
                     await pc.setLocalDescription({ type: "rollback" });
                   } catch {
                     // Rollback unsupported — proceed and let the offer apply.
                   }
                 }
+                stage = "set remote offer";
                 await pc.setRemoteDescription({ type: "offer", sdp: msg.sdp! });
 
                 // Only attach local tracks on the initial offer; on renegotiation
@@ -775,6 +778,7 @@ export function useSfu() {
                         tr.direction === "sendonly" &&
                         tr.sender.track === null,
                     );
+                    stage = `${transceiver ? "replace" : "add"} ${track.kind} track`;
                     if (transceiver) {
                       await transceiver.sender.replaceTrack(track);
                     } else {
@@ -783,7 +787,9 @@ export function useSfu() {
                   }
                 }
 
+                stage = "create answer";
                 const answer = await pc.createAnswer();
+                stage = "set local answer";
                 await pc.setLocalDescription(answer);
                 send({ type: "answer", target: "sfu", sdp: answer.sdp! });
 
@@ -793,7 +799,7 @@ export function useSfu() {
                 }
               } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
-                setError(`Failed to negotiate SFU offer (${pc.signalingState}): ${message}`);
+                setError(`SFU ${stage} failed (${pc.signalingState}): ${message}`);
               }
             });
             break;

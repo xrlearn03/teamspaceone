@@ -142,7 +142,8 @@ export function MeetingScreen() {
     try {
       await joinMeeting(activeMeetingId, displayName);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to join meeting");
+      const message = err instanceof Error ? err.message : String(err);
+      setError(`Meeting API join failed: ${message}`);
       setMediaOptions(null);
       return;
     }
@@ -153,7 +154,8 @@ export function MeetingScreen() {
       await sfu.join(activeMeetingId, displayName, opts, user?.id);
       setToken("native");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to join SFU");
+      const message = err instanceof Error ? err.message : String(err);
+      setError((current) => current ?? `SFU join failed: ${message}`);
       setMediaOptions(null);
     }
   }
@@ -214,6 +216,9 @@ export function MeetingScreen() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-3 sm:p-4 lg:p-6 text-text-secondary">
         <p className="text-sm text-error">{error}</p>
+        <p className="text-xs text-text-tertiary">
+          origin={window.location.origin} · secure={String(window.isSecureContext)} · tauri={String("__TAURI_INTERNALS__" in window)}
+        </p>
         <Button variant="secondary" onClick={() => setActiveView("meeting")}>
           Go back
         </Button>
