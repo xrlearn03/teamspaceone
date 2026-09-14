@@ -122,11 +122,7 @@ pub fn run() {
 
     #[cfg(all(not(dev), desktop))]
     {
-        // Bind the release asset server to 127.0.0.1 explicitly. macOS WKWebView
-        // treats IPv4 loopback as a secure context, which lets RTCPeerConnection
-        // construct; the default "localhost" can resolve to IPv6 ::1 and create
-        // an origin that WebKit rejects for WebRTC.
-        builder = builder.plugin(tauri_plugin_localhost::Builder::new(port).host("127.0.0.1").build());
+        builder = builder.plugin(tauri_plugin_localhost::Builder::new(port).build());
     }
 
     #[cfg(desktop)]
@@ -202,7 +198,7 @@ pub fn run() {
                 #[cfg(dev)]
                 let url = WebviewUrl::External("http://localhost:1420".parse::<Url>().unwrap());
                 #[cfg(not(dev))]
-                let url = WebviewUrl::External(format!("http://127.0.0.1:{}", port).parse::<Url>().unwrap());
+                let url = WebviewUrl::External(format!("http://localhost:{}", port).parse::<Url>().unwrap());
 
                 let _window = WebviewWindowBuilder::new(app, "main".to_string(), url)
                     .title("Teamspace One")
