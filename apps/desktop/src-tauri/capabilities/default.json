@@ -9,6 +9,8 @@
     "urls": [
       "http://localhost:*/*",
       "ws://localhost:*/*",
+      "http://127.0.0.1:*/*",
+      "ws://127.0.0.1:*/*",
       "tauri://localhost/*",
       "http://tauri.localhost/*",
       "https://*.teamspaceone.in/*",
@@ -25,6 +27,9 @@
       "identifier": "http:default",
       "allow": [
         {
+          "url": "http://127.0.0.1:*/*"
+        },
+        {
           "url": "http://localhost:3000/*"
         },
         {
@@ -35,6 +40,18 @@
         },
         {
           "url": "http://localhost:5173/*"
+        },
+        {
+          "url": "http://127.0.0.1:3000/*"
+        },
+        {
+          "url": "http://127.0.0.1:3005/*"
+        },
+        {
+          "url": "http://127.0.0.1:1420/*"
+        },
+        {
+          "url": "http://127.0.0.1:5173/*"
         },
         {
           "url": "https://app.teamspaceone.in/*"

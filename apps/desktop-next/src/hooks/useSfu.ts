@@ -534,9 +534,24 @@ export function useSfu(): UseSfuReturn {
         }
       }
 
-      const pc = new RTCPeerConnection({
-        iceServers: getIceServers(),
-      });
+      let pc: RTCPeerConnection;
+      try {
+        pc = new RTCPeerConnection({
+          iceServers: getIceServers(),
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn("RTCPeerConnection with ice servers failed:", message);
+        try {
+          pc = new RTCPeerConnection();
+        } catch (err2) {
+          const message2 = err2 instanceof Error ? err2.message : String(err2);
+          const wrapped = new Error(`${message2} (fallback RTCPeerConnection)`);
+          setError(wrapped.message);
+          await leave();
+          throw wrapped;
+        }
+      }
       pcRef.current = pc;
 
       pc.onconnectionstatechange = () => {
@@ -588,7 +603,14 @@ export function useSfu(): UseSfuReturn {
         });
       };
 
-      const ws = new WebSocket(SFU_URL);
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(SFU_URL);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(`WebSocket(${SFU_URL}) failed: ${message}`);
+        throw err;
+      }
       wsRef.current = ws;
 
       ws.onopen = () => {

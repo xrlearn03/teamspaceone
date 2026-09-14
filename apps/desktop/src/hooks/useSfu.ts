@@ -639,16 +639,21 @@ export function useSfu() {
           iceServers: getIceServers(),
         });
       } catch (err) {
-        // Include the security context so a webview-side SecurityError is
-        // diagnosable from the error screen alone (release builds have no
-        // devtools).
         const message = err instanceof Error ? err.message : String(err);
-        const wrapped = new Error(
-          `${message} (isSecureContext=${window.isSecureContext}, origin=${window.location.origin}, tauri=${isTauri})`,
-        );
-        setError(wrapped.message);
-        await leave();
-        throw wrapped;
+        const context = `(isSecureContext=${window.isSecureContext}, origin=${window.location.origin}, tauri=${isTauri})`;
+        console.warn("RTCPeerConnection with ice servers failed:", message, context);
+        // WKWebView on the tauri:// scheme may reject the configured ICE
+        // servers as insecure (e.g. STUN over a non-HTTP origin). Try again
+        // with an empty configuration so the call can still signal.
+        try {
+          pc = new RTCPeerConnection();
+        } catch (err2) {
+          const message2 = err2 instanceof Error ? err2.message : String(err2);
+          const wrapped = new Error(`${message2} (fallback RTCPeerConnection) ${context}`);
+          setError(wrapped.message);
+          await leave();
+          throw wrapped;
+        }
       }
       pcRef.current = pc;
 
@@ -701,7 +706,14 @@ export function useSfu() {
         });
       };
 
-      const ws = new WebSocket(SFU_URL);
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(SFU_URL);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(`WebSocket(${SFU_URL}) failed: ${message}`);
+        throw err;
+      }
       wsRef.current = ws;
 
       ws.onopen = () => {

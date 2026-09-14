@@ -1,6 +1,6 @@
 [package]
 name = "teamspace-one"
-version = "0.1.0"
+version = "0.1.2"
 description = "Teamspace One native desktop client"
 authors = ["Teamspace"]
 edition = "2021"
@@ -43,8 +43,10 @@ scap = "0.0.8"
 tokio-tungstenite = "0.21"
 futures = "0.3"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-localhost = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
+portpicker = "0.1"
 tauri-plugin-single-instance = "2"
 
 [target.'cfg(windows)'.dependencies]
