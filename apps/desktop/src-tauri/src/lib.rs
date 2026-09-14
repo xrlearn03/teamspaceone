@@ -162,6 +162,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(media::CameraState::new())
         .manage(media::MicrophoneState::new())
         .manage(screen_share::ScreenShareState::new())

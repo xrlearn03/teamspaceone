@@ -65,6 +65,7 @@ import {
 } from "../hooks/api";
 import { useUIStore } from "../stores/ui";
 import { cn } from "../lib/utils";
+import { copyToClipboard } from "../lib/desktop";
 import { toast, toastError } from "../lib/toast";
 import { MeetingScreen } from "./meeting";
 
@@ -1264,7 +1265,7 @@ export function MeetingsScreen() {
         setLinks((p) => ({ ...p, [m.id]: link }));
         setLinkLoading((p) => ({ ...p, [m.id]: false }));
       }
-      await navigator.clipboard.writeText(link.url);
+      await copyToClipboard(link.url);
       setCopiedId(m.id);
       toast.success("Guest link copied");
       window.setTimeout(() => setCopiedId((c) => (c === m.id ? null : c)), 2000);
@@ -1277,7 +1278,7 @@ export function MeetingsScreen() {
   async function copyCode(m: Meeting) {
     if (!m.joinCode) return;
     try {
-      await navigator.clipboard.writeText(m.joinCode);
+      await copyToClipboard(m.joinCode);
       toast.success("Join code copied");
     } catch {
       toast.error("Couldn't copy the join code");

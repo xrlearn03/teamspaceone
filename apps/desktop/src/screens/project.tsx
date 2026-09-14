@@ -45,6 +45,7 @@ import { UserAvatar } from "../components/user-avatar";
 import { usePermissionContext } from "@teamspace-one/authorization/react";
 import { hasPermission } from "@teamspace-one/authorization";
 import { cn, getUserDisplayName } from "../lib/utils";
+import { copyToClipboard } from "../lib/desktop";
 
 function useCan(permission: string) {
   const { user } = usePermissionContext();
@@ -294,7 +295,7 @@ function TaskDialog({ task, members, userMap, open, onOpenChange, onSave }: { ta
   }
 
   function copyLink() {
-    void navigator.clipboard.writeText(`teamspace-one://project/${task!.projectId}/task/${task!.id}`).then(() => {
+    void copyToClipboard(`teamspace-one://project/${task!.projectId}/task/${task!.id}`).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });

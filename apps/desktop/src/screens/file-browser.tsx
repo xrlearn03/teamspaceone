@@ -25,6 +25,7 @@ import { Badge } from "@teamspace-one/ui/badge";
 import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
 import { cn } from "../lib/utils";
+import { copyToClipboard } from "../lib/desktop";
 
 const filters = ["All", "PDF", "Images", "Video", "Audio", "Design", "Docs", "Archives"];
 
@@ -465,7 +466,7 @@ export function FileBrowserScreen() {
       </div>
     </div>
     <Dialog open={Boolean(shareToken)} onOpenChange={(open) => { if (!open) setShareToken(null); }}>
-      <DialogContent className="max-w-md p-0"><DialogHeader><DialogTitle>External share created</DialogTitle><DialogDescription>This token expires in seven days. Send it only to the intended recipient.</DialogDescription></DialogHeader><div className="space-y-3 px-4 pb-4"><Input readOnly value={shareToken ?? ""} /><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => { if (shareToken) void navigator.clipboard.writeText(shareToken); }}>Copy token</Button><Button onClick={() => setShareToken(null)}>Done</Button></div></div></DialogContent>
+      <DialogContent className="max-w-md p-0"><DialogHeader><DialogTitle>External share created</DialogTitle><DialogDescription>This token expires in seven days. Send it only to the intended recipient.</DialogDescription></DialogHeader><div className="space-y-3 px-4 pb-4"><Input readOnly value={shareToken ?? ""} /><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => { if (shareToken) void copyToClipboard(shareToken); }}>Copy token</Button><Button onClick={() => setShareToken(null)}>Done</Button></div></div></DialogContent>
     </Dialog>
     <Dialog open={Boolean(previewFile)} onOpenChange={(open) => { if (!open) setPreviewFile(null); }}>
       <DialogContent className="max-w-4xl top-1/2">

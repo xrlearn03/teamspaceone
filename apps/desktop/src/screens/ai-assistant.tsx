@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useAskAI, useConfirmAIAction, useCreateTask, useDeclineAIAction, useMe, useOrganisations, usePendingAIActions, useProjects, useUsers } from "../hooks/api";
 import { useUIStore } from "../stores/ui";
 import { cn, getUserDisplayName } from "../lib/utils";
+import { copyToClipboard } from "../lib/desktop";
 
 const suggestions = [
   "Summarize what changed today.",
@@ -158,7 +159,7 @@ export function AIAssistantScreen() {
   }
 
   function copyResponse(message: Message) {
-    void navigator.clipboard.writeText(message.content).then(() => {
+    void copyToClipboard(message.content).then(() => {
       setCopied(message.id);
       setTimeout(() => setCopied((current) => (current === message.id ? null : current)), 2000);
     });

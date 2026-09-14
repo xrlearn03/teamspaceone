@@ -12,6 +12,7 @@ import {
 } from "@teamspace-one/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
 import type { Message, UserDto } from "../../lib/api";
+import { copyToClipboard } from "../../lib/desktop";
 
 interface ThreadPanelProps {
   channelId: string;
@@ -39,7 +40,7 @@ export function ThreadPanel({ channelId, parentMessage, userMap, onClose }: Thre
   }
 
   function copyLink() {
-    void navigator.clipboard.writeText(`teamspace-one://channel/${channelId}/message/${parentMessage.id}`).then(() => {
+    void copyToClipboard(`teamspace-one://channel/${channelId}/message/${parentMessage.id}`).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });

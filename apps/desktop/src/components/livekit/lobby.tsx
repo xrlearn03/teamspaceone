@@ -25,6 +25,7 @@ import {
 import { useMediaDevices } from "../../hooks/useMediaDevices";
 import { useUsers } from "../../hooks/api";
 import { getMeetingShareLink, type Meeting, type UserDto } from "../../lib/api";
+import { copyToClipboard } from "../../lib/desktop";
 import { getUserDisplayName } from "../../lib/utils";
 import { UserAvatar } from "../user-avatar";
 import { SOUNDS } from "../../lib/sounds";
@@ -259,7 +260,7 @@ export function MeetingLobby({
   async function copyInviteLink() {
     try {
       const { url } = await getMeetingShareLink(meeting.id);
-      await navigator.clipboard.writeText(url);
+      await copyToClipboard(url);
       setCopiedLink(true);
       window.setTimeout(() => setCopiedLink(false), 2000);
     } catch (err) {

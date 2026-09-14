@@ -73,6 +73,7 @@
     "sql:allow-select",
     "core:window:allow-set-focus",
     "native-media",
-    "screen-share"
+    "screen-share",
+    "clipboard-manager:allow-write-text"
   ]
 }
