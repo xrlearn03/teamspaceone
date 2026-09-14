@@ -8,6 +8,7 @@ import { InboxScreen } from "../../screens/inbox";
 import { ChannelScreen } from "../../screens/channel";
 import { DirectMessageScreen } from "../../screens/direct-message";
 import { ProjectScreen } from "../../screens/project";
+import { MyProjectsScreen } from "../../screens/my-projects";
 import { MeetingView } from "../../screens/meetings";
 import { VoiceRoomScreen } from "../../screens/voice-room";
 import { FileBrowserScreen } from "../../screens/file-browser";
@@ -18,6 +19,7 @@ import { DraftsScreen } from "../../screens/drafts";
 import { SettingsScreen } from "../../screens/settings";
 import { AccessDeniedScreen } from "../../screens/access-denied";
 import { HrmsScreen } from "../../screens/hrms";
+import { HrPayrollScreen } from "../../screens/hr/payroll";
 import { InterviewScreen } from "../../screens/interview";
 import { AdminScreen } from "../../screens/admin";
 import { AssetsScreen } from "../../screens/assets";
@@ -28,7 +30,15 @@ import { EmployeeDetailScreen } from "../../screens/hr/employee-detail";
 import { HrDepartmentsScreen } from "../../screens/hr/departments";
 import { HrDesignationsScreen } from "../../screens/hr/designations";
 import { HrLeavesScreen } from "../../screens/hr/leaves";
+import { HrAttendanceScreen } from "../../screens/hr/attendance";
+import { HrTimesheetsScreen } from "../../screens/hr/timesheets";
+import { HrOffboardingScreen } from "../../screens/hr/offboarding";
+import { HrOnboardingScreen } from "../../screens/hr/onboarding";
 import { MyAttendanceScreen } from "../../screens/my-attendance";
+import { MyTimesheetScreen } from "../../screens/my-timesheet";
+import { MyLeavesScreen } from "../../screens/my-leaves";
+import { MyPayrollScreen } from "../../screens/my-payroll";
+import { MyPerformanceScreen } from "../../screens/my-performance";
 import { HelpScreen } from "../../screens/help";
 
 const screens: Record<View, React.ComponentType> = {
@@ -37,6 +47,7 @@ const screens: Record<View, React.ComponentType> = {
   channel: ChannelScreen,
   dm: DirectMessageScreen,
   project: ProjectScreen,
+  "my-projects": MyProjectsScreen,
   meeting: MeetingView,
   voice: VoiceRoomScreen,
   files: FileBrowserScreen,
@@ -45,6 +56,7 @@ const screens: Record<View, React.ComponentType> = {
   saved: SavedItemsScreen,
   drafts: DraftsScreen,
   hrms: HrmsScreen,
+  payroll: HrPayrollScreen,
   interview: InterviewScreen,
   admin: AdminScreen,
   assets: AssetsScreen,
@@ -55,7 +67,15 @@ const screens: Record<View, React.ComponentType> = {
   departments: HrDepartmentsScreen,
   designations: HrDesignationsScreen,
   leaves: HrLeavesScreen,
+  attendance: HrAttendanceScreen,
+  timesheets: HrTimesheetsScreen,
+  offboarding: HrOffboardingScreen,
+  onboarding: HrOnboardingScreen,
   "my-attendance": MyAttendanceScreen,
+  "my-timesheet": MyTimesheetScreen,
+  "my-leaves": MyLeavesScreen,
+  "my-payroll": MyPayrollScreen,
+  "my-performance": MyPerformanceScreen,
   settings: SettingsScreen,
   help: HelpScreen,
 };

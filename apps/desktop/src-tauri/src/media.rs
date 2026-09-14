@@ -9,6 +9,7 @@ use nokhwa::{
     Camera,
 };
 use serde::Serialize;
+use tauri::Emitter;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -82,7 +83,11 @@ impl CameraState {
 }
 
 #[tauri::command(rename = "start-camera")]
-pub fn start_camera(state: tauri::State<CameraState>, index: u32) -> Result<(), String> {
+pub fn start_camera(
+    app: tauri::AppHandle,
+    state: tauri::State<CameraState>,
+    index: u32,
+) -> Result<(), String> {
     // Stop any existing capture first.
     state.stop.store(true, Ordering::Relaxed);
     if let Some(handle) = state.handle.lock().map_err(|e| e.to_string())?.take() {
@@ -120,7 +125,12 @@ pub fn start_camera(state: tauri::State<CameraState>, index: u32) -> Result<(), 
                         let mut encoder = image::codecs::jpeg::JpegEncoder::new(&mut jpeg);
                         if encoder.encode_image(&image).is_ok() {
                             if let Ok(mut guard) = latest.lock() {
-                                *guard = Some(jpeg);
+                                *guard = Some(jpeg.clone());
+                            }
+                            let payload =
+                                format!("data:image/jpeg;base64,{}", BASE64.encode(&jpeg));
+                            if let Err(err) = app.emit("camera-frame", payload) {
+                                eprintln!("Failed to emit camera frame: {}", err);
                             }
                         }
                     }
@@ -372,7 +382,11 @@ mod mobile {
     }
 
     #[tauri::command(rename = "start-camera")]
-    pub fn start_camera(_state: tauri::State<CameraState>, _index: u32) -> Result<(), String> {
+    pub fn start_camera(
+        _app: tauri::AppHandle,
+        _state: tauri::State<CameraState>,
+        _index: u32,
+    ) -> Result<(), String> {
         Err("Camera capture is not supported on this platform".into())
     }
 

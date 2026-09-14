@@ -3,6 +3,7 @@ import {
   ChevronRight,
   FileText,
   Folder,
+  FolderKanban,
   Hash,
   Home,
   Inbox,
@@ -41,6 +42,7 @@ import {
 } from "../../hooks/api";
 import { type Channel, type Meeting, type UserDto } from "../../lib/api";
 import { useSwitchOrganisation } from "../../hooks/useOrganisationSwitch";
+import { usePermissions } from "../../hooks/usePermissions";
 import { Button } from "@teamspace-one/ui/button";
 import { Input } from "@teamspace-one/ui/input";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
@@ -245,9 +247,17 @@ export function WorkspaceSidebar() {
   useEffect(() => { meIdRef.current = me?.id; }, [me?.id]);
   const { connected, joinRealtimeChannel, leaveRealtimeChannel, sendPresence, onRealtimeEvent } = useRealtime();
   const { user: authzUser } = usePermissionContext();
+  const { scopesFor } = usePermissions();
   const canAny = (permissions: string[]) =>
     authzUser ? hasAnyPermission(authzUser, permissions) : false;
   const canCollaborate = canAny(["collaboration.access"]);
+  // Mirrors the projects service's member scoping: users with an
+  // organisation-level collaboration scope already see every project in the
+  // list below; everyone else gets the "My Projects" dashboard instead.
+  const memberScopedProjects =
+    !authzUser?.isSuperAdmin &&
+    !authzUser?.permissions.includes("*") &&
+    !scopesFor("collaboration").some((s) => s.scope === "organisation");
 
   const createChannel = useCreateChannel();
   const createDirectChannel = useCreateDirectChannel();
@@ -580,6 +590,14 @@ export function WorkspaceSidebar() {
 
         {canAny(["collaboration.project.view"]) ? (
         <SidebarSection title="Projects">
+          {memberScopedProjects ? (
+            <SidebarItem
+              icon={FolderKanban}
+              label="My Projects"
+              active={activeView === "my-projects"}
+              onClick={() => navigate("my-projects")}
+            />
+          ) : null}
           {visibleProjects.length > 0 ? (
             visibleProjects.map((p) => (
               <SidebarItem

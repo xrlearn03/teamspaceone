@@ -66,7 +66,11 @@ interface EmployeeFormState {
   employmentType: string;
   employeeNumber: string;
   status: string;
+  salaryBase: string;
+  salaryCurrency: string;
 }
+
+const SALARY_CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "SGD", "AUD", "CAD"];
 
 const EMPTY_FORM: EmployeeFormState = {
   userId: "",
@@ -82,6 +86,8 @@ const EMPTY_FORM: EmployeeFormState = {
   employmentType: "full_time",
   employeeNumber: "",
   status: "active",
+  salaryBase: "",
+  salaryCurrency: "INR",
 };
 
 export function EmployeeFormDialog({
@@ -100,7 +106,7 @@ export function EmployeeFormDialog({
   const init = (): EmployeeFormState => {
     if (employee) {
       return {
-        userId: employee.userId,
+        userId: employee.userId ?? "",
         membershipId: "",
         firstName: employee.firstName,
         lastName: employee.lastName,
@@ -113,6 +119,8 @@ export function EmployeeFormDialog({
         employmentType: employee.employmentType || "full_time",
         employeeNumber: employee.employeeNumber ?? "",
         status: employee.status || "active",
+        salaryBase: employee.salary?.base != null ? String(employee.salary.base) : "",
+        salaryCurrency: employee.salary?.currency ?? "INR",
       };
     }
     if (draft) {
@@ -130,12 +138,16 @@ export function EmployeeFormDialog({
         employmentType: "full_time",
         employeeNumber: "",
         status: "active",
+        salaryBase: "",
+        salaryCurrency: "INR",
       };
     }
     return EMPTY_FORM;
   };
 
   const [form, setForm] = useState<EmployeeFormState>(init);
+  const { can } = usePermissions();
+  const canSeePayroll = can("hrms.payroll.view");
   const departments = useDepartments();
   const designations = useDesignations();
   const allEmployees = useEmployees();
@@ -152,6 +164,10 @@ export function EmployeeFormDialog({
   }
 
   function pickDraft(userId: string) {
+    if (!userId) {
+      setForm((f) => ({ ...f, userId: "", membershipId: "" }));
+      return;
+    }
     const selected = (availableDrafts ?? []).find((d) => d.userId === userId) ?? draft;
     if (!selected) return;
     setForm({
@@ -167,6 +183,11 @@ export function EmployeeFormDialog({
 
   function submit() {
     if (!form.firstName.trim() || !form.lastName.trim()) return;
+    const salaryNum = Number(form.salaryBase);
+    const salary =
+      canSeePayroll && form.salaryBase.trim() && Number.isFinite(salaryNum) && salaryNum > 0
+        ? { base: salaryNum, currency: form.salaryCurrency || "INR" }
+        : undefined;
     if (employee) {
       const body = {
         firstName: form.firstName.trim(),
@@ -180,15 +201,15 @@ export function EmployeeFormDialog({
         employmentType: form.employmentType || undefined,
         employeeNumber: form.employeeNumber || undefined,
         status: form.status || undefined,
+        salary,
       };
       updateEmployee.mutate(
         { id: employee.id, body },
         { onSuccess: () => onOpenChange(false) },
       );
     } else {
-      if (!form.userId) return;
       const body = {
-        userId: form.userId,
+        userId: form.userId || undefined,
         membershipId: form.membershipId || undefined,
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
@@ -201,6 +222,7 @@ export function EmployeeFormDialog({
         employmentType: form.employmentType || undefined,
         employeeNumber: form.employeeNumber || undefined,
         status: form.status || undefined,
+        salary,
       };
       createEmployee.mutate(body, { onSuccess: () => onOpenChange(false) });
     }
@@ -224,13 +246,13 @@ export function EmployeeFormDialog({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 pt-2">
           {selectingMember ? (
             <label className="col-span-2 flex flex-col gap-1">
-              <span className={label}>Member *</span>
+              <span className={label}>Member <span className="text-text-muted">(optional)</span></span>
               <select
                 className="h-9 rounded-md border bg-background px-2 text-sm text-text"
                 value={form.userId}
                 onChange={(e) => pickDraft(e.target.value)}
               >
-                <option value="">Select an invited member…</option>
+                <option value="">No linked member</option>
                 {(availableDrafts ?? []).map((d) => (
                   <option key={d.userId} value={d.userId}>
                     {employeeName(d)} {d.workEmail ? `(${d.workEmail})` : ""}
@@ -302,6 +324,34 @@ export function EmployeeFormDialog({
             <span className={label}>Employee number</span>
             <Input value={form.employeeNumber} onChange={(e) => field("employeeNumber", e.target.value)} />
           </label>
+          {canSeePayroll ? (
+            <>
+              <label className="flex flex-col gap-1">
+                <span className={label}>
+                  Base salary <span className="text-text-muted">(payroll)</span>
+                </span>
+                <Input
+                  type="number"
+                  min={0}
+                  value={form.salaryBase}
+                  onChange={(e) => field("salaryBase", e.target.value)}
+                  placeholder="e.g. 150000"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className={label}>Salary currency</span>
+                <select
+                  className="h-9 rounded-md border bg-background px-2 text-sm text-text"
+                  value={form.salaryCurrency}
+                  onChange={(e) => field("salaryCurrency", e.target.value)}
+                >
+                  {SALARY_CURRENCIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : null}
           <label className="flex flex-col gap-1">
             <span className={label}>Manager</span>
             <select
@@ -336,7 +386,7 @@ export function EmployeeFormDialog({
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
             onClick={submit}
-            disabled={busy || !form.firstName.trim() || !form.lastName.trim() || (!employee && !form.userId)}
+            disabled={busy || !form.firstName.trim() || !form.lastName.trim()}
           >
             {employee ? "Save changes" : "Add employee"}
           </Button>

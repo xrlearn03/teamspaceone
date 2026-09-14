@@ -38,7 +38,7 @@ interface UpdateReviewInput {
 }
 
 interface CreateGoalInput {
-  employeeId: string;
+  employeeId?: string;
   cycleId?: string;
   title: string;
   description?: string;
@@ -231,16 +231,20 @@ export class PerformanceService {
     user: AuthorizableUser,
     input: CreateGoalInput,
   ) {
-    const { employeeWhere } = await this.scope.resolve(user, ctx.organisationId);
+    const { employeeWhere, actorEmployee } = await this.scope.resolve(user, ctx.organisationId);
+    const employeeId = input.employeeId ?? actorEmployee?.id;
+    if (!employeeId) {
+      throw new BadRequestException('No employee record to assign the goal to');
+    }
     const target = await this.prisma.employee.findFirst({
-      where: { id: input.employeeId, ...employeeWhere, organisationId: ctx.organisationId },
+      where: { id: employeeId, ...employeeWhere, organisationId: ctx.organisationId },
     });
     if (!target) throw new NotFoundException('Employee not found or outside your scope');
 
     return this.prisma.goal.create({
       data: {
         organisationId: ctx.organisationId,
-        employeeId: input.employeeId,
+        employeeId,
         cycleId: input.cycleId ?? null,
         title: input.title,
         description: input.description ?? null,

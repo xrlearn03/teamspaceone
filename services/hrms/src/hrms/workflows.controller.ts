@@ -247,8 +247,13 @@ export class LeaveController {
     @CurrentUser() user: AuthorizableUser,
     @Query('status') status?: string,
     @Query('employeeId') employeeId?: string,
+    @Query('mine') mine?: string,
   ) {
-    return this.leave.listRequests(toCtx(org), user, { status, employeeId });
+    return this.leave.listRequests(toCtx(org), user, {
+      status,
+      employeeId,
+      mine: mine === 'true',
+    });
   }
 
   @Post('requests/:id/approve')

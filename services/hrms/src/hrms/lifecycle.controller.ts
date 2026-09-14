@@ -94,7 +94,7 @@ export class ReviewSubmitDto {
 }
 
 export class GoalDto {
-  employeeId!: string;
+  employeeId?: string;
   cycleId?: string;
   title!: string;
   description?: string;

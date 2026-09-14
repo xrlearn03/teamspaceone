@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+#[cfg(not(feature = "rtc"))]
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration as StdDuration, Instant, SystemTime, UNIX_EPOCH};
@@ -32,6 +34,7 @@ const MAX_CANDIDATE_BYTES: usize = 65536;
 use interceptor::nack::generator::GeneratorBuilder;
 use interceptor::nack::responder::ResponderBuilder;
 use interceptor::registry::Registry;
+use webrtc::api::media_engine::MediaEngine;
 use webrtc::api::setting_engine::SettingEngine;
 use webrtc::api::{APIBuilder, API};
 use webrtc::ice::udp_mux::{UDPMuxDefault, UDPMuxParams};
@@ -105,6 +108,10 @@ enum Signal {
         track_id: String,
         rid: Option<String>,
     },
+    /// Ephemeral room-level event (raise hand, reaction, …) broadcast to every
+    /// other peer in the sender's room. The payload is opaque to the SFU.
+    #[serde(rename = "room_event")]
+    RoomEvent { data: serde_json::Value },
 }
 
 /// Messages sent from the SFU to the client.
@@ -139,6 +146,13 @@ enum Event {
     },
     #[serde(rename = "error")]
     Error { message: String },
+    #[serde(rename = "room_event")]
+    RoomEvent {
+        from: PeerId,
+        display_name: String,
+        user_id: Option<String>,
+        data: serde_json::Value,
+    },
 }
 
 #[derive(Clone)]
@@ -257,8 +271,14 @@ async fn main() -> Result<()> {
     let mut interceptor_registry = Registry::new();
     interceptor_registry.add(Box::new(GeneratorBuilder::default()));
     interceptor_registry.add(Box::new(ResponderBuilder::default()));
+    // The MediaEngine must have codecs registered: without them, offers are
+    // generated with rejected (port 0, attribute-less) m-lines and create_offer
+    // never converges, failing every join with ErrExcessiveRetries.
+    let mut media_engine = MediaEngine::default();
+    media_engine.register_default_codecs()?;
     let api = Arc::new(
         APIBuilder::new()
+            .with_media_engine(media_engine)
             .with_setting_engine(setting_engine)
             .with_interceptor_registry(interceptor_registry)
             .build(),
@@ -726,6 +746,43 @@ async fn process_signal(
 
             let pc = Arc::new(pc);
 
+            // Register the renegotiation handler before any tracks or
+            // transceivers are added. Each add enqueues webrtc-rs's
+            // negotiation-needed check, and if it runs before a handler exists
+            // the internal state machine wedges and re-offers are never sent
+            // again — subscribers would never see tracks published after they
+            // joined. `offer_ready` keeps the handler from racing the explicit
+            // create_offer below.
+            let offer_ready = Arc::new(AtomicBool::new(false));
+            let pc_for_neg = Arc::clone(&pc);
+            let negotiation_tx = tx.clone();
+            let negotiation_peer = peer_id.to_string();
+            let negotiation_ready = Arc::clone(&offer_ready);
+            pc.on_negotiation_needed(Box::new(move || {
+                let pc = Arc::clone(&pc_for_neg);
+                let tx = negotiation_tx.clone();
+                let peer = negotiation_peer.clone();
+                let ready = Arc::clone(&negotiation_ready);
+                Box::pin(async move {
+                    if !ready.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    match pc.create_offer(None).await {
+                        Ok(offer) => {
+                            if let Err(e) = pc.set_local_description(offer.clone()).await {
+                                warn!("set_local_description failed for {}: {}", peer, e);
+                                return;
+                            }
+                            let _ = tx.send(Event::Offer {
+                                from: SFU_ID.to_string(),
+                                sdp: offer.sdp,
+                            });
+                        }
+                        Err(e) => warn!("create_offer failed for {}: {}", peer, e),
+                    }
+                })
+            }));
+
             // Add tracks from publishers that are already in the room.
             let existing_tracks = {
                 let s = state.read().await;
@@ -757,30 +814,7 @@ async fn process_signal(
 
             let offer = pc.create_offer(None).await?;
             pc.set_local_description(offer.clone()).await?;
-
-            let pc_for_neg = Arc::clone(&pc);
-            let negotiation_tx = tx.clone();
-            let negotiation_peer = peer_id.to_string();
-            pc.on_negotiation_needed(Box::new(move || {
-                let pc = Arc::clone(&pc_for_neg);
-                let tx = negotiation_tx.clone();
-                let peer = negotiation_peer.clone();
-                Box::pin(async move {
-                    match pc.create_offer(None).await {
-                        Ok(offer) => {
-                            if let Err(e) = pc.set_local_description(offer.clone()).await {
-                                warn!("set_local_description failed for {}: {}", peer, e);
-                                return;
-                            }
-                            let _ = tx.send(Event::Offer {
-                                from: SFU_ID.to_string(),
-                                sdp: offer.sdp,
-                            });
-                        }
-                        Err(e) => warn!("create_offer failed for {}: {}", peer, e),
-                    }
-                })
-            }));
+            offer_ready.store(true, Ordering::Relaxed);
 
             let (tx, joined_peer) = {
                 let s = &mut *state.write().await;
@@ -1005,6 +1039,33 @@ async fn process_signal(
                 rid
             ));
         }
+        Signal::RoomEvent { data } => {
+            // Ephemeral room-scoped event (raise hand, reaction, …). Broadcast
+            // to every other peer in the room; the payload is opaque.
+            let s = state.read().await;
+            let Some(sender) = s.peers.get(peer_id) else {
+                return Err(anyhow!("peer not found: {}", peer_id));
+            };
+            let Some(room_id) = sender.room_id.clone() else {
+                return Err(anyhow!("peer not in a room"));
+            };
+            let Some(room) = s.rooms.get(&room_id) else {
+                return Err(anyhow!("room not found: {}", room_id));
+            };
+            for participant_id in room.participants.keys() {
+                if participant_id == peer_id {
+                    continue;
+                }
+                if let Some(peer) = s.peers.get(participant_id) {
+                    let _ = peer.tx.send(Event::RoomEvent {
+                        from: peer_id.to_string(),
+                        display_name: sender.display_name.clone(),
+                        user_id: sender.user_id.clone(),
+                        data: data.clone(),
+                    });
+                }
+            }
+        }
     }
 
     #[cfg(not(feature = "rtc"))]
@@ -1085,7 +1146,14 @@ async fn handle_track(
     // If the room is already recording, attach a writer for this new track and
     // ask the publisher for a keyframe so the file starts cleanly.
     if let Some(rec) = active_recording.clone() {
-        recording::attach_track_writer(&rec, &rt.recorder, &room_id, &publisher, &track_id, &track);
+        let speaker = participants.get(&publisher).map(|p| {
+            if p.display_name.is_empty() {
+                p.user_id.clone().unwrap_or_else(|| publisher.clone())
+            } else {
+                p.display_name.clone()
+            }
+        });
+        recording::attach_track_writer(&rec, &rt.recorder, &room_id, &publisher, &track_id, &track, speaker);
         if kind == RTPCodecType::Video {
             if let Some(pc) = publisher_pc.clone() {
                 let ssrc = track.ssrc();
@@ -1108,7 +1176,7 @@ async fn handle_track(
         loop {
             match track.read_rtp().await {
                 Ok((pkt, _)) => {
-                    if let Some((writer, _)) = track_recorder.lock().await.as_mut() {
+                    if let Some((writer, ..)) = track_recorder.lock().await.as_mut() {
                         writer.write_rtp(&pkt);
                     }
                     // Snapshot the sender channels while holding the lock, then

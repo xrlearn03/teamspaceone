@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { io, type Socket } from "socket.io-client";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
-import { getAccessToken, getActiveOrganisation, leaveMeeting } from "@/lib/api";
+import { getAccessToken, getActiveOrganisation, leaveMeeting, sendCallMessage } from "@/lib/api";
 import type { Message, MessagePage, MessageReaction } from "@/lib/api";
 import { useUIStore } from "@/stores/ui";
 import { flushQueue, queuedMessageCount } from "@/lib/offline-queue";
@@ -352,7 +352,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
                   outgoing.stopRingback();
                   outgoingCallsRef.current.delete(r.meetingId);
                   setOutgoingCall((call) => (call?.meetingId === r.meetingId ? null : call));
-                  dropOutgoingCall(r.meetingId, outgoing.userIds);
+                  dropOutgoingCall(r.meetingId, outgoing, "declined");
                 }
               }
             }
@@ -382,17 +382,6 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
             void queryClient.invalidateQueries({ queryKey: ["meetings"] });
             const handlers = handlersRef.current.get(event);
             if (handlers) handlers.forEach((h) => h(recording));
-          }
-          if (
-            event === "meeting.created" ||
-            event === "meeting.started" ||
-            event === "meeting.ended" ||
-            event === "meeting.participant.joined" ||
-            event === "meeting.participant.left" ||
-            event === "voice.room.created"
-          ) {
-            void queryClient.invalidateQueries({ queryKey: ["meetings"] });
-            void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
           }
           const handlers = handlersRef.current.get(event);
           if (handlers) {
@@ -495,13 +484,30 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     socketRef.current?.emit("message.read", { room: `channel:${channelId}`, messageId });
   }, []);
 
-  const outgoingCallsRef = useRef<
-    Map<string, { userIds: string[]; declined: Set<string>; timer: ReturnType<typeof setTimeout>; stopRingback: () => void }>
-  >(new Map());
+  interface OutgoingCallEntry {
+    userIds: string[];
+    declined: Set<string>;
+    timer: ReturnType<typeof setTimeout>;
+    stopRingback: () => void;
+    channelId?: string;
+    kind: "audio" | "video";
+    title?: string;
+  }
 
-  function dropOutgoingCall(meetingId: string, userIds: string[]) {
+  const outgoingCallsRef = useRef<Map<string, OutgoingCallEntry>>(new Map());
+
+  function postCallLog(meetingId: string, outgoing: OutgoingCallEntry, status: "missed" | "declined") {
+    if (!outgoing.channelId) return;
+    void sendCallMessage(outgoing.channelId, { meetingId, kind: outgoing.kind, status }).catch(() => {
+      // Best-effort — the call log message is optional.
+    });
+  }
+
+  function dropOutgoingCall(meetingId: string, outgoing: OutgoingCallEntry, status: "missed" | "declined" = "missed") {
     // Stop any still-ringing callees.
-    socketRef.current?.emit("call.cancel", { meetingId, userIds });
+    socketRef.current?.emit("call.cancel", { meetingId, userIds: outgoing.userIds });
+    // Record the unanswered call in the originating conversation.
+    postCallLog(meetingId, outgoing, status);
     // Play one full hang-up cycle, then drop the caller out of the call.
     void playSoundOnce(SOUNDS.hangup).then(() => {
       void leaveMeeting(meetingId).catch(() => {
@@ -535,7 +541,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         if (outgoing && outgoingCallsRef.current.delete(ring.meetingId)) {
           outgoing.stopRingback();
           setOutgoingCall((call) => (call?.meetingId === ring.meetingId ? null : call));
-          dropOutgoingCall(ring.meetingId, ring.userIds);
+          dropOutgoingCall(ring.meetingId, outgoing);
         }
       }, CALL_RING_TIMEOUT_MS);
       outgoingCallsRef.current.set(ring.meetingId, {
@@ -543,6 +549,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         declined: new Set(),
         timer,
         stopRingback,
+        channelId: ring.channelId,
+        kind: ring.kind,
+        title: ring.title,
       });
       setOutgoingCall({ meetingId: ring.meetingId, kind: ring.kind, title: ring.title, channelId: ring.channelId, userIds: ring.userIds });
       socketRef.current?.emit("call.ring", ring);
@@ -558,6 +567,8 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     outgoingCallsRef.current.delete(meetingId);
     setOutgoingCall((call) => (call?.meetingId === meetingId ? null : call));
     socketRef.current?.emit("call.cancel", { meetingId, userIds: outgoing.userIds });
+    // The caller hung up before anyone answered — log it as a missed call.
+    postCallLog(meetingId, outgoing, "missed");
   }, []);
 
   const sendCallResponse = useCallback(

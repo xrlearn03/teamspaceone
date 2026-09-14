@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { AiProvider } from './providers/ai-provider.js';
+import { ElevenLabsTranscriber, wordsToUtterances } from './providers/elevenlabs-transcriber.js';
 import {
   EVALUATION_PROMPT,
   QUESTION_PROMPT,
@@ -32,6 +33,7 @@ interface IndexDocumentInput {
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly provider: AiProvider;
+  private readonly transcriber: ElevenLabsTranscriber;
 
   constructor(
     private readonly outbox: OutboxService,
@@ -40,6 +42,7 @@ export class AiService {
     @InjectQueue('ai-ingestion') private readonly aiQueue: Queue,
   ) {
     this.provider = new AiProvider(config);
+    this.transcriber = new ElevenLabsTranscriber(config);
   }
 
   async summarize(prompt: string, sourceText?: string, options?: { system?: string }): Promise<{ result: string; model: string }> {
@@ -58,6 +61,11 @@ export class AiService {
       return { result: 'AI summarization failed.', model: 'none' };
     }
     return { result: text, model };
+  }
+
+  /** Mints a single-use ElevenLabs realtime Scribe token for client-side live transcription. */
+  async createScribeToken(): Promise<{ token: string } | null> {
+    return this.transcriber.createRealtimeToken();
   }
 
   async embed(text: string): Promise<number[]> {
@@ -217,11 +225,25 @@ export class AiService {
     }
 
     if (envelope.eventType === Subjects.MEETING_ENDED) {
+      // Delay the MOM job so the SFU has time to finalize and upload per-track
+      // recordings to file-storage after the room drains; retries cover slow
+      // uploads when the meeting was being recorded.
       jobs.push(
         this.aiQueue.add(
           'summarize',
-          { organisationId: envelope.organisationId, workspaceId, resourceType: 'meeting', resourceId },
-          { jobId: `summarize-${envelope.eventId}` },
+          {
+            organisationId: envelope.organisationId,
+            workspaceId,
+            resourceType: 'meeting',
+            resourceId,
+            wasRecording: payload.wasRecording === true,
+          },
+          {
+            jobId: `summarize-${envelope.eventId}`,
+            delay: Number(process.env.MEETING_SUMMARY_DELAY_MS ?? 60_000),
+            attempts: 4,
+            backoff: { type: 'exponential', delay: 30_000 },
+          },
         ),
       );
     }
@@ -303,7 +325,10 @@ export class AiService {
     });
   }
 
-  async processSummarizeJob(data: { organisationId: string; resourceType: string; resourceId: string }): Promise<void> {
+  async processSummarizeJob(
+    data: { organisationId: string; resourceType: string; resourceId: string; wasRecording?: boolean },
+    attemptsMade = 0,
+  ): Promise<void> {
     const rows = await this.prisma.$queryRaw<
       Array<{ id: string; text: string; title: string | null; workspaceId: string | null; metadata: Record<string, unknown> }>
     >`
@@ -315,7 +340,21 @@ export class AiService {
     `;
 
     const doc = rows[0];
-    const text = doc?.text ?? '';
+    const metadata = doc?.metadata ?? {};
+    const createdBy = (metadata.createdBy as string) ?? 'unknown';
+
+    const audioTranscript =
+      data.resourceType === 'meeting'
+        ? await this.meetingAudioTranscript(data, createdBy, attemptsMade)
+        : null;
+
+    const text = [
+      doc?.text ?? '',
+      audioTranscript ? `Call transcript (speaker-labeled):\n${audioTranscript}` : '',
+    ]
+      .filter((s) => s.trim().length > 0)
+      .join('\n\n');
+
     const prompt = `Draft a professional Minutes of Meeting (MOM) email body for the following meeting. Use this structure and include bracketed placeholders like [Meeting Date] for any missing details:
 
 Dear Team,
@@ -353,11 +392,18 @@ Do not include the meeting ID or a generic opening such as "The meeting with ID 
 `
     const { result, model } = await this.summarize(prompt, text, { system: 'You are an executive assistant that drafts professional Minutes of Meeting (MOM) emails.' });
 
-    const metadata = doc?.metadata ?? {};
     const participantIds = Array.isArray(metadata.actorIds) ? (metadata.actorIds as string[]) : [];
-    const createdBy = (metadata.createdBy as string) ?? 'unknown';
 
     await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      if (audioTranscript && doc) {
+        // Fold the spoken transcript into the indexed document so ask() and
+        // the daily digest see call content, then flag it for re-embedding.
+        await tx.$executeRaw`
+          UPDATE "ai_documents"
+          SET "text" = ${text.slice(0, 48000)}, "vector" = NULL, "updatedAt" = CURRENT_TIMESTAMP
+          WHERE "id" = ${doc.id}
+        `;
+      }
       await tx.aiSummary.upsert({
         where: { resourceType_resourceId: { resourceType: data.resourceType, resourceId: data.resourceId } },
         create: {
@@ -427,6 +473,98 @@ Do not include the meeting ID or a generic opening such as "The meeting with ID 
       });
       await this.outbox.createEvent(tx, requestOutbox, Subjects.AI_ACTION_REQUESTED);
     });
+
+    if (audioTranscript && doc) {
+      await this.aiQueue
+        .add(
+          'index',
+          { organisationId: data.organisationId, resourceType: data.resourceType, resourceId: data.resourceId },
+          { jobId: `reindex-${data.resourceType}-${data.resourceId}-${Date.now()}` },
+        )
+        .catch((err) => this.logger.warn(`Failed to enqueue re-index for ${data.resourceId}: ${(err as Error).message}`));
+    }
+  }
+
+  /**
+   * Transcribes a meeting's recorded audio tracks (uploaded by the SFU to
+   * file-storage as `resourceType=meeting` files, one per participant) via
+   * ElevenLabs Scribe and merges them into a speaker-labeled transcript.
+   * Returns null when transcription is unavailable or no audio exists; throws
+   * while recordings are still pending upload so BullMQ retries the job.
+   */
+  private async meetingAudioTranscript(
+    data: { organisationId: string; resourceId: string; wasRecording?: boolean },
+    createdBy: string,
+    attemptsMade: number,
+  ): Promise<string | null> {
+    if (!this.transcriber.enabled) return null;
+    const baseUrl = this.config.get<string>('FILE_STORAGE_SERVICE_URL');
+    const apiKey = this.config.get<string>('INTERNAL_API_KEY');
+    if (!baseUrl || !apiKey) return null;
+
+    const headers: Record<string, string> = {
+      'x-internal-api-key': apiKey,
+      'x-internal-caller': 'ai-service',
+      'x-organisation-id': data.organisationId,
+      'x-actor-id': createdBy,
+    };
+
+    const listRes = await fetch(
+      `${baseUrl}/files?resourceType=meeting&resourceId=${encodeURIComponent(data.resourceId)}`,
+      { headers },
+    ).catch((err) => {
+      this.logger.warn(`Listing meeting recordings failed: ${(err as Error).message}`);
+      return null;
+    });
+    if (!listRes?.ok) return null;
+
+    const files = ((await listRes.json().catch(() => [])) as Array<{
+      id: string;
+      originalName?: string;
+      mimeType?: string;
+      metadata?: { speaker?: string } | null;
+    }>).filter((f) => typeof f.mimeType === 'string' && f.mimeType.startsWith('audio/'));
+
+    if (files.length === 0) {
+      if (data.wasRecording && attemptsMade < 3) {
+        throw new Error(`Meeting ${data.resourceId} recordings not yet uploaded`);
+      }
+      return null;
+    }
+
+    const merged: { start: number; speaker: string; text: string }[] = [];
+    for (const file of files) {
+      const speaker = file.metadata?.speaker?.trim() || 'Participant';
+      try {
+        const dl = await fetch(`${baseUrl}/files/${encodeURIComponent(file.id)}/download?stream=true`, { headers });
+        if (!dl.ok) {
+          this.logger.warn({ fileId: file.id, status: dl.status }, 'Recording download failed');
+          continue;
+        }
+        const bytes = Buffer.from(await dl.arrayBuffer());
+        if (!bytes.length) continue;
+        const res = await this.transcriber.transcribe({
+          bytes,
+          fileName: file.originalName ?? 'recording.ogg',
+          mimeType: file.mimeType ?? 'audio/ogg',
+        });
+        if (res.status !== 'ok') continue;
+        const utterances = wordsToUtterances(res.words);
+        if (utterances.length === 0 && res.text.trim()) {
+          merged.push({ start: 0, speaker, text: res.text.trim() });
+        } else {
+          for (const u of utterances) {
+            merged.push({ start: u.start, speaker, text: u.text });
+          }
+        }
+      } catch (err) {
+        this.logger.warn({ fileId: file.id, error: (err as Error).message }, 'Transcribing recording failed');
+      }
+    }
+
+    if (!merged.length) return null;
+    merged.sort((a, b) => a.start - b.start);
+    return merged.map((u) => `${u.speaker}: ${u.text}`).join('\n');
   }
 
   async ask(
@@ -537,6 +675,7 @@ Do not include the meeting ID or a generic opening such as "The meeting with ID 
     hours = 24,
   ): Promise<{ sections: { title: string; items: string[] }[]; model: string; raw: string }> {
     const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+    const actorId = ctx.actorId ?? '';
     const rows = await this.prisma.$queryRaw<
       Array<{ resourceType: string; resourceId: string; title: string | null; text: string; updatedAt: Date }>
     >`
@@ -545,6 +684,10 @@ Do not include the meeting ID or a generic opening such as "The meeting with ID 
       WHERE "organisationId" = ${ctx.organisationId}
         AND "updatedAt" > ${since}::timestamp
         AND ( ${workspaceId ?? null}::text IS NULL OR "workspaceId" = ${workspaceId ?? null}::text )
+        AND (
+          "metadata"->>'visibility' = 'public'
+          OR ( ${actorId} <> '' AND jsonb_exists("metadata"->'actorIds', ${actorId}) )
+        )
       ORDER BY "updatedAt" DESC
       LIMIT 100
     `;
@@ -553,7 +696,7 @@ Do not include the meeting ID or a generic opening such as "The meeting with ID 
       .map((row) => `[${row.resourceType}:${row.resourceId}] ${row.title ? row.title + '\n' : ''}${row.text}`)
       .join('\n\n');
 
-    const prompt = `Summarize the following workspace activity from the last ${hours} hours into a concise daily digest. Return a JSON object with a "sections" array. Each section has "title" and "items". Include sections: summary, updates, decisions, blockers, actionItems, note. Items should be short bullet strings.`;
+    const prompt = `Summarize the following activity from the last ${hours} hours into a concise personal daily digest for this user — cover only their meetings/calls, tasks, files, and messages. Return a JSON object with a "sections" array. Each section has "title" and "items". Include sections: summary, updates, decisions, blockers, actionItems, note. Items should be short bullet strings.`;
     const { result, model } = await this.summarize(prompt, context.slice(0, 12000));
 
     const sections = this.parseDigestSections(result);

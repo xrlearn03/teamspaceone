@@ -4,6 +4,7 @@ import {
   BadgeCheck,
   Cake,
   CalendarDays,
+  Check,
   IdCard,
   Mail,
   MapPin,
@@ -13,12 +14,123 @@ import {
   Star,
   User,
   Users,
+  Wallet,
+  X,
 } from "lucide-react";
-import { useEmployee } from "../../hooks/api";
+import { useEmployee, useUpdateEmployee } from "../../hooks/api";
+import { usePermissions } from "../../hooks/usePermissions";
 import { useUIStore } from "../../stores/ui";
+import type { Employee } from "../../lib/api";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
+import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
 import { EmployeeFormDialog } from "../hrms/employees";
 import { SectionError, SectionSkeleton, formatDate } from "../hrms/common";
+
+const SALARY_CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "SGD", "AUD", "CAD"];
+
+function formatSalary(base?: number | null, currency?: string | null) {
+  if (base == null) return "—";
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: currency ?? "USD" }).format(base);
+  } catch {
+    return `${currency ?? ""} ${base}`;
+  }
+}
+
+function CompensationSection({ employee }: { employee: Employee }) {
+  const { can } = usePermissions();
+  const updateEmployee = useUpdateEmployee();
+  const canEdit = can("hrms.employee.edit");
+  const [editing, setEditing] = useState(false);
+  const [base, setBase] = useState("");
+  const [currency, setCurrency] = useState("INR");
+
+  const salary = employee.salary;
+
+  function startEdit() {
+    setBase(salary?.base != null ? String(salary.base) : "");
+    setCurrency(salary?.currency ?? "INR");
+    setEditing(true);
+  }
+
+  function save() {
+    const num = Number(base);
+    if (!base.trim() || !Number.isFinite(num) || num <= 0) return;
+    updateEmployee.mutate(
+      { id: employee.id, body: { salary: { base: num, currency } } },
+      { onSuccess: () => setEditing(false) },
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-surface">
+      <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
+        <h2 className="text-sm font-semibold text-text">Compensation</h2>
+        {canEdit && !editing ? (
+          <button
+            type="button"
+            onClick={startEdit}
+            className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+          >
+            <Pencil className="h-3 w-3" /> Edit
+          </button>
+        ) : null}
+      </div>
+      <div className="px-5 py-4">
+        {editing ? (
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-text-secondary">Base salary</span>
+              <Input
+                type="number"
+                min={0}
+                value={base}
+                onChange={(e) => setBase(e.target.value)}
+                className="w-40"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-text-secondary">Currency</span>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="h-9 rounded-md border bg-background px-2 text-sm text-text"
+              >
+                {SALARY_CURRENCIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </label>
+            <Button size="sm" onClick={save} disabled={updateEmployee.isPending}>
+              <Check className="mr-1 h-3.5 w-3.5" /> Save
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+              <X className="mr-1 h-3.5 w-3.5" /> Cancel
+            </Button>
+            {updateEmployee.error ? (
+              <p className="w-full text-xs text-error">{updateEmployee.error.message}</p>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Wallet className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-lg font-semibold text-text">
+                {formatSalary(salary?.base, salary?.currency)}
+              </p>
+              <p className="text-xs text-text-muted">
+                {salary?.base != null ? `${salary.currency ?? "USD"} · per payroll period` : "No salary configured — this employee is skipped by payroll runs."}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value?: React.ReactNode }) {
   return (
@@ -41,6 +153,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <div className="divide-y divide-border px-5">{children}</div>
     </div>
   );
+}
+
+function CompensationGate({ employee }: { employee: Employee }) {
+  const { can } = usePermissions();
+  if (!can("hrms.payroll.view")) return null;
+  return <CompensationSection employee={employee} />;
 }
 
 export function EmployeeDetailScreen() {
@@ -155,6 +273,8 @@ export function EmployeeDetailScreen() {
               <InfoRow icon={IdCard} label="Type" value={e.employmentType?.replace(/_/g, " ")} />
               <InfoRow icon={CalendarDays} label="Joined" value={formatDate(e.joiningDate)} />
             </Section>
+
+            <CompensationGate employee={e} />
           </div>
 
           {/* Right column */}

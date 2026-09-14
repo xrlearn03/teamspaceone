@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export interface NativeDevice {
   id: string;
@@ -27,7 +28,9 @@ export function useNativeCamera(): UseNativeCameraReturn {
   const [running, setRunning] = useState(false);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const intervalRef = useRef<number | null>(null);
+  const unlistenRef = useRef<(() => void) | null>(null);
+  const decodingRef = useRef(false);
+  const lastPreviewAtRef = useRef(0);
 
   useEffect(() => {
     // Create an off-screen canvas once and expose its capture stream.
@@ -63,12 +66,16 @@ export function useNativeCamera(): UseNativeCameraReturn {
     };
   }, []);
 
-  // Draw each incoming base64 frame onto the canvas so captureStream sees it.
-  useEffect(() => {
+  // Draw an emitted base64 frame onto the canvas so captureStream sees it.
+  // Frames are dropped while a decode is still in flight — that bounds latency
+  // (the video always tracks the newest frame) instead of queuing stale frames.
+  const drawFrame = useCallback((dataUrl: string) => {
     const canvas = canvasRef.current;
-    if (!frame || !canvas) return;
+    if (!canvas || decodingRef.current) return;
+    decodingRef.current = true;
     const img = new Image();
     img.onload = () => {
+      decodingRef.current = false;
       if (canvas.width !== img.width || canvas.height !== img.height) {
         canvas.width = img.width;
         canvas.height = img.height;
@@ -78,16 +85,15 @@ export function useNativeCamera(): UseNativeCameraReturn {
       ctx.drawImage(img, 0, 0);
     };
     img.onerror = () => {
-      // Ignore bad frames.
+      decodingRef.current = false;
     };
-    img.src = frame;
-  }, [frame]);
+    img.src = dataUrl;
+  }, []);
 
   const stop = useCallback(() => {
-    if (intervalRef.current !== null) {
-      window.clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    unlistenRef.current?.();
+    unlistenRef.current = null;
+    decodingRef.current = false;
     setFrame(null);
     setRunning(false);
     void invoke("stop-camera").catch(() => {});
@@ -101,21 +107,26 @@ export function useNativeCamera(): UseNativeCameraReturn {
       setRunning(false);
       stop();
       try {
+        // The Rust capture thread emits "camera-frame" events at camera rate;
+        // subscribe before starting so no early frames are missed.
+        unlistenRef.current = await listen<string>("camera-frame", (event) => {
+          const payload = event.payload;
+          // The video canvas gets every frame; the preview <img> is driven by
+          // React state, so it's throttled to avoid re-render churn.
+          drawFrame(payload);
+          const now = Date.now();
+          if (now - lastPreviewAtRef.current >= 100) {
+            lastPreviewAtRef.current = now;
+            setFrame(payload);
+          }
+        });
         await invoke("start-camera", { index });
         setRunning(true);
-        intervalRef.current = window.setInterval(async () => {
-          try {
-            const data = await invoke<string>("get-camera-frame");
-            setFrame(data);
-          } catch (err) {
-            // Transient; ignore
-          }
-        }, 100);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [stop],
+    [stop, drawFrame],
   );
 
   useEffect(() => {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type Event } from "@tauri-apps/api/event";
 import { getSfuToken } from "../lib/api";
+import { toast } from "../lib/toast";
 
 export interface SfuParticipant {
   id: string;
@@ -32,7 +33,8 @@ interface Signal {
     | "offer"
     | "answer"
     | "ice"
-    | "error";
+    | "error"
+    | "room_event";
   participant_id?: string;
   room_id?: string;
   participants?: { id: string; display_name: string; user_id?: string }[];
@@ -44,6 +46,7 @@ interface Signal {
   sdp_m_line_index?: number;
   sdp_mid?: string;
   message?: string;
+  data?: unknown;
 }
 
 type SendSignal =
@@ -56,7 +59,15 @@ type SendSignal =
       candidate: string;
       sdp_m_line_index: number;
       sdp_mid?: string;
-    };
+    }
+  | { type: "room_event"; data: unknown };
+
+export interface SfuRoomEvent {
+  from: string;
+  displayName: string;
+  userId?: string;
+  data: unknown;
+}
 
 const SFU_URL =
   (import.meta.env.VITE_SFU_URL as string | undefined) ?? "ws://127.0.0.1:8443";
@@ -111,6 +122,7 @@ export function useSfu() {
   const nativeUnlistenRef = useRef<(() => void) | null>(null);
   const nativeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const trackIdToParticipantRef = useRef<Record<string, string>>({});
+  const roomEventHandlersRef = useRef<Set<(event: SfuRoomEvent) => void>>(new Set());
 
   const isIntentionalLeaveRef = useRef(false);
   const reconnectAttemptRef = useRef(0);
@@ -124,6 +136,14 @@ export function useSfu() {
   } | null>(null);
 
   const isTauri = typeof (window as typeof window & { __TAURI_INTERNALS__?: unknown })?.__TAURI_INTERNALS__ !== "undefined";
+  // getUserMedia/getDisplayMedia throw "The operation is insecure" outside a
+  // secure context (the Tauri WKWebView, plain-http origins, etc.) and are
+  // absent entirely on some webviews — never call them there.
+  const canUseMediaDevices =
+    !isTauri &&
+    typeof navigator !== "undefined" &&
+    typeof navigator.mediaDevices?.getUserMedia === "function" &&
+    window.isSecureContext !== false;
 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<SfuRemoteStream[]>([]);
@@ -337,10 +357,10 @@ export function useSfu() {
 
     const audioTracks = localStreamRef.current?.getAudioTracks() ?? [];
 
-    // Try the browser getDisplayMedia path first (works in browsers and may
-    // work in future Tauri versions).
+    // Try the browser getDisplayMedia path first (works in secure-context
+    // browsers and may work in future Tauri versions).
     if (
-      navigator.mediaDevices &&
+      canUseMediaDevices &&
       typeof navigator.mediaDevices.getDisplayMedia === "function"
     ) {
       try {
@@ -398,10 +418,21 @@ export function useSfu() {
 
   const toggleAudio = useCallback(() => {
     const track = localStreamRef.current?.getAudioTracks()[0];
-    if (!track) return;
+    if (!track) {
+      if (!canUseMediaDevices) {
+        // getUserMedia is unavailable/insecure here — the mic is captured
+        // natively before joining, so there is nothing to attach.
+        toast.error(
+          isTauri
+            ? "Microphone is off. Enable it before joining or check mic permissions."
+            : "Microphone capture needs a secure (HTTPS) context or permission.",
+        );
+      }
+      return;
+    }
     track.enabled = !track.enabled;
     setLocalAudioEnabled(track.enabled);
-  }, []);
+  }, [isTauri, canUseMediaDevices]);
 
   const toggleVideo = useCallback(async () => {
     const pc = pcRef.current;
@@ -420,6 +451,18 @@ export function useSfu() {
       // instead of replacing it with a browser one.
       currentVideoTrack.enabled = !currentVideoTrack.enabled;
       setLocalVideoEnabled(currentVideoTrack.enabled);
+      return;
+    }
+
+    if (!canUseMediaDevices) {
+      // getUserMedia is unavailable/insecure here — camera is captured
+      // natively before joining, so there is nothing to attach mid-call.
+      // (Toast, not setError: a recoverable toggle shouldn't replace the call UI.)
+      toast.error(
+        isTauri
+          ? "Camera is off. Enable it before joining or check camera permissions."
+          : "Camera capture needs a secure (HTTPS) context or permission.",
+      );
       return;
     }
 
@@ -491,7 +534,10 @@ export function useSfu() {
       lastJoinArgsRef.current = { roomId, displayName, mediaOptions, userId, sfuToken: sfuTokenOverride };
 
       let stream: MediaStream | null = mediaOptions.stream ?? null;
-      if (!stream || stream.getTracks().length === 0) {
+      if ((!stream || stream.getTracks().length === 0) && canUseMediaDevices) {
+        // Secure-context browsers only — the Tauri webview (WKWebView) has no
+        // usable getUserMedia ("The operation is insecure"); the desktop app
+        // captures natively and passes the stream in via mediaOptions.stream.
         const audioConstraints: MediaTrackConstraints = {
           deviceId: mediaOptions.audioInputId ? { exact: mediaOptions.audioInputId } : undefined,
           echoCancellation: true,
@@ -523,6 +569,19 @@ export function useSfu() {
             throw err;
           }
         }
+      }
+      // No captured tracks (Tauri permission denied, or browser in an insecure
+      // context) — join anyway with an empty stream so the user can still
+      // watch/listen.
+      if (!stream || stream.getTracks().length === 0) {
+        if (mediaOptions.audioEnabled || mediaOptions.videoEnabled) {
+          toast.error(
+            isTauri
+              ? "Joined without camera/microphone — check permissions in System Settings > Privacy & Security."
+              : "Joined without camera/microphone — media capture needs a secure (HTTPS) context or permission.",
+          );
+        }
+        stream = new MediaStream();
       }
 
       stream.getAudioTracks().forEach((t) => {
@@ -590,6 +649,13 @@ export function useSfu() {
         const stream = e.streams[0] ?? new MediaStream([e.track]);
         const participantId = stream.id;
         trackIdToParticipantRef.current[e.track.id] = participantId;
+        // `muted` flips on the remote track when the peer stops sending (mic
+        // muted / camera off). That isn't a state change React can see, so
+        // bump remoteStreams to re-render tiles and mic/cam indicators.
+        const bump = () => setRemoteStreams((prev) => [...prev]);
+        e.track.onmute = bump;
+        e.track.onunmute = bump;
+        e.track.onended = bump;
         setRemoteStreams((prev) => {
           const others = prev.filter((p) => p.participantId !== participantId);
           return [...others, { participantId, stream }];
@@ -673,6 +739,18 @@ export function useSfu() {
             break;
           }
 
+          case "answer": {
+            // Reply to a client-initiated offer (e.g. screen-share or camera
+            // started mid-call via onnegotiationneeded). Without this the pc
+            // stays stuck in have-local-offer and the track never flows.
+            try {
+              await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp! });
+            } catch (err) {
+              console.error("Failed to apply SFU answer", err);
+            }
+            break;
+          }
+
           case "ice": {
             try {
               await pc.addIceCandidate({
@@ -689,6 +767,19 @@ export function useSfu() {
           case "error":
             setError(msg.message ?? "SFU error");
             break;
+
+          case "room_event": {
+            // Ephemeral in-room event broadcast by the SFU on behalf of
+            // another participant (raise hand, reaction, …).
+            const roomEvent: SfuRoomEvent = {
+              from: msg.from ?? "",
+              displayName: msg.display_name ?? "Participant",
+              userId: msg.user_id,
+              data: msg.data,
+            };
+            roomEventHandlersRef.current.forEach((h) => h(roomEvent));
+            break;
+          }
         }
       };
 
@@ -735,12 +826,27 @@ export function useSfu() {
     [leave],
   );
 
+  // Ephemeral room-scoped events (raise hand, reactions, …) shared with every
+  // participant — including link guests who have no realtime socket.
+  const sendRoomEvent = useCallback((data: unknown) => {
+    send({ type: "room_event", data });
+  }, []);
+
+  const onRoomEvent = useCallback((handler: (event: SfuRoomEvent) => void) => {
+    roomEventHandlersRef.current.add(handler);
+    return () => {
+      roomEventHandlersRef.current.delete(handler);
+    };
+  }, []);
+
   return {
     join,
     leave,
     toggleAudio,
     toggleVideo,
     toggleScreenShare,
+    sendRoomEvent,
+    onRoomEvent,
     localAudioEnabled,
     localVideoEnabled,
     screenShareEnabled,

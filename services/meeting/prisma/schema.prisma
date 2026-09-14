@@ -36,6 +36,7 @@ model Meeting {
   messages       MeetingMessage[]
   reactions      MeetingReaction[]
   raiseHands     MeetingRaiseHand[]
+  transcriptLines MeetingTranscriptLine[]
 
   @@index([organisationId])
   @@index([workspaceId])
@@ -98,6 +99,22 @@ model MeetingMessage {
   @@index([organisationId])
   @@index([createdAt])
   @@map("meeting_messages")
+}
+
+model MeetingTranscriptLine {
+  id             String   @id @default(cuid())
+  meetingId      String
+  organisationId String
+  userId         String
+  speaker        String?
+  text           String
+  createdAt      DateTime @default(now())
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([organisationId])
+  @@map("meeting_transcript_lines")
 }
 
 model MeetingReaction {

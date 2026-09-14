@@ -160,6 +160,14 @@ export function IncomingCallOverlay() {
     let active = true;
     let stream: MediaStream | null = null;
     const acquire = async () => {
+      // getUserMedia throws "The operation is insecure" outside a secure
+      // context (Tauri WKWebView, plain-http origins) — skip the preview there.
+      if (
+        window.isSecureContext === false ||
+        typeof navigator.mediaDevices?.getUserMedia !== "function"
+      ) {
+        return null;
+      }
       try {
         return await navigator.mediaDevices.getUserMedia(
           wantsVideo ? { video: true, audio: true } : { audio: true },

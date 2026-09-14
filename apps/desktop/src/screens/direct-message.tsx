@@ -371,6 +371,7 @@ export function DirectMessageScreen() {
                       onReply={() => setThreadMessage(m)}
                       onEdit={handleEdit}
                       onDelete={handleDelete}
+                      onCallBack={(kind) => startCall(kind === "video")}
                     />
                   );
                 })

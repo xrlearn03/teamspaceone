@@ -25,6 +25,17 @@ function getMediaErrorMessage(err: unknown): string {
   return message;
 }
 
+// getUserMedia/enumerateDevices throw "The operation is insecure" outside a
+// secure context (Tauri WKWebView, plain-http origins) — skip entirely there;
+// the desktop app enumerates/captures devices natively instead.
+function mediaDevicesAvailable(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    typeof navigator.mediaDevices?.getUserMedia === "function" &&
+    window.isSecureContext !== false
+  );
+}
+
 export interface MediaDeviceInfo {
   deviceId: string;
   label: string;
@@ -74,8 +85,7 @@ export function useMediaDevices(options: UseMediaDevicesOptions = {}) {
         video: videoEnabled ? buildTrackConstraints(videoDeviceId) : false,
       };
 
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setError("Media devices are not supported in this environment.");
+      if (!mediaDevicesAvailable()) {
         return;
       }
 
@@ -109,7 +119,7 @@ export function useMediaDevices(options: UseMediaDevicesOptions = {}) {
   );
 
   const enumerate = useCallback(async () => {
-    if (!navigator.mediaDevices?.enumerateDevices) return;
+    if (!mediaDevicesAvailable() || !navigator.mediaDevices?.enumerateDevices) return;
     try {
       const infos = await navigator.mediaDevices.enumerateDevices();
       const mapped = infos

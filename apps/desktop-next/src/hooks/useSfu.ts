@@ -32,7 +32,8 @@ interface Signal {
     | "offer"
     | "answer"
     | "ice"
-    | "error";
+    | "error"
+    | "room_event";
   participant_id?: string;
   room_id?: string;
   participants?: { id: string; display_name: string; user_id?: string }[];
@@ -44,6 +45,7 @@ interface Signal {
   sdp_m_line_index?: number;
   sdp_mid?: string;
   message?: string;
+  data?: unknown;
 }
 
 type SendSignal =
@@ -56,7 +58,15 @@ type SendSignal =
       candidate: string;
       sdp_m_line_index: number;
       sdp_mid?: string;
-    };
+    }
+  | { type: "room_event"; data: unknown };
+
+export interface SfuRoomEvent {
+  from: string;
+  displayName: string;
+  userId?: string;
+  data: unknown;
+}
 
 const SFU_URL = process.env.NEXT_PUBLIC_SFU_URL ?? "ws://localhost:8443";
 const MAX_RECONNECT_ATTEMPTS = 3;
@@ -101,6 +111,8 @@ export interface UseSfuReturn {
   toggleAudio: () => void;
   toggleVideo: () => Promise<void>;
   toggleScreenShare: () => Promise<void>;
+  sendRoomEvent: (data: unknown) => void;
+  onRoomEvent: (handler: (event: SfuRoomEvent) => void) => () => void;
   localAudioEnabled: boolean;
   localVideoEnabled: boolean;
   screenShareEnabled: boolean;
@@ -122,6 +134,7 @@ export function useSfu(): UseSfuReturn {
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenShareSenderRef = useRef<RTCRtpSender | null>(null);
   const trackIdToParticipantRef = useRef<Record<string, string>>({});
+  const roomEventHandlersRef = useRef<Set<(event: SfuRoomEvent) => void>>(new Set());
 
   const isIntentionalLeaveRef = useRef(false);
   const reconnectAttemptRef = useRef(0);
@@ -363,6 +376,14 @@ export function useSfu(): UseSfuReturn {
       ? (localStreamRef.current?.getVideoTracks()[0] ?? null)
       : null;
 
+    if (
+      typeof navigator.mediaDevices?.getUserMedia !== "function" ||
+      window.isSecureContext === false
+    ) {
+      console.error("Camera capture unavailable: insecure context (HTTPS required)");
+      return;
+    }
+
     try {
       const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
       const newTrack = videoStream.getVideoTracks()[0];
@@ -420,7 +441,10 @@ export function useSfu(): UseSfuReturn {
       lastJoinArgsRef.current = { roomId, displayName, mediaOptions, userId, sfuToken };
 
       let stream: MediaStream | null = mediaOptions.stream ?? null;
-      if (!stream || stream.getTracks().length === 0) {
+      const canCapture =
+        typeof navigator.mediaDevices?.getUserMedia === "function" &&
+        window.isSecureContext !== false;
+      if ((!stream || stream.getTracks().length === 0) && canCapture) {
         const audioConstraints: MediaTrackConstraints = {
           deviceId: mediaOptions.audioInputId ? { exact: mediaOptions.audioInputId } : undefined,
           echoCancellation: true,
@@ -450,6 +474,17 @@ export function useSfu(): UseSfuReturn {
             throw err;
           }
         }
+      }
+      if (!stream) {
+        // Insecure context (plain-http origin) — getUserMedia throws
+        // "The operation is insecure"; join muted so the user can still
+        // watch/listen.
+        if (mediaOptions.audioEnabled || mediaOptions.videoEnabled) {
+          console.error(
+            "Media capture unavailable: page is not in a secure context (HTTPS required)",
+          );
+        }
+        stream = new MediaStream();
       }
 
       stream.getAudioTracks().forEach((t) => {
@@ -518,6 +553,13 @@ export function useSfu(): UseSfuReturn {
         const stream = e.streams[0] ?? new MediaStream([e.track]);
         const participantId = stream.id;
         trackIdToParticipantRef.current[e.track.id] = participantId;
+        // `muted` flips on the remote track when the peer stops sending (mic
+        // muted / camera off). That isn't a state change React can see, so
+        // bump remoteStreams to re-render tiles and mic/cam indicators.
+        const bump = () => setRemoteStreams((prev) => [...prev]);
+        e.track.onmute = bump;
+        e.track.onunmute = bump;
+        e.track.onended = bump;
         setRemoteStreams((prev) => {
           const others = prev.filter((p) => p.participantId !== participantId);
           return [...others, { participantId, stream }];
@@ -599,6 +641,18 @@ export function useSfu(): UseSfuReturn {
             break;
           }
 
+          case "answer": {
+            // Reply to a client-initiated offer (e.g. screen-share or camera
+            // started mid-call via onnegotiationneeded). Without this the pc
+            // stays stuck in have-local-offer and the track never flows.
+            try {
+              await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp! });
+            } catch (err) {
+              console.error("Failed to apply SFU answer", err);
+            }
+            break;
+          }
+
           case "ice": {
             try {
               await pc.addIceCandidate({
@@ -615,6 +669,19 @@ export function useSfu(): UseSfuReturn {
           case "error":
             setError(msg.message ?? "SFU error");
             break;
+
+          case "room_event": {
+            // Ephemeral in-room event broadcast by the SFU on behalf of
+            // another participant (raise hand, reaction, …).
+            const roomEvent: SfuRoomEvent = {
+              from: msg.from ?? "",
+              displayName: msg.display_name ?? "Participant",
+              userId: msg.user_id,
+              data: msg.data,
+            };
+            roomEventHandlersRef.current.forEach((h) => h(roomEvent));
+            break;
+          }
         }
       };
 
@@ -661,12 +728,27 @@ export function useSfu(): UseSfuReturn {
     [leave],
   );
 
+  // Ephemeral room-scoped events (raise hand, reactions, …) shared with every
+  // participant — including link guests who have no realtime socket.
+  const sendRoomEvent = useCallback((data: unknown) => {
+    send({ type: "room_event", data });
+  }, []);
+
+  const onRoomEvent = useCallback((handler: (event: SfuRoomEvent) => void) => {
+    roomEventHandlersRef.current.add(handler);
+    return () => {
+      roomEventHandlersRef.current.delete(handler);
+    };
+  }, []);
+
   return {
     join,
     leave,
     toggleAudio,
     toggleVideo,
     toggleScreenShare,
+    sendRoomEvent,
+    onRoomEvent,
     localAudioEnabled,
     localVideoEnabled,
     screenShareEnabled,

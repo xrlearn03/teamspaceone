@@ -19,7 +19,10 @@ export class AiIngestionProcessor extends WorkerHost {
         await this.ai.processIndexJob(job.data as { organisationId: string; resourceType: string; resourceId: string });
         break;
       case 'summarize':
-        await this.ai.processSummarizeJob(job.data as { organisationId: string; resourceType: string; resourceId: string });
+        await this.ai.processSummarizeJob(
+          job.data as { organisationId: string; resourceType: string; resourceId: string; wasRecording?: boolean },
+          job.attemptsMade,
+        );
         break;
       default:
         this.logger.warn({ jobId: job.id, name: job.name }, 'Unknown AI ingestion job type');

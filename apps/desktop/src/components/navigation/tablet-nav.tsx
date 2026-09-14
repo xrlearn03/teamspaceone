@@ -14,6 +14,7 @@ import { usePermissionContext } from "@teamspace-one/authorization/react";
 import { hasAnyPermission } from "@teamspace-one/authorization";
 import { useUIStore, type View } from "../../stores/ui";
 import { useMe, useUnreadCount } from "../../hooks/api";
+import { usePermissions } from "../../hooks/usePermissions";
 import { logout } from "../../lib/api";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
 import { cn } from "../../lib/utils";
@@ -22,6 +23,11 @@ export function TabletNav() {
   const { activeView, setActiveView, setSearchOpen } = useUIStore();
   const { data: user, isLoading: userLoading } = useMe();
   const { data: unread } = useUnreadCount();
+  const { scopesFor, user: scopedUser } = usePermissions();
+  const memberScopedProjects =
+    !scopedUser?.isSuperAdmin &&
+    !scopedUser?.permissions.includes("*") &&
+    !scopesFor("collaboration").some((s) => s.scope === "organisation");
 
   const { user: authzUser } = usePermissionContext();
   const canAny = (permissions?: string[]) =>
@@ -35,7 +41,7 @@ export function TabletNav() {
     { id: "home", icon: Home, label: "Home", permissions: ["dashboard.view"] },
     { id: "inbox", icon: Inbox, label: "Inbox", badge: unread?.count ?? 0 },
     { id: "dm", icon: MessageSquare, label: "Messages", permissions: ["collaboration.access"] },
-    { id: "project", icon: Folder, label: "Projects", permissions: ["collaboration.project.view"] },
+    { id: memberScopedProjects ? "my-projects" : "project", icon: Folder, label: "Projects", permissions: ["collaboration.project.view"] },
     { id: "meeting", icon: Calendar, label: "Meetings", permissions: ["collaboration.meeting.view"] },
     { id: "hrms", icon: Briefcase, label: "HRMS", permissions: ["hrms.access"] },
     { id: "interview", icon: ClipboardCheck, label: "Interview", permissions: ["interview.access"] },
@@ -57,7 +63,9 @@ export function TabletNav() {
       <div className="mt-4 flex flex-1 flex-col gap-1 overflow-y-auto px-2">
         {topItems.map((item) => {
           const Icon = item.icon;
-          const isActive = activeView === item.id;
+          const isActive =
+            activeView === item.id ||
+            (item.id === "my-projects" && activeView === "project");
           return (
             <button
               key={item.id}

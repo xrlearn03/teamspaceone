@@ -41,6 +41,7 @@ export type View =
   | "saved"
   | "drafts"
   | "hrms"
+  | "payroll"
   | "interview"
   | "admin"
   | "assets"
@@ -51,7 +52,14 @@ export type View =
   | "departments"
   | "designations"
   | "leaves"
+  | "attendance"
+  | "onboarding"
+  | "offboarding"
   | "my-attendance"
+  | "my-timesheet"
+  | "my-leaves"
+  | "my-payroll"
+  | "my-performance"
   | "settings"
   | "help";
 

@@ -37,7 +37,7 @@ export function TopHeader() {
       <button
         type="button"
         onClick={() => setSearchOpen(true)}
-        className="flex h-7 min-w-0 max-w-[259px] flex-1 items-center justify-between rounded-md border border-border bg-surface px-2.5 text-left sm:flex-none sm:basis-[259px]"
+        className="flex h-7 min-w-0 max-w-[50%] flex-1 items-center justify-between rounded-md border border-border bg-surface px-2.5 text-left sm:flex-none sm:basis-1/2"
       >
         <span className="flex min-w-0 items-center gap-2">
           <Search className="h-3.5 w-3.5 shrink-0 text-text-muted" />

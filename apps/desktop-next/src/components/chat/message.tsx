@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bookmark, Check, MessageCircle, Pencil, Pin, Smile, Trash2, X } from "lucide-react";
+import { Bookmark, Check, MessageCircle, Pencil, PhoneMissed, PhoneOff, Pin, Smile, Trash2, X } from "lucide-react";
 import { Button } from "@teamspace-one/ui/button";
 import { Input } from "@teamspace-one/ui/input";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
@@ -8,7 +8,7 @@ import { MessageContent } from "./message-content";
 import { isSaved, toggleSavedMessage } from "@/lib/message-local";
 import { useToggleReaction } from "@/hooks/api";
 import { cn, getUserDisplayName } from "@/lib/utils";
-import type { Message as MessageType, UserDto } from "@/lib/api";
+import { callMessageLabel, type Message as MessageType, type UserDto } from "@/lib/api";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "👀", "🙏", "✅", "🔥"];
 
@@ -26,6 +26,8 @@ export interface MessageItemProps {
   onEdit?: (messageId: string, content: string) => void;
   onDelete?: (messageId: string) => void;
   onPin?: (message: MessageType) => void;
+  /** Rendered on call log messages to let either party ring back. */
+  onCallBack?: (kind: "audio" | "video") => void;
   /** Grouped under the previous message — hides avatar and author name. */
   compact?: boolean;
 }
@@ -39,6 +41,7 @@ export function MessageItem({
   onEdit,
   onDelete,
   onPin,
+  onCallBack,
   compact,
 }: MessageItemProps) {
   const [editing, setEditing] = useState(false);
@@ -77,6 +80,7 @@ export function MessageItem({
     );
   }
 
+  const callMeta = message.type === "call" && !message.deletedAt ? message.metadata : undefined;
   const replyCount = message._count?.replies ?? 0;
   const reactions: Record<string, string[]> = {};
   for (const reaction of message.reactions ?? []) {
@@ -136,6 +140,27 @@ export function MessageItem({
             >
               {message.deletedAt ? (
                 "Message deleted"
+              ) : callMeta ? (
+                <span className="flex items-center gap-2">
+                  {callMeta.status === "declined" ? (
+                    <PhoneOff className="h-4 w-4 shrink-0 text-error" />
+                  ) : (
+                    <PhoneMissed className="h-4 w-4 shrink-0 text-error" />
+                  )}
+                  <span>{callMessageLabel(callMeta)}</span>
+                  {onCallBack ? (
+                    <button
+                      type="button"
+                      onClick={() => onCallBack(callMeta.kind === "video" ? "video" : "audio")}
+                      className={cn(
+                        "ml-1 rounded px-2 py-0.5 text-xs font-medium",
+                        isMe ? "bg-white/15 text-white hover:bg-white/25" : "bg-primary-subtle text-primary hover:opacity-80",
+                      )}
+                    >
+                      Call back
+                    </button>
+                  ) : null}
+                </span>
               ) : (
                 <MessageContent content={message.content} mentionName={mentionName} />
               )}
@@ -169,7 +194,7 @@ export function MessageItem({
                     <Bookmark className={cn("h-3.5 w-3.5", saved && "fill-warning text-warning")} />
                   </Button>
                 ) : null}
-                {isMe && onEdit ? (
+                {isMe && onEdit && !callMeta ? (
                   <Button size="icon" variant="ghost" onClick={() => setEditing(true)} aria-label="Edit message">
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>

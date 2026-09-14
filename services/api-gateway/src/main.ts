@@ -142,10 +142,14 @@ async function bootstrap() {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+  const loopbackOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
   app.enableCors({
-    origin: corsOrigins.length
-      ? corsOrigins
-      : ['http://localhost:1420', 'http://localhost:3002', 'http://localhost:5173', 'http://tauri.localhost', 'tauri://localhost'],
+    origin: [
+      loopbackOrigin,
+      'http://tauri.localhost',
+      'tauri://localhost',
+      ...corsOrigins,
+    ],
     credentials: true,
   });
 
@@ -192,6 +196,7 @@ async function bootstrap() {
   const orgUrl = config.get<string>('ORGANISATION_SERVICE_URL', 'http://localhost:3003');
   const msgUrl = config.get<string>('MESSAGING_SERVICE_URL', 'http://localhost:3004');
   const projectsUrl = config.get<string>('PROJECTS_SERVICE_URL', 'http://localhost:3006');
+  const auditUrl = config.get<string>('AUDIT_SERVICE_URL', 'http://localhost:3007');
   const notificationUrl = config.get<string>('NOTIFICATION_SERVICE_URL', 'http://localhost:3008');
   const meetingUrl = config.get<string>('MEETING_SERVICE_URL', 'http://localhost:3009');
   const fileStorageUrl = config.get<string>('FILE_STORAGE_SERVICE_URL', 'http://localhost:3010');
@@ -230,11 +235,14 @@ async function bootstrap() {
   app.use(['/channels', '/messages'], createAuthMiddleware(jwtSecret));
   app.use(['/channels', '/messages'], proxy(msgUrl));
 
-  app.use(['/projects', '/tasks', '/project-comments', '/approvals'], createAuthMiddleware(jwtSecret));
-  app.use(['/projects', '/tasks', '/project-comments', '/approvals'], proxy(projectsUrl));
+  app.use(['/projects', '/tasks', '/project-comments', '/approvals', '/todos', '/time-entries'], createAuthMiddleware(jwtSecret));
+  app.use(['/projects', '/tasks', '/project-comments', '/approvals', '/todos', '/time-entries'], proxy(projectsUrl));
 
   app.use('/notifications', createAuthMiddleware(jwtSecret));
   app.use('/notifications', proxy(notificationUrl));
+
+  app.use('/audit', createAuthMiddleware(jwtSecret));
+  app.use('/audit', proxy(auditUrl));
 
   app.use('/meetings/public', proxy(meetingUrl));
   app.use('/meetings', createAuthMiddleware(jwtSecret));

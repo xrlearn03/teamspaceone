@@ -677,6 +677,75 @@ export function useDeleteTask() {
   });
 }
 
+export function useTodos() {
+  return useQuery({
+    queryKey: ["todos", orgId()],
+    queryFn: api.getTodos,
+    enabled: getActiveOrganisation() !== null,
+    staleTime: 30 * 1000,
+    retry: 2,
+    meta: { suppressErrorToast: true },
+  });
+}
+
+export function useCreateTodo() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createTodo,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["todos", orgId()] }),
+  });
+}
+
+export function useUpdateTodo() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { todoId: string; body: Parameters<typeof api.updateTodo>[1] }) => api.updateTodo(args.todoId, args.body),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["todos", orgId()] }),
+  });
+}
+
+export function useDeleteTodo() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteTodo,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["todos", orgId()] }),
+  });
+}
+
+export function useTimeEntries(params?: { from?: string; to?: string }) {
+  return useQuery({
+    queryKey: ["time-entries", orgId(), params?.from ?? "", params?.to ?? ""],
+    queryFn: () => api.getTimeEntries(params),
+    enabled: getActiveOrganisation() !== null,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCreateTimeEntry() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createTimeEntry,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["time-entries", orgId()] }),
+  });
+}
+
+export function useUpdateTimeEntry() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; body: Parameters<typeof api.updateTimeEntry>[1] }) =>
+      api.updateTimeEntry(args.id, args.body),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["time-entries", orgId()] }),
+  });
+}
+
+export function useDeleteTimeEntry() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteTimeEntry,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["time-entries", orgId()] }),
+  });
+}
+
 export function useProjectComments(projectId?: string) {
   return useInfiniteQuery({
     queryKey: ["project-comments", projectId],
@@ -1007,6 +1076,17 @@ export function useMarkAllRead() {
   });
 }
 
+/** Org-wide audit feed (admin.audit.view). Pass enabled=false to skip. */
+export function useAuditEvents(enabled = true, take = 50) {
+  return useQuery({
+    queryKey: ["audit-events", orgId(), take],
+    queryFn: () => api.getAuditEvents(take),
+    enabled: enabled && getActiveOrganisation() !== null,
+    staleTime: 30 * 1000,
+    retry: 1,
+  });
+}
+
 export function useFile(fileId?: string) {
   return useQuery({
     queryKey: ["file", fileId],
@@ -1165,6 +1245,18 @@ export function useMyEmployee() {
     enabled: hrmsEnabled(),
     staleTime: 60 * 1000,
     retry: 1,
+    meta: { suppressErrorToast: true },
+  });
+}
+
+export function useEmployeeBirthdays(days = 7) {
+  return useQuery({
+    queryKey: ["hrms", "employee-birthdays", orgId(), days],
+    queryFn: () => api.getEmployeeBirthdays(days),
+    enabled: hrmsEnabled(),
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+    meta: { suppressErrorToast: true },
   });
 }
 
@@ -1201,6 +1293,20 @@ export function useUpdateEmployee() {
       client.invalidateQueries({ queryKey: ["hrms", "employees", orgId(), args.id] });
       client.invalidateQueries({ queryKey: ["users"] });
       client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+    },
+  });
+}
+
+/** DELETE /hrms/employees/:id — sets status to 'terminated'. */
+export function useTerminateEmployee() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.terminateEmployee,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["hrms", "employees", orgId()] });
+      client.invalidateQueries({ queryKey: ["hrms", "overview"] });
+      client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+      client.invalidateQueries({ queryKey: ["users"] });
     },
   });
 }
@@ -2042,6 +2148,14 @@ function invalidatePayroll(client: ReturnType<typeof useQueryClient>) {
   client.invalidateQueries({ queryKey: ["hrms", "payslips"] });
   client.invalidateQueries({ queryKey: ["hrms", "overview"] });
   client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
+}
+
+export function useCreatePayrollPeriod() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createPayrollPeriod,
+    onSuccess: () => invalidatePayroll(client),
+  });
 }
 
 export function useProcessPayrollPeriod() {

@@ -3,4 +3,6 @@ export class CreateMessageDto {
   content!: string;
   attachmentIds?: string[];
   parentMessageId?: string;
+  type?: string;
+  metadata?: Record<string, unknown>;
 }

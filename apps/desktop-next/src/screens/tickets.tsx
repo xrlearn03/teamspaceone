@@ -282,7 +282,7 @@ export function TicketsScreen() {
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="Tickets" crumbs={["Employee", "Tickets"]}>
+      <PageHeader title="Tickets">
         <div className="flex h-8 overflow-hidden rounded-md border border-border bg-surface">
           <button
             type="button"

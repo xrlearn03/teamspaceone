@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Copy, ExternalLink, FileText, Folder, Paperclip, Plus, Send, Settings, Trash2, X } from "lucide-react";
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleDot, Copy, Download, ExternalLink, FileText, Filter, Folder, ListTodo, Paperclip, Plus, Send, Settings, Trash2, Users, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useUIStore } from "../stores/ui";
 import {
   useAddProjectAttachment,
@@ -41,6 +41,7 @@ import { Input } from "@teamspace-one/ui/input";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
 import { MessageAttachment } from "../components/ui/message-attachment";
+import { UserAvatar } from "../components/user-avatar";
 import { usePermissionContext } from "@teamspace-one/authorization/react";
 import { hasPermission } from "@teamspace-one/authorization";
 import { cn, getUserDisplayName } from "../lib/utils";
@@ -189,7 +190,7 @@ export function ProjectScreen() {
           ))}</div>
         ) : null}
         {tab === "list" ? <TaskList tasks={tasks ?? []} onSelect={setSelectedTask} /> : null}
-        {tab === "timeline" ? <Gantt project={project} tasks={tasks ?? []} onSelect={setSelectedTask} /> : null}
+        {tab === "timeline" ? <Gantt project={project} tasks={tasks ?? []} userMap={userMap} onSelect={setSelectedTask} /> : null}
         {tab === "files" ? <ProjectFiles projectId={project.id} /> : null}
         {tab === "discussions" ? <ProjectDiscussions projectId={project.id} userMap={userMap} /> : null}
         {tab === "approvals" ? <ProjectApprovals projectId={project.id} tasks={tasks ?? []} userMap={userMap} /> : null}
@@ -644,131 +645,402 @@ function dayDiff(a: Date, b: Date) {
   return Math.round((b.getTime() - a.getTime()) / 86400000);
 }
 
-function stringToHsl(value: string) {
-  let hash = 0;
-  for (let i = 0; i < value.length; i++) {
-    hash = value.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 70%, 50%)`;
+/* =========================================================
+   GANTT / TIMELINE
+========================================================= */
+
+const GANTT_ROW_H = 39;
+const GANTT_LEFT_W = 560;
+const GANTT_GROUP_ORDER = ["in_progress", "in_review", "todo", "backlog", "blocked", "done"] as const;
+const GANTT_STATUS_CHIP: Record<string, string> = {
+  done: "bg-success/10 text-success",
+  in_progress: "bg-info/10 text-info",
+  in_review: "bg-primary/10 text-primary",
+  blocked: "bg-error/10 text-error",
+  todo: "bg-surface-elevated text-text-secondary",
+  backlog: "bg-surface-elevated text-text-muted",
+};
+const GANTT_VIEW_DAY_WIDTH: Record<string, number> = { Day: 48, Week: 24, Month: 12, Quarter: 5 };
+
+interface GanttRow {
+  task: Task;
+  start: Date | null;
+  end: Date | null;
+  /** Single-day deadline — rendered as a diamond instead of a bar. */
+  milestone: boolean;
 }
 
-function Gantt({ project, tasks, onSelect }: { project: Project; tasks: Task[]; onSelect?: (task: Task) => void }) {
-  const items = useMemo(() => {
-    const ranges = tasks.map((task) => {
-      const start = toLocalDay(task.startDate ?? task.createdAt);
-      const end = task.dueDate ? toLocalDay(task.dueDate) : addDays(start, 2);
-      return { task, start, end: end < start ? addDays(start, 1) : end };
+function ganttRow(task: Task): GanttRow {
+  const start = task.startDate ? toLocalDay(task.startDate) : null;
+  const end = task.dueDate ? toLocalDay(task.dueDate) : null;
+  if (!start && !end) return { task, start: null, end: null, milestone: false };
+  // A due-date-only task is a deadline — draw it as a milestone diamond.
+  if (!start && end) return { task, start: end, end, milestone: true };
+  const s = start!;
+  const e = end && end >= s ? end : addDays(s, 2);
+  return { task, start: s, end: e, milestone: s.getTime() === e.getTime() };
+}
+
+function GanttStat({ icon, value, label, iconClass }: { icon: React.ReactNode; value: string; label: string; iconClass: string }) {
+  return (
+    <div className="flex h-[72px] items-center gap-3 rounded-xl border border-border bg-surface px-4 shadow-sm">
+      <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", iconClass)}>{icon}</div>
+      <div>
+        <div className="text-[17px] font-semibold text-text">{value}</div>
+        <div className="mt-0.5 text-[10px] text-text-muted">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+function Gantt({ project, tasks, userMap, onSelect }: { project: Project; tasks: Task[]; userMap: Map<string, UserDto>; onSelect?: (task: Task) => void }) {
+  const [view, setView] = useState("Month");
+  const [dayWidth, setDayWidth] = useState(GANTT_VIEW_DAY_WIDTH.Month);
+  const [offset, setOffset] = useState(0);
+  const [showFilter, setShowFilter] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [assigneeFilter, setAssigneeFilter] = useState("");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const rows = useMemo(() => {
+    const mapped = tasks.map(ganttRow);
+    return mapped.filter((r) => {
+      if (statusFilter.length && !statusFilter.includes(r.task.status)) return false;
+      if (assigneeFilter && r.task.assigneeId !== assigneeFilter) return false;
+      return true;
     });
+  }, [tasks, statusFilter, assigneeFilter]);
 
-    let rangeStart: Date | null = project.startDate ? toLocalDay(project.startDate) : null;
-    let rangeEnd: Date | null = project.targetDate ? toLocalDay(project.targetDate) : null;
-    for (const { start, end } of ranges) {
-      if (!rangeStart || start < rangeStart) rangeStart = start;
-      if (!rangeEnd || end > rangeEnd) rangeEnd = end;
+  const scheduled = rows.filter((r) => r.start && r.end);
+  const unscheduled = rows.filter((r) => !r.start || !r.end);
+
+  const { rangeStart, totalDays } = useMemo(() => {
+    let start: Date | null = project.startDate ? toLocalDay(project.startDate) : null;
+    let end: Date | null = project.targetDate ? toLocalDay(project.targetDate) : null;
+    for (const r of scheduled) {
+      if (!start || r.start! < start) start = r.start;
+      if (!end || r.end! > end) end = r.end;
     }
-    if (!rangeStart) rangeStart = new Date();
-    if (!rangeEnd) rangeEnd = addDays(rangeStart, 7);
-    if (rangeEnd < rangeStart) rangeEnd = addDays(rangeStart, 7);
+    const today = toLocalDay(new Date().toISOString());
+    if (!start || today < start) start = today;
+    if (!end || today > end) end = today;
+    // Pad a little on both sides so bars don't touch the edges.
+    start = addDays(start, -3);
+    end = addDays(end, 7);
+    start = addDays(start, offset);
+    end = addDays(end, offset);
+    return { rangeStart: start, rangeEnd: end, totalDays: Math.max(1, dayDiff(start, end) + 1) };
+  }, [scheduled, project.startDate, project.targetDate, offset]);
 
-    const totalDays = Math.max(1, dayDiff(rangeStart, rangeEnd) + 1);
-    const sorted = [...ranges].sort((a, b) => a.start.getTime() - b.start.getTime());
-    return { rangeStart, rangeEnd, totalDays, rows: sorted };
-  }, [tasks, project.startDate, project.targetDate]);
+  const totalWidth = totalDays * dayWidth;
+  const todayOffset = dayDiff(rangeStart, toLocalDay(new Date().toISOString()));
+  const showToday = todayOffset >= 0 && todayOffset < totalDays;
 
-  const { rangeStart, totalDays, rows } = items;
-  const days = Array.from({ length: totalDays }, (_, i) => addDays(rangeStart, i));
-
-  const months: { label: string; start: number; end: number }[] = [];
-  let current: { label: string; start: number; end: number } | null = null;
-  for (let i = 0; i < days.length; i++) {
-    const label = days[i].toLocaleDateString(undefined, { month: "short", year: "numeric" });
-    if (!current || current.label !== label) {
-      if (current) months.push(current);
-      current = { label, start: i, end: i };
-    } else {
-      current.end = i;
+  const months = useMemo(() => {
+    const out: { label: string; start: number; end: number }[] = [];
+    let current: { label: string; start: number; end: number } | null = null;
+    for (let i = 0; i < totalDays; i++) {
+      const label = addDays(rangeStart, i).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+      if (!current || current.label !== label) {
+        if (current) out.push(current);
+        current = { label, start: i, end: i };
+      } else {
+        current.end = i;
+      }
     }
+    if (current) out.push(current);
+    return out;
+  }, [rangeStart, totalDays]);
+
+  const groups = useMemo(() => {
+    const out: { status: string; label: string; color: string; rows: GanttRow[] }[] = [];
+    for (const status of GANTT_GROUP_ORDER) {
+      const items = scheduled.filter((r) => r.task.status === status).sort((a, b) => a.start!.getTime() - b.start!.getTime());
+      if (items.length) out.push({ status, label: labels[status] ?? status, color: statusColors[status] ?? "var(--primary)", rows: items });
+    }
+    if (unscheduled.length) out.push({ status: "unscheduled", label: "Unscheduled", color: "var(--text-muted)", rows: unscheduled });
+    return out;
+  }, [scheduled, unscheduled]);
+
+  const assignees = useMemo(() => [...new Set(tasks.map((t) => t.assigneeId).filter((id): id is string => Boolean(id)))], [tasks]);
+
+  const total = tasks.length;
+  const done = tasks.filter((t) => t.status === "done").length;
+  const progress = total ? Math.round((done / total) * 100) : 0;
+  const daysLeft = project.targetDate ? Math.max(0, dayDiff(toLocalDay(new Date().toISOString()), toLocalDay(project.targetDate))) : null;
+
+  function dayIndex(date: Date) {
+    return Math.max(0, Math.min(totalDays - 1, dayDiff(rangeStart, date)));
   }
-  if (current) months.push(current);
+
+  function exportCsv() {
+    const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const lines = [
+      "Task,Status,Priority,Assignee,Start,Due",
+      ...tasks.map((t) =>
+        [
+          escape(t.title),
+          t.status,
+          t.priority,
+          escape(t.assigneeId ? getUserDisplayName(userMap.get(t.assigneeId)) : ""),
+          t.startDate?.slice(0, 10) ?? "",
+          t.dueDate?.slice(0, 10) ?? "",
+        ].join(","),
+      ),
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${project.name.replace(/\s+/g, "-").toLowerCase()}-timeline.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const dayGridBg = `repeating-linear-gradient(to right, var(--border) 0, var(--border) 1px, transparent 1px, transparent ${dayWidth}px)`;
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="grid text-sm" style={{ gridTemplateColumns: `240px repeat(${totalDays}, 40px)` }}>
-        <div className="sticky left-0 top-0 z-30 border-b border-r bg-surface" style={{ gridRow: "1 / span 2" }} />
-        {months.map((month) => (
-          <div
-            key={`${month.label}-${month.start}`}
-            className="sticky top-0 z-20 flex h-7 items-end border-b border-r bg-surface px-1 pb-1 text-xs font-medium text-text-secondary"
-            style={{ gridColumn: `${2 + month.start} / ${2 + month.end + 1}` }}
-          >
-            {month.label}
-          </div>
-        ))}
-        {days.map((day, i) => {
-          const weekend = day.getDay() === 0 || day.getDay() === 6;
-          return (
-            <div
-              key={day.toISOString()}
-              className={cn(
-                "sticky top-7 z-20 h-7 border-b border-r text-center text-[10px] leading-7",
-                weekend ? "bg-surface-elevated/85 text-text" : "bg-surface text-text-muted",
-              )}
-              style={{ gridColumn: `${2 + i} / ${3 + i}` }}
-            >
-              {day.getDate()}
-            </div>
-          );
-        })}
-        {!rows.length ? (
-          <div className="col-span-full py-12 text-center text-sm text-text-muted" style={{ gridColumn: "1 / -1", gridRow: 3 }}>
-            Add task dates to build the Gantt chart.
-          </div>
-        ) : null}
-        {rows.map(({ task, start, end }, idx) => {
-          const startIdx = Math.max(0, Math.min(totalDays - 1, dayDiff(rangeStart, start)));
-          const endIdx = Math.max(startIdx, Math.min(totalDays - 1, dayDiff(rangeStart, end)));
-          const colStart = startIdx + 1;
-          const duration = endIdx - startIdx + 1;
-          return (
-            <div key={task.id} className="contents">
+    <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
+      {/* Stats */}
+      <section className="grid grid-cols-2 gap-2 lg:grid-cols-5">
+        <GanttStat icon={<ListTodo size={20} />} iconClass="bg-primary/10 text-primary" value={String(total)} label="Total Tasks" />
+        <GanttStat icon={<CheckCircle2 size={20} />} iconClass="bg-success/10 text-success" value={String(done)} label="Completed" />
+        <GanttStat icon={<CircleDot size={20} />} iconClass="bg-info/10 text-info" value={`${progress}%`} label="Overall Progress" />
+        <GanttStat icon={<Users size={20} />} iconClass="bg-mention/10 text-mention" value={String(project.members.length)} label="Team Members" />
+        <GanttStat icon={<CalendarDays size={20} />} iconClass="bg-warning/10 text-warning" value={daysLeft === null ? "—" : String(daysLeft)} label="Days Left" />
+      </section>
+
+      {/* Toolbar */}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-surface p-2">
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => setOffset((o) => o - 30)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-text-secondary hover:bg-surface-elevated" aria-label="Earlier">
+            <ChevronLeft size={15} />
+          </button>
+          <button type="button" onClick={() => setOffset((o) => o + 30)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-text-secondary hover:bg-surface-elevated" aria-label="Later">
+            <ChevronRight size={15} />
+          </button>
+          <button type="button" onClick={() => setOffset(0)} className="ml-1 h-9 rounded-lg border border-border px-4 text-[10px] font-semibold text-text-secondary hover:bg-surface-elevated">
+            Today
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg bg-surface-elevated p-1">
+            {Object.keys(GANTT_VIEW_DAY_WIDTH).map((item) => (
               <button
+                key={item}
                 type="button"
-                onClick={() => onSelect?.(task)}
-                className="sticky left-0 z-10 flex items-center border-b border-r bg-surface px-3 py-2 text-left text-xs text-text transition-colors hover:bg-surface-elevated"
-                style={{ gridRow: idx + 3 }}
+                onClick={() => { setView(item); setDayWidth(GANTT_VIEW_DAY_WIDTH[item]); }}
+                className={cn("rounded-md px-4 py-1.5 text-[10px] font-medium", view === item ? "bg-primary/15 text-primary shadow-sm" : "text-text-muted")}
               >
-                {task.title}
+                {item}
               </button>
-              <div
-                className="relative border-b"
-                style={{ gridColumn: "2 / -1", gridRow: idx + 3, display: "grid", gridTemplateColumns: "subgrid", alignItems: "center" }}
-              >
-                <button
-                  type="button"
-                  onClick={() => onSelect?.(task)}
-                  className="flex h-6 items-center overflow-hidden rounded px-2 text-xs font-medium text-white"
-                  style={{ gridColumn: `${colStart} / span ${duration}`, backgroundColor: stringToHsl(task.id), borderLeft: `3px solid ${statusColors[task.status] ?? "var(--primary)"}`, cursor: "pointer" }}
-                  title={`${task.title} · ${labels[task.status]} · ${task.priority}`}
-                >
-                  {task.title}
-                </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowFilter((s) => !s)}
+            className={cn("flex h-9 items-center gap-2 rounded-lg border px-4 text-[10px] font-semibold", showFilter || statusFilter.length || assigneeFilter ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-surface text-text-secondary")}
+          >
+            <Filter size={14} />
+            Filter
+          </button>
+          <button type="button" onClick={exportCsv} className="flex h-9 items-center gap-2 rounded-lg border border-border bg-surface px-4 text-[10px] font-semibold text-text-secondary hover:bg-surface-elevated">
+            <Download size={14} />
+            Export
+          </button>
+        </div>
+      </div>
+
+      {/* Filter strip */}
+      {showFilter ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-primary/20 bg-surface p-3">
+          <span className="mr-1 text-[10px] font-semibold text-text-secondary">Status:</span>
+          {statuses.map((status) => (
+            <button
+              key={status}
+              type="button"
+              onClick={() => setStatusFilter((s) => (s.includes(status) ? s.filter((x) => x !== status) : [...s, status]))}
+              className={cn("rounded-lg px-3 py-1.5 text-[10px] font-semibold", statusFilter.includes(status) ? "bg-primary/10 text-primary" : "border border-border text-text-muted hover:bg-surface-elevated")}
+            >
+              {labels[status]}
+            </button>
+          ))}
+          <span className="ml-2 mr-1 text-[10px] font-semibold text-text-secondary">Assignee:</span>
+          <select className="h-8 w-44 rounded-md border border-border bg-surface px-3 text-[11px] text-text" value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
+            <option value="">All assignees</option>
+            {assignees.map((id) => (
+              <option key={id} value={id}>{getUserDisplayName(userMap.get(id))}</option>
+            ))}
+          </select>
+          {(statusFilter.length > 0 || assigneeFilter) && (
+            <button type="button" onClick={() => { setStatusFilter([]); setAssigneeFilter(""); }} className="ml-auto text-[10px] font-semibold text-primary">
+              Clear filters
+            </button>
+          )}
+        </div>
+      ) : null}
+
+      {/* Chart */}
+      <section className="mt-3 overflow-hidden rounded-xl border border-border bg-surface">
+        <div className="relative overflow-x-auto">
+          <div style={{ minWidth: GANTT_LEFT_W + totalWidth }}>
+            {/* Header row */}
+            <div className="flex border-b border-border">
+              <div className="sticky left-0 z-30 grid shrink-0 grid-cols-[210px_90px_110px_110px_1fr] items-end border-r border-border bg-surface-elevated px-2 pb-2 pt-2 text-[10px] font-semibold text-text-secondary" style={{ width: GANTT_LEFT_W }}>
+                <span>Task</span>
+                <span>Assignee</span>
+                <span>Start Date</span>
+                <span>End Date</span>
+                <span>Status</span>
+              </div>
+              <div className="shrink-0" style={{ width: totalWidth }}>
+                <div className="flex h-7 border-b border-border">
+                  {months.map((month) => (
+                    <div key={`${month.label}-${month.start}`} className="border-r border-border px-2 pt-1 text-[10px] font-semibold text-text" style={{ width: (month.end - month.start + 1) * dayWidth }}>
+                      {month.label}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex h-6">
+                  {Array.from({ length: totalDays }, (_, i) => {
+                    const day = addDays(rangeStart, i);
+                    const weekend = day.getDay() === 0 || day.getDay() === 6;
+                    return (
+                      <div key={i} className={cn("shrink-0 border-r border-border/50 text-center text-[8px] leading-6", weekend ? "bg-surface-elevated text-text" : "text-text-muted")} style={{ width: dayWidth }}>
+                        {dayWidth >= 10 ? day.getDate() : day.getDate() === 1 ? day.getDate() : ""}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          );
-        })}
-        {rows.length > 0 &&
-          days.map((day, i) => {
-            if (day.getDay() !== 0 && day.getDay() !== 6) return null;
-            return (
-              <div
-                key={`weekend-${day.toISOString()}`}
-                className="pointer-events-none bg-surface-elevated/85"
-                style={{ gridColumn: `${2 + i} / ${3 + i}`, gridRow: `3 / span ${rows.length}` }}
-              />
-            );
-          })}
-      </div>
+
+            {/* Today line */}
+            {showToday ? (
+              <div className="pointer-events-none absolute bottom-0 top-[53px] z-20 border-l-2 border-dashed border-error/70" style={{ left: GANTT_LEFT_W + todayOffset * dayWidth + dayWidth / 2 }}>
+                <div className="absolute -top-0.5 left-[-18px] rounded-sm bg-error px-1.5 py-0.5 text-[8px] font-semibold text-white">Today</div>
+              </div>
+            ) : null}
+
+            {/* Groups + rows */}
+            {!rows.length ? (
+              <p className="py-12 text-center text-sm text-text-muted">No tasks match the current filters.</p>
+            ) : null}
+            {groups.map((group) => {
+              const groupStart = group.rows.reduce<Date | null>((min, r) => (r.start && (!min || r.start < min) ? r.start : min), null);
+              const groupEnd = group.rows.reduce<Date | null>((max, r) => (r.end && (!max || r.end > max) ? r.end : max), null);
+              const isCollapsed = collapsed[group.status] ?? false;
+              return (
+                <div key={group.status}>
+                  {/* Group row */}
+                  <div className="flex border-b border-border" style={{ height: GANTT_ROW_H }}>
+                    <button
+                      type="button"
+                      onClick={() => setCollapsed((c) => ({ ...c, [group.status]: !isCollapsed }))}
+                      className="sticky left-0 z-30 flex shrink-0 items-center gap-2 border-r border-border bg-surface px-3 text-left"
+                      style={{ width: GANTT_LEFT_W }}
+                    >
+                      {isCollapsed ? <ChevronRight size={14} className="text-text" /> : <ChevronDown size={14} className="text-text" />}
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: group.color }} />
+                      <span className="text-[11px] font-semibold text-text">{group.label}</span>
+                      <span className="text-[10px] text-text-muted">({group.rows.length})</span>
+                    </button>
+                    <div className="relative shrink-0" style={{ width: totalWidth, backgroundImage: dayGridBg }}>
+                      {groupStart && groupEnd ? (
+                        <div
+                          className="absolute top-1/2 h-4 -translate-y-1/2 rounded-md opacity-70"
+                          style={{ left: dayIndex(groupStart) * dayWidth, width: Math.max(dayWidth, (dayIndex(groupEnd) - dayIndex(groupStart) + 1) * dayWidth), backgroundColor: group.color }}
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* Task rows */}
+                  {!isCollapsed
+                    ? group.rows.map((row) => {
+                        const { task, start, end, milestone } = row;
+                        return (
+                          <div key={task.id} className="flex border-b border-border/60" style={{ height: GANTT_ROW_H }}>
+                            <div className="sticky left-0 z-30 grid shrink-0 grid-cols-[210px_90px_110px_110px_1fr] items-center border-r border-border bg-surface px-2 text-[10px]" style={{ width: GANTT_LEFT_W }}>
+                              <button type="button" onClick={() => onSelect?.(task)} className="truncate pl-8 text-left font-medium text-text hover:text-primary">
+                                {task.title}
+                              </button>
+                              <span className="flex justify-center">
+                                {task.assigneeId ? <UserAvatar user={userMap.get(task.assigneeId)} className="h-6 w-6" fallbackClassName="text-[8px]" /> : <span className="text-text-muted">—</span>}
+                              </span>
+                              <span className="text-text-muted">{start ? start.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }) : "—"}</span>
+                              <span className="text-text-muted">{end ? end.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }) : "—"}</span>
+                              <span>
+                                <span className={cn("rounded-md px-2 py-1 text-[8px] font-semibold", GANTT_STATUS_CHIP[task.status] ?? "bg-surface-elevated text-text-muted")}>
+                                  {labels[task.status] ?? task.status}
+                                </span>
+                              </span>
+                            </div>
+                            <div className="relative shrink-0" style={{ width: totalWidth, backgroundImage: dayGridBg }}>
+                              {start && end ? (
+                                milestone ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => onSelect?.(task)}
+                                    title={`${task.title} · ${labels[task.status]} · due ${end.toLocaleDateString()}`}
+                                    className="absolute top-1/2 -translate-y-1/2"
+                                    style={{ left: dayIndex(start) * dayWidth + dayWidth / 2 - 7 }}
+                                  >
+                                    <div className="h-3.5 w-3.5 rotate-45 rounded-[2px] border border-white/60 shadow-sm" style={{ backgroundColor: statusColors[task.status] ?? "var(--primary)" }} />
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => onSelect?.(task)}
+                                    title={`${task.title} · ${labels[task.status]} · ${task.priority}`}
+                                    className="absolute top-1/2 flex h-6 -translate-y-1/2 items-center overflow-hidden rounded-md px-2 text-[9px] font-medium text-white shadow-sm"
+                                    style={{
+                                      left: dayIndex(start) * dayWidth,
+                                      width: Math.max(dayWidth, (dayIndex(end) - dayIndex(start) + 1) * dayWidth - 2),
+                                      backgroundColor: statusColors[task.status] ?? "var(--primary)",
+                                    }}
+                                  >
+                                    {dayWidth >= 16 ? task.title : ""}
+                                  </button>
+                                )
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })
+                    : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Footer: legend + zoom */}
+      <footer className="mt-3 flex flex-col gap-3 px-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-4">
+          {GANTT_GROUP_ORDER.filter((status) => groups.some((g) => g.status === status)).map((status) => (
+            <div key={status} className="flex items-center gap-2 text-[10px] text-text-muted">
+              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: statusColors[status] }} />
+              {labels[status]}
+            </div>
+          ))}
+          <div className="flex items-center gap-2 text-[10px] text-text-muted">
+            <span className="h-3 w-3 rotate-45 rounded-[2px] bg-text-muted" />
+            Milestone (due-date only)
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-text-muted">Zoom</span>
+          <button type="button" onClick={() => setDayWidth((w) => Math.max(4, w - 4))} className="text-text-muted hover:text-text" aria-label="Zoom out">
+            <ZoomOut size={14} />
+          </button>
+          <input type="range" min={4} max={64} step={2} value={dayWidth} onChange={(e) => setDayWidth(Number(e.target.value))} className="w-28 accent-primary" aria-label="Timeline zoom" />
+          <button type="button" onClick={() => setDayWidth((w) => Math.min(64, w + 4))} className="text-text-muted hover:text-text" aria-label="Zoom in">
+            <ZoomIn size={14} />
+          </button>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -408,11 +408,25 @@ export class MeetingService {
     const meeting = await this.getById(ctx, id);
     if (meeting.status === 'ended') throw new ConflictException('Meeting already ended');
 
-    const messages = await this.prisma.meetingMessage.findMany({
-      where: { meetingId: id, organisationId: ctx.organisationId },
-      orderBy: { createdAt: 'asc' },
-    });
-    const transcript = messages.map((m) => `[${m.userId}] ${m.content}`).join('\n');
+    const [messages, speechLines] = await Promise.all([
+      this.prisma.meetingMessage.findMany({
+        where: { meetingId: id, organisationId: ctx.organisationId },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.meetingTranscriptLine.findMany({
+        where: { meetingId: id, organisationId: ctx.organisationId },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+    // Merge live speech-to-text lines with in-meeting chat, in time order, so
+    // the MOM sees the spoken call and the written discussion together.
+    const transcript = [
+      ...messages.map((m) => ({ at: m.createdAt, text: `[${m.userId}] ${m.content}` })),
+      ...speechLines.map((l) => ({ at: l.createdAt, text: `${l.speaker ?? l.userId}: ${l.text}` })),
+    ]
+      .sort((a, b) => a.at.getTime() - b.at.getTime())
+      .map((l) => l.text)
+      .join('\n');
     const participantIds = meeting.participants.map((p) => p.userId);
 
     const payload = {
@@ -422,6 +436,7 @@ export class MeetingService {
       title: meeting.title,
       transcript,
       participantIds,
+      wasRecording: meeting.isRecording,
       endedAt: new Date().toISOString(),
     };
 
@@ -907,6 +922,37 @@ export class MeetingService {
       await this.outbox.createEvent(tx, envelope, Subjects.MEETING_CHAT_CREATED);
       return message;
     });
+  }
+
+  /**
+   * Live speech-to-text lines posted by participants' clients during a call.
+   * Only active participants may append; lines feed the meeting transcript
+   * used for the AI MOM summary on `end()`.
+   */
+  async createTranscriptLines(ctx: OrganisationContextValue, meetingId: string, lines: { text: string; speaker?: string }[]) {
+    const userId = ctx.actorId;
+    if (!userId) throw new ForbiddenException('Missing actor');
+    if (!Array.isArray(lines) || !lines.length) throw new BadRequestException('lines are required');
+    if (lines.length > 200) throw new BadRequestException('Too many lines');
+
+    const participant = await this.prisma.meetingParticipant.findFirst({
+      where: { meetingId, userId, leftAt: null },
+    });
+    if (!participant) throw new ForbiddenException('Join the meeting to contribute to the transcript');
+
+    const rows = lines
+      .map((l) => ({
+        meetingId,
+        organisationId: ctx.organisationId,
+        userId,
+        speaker: typeof l.speaker === 'string' ? l.speaker.slice(0, 120) : null,
+        text: typeof l.text === 'string' ? l.text.trim().slice(0, 2000) : '',
+      }))
+      .filter((l) => l.text.length > 0);
+    if (!rows.length) throw new BadRequestException('lines are required');
+
+    await this.prisma.meetingTranscriptLine.createMany({ data: rows });
+    return { inserted: rows.length };
   }
 
   async listMeetingMessages(ctx: OrganisationContextValue, meetingId: string, cursor?: string, limit = 50) {

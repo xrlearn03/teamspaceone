@@ -31,6 +31,7 @@ import {
 } from "@teamspace-one/ui/dropdown-menu";
 import { cn, getUserDisplayName } from "@/lib/utils";
 import { useRealtime } from "@/hooks/useRealtime";
+import { useLiveTranscription } from "@/hooks/useLiveTranscription";
 import { useMembers, useUsers } from "@/hooks/api";
 import { useUIStore } from "@/stores/ui";
 import { UserAvatar } from "@/components/user-avatar";
@@ -105,6 +106,16 @@ export function NativeConference({
   const [copiedLink, setCopiedLink] = useState(false);
 
   const displayName = getUserDisplayName(user, "Guest");
+
+  // Streams the local mic to ElevenLabs Scribe; committed lines are stored on
+  // the meeting and merged into the MOM transcript on end. No-ops when the
+  // transcription provider isn't configured (or for guests without JWT).
+  useLiveTranscription({
+    meetingId,
+    stream: localStream ?? null,
+    speaker: displayName,
+    enabled: connected,
+  });
 
   async function copyInviteLink() {
     try {

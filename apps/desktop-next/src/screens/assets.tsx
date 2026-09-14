@@ -448,7 +448,7 @@ export function AssetsScreen() {
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="Assets" crumbs={["Administration", "Assets"]}>
+      <PageHeader title="Assets">
         {canCreate && (
           <PrimaryAction icon={PlusCircle} label="Add New Asset" onClick={() => setCreateOpen(true)} />
         )}

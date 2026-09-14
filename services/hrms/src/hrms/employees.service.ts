@@ -18,7 +18,7 @@ export interface RequestContextInput {
 }
 
 export interface CreateEmployeeInput extends RequestContextInput {
-  userId: string;
+  userId?: string;
   membershipId?: string;
   employeeNumber?: string;
   firstName: string;
@@ -174,10 +174,59 @@ export class EmployeesService {
     return sanitizeEmployee(actorEmployee, user);
   }
 
+  /**
+   * Upcoming birthdays within `days`. Deliberately NOT data-scope filtered:
+   * birthdays are org-directory information, and only non-sensitive fields
+   * (name, department, day/month — never the birth year) are returned.
+   */
+  async listBirthdays(ctx: RequestContextInput, days = 7) {
+    const windowDays = Math.min(Math.max(Math.floor(days) || 7, 1), 62);
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        organisationId: ctx.organisationId,
+        dateOfBirth: { not: null },
+        status: 'active',
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        avatarFileId: true,
+        dateOfBirth: true,
+        department: { select: { name: true } },
+      },
+    });
+
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const upcoming = employees
+      .map((e) => {
+        const dob = e.dateOfBirth as Date;
+        let next = new Date(start.getFullYear(), dob.getMonth(), dob.getDate());
+        if (next.getTime() < start.getTime()) {
+          next = new Date(start.getFullYear() + 1, dob.getMonth(), dob.getDate());
+        }
+        const daysUntil = Math.round((next.getTime() - start.getTime()) / 86400000);
+        return {
+          id: e.id,
+          firstName: e.firstName,
+          lastName: e.lastName,
+          avatarFileId: e.avatarFileId,
+          departmentName: e.department?.name ?? null,
+          date: next.toISOString().slice(0, 10),
+          daysUntil,
+        };
+      })
+      .filter((e) => e.daysUntil <= windowDays)
+      .sort((a, b) => a.daysUntil - b.daysUntil || a.firstName.localeCompare(b.firstName));
+    return upcoming;
+  }
+
   async syncProfile(
-    employee: { userId: string; firstName: string; lastName: string; avatarFileId?: string | null },
+    employee: { userId: string | null; firstName: string; lastName: string; avatarFileId?: string | null },
     correlationId?: string,
   ) {
+    if (!employee.userId) return;
     await this.authProfiles.updateUserProfile(
       employee.userId,
       {
@@ -191,15 +240,17 @@ export class EmployeesService {
 
   async create(input: CreateEmployeeInput, tx?: Prisma.TransactionClient) {
     const run = async (t: Prisma.TransactionClient) => {
-      const existing = await t.employee.findUnique({
-        where: { organisationId_userId: { organisationId: input.organisationId, userId: input.userId } },
-      });
-      if (existing) return existing;
+      if (input.userId) {
+        const existing = await t.employee.findUnique({
+          where: { organisationId_userId: { organisationId: input.organisationId, userId: input.userId } },
+        });
+        if (existing) return existing;
+      }
 
       const created = await t.employee.create({
         data: {
           organisationId: input.organisationId,
-          userId: input.userId,
+          userId: input.userId ?? null,
           membershipId: input.membershipId,
           employeeNumber: input.employeeNumber,
           firstName: input.firstName,
@@ -304,6 +355,7 @@ export class EmployeesService {
     }
 
     if (Object.keys(data).length === 0) {
+      if (!existing.userId) return sanitizeEmployee(existing, user);
       await this.authProfiles.updateUserProfile(
         existing.userId,
         {
@@ -349,7 +401,7 @@ export class EmployeesService {
     if ('firstName' in data) profile.firstName = employee.firstName;
     if ('lastName' in data) profile.lastName = employee.lastName;
     if ('avatarFileId' in data) profile.avatarFileId = employee.avatarFileId;
-    if (Object.keys(profile).length > 0) {
+    if (Object.keys(profile).length > 0 && employee.userId) {
       await this.authProfiles.updateUserProfile(employee.userId, profile, ctx.correlationId);
     }
 

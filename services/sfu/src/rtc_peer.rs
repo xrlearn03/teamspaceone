@@ -694,6 +694,17 @@ where
                                         s.rooms.get(&room_id).and_then(|r| r.recording.clone()).map(
                                             |rec| {
                                                 let slot = recording::new_track_writer_slot();
+                                                let speaker = s
+                                                    .rooms
+                                                    .get(&room_id)
+                                                    .and_then(|r| r.participants.get(&peer_id))
+                                                    .map(|p| {
+                                                        if p.display_name.is_empty() {
+                                                            p.user_id.clone().unwrap_or_else(|| peer_id.clone())
+                                                        } else {
+                                                            p.display_name.clone()
+                                                        }
+                                                    });
                                                 recording::attach_rtc_track_writer(
                                                     &rec,
                                                     &slot,
@@ -701,6 +712,7 @@ where
                                                     &peer_id,
                                                     &init.track_id,
                                                     codec.as_ref(),
+                                                    speaker,
                                                 );
                                                 slot
                                             },
@@ -901,7 +913,7 @@ where
                         if let Some(ref writer) = writer {
                             let w_pkt = to_webrtc_packet(&rtp_packet);
                             let mut guard = writer.lock().await;
-                            if let Some((ref mut w, _)) = guard.as_mut() {
+                            if let Some((ref mut w, ..)) = guard.as_mut() {
                                 w.write_rtp(&w_pkt);
                             }
                         }
@@ -1668,6 +1680,34 @@ pub async fn process_rtc_signal(
             let room_id = crate::leave_room(peer_id, state).await;
             if let Some(room_id) = room_id {
                 cleanup_rtc_peer(peer_id, &room_id, state).await;
+            }
+        }
+
+        Signal::RoomEvent { data } => {
+            // Ephemeral room-scoped event (raise hand, reaction, …). Broadcast
+            // to every other peer in the room; the payload is opaque.
+            let s = state.read().await;
+            let Some(sender) = s.peers.get(peer_id) else {
+                return Err(anyhow!("peer not found: {}", peer_id));
+            };
+            let Some(room_id) = sender.room_id.clone() else {
+                return Err(anyhow!("peer not in a room"));
+            };
+            let Some(room) = s.rooms.get(&room_id) else {
+                return Err(anyhow!("room not found: {}", room_id));
+            };
+            for participant_id in room.participants.keys() {
+                if participant_id == peer_id {
+                    continue;
+                }
+                if let Some(peer) = s.peers.get(participant_id) {
+                    let _ = peer.tx.send(Event::RoomEvent {
+                        from: peer_id.to_string(),
+                        display_name: sender.display_name.clone(),
+                        user_id: sender.user_id.clone(),
+                        data: data.clone(),
+                    });
+                }
             }
         }
     }

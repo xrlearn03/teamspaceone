@@ -389,6 +389,7 @@ export class NotificationService {
       case Subjects.AI_SUMMARY_CONFIRMED: {
         const participantIds = Array.isArray(payload.participantIds) ? (payload.participantIds as string[]) : [];
         if (!participantIds.length) return [];
+        const summary = typeof payload.summary === 'string' ? payload.summary.trim() : '';
         return participantIds
           .filter((userId) => userId !== actorId)
           .map((userId) => ({
@@ -400,8 +401,8 @@ export class NotificationService {
             eventType,
             resourceType: 'ai-summary',
             resourceId: payload.resourceId as string,
-            title: 'Meeting minutes ready',
-            body: `The AI summary for meeting "${payload.title || payload.resourceId}" is ready.`,
+            title: `Meeting minutes: ${payload.title || payload.resourceId}`,
+            body: summary || `The AI summary for meeting "${payload.title || payload.resourceId}" is ready.`,
             link: this.meetingLink(organisationId, payload.resourceId as string),
           }));
       }

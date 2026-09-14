@@ -139,6 +139,15 @@ pub fn run() {
                 })
                 .build(),
         );
+    }
+
+    // The updater (and the process relaunch helper it needs) only make sense on
+    // signed, bundled release builds. In `tauri dev` the running binary is not a
+    // real app bundle, so downloading an updater artifact would fail or replace
+    // the wrong binary. Skip registering these plugins in dev to avoid the
+    // "update available" prompt and the resulting broken install attempts.
+    #[cfg(all(desktop, not(dev)))]
+    {
         builder = builder.plugin(tauri_plugin_process::init());
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }

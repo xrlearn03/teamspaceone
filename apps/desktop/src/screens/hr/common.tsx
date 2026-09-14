@@ -3,7 +3,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Home,
   Search,
 } from "lucide-react";
 import {
@@ -16,27 +15,14 @@ import { cn } from "../../lib/utils";
 
 export function PageHeader({
   title,
-  crumbs,
   children,
 }: {
   title: string;
-  crumbs: string[];
   children?: React.ReactNode;
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h1 className="text-2xl font-bold text-text">{title}</h1>
-        <div className="mt-1 flex items-center gap-1.5 text-xs text-text-secondary">
-          <Home className="h-3.5 w-3.5" />
-          {crumbs.map((c, i) => (
-            <span key={c} className="flex items-center gap-1.5">
-              <span>/</span>
-              <span className={i === crumbs.length - 1 ? "text-text" : undefined}>{c}</span>
-            </span>
-          ))}
-        </div>
-      </div>
+      <h1 className="text-2xl font-bold text-text">{title}</h1>
       {children ? <div className="flex flex-wrap items-center gap-2">{children}</div> : null}
     </div>
   );

@@ -38,8 +38,11 @@ export function useNativeMicrophone(): UseNativeMicrophoneReturn {
 
   const start = useCallback(
     async (index: number) => {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setError("Microphone access is not supported in this browser.");
+      if (
+        typeof navigator.mediaDevices?.getUserMedia !== "function" ||
+        window.isSecureContext === false
+      ) {
+        setError("Microphone access needs a secure (HTTPS) context.");
         return;
       }
       stop();
@@ -96,7 +99,7 @@ export function useNativeMicrophone(): UseNativeMicrophoneReturn {
   }, []);
 
   useEffect(() => {
-    if (!navigator.mediaDevices?.enumerateDevices) return;
+    if (!navigator.mediaDevices?.enumerateDevices || window.isSecureContext === false) return;
     let mounted = true;
     navigator.mediaDevices
       .enumerateDevices()

@@ -275,7 +275,7 @@ function MeetingAction({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="group flex min-w-0 flex-1 items-center gap-3 rounded-xl border bg-surface p-4 text-left transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md disabled:pointer-events-none disabled:opacity-50"
+      className="group flex w-full min-w-0 items-center gap-3 rounded-xl border bg-surface p-4 text-left transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md disabled:pointer-events-none disabled:opacity-50"
     >
       <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-lg", iconClass)}>
         {icon}
@@ -341,7 +341,7 @@ function MeetingRow({
         )}
       />
 
-      <div className="w-32 shrink-0 pl-2">
+      <div className="w-24 shrink-0 pl-2 sm:w-32">
         <p className="text-sm font-medium text-text">{formatTime(when)}</p>
         <p className="mt-0.5 text-xs text-text-muted">
           {end ? `– ${formatTime(end)}` : meeting.type === "voice_room" ? "Voice room" : "Open ended"}
@@ -393,7 +393,7 @@ function MeetingRow({
         <AvatarStack userIds={attendees} extra={guests} usersById={usersById} />
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
         {!ended && (
           <Button size="sm" className="px-4" onClick={() => onOpen(meeting)}>
             {live ? "Join" : isCreator ? "Start" : "Join"}
@@ -823,7 +823,7 @@ function ScheduleMeetingDialog({
         <DialogHeader>
           <DialogTitle>Schedule meeting</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="space-y-4 p-4 pt-2">
           <div>
             <label className="mb-1.5 block text-xs font-medium text-text-secondary">Title</label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Product standup" />
@@ -836,10 +836,15 @@ function ScheduleMeetingDialog({
               placeholder="What's this meeting about?"
             />
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="col-span-1">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
               <label className="mb-1.5 block text-xs font-medium text-text-secondary">Date & time</label>
-              <Input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
+              <Input
+                type="datetime-local"
+                value={when}
+                onChange={(e) => setWhen(e.target.value)}
+                className="min-w-0"
+              />
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-text-secondary">Duration</label>
@@ -972,7 +977,7 @@ function JoinWithCodeDialog({ open, onClose }: { open: boolean; onClose: () => v
         <DialogHeader>
           <DialogTitle>Join a meeting</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="space-y-4 p-4 pt-2">
           <p className="text-xs text-text-muted">
             Paste an invite link, enter a join code (e.g. <span className="font-mono">K7M2P4NQ</span>), or a
             meeting ID.
@@ -1030,16 +1035,18 @@ function SummaryDialog({
             {meeting?.title ?? "Meeting"} — summary
           </DialogTitle>
         </DialogHeader>
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 py-8 text-sm text-text-muted">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Generating summary…
-          </div>
-        ) : (
-          <div className="max-h-96 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-text-secondary">
-            {text || "No summary available."}
-          </div>
-        )}
+        <div className="p-4 pt-2">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-text-muted">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Generating summary…
+            </div>
+          ) : (
+            <div className="max-h-96 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-text-secondary">
+              {text || "No summary available."}
+            </div>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -1327,8 +1334,8 @@ export function MeetingsScreen() {
   return (
     <div className="flex h-full flex-col bg-background text-text">
       {/* Header */}
-      <header className="shrink-0 px-6 pb-3 pt-5">
-        <div className="flex items-start justify-between">
+      <header className="shrink-0 px-4 pb-3 pt-5 sm:px-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Meetings</h1>
             <p className="mt-1 text-sm text-text-muted">Connect. Collaborate. Move forward.</p>
@@ -1342,7 +1349,7 @@ export function MeetingsScreen() {
         </div>
 
         {/* Quick actions */}
-        <div className="mt-5 flex gap-3">
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
           <MeetingAction
             icon={<Video className="h-5 w-5" />}
             title="Start Instant Meeting"
@@ -1386,17 +1393,17 @@ export function MeetingsScreen() {
       </header>
 
       {/* Body */}
-      <div className="flex min-h-0 flex-1 gap-4 px-6 pb-4">
+      <div className="flex min-h-0 flex-1 gap-4 px-4 pb-4 sm:px-6">
         {/* Main column */}
         <main className="flex min-w-0 flex-1 flex-col">
-          <div className="flex h-12 shrink-0 items-center gap-1 border-b">
+          <div className="flex h-12 shrink-0 items-center gap-1 overflow-x-auto border-b">
             {TABS.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
                 className={cn(
-                  "relative h-full px-4 text-xs font-medium transition",
+                  "relative h-full shrink-0 whitespace-nowrap px-4 text-xs font-medium transition",
                   tab === t.id ? "text-text" : "text-text-muted hover:text-text-secondary",
                 )}
               >
@@ -1479,7 +1486,7 @@ export function MeetingsScreen() {
         </main>
 
         {/* Right sidebar */}
-        <aside className="hidden w-[380px] shrink-0 space-y-3 overflow-y-auto pb-2 xl:block">
+        <aside className="hidden w-[320px] shrink-0 space-y-3 overflow-y-auto pb-2 xl:block 2xl:w-[380px]">
           <CalendarWidget eventDays={eventDays} selected={selectedDay} onSelect={setSelectedDay} />
 
           <section className="rounded-xl border bg-surface p-4">

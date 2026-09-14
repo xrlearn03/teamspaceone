@@ -27,7 +27,7 @@ import {
 import { StructureService, type DepartmentInput, type DesignationInput, type HolidayInput } from './structure.service.js';
 
 export class CreateEmployeeDto {
-  userId!: string;
+  userId?: string;
   membershipId?: string;
   employeeNumber?: string;
   firstName!: string;
@@ -138,6 +138,15 @@ export class EmployeesController {
     @CurrentUser() user: AuthorizableUser,
   ) {
     return this.employees.getMe(toCtx(org), user);
+  }
+
+  @Get('birthdays')
+  @RequirePermissions('hrms.employee.view')
+  birthdays(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @Query('days') days?: string,
+  ) {
+    return this.employees.listBirthdays(toCtx(org), days ? Number(days) : undefined);
   }
 
   @Get(':id')

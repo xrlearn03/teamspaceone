@@ -103,6 +103,16 @@ async fn start_recording(
     // for a keyframe so video files start cleanly.
     let tracks = room.tracks.clone();
     for rt in tracks.iter() {
+        let speaker = room
+            .participants
+            .get(&rt.publisher)
+            .map(|p| {
+                if p.display_name.is_empty() {
+                    p.user_id.clone().unwrap_or_else(|| rt.publisher.clone())
+                } else {
+                    p.display_name.clone()
+                }
+            });
         recording::attach_track_writer(
             &rec,
             &rt.recorder,
@@ -110,6 +120,7 @@ async fn start_recording(
             &rt.publisher,
             &rt.track_id,
             &rt.remote,
+            speaker,
         );
         if let Some(pc) = room
             .participants
@@ -140,6 +151,17 @@ async fn start_recording(
         for (track_id, rt) in rtc_tracks {
             if rt.writer.is_none() {
                 let slot = recording::new_track_writer_slot();
+                let speaker = s
+                    .rooms
+                    .get(&room_id)
+                    .and_then(|r| r.participants.get(&rt.publisher))
+                    .map(|p| {
+                        if p.display_name.is_empty() {
+                            p.user_id.clone().unwrap_or_else(|| rt.publisher.clone())
+                        } else {
+                            p.display_name.clone()
+                        }
+                    });
                 recording::attach_rtc_track_writer(
                     &rec,
                     &slot,
@@ -147,6 +169,7 @@ async fn start_recording(
                     &rt.publisher,
                     &track_id,
                     rt.codec.as_ref(),
+                    speaker,
                 );
                 s.rtc_tracks.get_mut(&track_id).unwrap().writer = Some(slot);
             }
@@ -204,15 +227,19 @@ pub async fn finalize_recording(state: SharedState, room_id: &str) -> Vec<serde_
         (rec, slots)
     };
 
-    let mut paths = recording::collect_recording_files(&rec, slots).await;
-    if paths.is_empty() {
+    let mut files = recording::collect_recording_files(&rec, slots).await;
+    if files.is_empty() {
         return Vec::new();
     }
 
     let composited = rec.dir.join("composited.mp4");
-    match composit::compose_room(room_id, &paths, &composited).await {
+    let media_paths: Vec<std::path::PathBuf> = files.iter().map(|f| f.path.clone()).collect();
+    match composit::compose_room(room_id, &media_paths, &composited).await {
         Ok(_) => {
-            paths.push(composited);
+            files.push(recording::FinishedFile {
+                path: composited,
+                speaker: None,
+            });
         }
         Err(e) => {
             warn!("Compositing failed for room {}: {}", room_id, e);
@@ -221,11 +248,11 @@ pub async fn finalize_recording(state: SharedState, room_id: &str) -> Vec<serde_
 
     // Always produce records for the files that were finalized on disk; when
     // upload is disabled (or fails) these are the only records we can return.
-    let local_files = recording::local_file_records(&paths);
+    let local_files = recording::local_file_records(&files);
 
     match recording::require_recording_env() {
         Ok((url, key)) => {
-            let uploaded = recording::upload_files(&url, &key, &rec, paths).await;
+            let uploaded = recording::upload_files(&url, &key, &rec, files).await;
             if uploaded.is_empty() {
                 local_files
             } else {

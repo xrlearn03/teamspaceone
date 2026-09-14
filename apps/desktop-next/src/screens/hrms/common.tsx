@@ -29,12 +29,13 @@ export function StatusBadge({ status }: { status?: string | null }) {
   const variant =
     s === "active" || s === "approved" || s === "present" || s === "paid" || s === "completed"
       ? "success"
-      : s === "pending" || s === "requested" || s === "draft" || s === "processing"
+      : s === "pending" || s === "requested" || s === "draft" || s === "processing" || s === "manager_approved"
         ? "warning"
         : s === "rejected" || s === "cancelled" || s === "inactive" || s === "absent" || s === "terminated"
           ? "error"
           : "secondary";
-  return <Badge variant={variant}>{status ?? "unknown"}</Badge>;
+  const label = s === "manager_approved" ? "awaiting hr" : (status ?? "unknown");
+  return <Badge variant={variant}>{label}</Badge>;
 }
 
 export function SectionSkeleton({ rows = 4 }: { rows?: number }) {

@@ -12,7 +12,6 @@ import {
   UserMinus,
   UserPlus,
   Users,
-  Wallet,
 } from "lucide-react";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useUIStore } from "../../stores/ui";
@@ -24,7 +23,6 @@ import { DepartmentsSection } from "./departments";
 import { OrgChartSection } from "./org-chart";
 import { AttendanceSection } from "./attendance";
 import { LeaveSection } from "./leave";
-import { PayrollSection } from "./payroll";
 import { DocumentsSection } from "./documents";
 import { OnboardingSection } from "./onboarding";
 import { OffboardingSection } from "./offboarding";
@@ -38,7 +36,6 @@ type TabId =
   | "org-chart"
   | "attendance"
   | "leave"
-  | "payroll"
   | "documents"
   | "onboarding"
   | "offboarding"
@@ -59,7 +56,6 @@ const TABS: Tab[] = [
   { id: "org-chart", label: "Org chart", icon: TrendingUp, permission: "hrms.org-chart.view" },
   { id: "attendance", label: "Attendance", icon: CalendarCheck, permission: "hrms.attendance.view" },
   { id: "leave", label: "Leave", icon: CalendarClock, permission: "hrms.leave.view" },
-  { id: "payroll", label: "Payroll", icon: Wallet, permission: "hrms.payroll.view" },
   { id: "documents", label: "Documents", icon: FileText, permission: "hrms.document.view" },
   { id: "onboarding", label: "Onboarding", icon: UserPlus, permission: "hrms.onboarding.view" },
   { id: "offboarding", label: "Offboarding", icon: UserMinus, permission: "hrms.offboarding.view" },
@@ -141,7 +137,6 @@ export function HrmsScreen() {
         {activeTab === "org-chart" && <OrgChartSection />}
         {activeTab === "attendance" && <AttendanceSection />}
         {activeTab === "leave" && <LeaveSection />}
-        {activeTab === "payroll" && <PayrollSection />}
         {activeTab === "documents" && <DocumentsSection />}
         {activeTab === "onboarding" && <OnboardingSection />}
         {activeTab === "offboarding" && <OffboardingSection />}
