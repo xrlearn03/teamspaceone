@@ -19,6 +19,8 @@ interface MediaOptions {
   audioEnabled: boolean;
   videoEnabled: boolean;
   audioInputId?: string;
+  /** Native (cpal) device name — matched against enumerateDevices labels. */
+  audioInputLabel?: string;
   videoInputId?: string;
   audioOutputId?: string;
   stream?: MediaStream;
@@ -441,23 +443,60 @@ export function useSfu() {
     }
   }, [screenShareEnabled, startScreenShare, stopScreenShare]);
 
-  const toggleAudio = useCallback(() => {
+  const toggleAudio = useCallback(async () => {
     const track = localStreamRef.current?.getAudioTracks()[0];
     if (!track) {
-      if (!canUseMediaDevices) {
-        // getUserMedia is unavailable/insecure here — the mic is captured
-        // natively before joining, so there is nothing to attach.
-        toast.error(
-          isTauri
-            ? "Microphone is off. Enable it before joining or check mic permissions."
-            : "Microphone capture needs a secure (HTTPS) context or permission.",
-        );
+      const pc = pcRef.current;
+      const canGetMic =
+        typeof navigator !== "undefined" &&
+        typeof navigator.mediaDevices?.getUserMedia === "function" &&
+        window.isSecureContext !== false;
+      if (pc && canGetMic) {
+        try {
+          // Joined muted — acquire the mic now. The getUserMedia track carries
+          // WebKit's echo cancellation, unlike the raw native capture.
+          const mic = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+            video: false,
+          });
+          const audioTrack = mic.getAudioTracks()[0];
+          if (audioTrack) {
+            const sender = pc
+              .getTransceivers()
+              .find((tr) => tr.receiver.track.kind === "audio")?.sender;
+            if (sender) {
+              await sender.replaceTrack(audioTrack);
+            } else {
+              pc.addTrack(audioTrack, localStreamRef.current ?? new MediaStream());
+            }
+            const merged = new MediaStream([
+              audioTrack,
+              ...(localStreamRef.current?.getVideoTracks() ?? []),
+            ]);
+            cameraStreamRef.current = merged;
+            localStreamRef.current = merged;
+            setLocalStream(merged);
+            setLocalAudioEnabled(true);
+            return;
+          }
+        } catch {
+          // Fall through to the toast below.
+        }
       }
+      toast.error(
+        isTauri
+          ? "Microphone is off. Enable it before joining or check mic permissions."
+          : "Microphone capture needs a secure (HTTPS) context or permission.",
+      );
       return;
     }
     track.enabled = !track.enabled;
     setLocalAudioEnabled(track.enabled);
-  }, [isTauri, canUseMediaDevices]);
+  }, [isTauri]);
 
   const toggleVideo = useCallback(async () => {
     const pc = pcRef.current;
@@ -559,6 +598,52 @@ export function useSfu() {
       lastJoinArgsRef.current = { roomId, displayName, mediaOptions, userId, sfuToken: sfuTokenOverride };
 
       let stream: MediaStream | null = mediaOptions.stream ?? null;
+
+      // In the Tauri webview on a secure origin (http://localhost release or
+      // the Vite dev server), prefer the browser microphone: wry grants
+      // capture permission automatically and WebKit's getUserMedia applies
+      // echo cancellation/noise suppression. The native cpal capture has no
+      // AEC, so speaker output bleeds back into the mic and remote
+      // participants hear themselves repeated. If getUserMedia fails here the
+      // native track is kept as the fallback.
+      if (
+        isTauri &&
+        window.isSecureContext &&
+        typeof navigator.mediaDevices?.getUserMedia === "function" &&
+        ((stream?.getAudioTracks().length ?? 0) > 0 || mediaOptions.audioEnabled)
+      ) {
+        try {
+          let audioInputId: string | undefined = mediaOptions.audioInputId;
+          if (!audioInputId && mediaOptions.audioInputLabel) {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const match = devices.find(
+              (d) => d.kind === "audioinput" && d.label === mediaOptions.audioInputLabel,
+            );
+            audioInputId = match?.deviceId;
+          }
+          const mic = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              deviceId: audioInputId ? { exact: audioInputId } : undefined,
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+            video: false,
+          });
+          const audioTrack = mic.getAudioTracks()[0];
+          if (audioTrack) {
+            stream?.getAudioTracks().forEach((t) => t.stop());
+            stream = new MediaStream([audioTrack, ...(stream?.getVideoTracks() ?? [])]);
+            // The browser mic replaced the native one — stop the cpal capture
+            // so it doesn't hold the device and burn CPU polling chunks.
+            void invoke("stop-microphone").catch(() => {});
+          }
+        } catch {
+          // Browser capture still unavailable in this webview — keep the
+          // native track (echo risk, but the call works).
+        }
+      }
+
       if ((!stream || stream.getTracks().length === 0) && canUseMediaDevices) {
         // Secure-context browsers only — the Tauri webview (WKWebView) has no
         // usable getUserMedia ("The operation is insecure"); the desktop app

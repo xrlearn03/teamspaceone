@@ -153,8 +153,9 @@ Semantic tokens live in `apps/desktop/src/styles/index.css`:
 
 ## Desktop (Tauri) auto-updater
 
-- The in-app updater is implemented in `apps/desktop/src/components/update/update-checker.tsx` and mounted from `App.tsx`.
+- The in-app updater is implemented in `apps/desktop/src/components/update/update-checker.tsx` and mounted from `App.tsx`. Settings → About also has a "Check for updates" button (`requestUpdateCheck()`) that runs an interactive check and surfaces errors in the dialog — background-check failures are only `console.warn`ed.
 - It calls `check()` from `@tauri-apps/plugin-updater` on launch and every 30 minutes, prompts the user to install, then asks to `relaunch()` via `@tauri-apps/plugin-process`.
+- Release builds serve the frontend over `http://localhost:<random port>` via `tauri-plugin-localhost` (`lib.rs`), which Tauri's ACL treats as a REMOTE origin — any capability whose commands the frontend invokes must list `http://localhost:*/*` under `remote.urls` or the IPC call is denied. `default.json` does this; `desktop.json` (updater/process/global-shortcut) needs it too — without it `check()` is denied and the updater silently does nothing.
 - `tauri.conf.json > bundle.createUpdaterArtifacts` must be `true` so `tauri build` produces `.sig` files.
 - `tauri:build` runs `scripts/bump-version.mjs` first to auto-increment the desktop version (patch by default). Use `BUMP_SKIP=1` to disable the auto-bump (e.g. local test builds). Manual bumps: `pnpm --filter @teamspace-one/desktop version:bump [patch|minor|major|x.y.z]`.
 - The updater endpoint is configured to the marketing site so the same `public/downloads/` folder serves both the download buttons and the updater: `https://teamspaceone.in/downloads/update.json`.

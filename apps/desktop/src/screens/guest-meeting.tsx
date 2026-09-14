@@ -160,6 +160,7 @@ export function GuestMeetingScreen({
         {
           audioEnabled: mic.enabled,
           videoEnabled: camera.enabled && !isVoiceRoom,
+          audioInputLabel: mic.selectedIndex != null ? mic.devices[mic.selectedIndex]?.name : undefined,
           stream: tracks.length > 0 ? new MediaStream(tracks) : undefined,
         },
         result.userId,

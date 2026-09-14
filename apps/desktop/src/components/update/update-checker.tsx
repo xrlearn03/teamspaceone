@@ -13,6 +13,22 @@ import { cn } from "../../lib/utils";
  */
 const RECHECK_INTERVAL_MS = 30 * 60 * 1000;
 
+const MANUAL_CHECK_EVENT = "teamspace-one:check-for-updates";
+
+/**
+ * Triggers an interactive update check from anywhere in the app (e.g. the
+ * Settings → About "Check for updates" button). Unlike the background poll,
+ * failures surface in the update dialog instead of being logged and dropped.
+ */
+export function requestUpdateCheck() {
+  window.dispatchEvent(new Event(MANUAL_CHECK_EVENT));
+}
+
+/** True only where the updater plugin is registered and a check can succeed. */
+export function canUseDesktopUpdater(): boolean {
+  return isTauriReleaseBuild();
+}
+
 type Phase =
   | "idle"
   | "checking"
@@ -97,6 +113,12 @@ export function UpdateChecker() {
     checkForUpdate();
     const timer = setInterval(() => checkForUpdate(), RECHECK_INTERVAL_MS);
     return () => clearInterval(timer);
+  }, [checkForUpdate]);
+
+  useEffect(() => {
+    const onManualCheck = () => checkForUpdate(true);
+    window.addEventListener(MANUAL_CHECK_EVENT, onManualCheck);
+    return () => window.removeEventListener(MANUAL_CHECK_EVENT, onManualCheck);
   }, [checkForUpdate]);
 
   async function startDownload() {

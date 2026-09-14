@@ -52,6 +52,7 @@ import { UserAvatar } from "../components/user-avatar";
 import { Badge } from "@teamspace-one/ui/badge";
 import { cn, getUserDisplayName } from "../lib/utils";
 import { copyToClipboard } from "../lib/desktop";
+import { canUseDesktopUpdater, requestUpdateCheck } from "../components/update/update-checker";
 
 const sections = [
   { id: "account", label: "My account", icon: User },
@@ -357,6 +358,13 @@ function AboutSettings() {
           secure desktop workspace — so you can chat, collaborate, and stay organised without
           switching between apps.
         </p>
+        {canUseDesktopUpdater() ? (
+          <div className="pt-1">
+            <Button variant="secondary" size="sm" onClick={() => requestUpdateCheck()}>
+              Check for updates
+            </Button>
+          </div>
+        ) : null}
       </div>
     </SettingsSection>
   );

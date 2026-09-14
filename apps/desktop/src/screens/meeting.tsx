@@ -24,6 +24,8 @@ export interface MediaJoinOptions {
   audioEnabled: boolean;
   videoEnabled: boolean;
   audioInputId?: string;
+  /** Native device name — matched against enumerateDevices labels for AEC. */
+  audioInputLabel?: string;
   videoInputId?: string;
   audioOutputId?: string;
   stream?: MediaStream;

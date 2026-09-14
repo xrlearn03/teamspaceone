@@ -37,6 +37,7 @@ interface MeetingLobbyProps {
     audioEnabled: boolean;
     videoEnabled: boolean;
     audioInputId?: string;
+    audioInputLabel?: string;
     videoInputId?: string;
     audioOutputId?: string;
     stream?: MediaStream;
@@ -294,6 +295,8 @@ export function MeetingLobby({
       audioEnabled: nativeAudioEnabled,
       videoEnabled: nativeVideoEnabled,
       audioOutputId,
+      // The browser mic used for AEC needs a deviceId; match it by label.
+      audioInputLabel: nativeAudioIndex != null ? nativeAudioDevices[nativeAudioIndex]?.name : undefined,
       stream: tracks.length > 0 ? new MediaStream(tracks) : undefined,
     });
   }

@@ -10,6 +10,14 @@
     "macOS",
     "windows"
   ],
+  "remote": {
+    "urls": [
+      "http://localhost:*/*",
+      "ws://localhost:*/*",
+      "tauri://localhost/*",
+      "http://tauri.localhost/*"
+    ]
+  },
   "permissions": [
     "global-shortcut:allow-register",
     "global-shortcut:allow-is-registered",

@@ -43,6 +43,20 @@ function trackLive(stream: MediaStream | null | undefined, kind: "audio" | "vide
   return tracks?.some((t) => t.enabled && !t.muted && t.readyState !== "ended") ?? false;
 }
 
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(mql.matches);
+    onChange();
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
+
 function ConferenceTile({
   name,
   subtitle,
@@ -218,6 +232,7 @@ export function GuestJoinPage({ token }: { token: string }) {
   const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
   const [reactions, setReactions] = useState<{ id: string; emoji: string; name: string }[]>([]);
   const processedReactions = useRef<Set<string>>(new Set());
+  const isNarrowPortrait = useMediaQuery("(max-width: 640px)");
 
   useEffect(() => {
     let cancelled = false;
@@ -447,8 +462,19 @@ export function GuestJoinPage({ token }: { token: string }) {
       })),
     ];
 
-    const cols =
-      tiles.length <= 1 ? 1 : tiles.length <= 4 ? 2 : tiles.length <= 9 ? 3 : 4;
+    // On portrait phones stack two participants vertically; for larger groups
+    // use a 2-column grid of smaller tiles instead of squeezing more columns in.
+    const cols = isNarrowPortrait
+      ? tiles.length <= 2
+        ? 1
+        : 2
+      : tiles.length <= 1
+        ? 1
+        : tiles.length <= 4
+          ? 2
+          : tiles.length <= 9
+            ? 3
+            : 4;
     const featured = screenStreams.length > 0 ? tiles[0] : null;
     const gridTiles = featured ? tiles.slice(1) : tiles;
 
@@ -570,7 +596,7 @@ export function GuestJoinPage({ token }: { token: string }) {
 
         {/* Controls — same icon style as the in-app conference */}
         <footer className="relative flex h-[110px] shrink-0 items-start justify-center pt-1">
-          <div className="flex items-start gap-5 sm:gap-8">
+          <div className="flex max-w-full items-start gap-4 overflow-x-auto px-4 sm:gap-8">
             <ControlButton
               icon={sfu.audioEnabled ? <Mic size={22} /> : <MicOff size={22} />}
               label={sfu.audioEnabled ? "Mute" : "Unmute"}
