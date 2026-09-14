@@ -43,10 +43,8 @@ scap = "0.0.8"
 tokio-tungstenite = "0.21"
 futures = "0.3"
 tauri-plugin-global-shortcut = "2"
-tauri-plugin-localhost = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
-portpicker = "0.1"
 tauri-plugin-single-instance = "2"
 
 [target.'cfg(windows)'.dependencies]
