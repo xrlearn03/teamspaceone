@@ -19,6 +19,7 @@ export const VIEW_PERMISSIONS: Partial<Record<View, string[]>> = {
   hrms: ["hrms.access"],
   payroll: ["hrms.payroll.view"],
   interview: ["interview.access"],
+  "ai-interview": ["interview.interview.conduct"],
   admin: ["admin.user.manage", "admin.role.manage", "admin.organization.settings"],
   assets: ["admin.asset.view", "admin.user.manage", "admin.role.manage", "admin.organization.settings"],
   tickets: ["collaboration.ticket.view"],

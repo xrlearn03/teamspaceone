@@ -78,3 +78,20 @@ export function useShellVariant(): ShellVariant {
   if (data?.roleCategory === "administrative") return "admin";
   return "default";
 }
+
+/**
+ * Recruiters, hiring managers and interviewers land on the recruiter home
+ * dashboard. Detected via role name, or interview-module permissions held by
+ * an internal member — candidates/guests keep the applicant-facing views even
+ * though their roles also carry interview.* permissions.
+ */
+export function useIsRecruitingRole() {
+  const { data } = useMyContext();
+  const roleName = (data?.roleName ?? "").toLowerCase().replace(/[\s_-]+/g, "");
+  if (/recruiter|hiringmanager|interviewer/.test(roleName)) return true;
+  const category = data?.roleCategory ?? "";
+  if (category === "candidate" || category === "guest" || category === "external") {
+    return false;
+  }
+  return (data?.permissions ?? []).some((p) => p.startsWith("interview."));
+}

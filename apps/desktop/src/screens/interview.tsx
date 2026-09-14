@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BarChart3,
   Briefcase,
@@ -10,6 +10,7 @@ import {
   Users,
 } from "lucide-react";
 import { usePermissions } from "../hooks/usePermissions";
+import { useUIStore } from "../stores/ui";
 import { cn } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@teamspace-one/ui/card";
 import { Badge } from "@teamspace-one/ui/badge";
@@ -377,7 +378,15 @@ function SectionSkeletonRows() {
 
 export function InterviewScreen() {
   const { can, hasPermissionPrefix } = usePermissions();
+  const interviewTab = useUIStore((s) => s.interviewTab);
   const [tab, setTab] = useState<TabId>("overview");
+
+  // Deep-links (e.g. recruiter dashboard tabs) select the initial tab.
+  useEffect(() => {
+    if (interviewTab && TABS.some((t) => t.id === interviewTab)) {
+      setTab(interviewTab as TabId);
+    }
+  }, [interviewTab]);
   const { user } = usePermissions();
   const isCandidate = user?.dataScopes.some(
     (s) => (s.module === "interview" || s.module === "*") && s.scope === "own",

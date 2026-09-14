@@ -45,7 +45,7 @@ export function MobileShell() {
     };
   }, [setConnection]);
 
-  const isSubView = Boolean(activeChannelId || activeProjectId || activeMeetingId || activeView === "voice");
+  const isSubView = Boolean(activeChannelId || activeProjectId || activeMeetingId || activeView === "voice" || activeView === "ai-interview");
 
   return (
     <TooltipProvider delayDuration={300}>

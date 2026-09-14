@@ -43,6 +43,7 @@ export type View =
   | "hrms"
   | "payroll"
   | "interview"
+  | "ai-interview"
   | "admin"
   | "assets"
   | "tickets"
@@ -81,6 +82,8 @@ interface UIState {
   activeEmployeeId: string | null;
   hrmsTab: string | null;
   helpTab: string | null;
+  interviewTab: string | null;
+  activeInterviewSessionId: string | null;
   sidebarCollapsed: boolean;
   sidebarWidth: number;
   rightPanelOpen: boolean;
@@ -97,7 +100,7 @@ interface UIState {
   setTheme: (theme: "light" | "dark" | "system") => void;
   setActiveView: (
     view: View,
-    params?: { channelId?: string; projectId?: string; meetingId?: string; employeeId?: string; hrmsTab?: string; helpTab?: string },
+    params?: { channelId?: string; projectId?: string; meetingId?: string; employeeId?: string; hrmsTab?: string; helpTab?: string; interviewTab?: string; interviewSessionId?: string },
   ) => void;
   setHrmsTab: (tab: string | null) => void;
   setHelpTab: (tab: string | null) => void;
@@ -124,6 +127,8 @@ export const useUIStore = create<UIState>((set) => ({
   activeEmployeeId: null,
   hrmsTab: null,
   helpTab: null,
+  interviewTab: null,
+  activeInterviewSessionId: null,
   sidebarCollapsed: false,
   sidebarWidth: getSidebarWidthDefault(),
   rightPanelOpen: false,
@@ -149,6 +154,8 @@ export const useUIStore = create<UIState>((set) => ({
       activeEmployeeId: null,
       hrmsTab: null,
       helpTab: null,
+      interviewTab: null,
+      activeInterviewSessionId: null,
       rightPanelOpen: false,
       searchOpen: false,
       pendingCount: 0,
@@ -171,6 +178,8 @@ export const useUIStore = create<UIState>((set) => ({
       activeEmployeeId: params?.employeeId ?? null,
       hrmsTab: params?.hrmsTab ?? (view === "hrms" ? "overview" : null),
       helpTab: params?.helpTab ?? (view === "help" ? "tutorials" : null),
+      interviewTab: params?.interviewTab ?? null,
+      activeInterviewSessionId: params?.interviewSessionId ?? null,
     }),
   setHrmsTab: (tab) => set({ hrmsTab: tab }),
   setHelpTab: (tab) => set({ helpTab: tab }),

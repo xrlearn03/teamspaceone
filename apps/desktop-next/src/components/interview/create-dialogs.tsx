@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { cloneElement, useState } from "react";
 import { Briefcase, Plus, UserPlus, CalendarClock } from "lucide-react";
 import { Button } from "@teamspace-one/ui/button";
 import {
@@ -47,7 +47,14 @@ function TextArea({
   );
 }
 
-export function CreateJobDialog({ onCreated }: { onCreated?: () => void }) {
+export function CreateJobDialog({
+  onCreated,
+  trigger,
+}: {
+  onCreated?: () => void;
+  /** Custom trigger element — receives an onClick that opens the dialog. */
+  trigger?: React.ReactElement<{ onClick?: () => void }>;
+}) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [departmentName, setDepartmentName] = useState("");
@@ -80,10 +87,14 @@ export function CreateJobDialog({ onCreated }: { onCreated?: () => void }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)} className="gap-1">
-        <Plus className="h-3.5 w-3.5" />
-        New job
-      </Button>
+      {trigger ? (
+        cloneElement(trigger, { onClick: () => setOpen(true) })
+      ) : (
+        <Button variant="secondary" size="sm" onClick={() => setOpen(true)} className="gap-1">
+          <Plus className="h-3.5 w-3.5" />
+          New job
+        </Button>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -118,9 +129,12 @@ export function CreateJobDialog({ onCreated }: { onCreated?: () => void }) {
 export function CreateCandidateDialog({
   jobs,
   onCreated,
+  trigger,
 }: {
   jobs: JobOpening[];
   onCreated?: () => void;
+  /** Custom trigger element — receives an onClick that opens the dialog. */
+  trigger?: React.ReactElement<{ onClick?: () => void }>;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -160,10 +174,14 @@ export function CreateCandidateDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)} className="gap-1">
-        <UserPlus className="h-3.5 w-3.5" />
-        Add candidate
-      </Button>
+      {trigger ? (
+        cloneElement(trigger, { onClick: () => setOpen(true) })
+      ) : (
+        <Button variant="secondary" size="sm" onClick={() => setOpen(true)} className="gap-1">
+          <UserPlus className="h-3.5 w-3.5" />
+          Add candidate
+        </Button>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

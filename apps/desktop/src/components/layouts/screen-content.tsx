@@ -21,6 +21,7 @@ import { AccessDeniedScreen } from "../../screens/access-denied";
 import { HrmsScreen } from "../../screens/hrms";
 import { HrPayrollScreen } from "../../screens/hr/payroll";
 import { InterviewScreen } from "../../screens/interview";
+import { AiInterviewScreen } from "../../screens/ai-interview";
 import { AdminScreen } from "../../screens/admin";
 import { AssetsScreen } from "../../screens/assets";
 import { TicketsScreen } from "../../screens/tickets";
@@ -58,6 +59,7 @@ const screens: Record<View, React.ComponentType> = {
   hrms: HrmsScreen,
   payroll: HrPayrollScreen,
   interview: InterviewScreen,
+  "ai-interview": AiInterviewScreen,
   admin: AdminScreen,
   assets: AssetsScreen,
   tickets: TicketsScreen,

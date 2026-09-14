@@ -36,13 +36,16 @@ export function useLiveTranscription(options: {
   stream: MediaStream | null;
   speaker: string;
   enabled?: boolean;
+  onCommitted?: (lines: { text: string; speaker?: string }[]) => void;
 }): { partial: string; active: boolean } {
-  const { meetingId, stream, speaker, enabled = true } = options;
+  const { meetingId, stream, speaker, enabled = true, onCommitted } = options;
   const [partial, setPartial] = useState("");
   const [active, setActive] = useState(false);
   const pendingRef = useRef<{ text: string; speaker?: string }[]>([]);
   const flushingRef = useRef(false);
   const reconnectsRef = useRef(0);
+  const onCommittedRef = useRef(onCommitted);
+  onCommittedRef.current = onCommitted;
 
   useEffect(() => {
     if (!enabled || !meetingId || !stream || !stream.getAudioTracks().length) return;
@@ -130,6 +133,7 @@ export function useLiveTranscription(options: {
             setPartial("");
             if (text) {
               pendingRef.current.push({ text, speaker });
+              onCommittedRef.current?.([{ text, speaker }]);
               void flush();
             }
           }

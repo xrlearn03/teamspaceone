@@ -4,9 +4,10 @@ import { useMe } from "../hooks/api";
 import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { cn, getUserDisplayName } from "../lib/utils";
 import { filterDashboardWidgets } from "../features/dashboard/registry";
-import { useShellVariant } from "../hooks/usePermissions";
+import { useIsRecruitingRole, useShellVariant } from "../hooks/usePermissions";
 import { AdminHomeScreen } from "./home-admin";
 import { HrDashboardScreen } from "./hr/dashboard";
+import { RecruiterHomeScreen } from "./home-recruiter";
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -19,6 +20,7 @@ export function HomeScreen() {
   const { data: user } = useMe();
   const { user: authzUser } = usePermissionContext();
   const shellVariant = useShellVariant();
+  const isRecruitingRole = useIsRecruitingRole();
   const widgets = filterDashboardWidgets(authzUser);
   const bannerWidgets = widgets.filter((w) => w.banner);
   const gridWidgets = widgets.filter((w) => !w.banner);
@@ -32,6 +34,9 @@ export function HomeScreen() {
   }
   if (shellVariant === "hr") {
     return <HrDashboardScreen />;
+  }
+  if (isRecruitingRole) {
+    return <RecruiterHomeScreen />;
   }
 
   return (

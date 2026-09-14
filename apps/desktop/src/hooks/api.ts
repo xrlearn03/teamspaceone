@@ -1682,11 +1682,11 @@ export function useUploadCandidateResume() {
   });
 }
 
-export function useHiringDecisions() {
+export function useHiringDecisions(enabled = true) {
   return useQuery({
     queryKey: ["interview", "decisions", orgId()],
     queryFn: () => api.getHiringDecisions(),
-    enabled: Boolean(getActiveOrganisation()),
+    enabled: enabled && Boolean(getActiveOrganisation()),
     staleTime: 30 * 1000,
   });
 }
@@ -1769,12 +1769,18 @@ export function useReviewApplicationScreening() {
 export function useStartAiInterview() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (args: { sessionId: string; templateId?: string; config?: Record<string, unknown> }) =>
-      api.startAiInterview(args.sessionId, { templateId: args.templateId, config: args.config }),
+    mutationFn: (args: { sessionId: string; templateId?: string; config?: Record<string, unknown>; interviewType?: "ai_text" | "ai_voice" | "ai_video" }) =>
+      api.startAiInterview(args.sessionId, { templateId: args.templateId, config: args.config, interviewType: args.interviewType }),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ["interview", "sessions"] });
       client.invalidateQueries({ queryKey: ["interview", "overview"] });
     },
+  });
+}
+
+export function useJoinAiInterview() {
+  return useMutation({
+    mutationFn: api.joinAiInterview,
   });
 }
 
