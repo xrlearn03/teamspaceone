@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Bell,
   Bot,
@@ -329,11 +330,27 @@ function ClientSettings({ organisationId }: { organisationId: string | null }) {
 }
 
 function AboutSettings() {
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    invoke<{ version: string }>("get_app_info")
+      .then((info) => {
+        if (mounted) setVersion(info.version);
+      })
+      .catch(() => {
+        if (mounted) setVersion("Unavailable");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   return (
     <SettingsSection title="About">
       <div className="max-w-lg space-y-2 text-sm text-text-secondary">
         <p><strong className="text-text">Teamspace One</strong></p>
-        <p>Version 0.1.0</p>
+        <p>Version {version ?? "…"}</p>
         <p>
           Teamspace One brings your team&apos;s conversations, projects, and files together in one
           secure desktop workspace — so you can chat, collaborate, and stay organised without
