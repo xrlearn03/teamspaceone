@@ -51,6 +51,7 @@ import { Input } from "@teamspace-one/ui/input";
 import { UserAvatar } from "../components/user-avatar";
 import { Badge } from "@teamspace-one/ui/badge";
 import { cn, getUserDisplayName } from "../lib/utils";
+import { copyToClipboard } from "../lib/desktop";
 
 const sections = [
   { id: "account", label: "My account", icon: User },
@@ -296,7 +297,7 @@ function DeveloperSettings() {
         <p className="text-sm text-text-muted">API tokens for third-party integrations and scripts.</p>
         <div className="flex gap-2">
           <Input readOnly value={token} />
-          <Button variant="secondary" onClick={() => { void navigator.clipboard.writeText(token); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? "Copied" : "Copy"}</Button>
+          <Button variant="secondary" onClick={() => { void copyToClipboard(token); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? "Copied" : "Copy"}</Button>
         </div>
       </div>
     </SettingsSection>

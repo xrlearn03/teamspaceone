@@ -36,6 +36,7 @@ import { useRealtime } from "../hooks/useRealtime";
 import { useLiveTranscription } from "../hooks/useLiveTranscription";
 import type { SfuRoomEvent } from "../hooks/useSfu";
 import { useUIStore } from "../stores/ui";
+import { copyToClipboard } from "../lib/desktop";
 import { useMembers, useUsers } from "../hooks/api";
 import { UserAvatar } from "./user-avatar";
 import {
@@ -325,7 +326,7 @@ export function NativeConference({
   async function copyInviteLink() {
     try {
       const { url } = await getMeetingShareLink(meetingId);
-      await navigator.clipboard.writeText(url);
+      await copyToClipboard(url);
       setCopiedLink(true);
       window.setTimeout(() => setCopiedLink(false), 2000);
     } catch (err) {
@@ -962,7 +963,7 @@ function CallRoomHeader({
               <Link2 className="mr-2 h-4 w-4" /> Copy invite link
             </DropdownMenuItem>
             {joinCode ? (
-              <DropdownMenuItem onClick={() => void navigator.clipboard.writeText(joinCode)}>
+              <DropdownMenuItem onClick={() => void copyToClipboard(joinCode)}>
                 <Copy className="mr-2 h-4 w-4" /> Copy meeting code
               </DropdownMenuItem>
             ) : null}
@@ -1270,7 +1271,7 @@ function CallSidePanel({
                     <Link2 className="mr-2 h-4 w-4" /> Copy invite link
                   </DropdownMenuItem>
                   {joinCode ? (
-                    <DropdownMenuItem onClick={() => void navigator.clipboard.writeText(joinCode)}>
+                    <DropdownMenuItem onClick={() => void copyToClipboard(joinCode)}>
                       <Copy className="mr-2 h-4 w-4" /> Copy meeting code
                     </DropdownMenuItem>
                   ) : null}
@@ -1977,7 +1978,7 @@ function ActiveCallRoom({
               </DropdownMenuItem>
               {meeting?.joinCode ? (
                 <DropdownMenuItem
-                  onClick={() => void navigator.clipboard.writeText(meeting.joinCode!)}
+                  onClick={() => void copyToClipboard(meeting.joinCode!)}
                 >
                   <Copy className="mr-2 h-4 w-4" /> Copy meeting code
                 </DropdownMenuItem>

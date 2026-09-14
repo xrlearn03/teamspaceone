@@ -33,6 +33,7 @@ import {
 import { SOUNDS, loopSound } from "../../lib/sounds";
 import { getUserDisplayName } from "../../lib/utils";
 import { getMeetingShareLink } from "../../lib/api";
+import { copyToClipboard } from "../../lib/desktop";
 
 type IncomingCall = RealtimeEventPayloads["call.incoming"];
 
@@ -258,7 +259,7 @@ export function IncomingCallOverlay() {
     if (!outgoingCall) return;
     try {
       const { url } = await getMeetingShareLink(outgoingCall.meetingId);
-      await navigator.clipboard.writeText(url);
+      await copyToClipboard(url);
       setCopiedLink(true);
       window.setTimeout(() => setCopiedLink(false), 2000);
     } catch (err) {

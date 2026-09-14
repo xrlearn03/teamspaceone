@@ -1,4 +1,5 @@
 import Database from '@tauri-apps/plugin-sql';
+import { writeText as tauriWriteText } from '@tauri-apps/plugin-clipboard-manager';
 
 let db: Database | null = null;
 
@@ -114,4 +115,20 @@ export async function getCache(key: string, organisationId: string): Promise<unk
 export async function deleteCache(key: string, organisationId: string): Promise<void> {
   const database = await initLocalDb();
   await database.execute('DELETE FROM cache WHERE key = ? AND organisation_id = ?', [key, organisationId]);
+}
+
+export function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+export async function copyToClipboard(text: string): Promise<void> {
+  if (isTauri()) {
+    try {
+      await tauriWriteText(text);
+      return;
+    } catch {
+      // Fall through to browser clipboard.
+    }
+  }
+  await navigator.clipboard.writeText(text);
 }
