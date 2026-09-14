@@ -104,6 +104,6 @@ export class PublicInterviewController {
     if (!candidate || candidate.email.toLowerCase() !== dto.email.trim().toLowerCase()) {
       throw new NotFoundException('Candidate not found');
     }
-    return this.interview.joinAiInterview(ctx, id, candidate.id);
+    return this.interview.joinAiInterview(ctx, id, candidate.id, candidate.name);
   }
 }

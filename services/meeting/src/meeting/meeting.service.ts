@@ -728,11 +728,38 @@ export class MeetingService {
     });
   }
 
-  async getSfuTokenForInterview(organisationId: string, id: string, userId: string) {
+  async getSfuTokenForInterview(organisationId: string, id: string, userId: string, displayName?: string) {
     const meeting = await this.prisma.meeting.findFirst({
       where: { id, organisationId },
     });
     if (!meeting) throw new NotFoundException('Meeting not found');
+
+    // Interview rooms are created without invitees, so record the join as a
+    // meeting participant — transcript-lines/chat permission checks require an
+    // active participant row. Candidates join under their candidate id.
+    const participant = await this.prisma.meetingParticipant.findUnique({
+      where: { meetingId_userId: { meetingId: meeting.id, userId } },
+    });
+    if (participant) {
+      await this.prisma.meetingParticipant.update({
+        where: { id: participant.id },
+        data: {
+          leftAt: null,
+          ...(displayName ? { guestName: displayName } : {}),
+          updatedAt: new Date(),
+        },
+      });
+    } else {
+      await this.prisma.meetingParticipant.create({
+        data: {
+          id: randomUUID(),
+          meetingId: meeting.id,
+          organisationId,
+          userId,
+          guestName: displayName ?? null,
+        },
+      });
+    }
 
     return { token: this.signSfuToken(meeting.id, userId), roomId: meeting.id, userId, roomName: meeting.roomName };
   }

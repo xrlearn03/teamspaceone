@@ -2586,11 +2586,18 @@ export function reviewApplicationScreening(applicationId: string) {
   });
 }
 
-export function startAiInterview(sessionId: string, body: { templateId?: string; config?: Record<string, unknown> } = {}) {
+export function startAiInterview(sessionId: string, body: { templateId?: string; config?: Record<string, unknown>; interviewType?: "ai_text" | "ai_voice" | "ai_video" } = {}) {
   return apiRequest<AiStartResult>(`/interview/sessions/${encodeURIComponent(sessionId)}/ai/start`, {
     method: "POST",
     body,
   });
+}
+
+export function joinAiInterview(sessionId: string) {
+  return apiRequest<{ token: string; roomId: string; userId: string; roomName?: string }>(
+    `/interview/sessions/${encodeURIComponent(sessionId)}/ai/join`,
+    { method: "POST", body: {} },
+  );
 }
 
 export function submitAiAnswer(sessionId: string, body: { questionIndex: number; answer: string }) {

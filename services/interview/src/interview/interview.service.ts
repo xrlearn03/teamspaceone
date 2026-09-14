@@ -1090,7 +1090,7 @@ export class InterviewService {
     return { session: updated, questions: updated.answers };
   }
 
-  async joinAiInterview(ctx: OrganisationContextValue, sessionId: string, userId: string) {
+  async joinAiInterview(ctx: OrganisationContextValue, sessionId: string, userId: string, displayName?: string) {
     const session = await this.prisma.interviewSession.findFirst({
       where: { id: sessionId, organisationId: ctx.organisationId },
       include: { candidate: true, jobOpening: true },
@@ -1109,7 +1109,7 @@ export class InterviewService {
 
     const title = `AI Interview: ${session.candidate?.name ?? 'Candidate'} - ${session.jobOpening?.title ?? 'Interview'}`;
     await this.meeting.ensureRoom(ctx, sessionId, title);
-    return this.meeting.getSfuToken(ctx, sessionId, userId);
+    return this.meeting.getSfuToken(ctx, sessionId, userId, displayName);
   }
 
   async answerAiQuestion(

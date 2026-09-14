@@ -39,12 +39,12 @@ export class MeetingClient {
     return response.json();
   }
 
-  async getSfuToken(ctx: OrganisationContextValue, id: string, userId: string) {
+  async getSfuToken(ctx: OrganisationContextValue, id: string, userId: string, displayName?: string) {
     const baseUrl = this.requireBaseUrl();
     const response = await fetch(`${baseUrl}/meetings/internal/${encodeURIComponent(id)}/sfu-token`, {
       method: 'POST',
       headers: this.headers(ctx),
-      body: JSON.stringify({ userId }),
+      body: JSON.stringify({ userId, displayName }),
     });
     if (!response.ok) {
       throw new Error(`Failed to get SFU token: ${response.status}`);

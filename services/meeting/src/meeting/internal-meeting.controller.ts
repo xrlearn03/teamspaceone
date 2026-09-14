@@ -22,11 +22,11 @@ export class InternalMeetingController {
   async getSfuToken(
     @CurrentOrganisation() ctx: OrganisationContextValue,
     @Param('id') id: string,
-    @Body() dto: { userId: string },
+    @Body() dto: { userId: string; displayName?: string },
   ) {
     if (!dto.userId) {
       throw new BadRequestException('userId is required');
     }
-    return this.meeting.getSfuTokenForInterview(ctx.organisationId, id, dto.userId);
+    return this.meeting.getSfuTokenForInterview(ctx.organisationId, id, dto.userId, dto.displayName);
   }
 }

@@ -26,7 +26,7 @@ export function MobileHeader({ onOpenDrawer }: MobileHeaderProps) {
     ? `${me.firstName} ${me.lastName ?? ""}`.trim()
     : me?.email ?? "User";
 
-  const isSubView = Boolean(activeChannelId || activeProjectId || activeMeetingId || activeView === "voice");
+  const isSubView = Boolean(activeChannelId || activeProjectId || activeMeetingId || activeView === "voice" || activeView === "ai-interview");
 
   const viewTitle: Record<string, string> = {
     home: "Home",
@@ -36,6 +36,7 @@ export function MobileHeader({ onOpenDrawer }: MobileHeaderProps) {
     project: "Project",
     meeting: "Meeting",
     voice: "Voice call",
+    "ai-interview": "AI Interview",
     files: "Files",
     ai: "AI",
     members: "Members",
@@ -53,6 +54,8 @@ export function MobileHeader({ onOpenDrawer }: MobileHeaderProps) {
       setActiveView("home");
     } else if (activeView === "voice") {
       setActiveView("meeting");
+    } else if (activeView === "ai-interview") {
+      setActiveView("interview", { interviewTab: "sessions" });
     } else {
       setActiveView(activeView);
     }

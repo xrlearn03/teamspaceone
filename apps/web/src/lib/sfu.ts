@@ -271,7 +271,7 @@ export function useGuestSfu() {
                 if (pc.signalingState === "have-local-offer") {
                   pendingLocalOfferRef.current = true;
                   try {
-                    await pc.setRemoteDescription({ type: "rollback" });
+                    await pc.setLocalDescription({ type: "rollback" });
                   } catch {
                     // Rollback unsupported — proceed and let the offer apply.
                   }
@@ -302,7 +302,8 @@ export function useGuestSfu() {
                   makeLocalOffer(pc);
                 }
               } catch (err) {
-                setError(err instanceof Error ? err.message : "Failed to handle SFU offer");
+                const message = err instanceof Error ? err.message : String(err);
+                setError(`Failed to negotiate SFU offer (${pc.signalingState}): ${message}`);
               }
             });
             break;
