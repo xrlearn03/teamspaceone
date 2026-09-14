@@ -1,4 +1,6 @@
-use tauri::{Url, WebviewUrl};
+use tauri::WebviewUrl;
+#[cfg(dev)]
+use tauri::Url;
 #[cfg(desktop)]
 use tauri::WebviewWindowBuilder;
 #[cfg(desktop)]
@@ -117,14 +119,6 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}));
     }
 
-    #[cfg(all(not(dev), desktop))]
-    let port = portpicker::pick_unused_port().expect("failed to find unused port");
-
-    #[cfg(all(not(dev), desktop))]
-    {
-        builder = builder.plugin(tauri_plugin_localhost::Builder::new(port).build());
-    }
-
     #[cfg(desktop)]
     {
         builder = builder.plugin(
@@ -198,15 +192,17 @@ pub fn run() {
                 #[cfg(dev)]
                 let url = WebviewUrl::External("http://localhost:1420".parse::<Url>().unwrap());
                 #[cfg(not(dev))]
-                let url = WebviewUrl::External(format!("http://localhost:{}", port).parse::<Url>().unwrap());
+                let url = WebviewUrl::App("index.html".into());
 
-                let _window = WebviewWindowBuilder::new(app, "main".to_string(), url)
+                let window_builder = WebviewWindowBuilder::new(app, "main".to_string(), url)
                     .title("Teamspace One")
                     .inner_size(1200.0, 800.0)
                     .min_inner_size(800.0, 600.0)
                     .disable_drag_drop_handler()
-                    .devtools(cfg!(debug_assertions))
-                    .build()?;
+                    .devtools(cfg!(debug_assertions));
+                #[cfg(not(dev))]
+                let window_builder = window_builder.use_https_scheme(true);
+                let _window = window_builder.build()?;
 
                 // Open the web inspector so console errors are visible during testing.
                 #[cfg(debug_assertions)]
