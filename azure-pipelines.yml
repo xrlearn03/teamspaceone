@@ -227,7 +227,7 @@ stages:
       - job: Configure
         displayName: 'Generate production desktop configuration'
         pool:
-          vmImage: 'ubuntu-latest'
+          name: gce
         steps:
           - checkout: self
             clean: true
@@ -258,7 +258,7 @@ stages:
       - job: macOS_universal
         displayName: 'macOS universal'
         pool:
-          vmImage: 'macos-latest'
+          name: macos-build
         variables:
           TAURI_TARGET: 'universal-apple-darwin'
         steps:
@@ -408,7 +408,7 @@ stages:
       - job: Windows_x86_64
         displayName: 'Windows x86_64'
         pool:
-          vmImage: 'windows-latest'
+          name: windows-build
         variables:
           TAURI_TARGET: 'x86_64-pc-windows-msvc'
         steps:
