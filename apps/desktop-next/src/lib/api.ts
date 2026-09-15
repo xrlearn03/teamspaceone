@@ -2085,6 +2085,8 @@ export function createEmployee(body: {
 export function updateEmployee(
   id: string,
   body: Partial<{
+    userId: string | null;
+    membershipId: string | null;
     firstName: string;
     lastName: string;
     workEmail: string | null;

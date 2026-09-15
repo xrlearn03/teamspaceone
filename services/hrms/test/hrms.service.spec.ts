@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import type { AuthorizableUser } from '@teamspace-one/authorization';
 import { PrismaService } from '../src/prisma/prisma.service.js';
@@ -6,6 +6,7 @@ import { OutboxService } from '../src/outbox/outbox.service.js';
 import { HrmsScopeService } from '../src/hrms/scope.service.js';
 import { EmployeesService, sanitizeEmployee } from '../src/hrms/employees.service.js';
 import { AuthProfileClientService } from '../src/hrms/auth-profile.client.js';
+import { AuthAccountsClientService } from '../src/hrms/auth-accounts.client.js';
 import { LeaveService } from '../src/hrms/leave.service.js';
 import { PayrollService } from '../src/hrms/payroll.service.js';
 import { LifecycleService } from '../src/hrms/lifecycle.service.js';
@@ -50,6 +51,10 @@ const noScopeUser: AuthorizableUser = {
 };
 
 const mockAuthProfiles = { updateUserProfile: jest.fn().mockResolvedValue(undefined) };
+const mockAuthAccounts = {
+  provisionUser: jest.fn(),
+  resetTemporaryPassword: jest.fn(),
+};
 
 function buildModule(mockPrisma: Record<string, unknown>, mockOutbox: Record<string, unknown>) {
   return Test.createTestingModule({
@@ -64,6 +69,7 @@ function buildModule(mockPrisma: Record<string, unknown>, mockOutbox: Record<str
       { provide: PrismaService, useValue: mockPrisma },
       { provide: OutboxService, useValue: mockOutbox },
       { provide: AuthProfileClientService, useValue: mockAuthProfiles },
+      { provide: AuthAccountsClientService, useValue: mockAuthAccounts },
     ],
   }).compile();
 }
@@ -229,6 +235,65 @@ describe('EmployeesService', () => {
       { firstName: 'Current', lastName: 'Employee', avatarFileId: null },
       'corr-1',
     );
+  });
+
+  it('links a member account to an unlinked employee record', async () => {
+    const existing = {
+      id: 'emp-1',
+      userId: null,
+      membershipId: null,
+      departmentId: null,
+      managerEmployeeId: null,
+    };
+    const update = jest.fn().mockResolvedValue({ ...existing, userId: 'user-7' });
+    const transactionClient = {
+      employee: { update },
+      employeeHistory: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const findFirst = jest
+      .fn()
+      // Calls: scope.resolve's actor lookup, the employee load, the link check.
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(null);
+    const prisma = {
+      employee: { findFirst },
+      $transaction: jest.fn((fn: (tx: typeof transactionClient) => unknown) => fn(transactionClient)),
+    };
+    const module = await buildModule(prisma, mockOutbox);
+    const service = module.get(EmployeesService);
+
+    await service.update(ctx, employeeEditor, 'emp-1', {
+      ...ctx,
+      userId: 'user-7',
+      membershipId: 'mem-7',
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'emp-1' },
+      data: { userId: 'user-7', membershipId: 'mem-7' },
+    });
+  });
+
+  it('rejects linking a userId already held by another employee', async () => {
+    const existing = {
+      id: 'emp-1',
+      userId: null,
+      departmentId: null,
+      managerEmployeeId: null,
+    };
+    const findFirst = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce({ id: 'emp-2' });
+    const prisma = { employee: { findFirst } };
+    const module = await buildModule(prisma, mockOutbox);
+    const service = module.get(EmployeesService);
+
+    await expect(
+      service.update(ctx, employeeEditor, 'emp-1', { ...ctx, userId: 'user-7' }),
+    ).rejects.toThrow(ConflictException);
   });
 });
 

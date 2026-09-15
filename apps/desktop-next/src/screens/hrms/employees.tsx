@@ -157,6 +157,46 @@ export function EmployeeFormDialog({
   const updateEmployee = useUpdateEmployee();
   const busy = createEmployee.isPending || updateEmployee.isPending;
 
+  const { id: activeOrgId } = useActiveOrganisation();
+  // The member picker shows when creating a record, or when the record isn't
+  // linked to a login account — without a userId the employee can't reach the
+  // self-service (My Attendance / My Leaves / …) screens.
+  const showMemberPicker = !draft && !employee?.userId;
+  const members = useMembers(
+    showMemberPicker && !availableDrafts ? activeOrgId ?? undefined : undefined,
+  );
+  const memberUserIds = useMemo(
+    () => [...new Set((members.data ?? []).map((m) => m.userId))],
+    [members.data],
+  );
+  const memberUsers = useUsers(memberUserIds);
+  const linkedUserIds = useMemo(
+    () =>
+      new Set(
+        (allEmployees.data ?? []).map((e) => e.userId).filter(Boolean) as string[],
+      ),
+    [allEmployees.data],
+  );
+  const memberOptions = useMemo<Draft[]>(() => {
+    if (availableDrafts) return availableDrafts;
+    const userMap = new Map((memberUsers.data ?? []).map((u) => [u.id, u]));
+    return (members.data ?? [])
+      .filter((m) => isInternalMember(m) && !linkedUserIds.has(m.userId))
+      .map((m) => {
+        const u = userMap.get(m.userId);
+        return {
+          isDraft: true as const,
+          id: m.id,
+          userId: m.userId,
+          membershipId: m.id,
+          firstName: u?.firstName ?? u?.email?.split("@")[0] ?? "Unknown",
+          lastName: u?.lastName ?? "",
+          workEmail: u?.email ?? null,
+          phone: null,
+        };
+      });
+  }, [availableDrafts, members.data, memberUsers.data, linkedUserIds]);
+
   useEffect(() => {
     setForm(init());
   }, [employee?.id, draft?.id, open]);
@@ -170,16 +210,22 @@ export function EmployeeFormDialog({
       setForm((f) => ({ ...f, userId: "", membershipId: "" }));
       return;
     }
-    const selected = (availableDrafts ?? []).find((d) => d.userId === userId) ?? draft;
+    const selected = memberOptions.find((d) => d.userId === userId) ?? draft;
     if (!selected) return;
     setForm({
       ...form,
       userId: selected.userId,
       membershipId: selected.membershipId,
-      firstName: selected.firstName,
-      lastName: selected.lastName,
-      workEmail: selected.workEmail ?? "",
-      phone: selected.phone ?? "",
+      // When linking an existing record only the account ids change — the
+      // profile fields HR already entered are left untouched.
+      ...(employee
+        ? {}
+        : {
+            firstName: selected.firstName,
+            lastName: selected.lastName,
+            workEmail: selected.workEmail ?? "",
+            phone: selected.phone ?? "",
+          }),
     });
   }
 
@@ -192,6 +238,8 @@ export function EmployeeFormDialog({
         : undefined;
     if (employee) {
       const body = {
+        userId: form.userId || undefined,
+        membershipId: form.membershipId || undefined,
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
         workEmail: form.workEmail || undefined,
@@ -231,7 +279,6 @@ export function EmployeeFormDialog({
   }
 
   const label = "text-xs font-medium text-text-secondary";
-  const selectingMember = !employee && !draft;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -246,16 +293,18 @@ export function EmployeeFormDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 pt-2">
-          {selectingMember ? (
+          {showMemberPicker ? (
             <label className="col-span-2 flex flex-col gap-1">
-              <span className={label}>Member <span className="text-text-muted">(optional)</span></span>
+              <span className={label}>
+                {employee ? "Link member account" : "Member"} <span className="text-text-muted">(optional)</span>
+              </span>
               <select
                 className="h-9 rounded-md border bg-background px-2 text-sm text-text"
                 value={form.userId}
                 onChange={(e) => pickDraft(e.target.value)}
               >
                 <option value="">No linked member</option>
-                {(availableDrafts ?? []).map((d) => (
+                {memberOptions.map((d) => (
                   <option key={d.userId} value={d.userId}>
                     {employeeName(d)} {d.workEmail ? `(${d.workEmail})` : ""}
                   </option>

@@ -513,6 +513,7 @@ export function HrEmployeesScreen() {
           if (!open) setEditing(null);
         }}
         employee={editing}
+        availableDrafts={drafts}
       />
       <EmployeeFormDialog
         open={Boolean(editingDraft)}

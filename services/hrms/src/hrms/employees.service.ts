@@ -43,6 +43,8 @@ export interface CreateEmployeeInput extends RequestContextInput {
 }
 
 export interface UpdateEmployeeInput extends RequestContextInput {
+  userId?: string | null;
+  membershipId?: string | null;
   employeeNumber?: string;
   firstName?: string;
   lastName?: string;
@@ -64,6 +66,8 @@ export interface UpdateEmployeeInput extends RequestContextInput {
 }
 
 const TRACKED_FIELDS = [
+  'userId',
+  'membershipId',
   'employeeNumber',
   'firstName',
   'lastName',
@@ -83,6 +87,9 @@ const TRACKED_FIELDS = [
   'emergencyContactPhone',
   'salary',
 ] as const;
+
+/** Keys present on every service input that are not employee fields. */
+const REQUEST_CONTEXT_KEYS = new Set(['organisationId', 'actorId', 'correlationId']);
 
 /** Fields a user may change on their own profile without hrms.employee.edit. */
 const SELF_EDITABLE_FIELDS = new Set([
@@ -331,9 +338,12 @@ export class EmployeesService {
       if (!isSelf) {
         throw new ForbiddenException('You may only edit your own profile');
       }
-      // Own-profile edits are limited to a safe subset of fields.
+      // Own-profile edits are limited to a safe subset of fields. Request
+      // context keys (organisationId/actorId/correlationId) are not fields.
       const requested = Object.keys(input).filter(
-        (k) => (input as unknown as Record<string, unknown>)[k] !== undefined,
+        (k) =>
+          (input as unknown as Record<string, unknown>)[k] !== undefined &&
+          !REQUEST_CONTEXT_KEYS.has(k),
       );
       const disallowed = requested.filter((k) => !SELF_EDITABLE_FIELDS.has(k));
       if (disallowed.length > 0) {
@@ -356,6 +366,20 @@ export class EmployeesService {
       if (oldSerialized === newSerialized) continue;
       data[field] = newValue;
       history.push({ field, oldValue: oldSerialized, newValue: newSerialized });
+    }
+
+    if (typeof data.userId === 'string' && data.userId) {
+      const linked = await this.prisma.employee.findFirst({
+        where: {
+          organisationId: ctx.organisationId,
+          userId: data.userId,
+          id: { not: id },
+        },
+        select: { id: true },
+      });
+      if (linked) {
+        throw new ConflictException('Another employee record is already linked to this user');
+      }
     }
 
     if (Object.keys(data).length === 0) {
