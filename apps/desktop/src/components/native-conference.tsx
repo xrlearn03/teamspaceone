@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
-  ChevronDown,
   CircleDot,
   Copy,
   Ellipsis,
@@ -28,6 +27,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@teamspace-one/ui/dropdown-menu";
 import { cn, getUserDisplayName } from "../lib/utils";
@@ -631,12 +631,6 @@ function CallWaitingRoom({
         signalColor={signalColor}
         connected={connected}
         elapsedLabel={elapsedLabel}
-        joinCode={meeting?.joinCode}
-        onCopyInviteLink={onCopyInviteLink}
-        raisedHand={raisedHand}
-        onToggleRaiseHand={onToggleRaiseHand}
-        isHost={isHost}
-        onToggleRecording={onToggleRecording}
         endLabel={endLabel}
         onEnd={endHandler}
       />
@@ -785,13 +779,6 @@ function CallWaitingRoom({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <div className="mx-1 h-10 w-px bg-white/[0.08]" />
-          <WaitingControl
-            icon={<PhoneOff size={22} />}
-            label={endLabel}
-            danger
-            onClick={endHandler}
-          />
         </div>
       </footer>
     </div>
@@ -880,12 +867,6 @@ function CallRoomHeader({
   signalColor,
   connected,
   elapsedLabel,
-  joinCode,
-  onCopyInviteLink,
-  raisedHand,
-  onToggleRaiseHand,
-  isHost,
-  onToggleRecording,
   endLabel,
   onEnd,
 }: {
@@ -899,12 +880,6 @@ function CallRoomHeader({
   signalColor: string;
   connected: boolean;
   elapsedLabel: string;
-  joinCode?: string | null;
-  onCopyInviteLink: () => void;
-  raisedHand: boolean;
-  onToggleRaiseHand: () => void;
-  isHost: boolean;
-  onToggleRecording: () => void;
   endLabel: string;
   onEnd: () => void;
 }) {
@@ -949,35 +924,6 @@ function CallRoomHeader({
           ))}
         </div>
         <span className="mr-2 text-sm font-medium tabular-nums text-white">{elapsedLabel}</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="flex h-11 w-11 items-center justify-center rounded-lg border border-white/[0.07] bg-[#0d1f32] text-white transition hover:bg-[#142b44]"
-              aria-label="Meeting options"
-            >
-              <Ellipsis size={20} />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onCopyInviteLink}>
-              <Link2 className="mr-2 h-4 w-4" /> Copy invite link
-            </DropdownMenuItem>
-            {joinCode ? (
-              <DropdownMenuItem onClick={() => void copyToClipboard(joinCode)}>
-                <Copy className="mr-2 h-4 w-4" /> Copy meeting code
-              </DropdownMenuItem>
-            ) : null}
-            <DropdownMenuItem onClick={onToggleRaiseHand}>
-              <Hand className="mr-2 h-4 w-4" /> {raisedHand ? "Lower hand" : "Raise hand"}
-            </DropdownMenuItem>
-            {isHost ? (
-              <DropdownMenuItem onClick={onToggleRecording}>
-                <CircleDot className="mr-2 h-4 w-4" />
-                {isRecording ? "Stop recording" : "Start recording"}
-              </DropdownMenuItem>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
         <button
           onClick={onEnd}
           className="flex h-11 items-center gap-3 rounded-lg bg-red-500 px-5 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition hover:bg-red-400"
@@ -1059,11 +1005,18 @@ function CallSidePanel({
   const ringable = (members ?? []).filter(
     (m) => q && !existingIds.has(m.userId),
   );
+  const invitable = (members ?? []).filter((m) => !existingIds.has(m.userId));
 
   function ringMember(userId: string) {
     realtime.sendCallRing({ meetingId, kind, callerName, userIds: [userId] });
     setRinged((prev) => new Set([...prev, userId]));
     setQuery("");
+  }
+
+  function inviteMember(userId: string) {
+    const u = memberMap.get(userId);
+    ringMember(userId);
+    toast.success(`Invited ${u ? getUserDisplayName(u) : "member"} to join the call`);
   }
 
   return (
@@ -1093,13 +1046,6 @@ function CallSidePanel({
           {tab === "chat" && (
             <span className="absolute bottom-0 left-4 right-4 h-0.5 rounded-full bg-indigo-500" />
           )}
-        </button>
-        <button
-          onClick={onCopyInviteLink}
-          className="ml-auto mr-4 flex h-10 items-center gap-2 rounded-lg bg-indigo-500 px-3 text-xs font-semibold text-white transition hover:bg-indigo-400"
-        >
-          {copiedLink ? <Check size={15} /> : <UserPlus size={15} />}
-          Invite
         </button>
       </div>
 
@@ -1249,35 +1195,58 @@ function CallSidePanel({
 
           {/* Invite */}
           <div className="shrink-0 p-4">
-            <div className="flex h-14 w-full overflow-hidden rounded-lg border border-indigo-500 bg-indigo-500/[0.05]">
-              <button
-                onClick={onCopyInviteLink}
-                className="flex flex-1 items-center justify-center gap-3 text-sm font-medium text-white transition hover:bg-indigo-500/10"
-              >
-                <UserPlus size={19} />
-                {copiedLink ? "Link copied" : "Invite People"}
-              </button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className="flex w-12 items-center justify-center border-l border-indigo-500/40 text-slate-400 transition hover:bg-indigo-500/10 hover:text-white"
-                    aria-label="Invite options"
-                  >
-                    <ChevronDown size={17} />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" side="top">
-                  <DropdownMenuItem onClick={onCopyInviteLink}>
-                    <Link2 className="mr-2 h-4 w-4" /> Copy invite link
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex h-14 w-full items-center justify-center gap-3 rounded-lg border border-indigo-500 bg-indigo-500/[0.05] text-sm font-medium text-white transition hover:bg-indigo-500/10">
+                  <UserPlus size={19} />
+                  Invite People
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="top" className="w-[340px]">
+                <div className="px-2 py-1.5 text-xs font-medium text-slate-400">
+                  Add organisation member
+                </div>
+                <div className="max-h-60 overflow-y-auto">
+                  {invitable.length === 0 ? (
+                    <p className="px-2 py-3 text-xs text-slate-500">
+                      Everyone in the organisation is already invited.
+                    </p>
+                  ) : (
+                    invitable.map((m) => {
+                      const u = memberMap.get(m.userId);
+                      const name = u ? getUserDisplayName(u) : "Member";
+                      return (
+                        <DropdownMenuItem
+                          key={m.userId}
+                          onClick={() => inviteMember(m.userId)}
+                        >
+                          <UserAvatar
+                            user={u ?? { firstName: name, email: "" }}
+                            className="mr-2 h-6 w-6"
+                          />
+                          <span className="min-w-0 flex-1 truncate">{name}</span>
+                          <Phone className="ml-2 h-3.5 w-3.5 shrink-0 text-indigo-300" />
+                        </DropdownMenuItem>
+                      );
+                    })
+                  )}
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={onCopyInviteLink}>
+                  {copiedLink ? (
+                    <Check className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Link2 className="mr-2 h-4 w-4" />
+                  )}
+                  {copiedLink ? "Link copied" : "Copy invite link"}
+                </DropdownMenuItem>
+                {joinCode ? (
+                  <DropdownMenuItem onClick={() => void copyToClipboard(joinCode)}>
+                    <Copy className="mr-2 h-4 w-4" /> Copy meeting code
                   </DropdownMenuItem>
-                  {joinCode ? (
-                    <DropdownMenuItem onClick={() => void copyToClipboard(joinCode)}>
-                      <Copy className="mr-2 h-4 w-4" /> Copy meeting code
-                    </DropdownMenuItem>
-                  ) : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </>
       ) : (
@@ -1795,12 +1764,6 @@ function ActiveCallRoom({
         signalColor={signalColor}
         connected={connected}
         elapsedLabel={elapsedLabel}
-        joinCode={meeting?.joinCode}
-        onCopyInviteLink={onCopyInviteLink}
-        raisedHand={raisedHand}
-        onToggleRaiseHand={onToggleRaiseHand}
-        isHost={isHost}
-        onToggleRecording={onToggleRecording}
         endLabel={endLabel}
         onEnd={endHandler}
       />
@@ -1985,13 +1948,6 @@ function ActiveCallRoom({
               ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
-          <div className="mx-1 h-10 w-px bg-white/[0.08]" />
-          <WaitingControl
-            icon={<PhoneOff size={22} />}
-            label={endLabel}
-            danger
-            onClick={endHandler}
-          />
         </div>
       </footer>
     </div>

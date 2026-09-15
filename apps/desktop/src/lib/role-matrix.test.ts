@@ -29,25 +29,46 @@ function roleUser(permissions: string[], dataScopes: DataScope[] = []): Authoriz
   return { id: `u-${Math.random().toString(36).slice(2)}`, organisationId: ORG, permissions, dataScopes };
 }
 
+/**
+ * Concrete expansion of STAFF_BASELINE_ALLOW — the common surface every
+ * internal staff role shares (mirrors the employee template).
+ */
+const STAFF_BASELINE = [
+  "dashboard.view",
+  "collaboration.access",
+  "collaboration.channel.view",
+  "collaboration.message.view",
+  "collaboration.message.send",
+  "collaboration.message.edit",
+  "collaboration.message.delete",
+  "collaboration.file.view",
+  "collaboration.file.upload",
+  "collaboration.project.view",
+  "collaboration.task.view",
+  "collaboration.task.create",
+  "collaboration.task.assign",
+  "collaboration.task.edit",
+  "collaboration.task.delete",
+  "collaboration.meeting.view",
+  "collaboration.meeting.create",
+  "collaboration.meeting.conduct",
+  "collaboration.ticket.view",
+  "collaboration.ticket.create",
+  "hrms.access",
+  "hrms.employee.view",
+  "hrms.attendance.view",
+  "hrms.attendance.checkin",
+  "hrms.attendance.checkout",
+  "hrms.leave.view",
+  "hrms.leave.apply",
+  "hrms.document.view",
+  "hrms.payroll.view",
+  "hrms.onboarding.view",
+  "hrms.performance.view",
+];
+
 const employee = roleUser(
-  [
-    "dashboard.view",
-    "dashboard.quick-action.execute",
-    "collaboration.access",
-    "collaboration.channel.view",
-    "collaboration.message.send",
-    "collaboration.project.view",
-    "collaboration.task.view",
-    "collaboration.meeting.view",
-    "hrms.access",
-    "hrms.employee.view",
-    "hrms.attendance.view",
-    "hrms.attendance.checkin",
-    "hrms.attendance.checkout",
-    "hrms.leave.view",
-    "hrms.leave.apply",
-    "hrms.document.view",
-  ],
+  [...STAFF_BASELINE],
   [
     { module: "hrms", scope: "own" },
     { module: "collaboration", scope: "organisation" },
@@ -56,10 +77,10 @@ const employee = roleUser(
 
 const manager = roleUser(
   [
-    ...employee.permissions,
-    "hrms.department.view",
+    ...STAFF_BASELINE,
     "hrms.leave.approve",
     "hrms.attendance.approve",
+    "hrms.analytics.view",
   ],
   [
     { module: "hrms", scope: "team" },
@@ -69,19 +90,15 @@ const manager = roleUser(
 
 const recruiter = roleUser(
   [
-    "dashboard.view",
-    "dashboard.quick-action.execute",
-    "collaboration.access",
-    "collaboration.channel.view",
-    "collaboration.message.send",
-    "interview.access",
+    ...STAFF_BASELINE,
     "interview.job.view",
-    "interview.job.create",
     "interview.candidate.view",
     "interview.candidate.create",
     "interview.candidate.edit",
     "interview.interview.view",
     "interview.interview.schedule",
+    "interview.interview.evaluate",
+    "interview.decision.view",
   ],
   [
     { module: "interview", scope: "assigned" },
@@ -91,9 +108,7 @@ const recruiter = roleUser(
 
 const hiringManager = roleUser(
   [
-    "dashboard.view",
-    "collaboration.access",
-    "interview.access",
+    ...STAFF_BASELINE,
     "interview.job.view",
     "interview.candidate.view",
     "interview.interview.view",
@@ -144,11 +159,13 @@ describe("view access by role", () => {
     expect(canAccessView(employee, "admin")).toBe(false);
   });
 
-  it("recruiter sees interview but not HRMS or admin", () => {
+  it("recruiter sees interview + common staff views, not admin", () => {
     expect(canAccessView(recruiter, "interview")).toBe(true);
-    expect(canAccessView(recruiter, "hrms")).toBe(false);
+    expect(canAccessView(recruiter, "channel")).toBe(true);
+    expect(canAccessView(recruiter, "meeting")).toBe(true);
+    expect(canAccessView(recruiter, "project")).toBe(true);
+    expect(canAccessView(recruiter, "hrms")).toBe(true);
     expect(canAccessView(recruiter, "admin")).toBe(false);
-    expect(canAccessView(recruiter, "project")).toBe(false);
   });
 
   it("candidate sees only interview + home", () => {
@@ -191,21 +208,22 @@ describe("dashboard widget visibility by role", () => {
     expect(w).toContain("my-leave");
   });
 
-  it("recruiter sees pipeline + jobs, no HR widgets", () => {
+  it("recruiter sees pipeline + jobs + common staff widgets, no HR admin widgets", () => {
     const w = ids(recruiter);
     expect(w).toContain("open-positions");
     expect(w).toContain("candidate-pipeline");
     expect(w).toContain("interviews-today");
+    expect(w).toContain("my-leave");
+    expect(w).toContain("my-tasks");
     expect(w).not.toContain("hrms-overview");
-    expect(w).not.toContain("my-leave");
-    expect(w).not.toContain("people");
+    expect(w).not.toContain("pending-hr-approvals");
   });
 
-  it("hiring manager sees evaluations + decisions widgets", () => {
+  it("hiring manager sees evaluations + decisions + common staff widgets", () => {
     const w = ids(hiringManager);
     expect(w).toContain("pending-evaluations");
     expect(w).toContain("interviews-today");
-    expect(w).not.toContain("my-attendance");
+    expect(w).toContain("my-attendance");
   });
 
   it("candidate sees no recruiter widgets (own scope excluded)", () => {

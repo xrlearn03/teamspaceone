@@ -12,6 +12,7 @@ export const VIEW_PERMISSIONS: Partial<Record<View, string[]>> = {
   channel: ["collaboration.access"],
   dm: ["collaboration.access"],
   project: ["collaboration.project.view"],
+  "my-projects": ["collaboration.project.view"],
   meeting: ["collaboration.meeting.view"],
   voice: ["collaboration.meeting.view"],
   files: ["collaboration.file.view"],
@@ -47,6 +48,14 @@ export function canAccessView(user: AuthorizableUser | null, view: View): boolea
   // The role seed may grant granular hrms.* permissions without the
   // umbrella "hrms.access"; any hrms.* permission unlocks the module.
   if (view === "hrms" && user.permissions.some((p) => p.startsWith("hrms."))) {
+    return true;
+  }
+  // Same for the interview workspace: staff roles carry interview.* grants
+  // (interview.access is the candidate-facing umbrella permission).
+  if (
+    view === "interview" &&
+    user.permissions.some((p) => p.startsWith("interview."))
+  ) {
     return true;
   }
   return false;

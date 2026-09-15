@@ -18,16 +18,16 @@
 | Module / Feature | Super Admin | Org Admin | HR Admin | Recruiter | Hiring Manager | Manager | Employee | Interviewer | Candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **Dashboard** | A | A | A | A | A | A | A | A | O |
-| **Collaboration** | A | A | M | M | M | M | O | O | - |
-| **HRMS** | A | A | A | - | Limited | T | O | - | - |
-| Employee Management | A | A | A | - | Limited | T | O | - | - |
-| Attendance | A | A | M | - | T | T | O | - | - |
-| Leave | A | A | A | - | T | T | O | - | - |
-| Payroll | A | A | A | - | - | - | O* | - | - |
+| **Collaboration** | A | A | M | O | O | M | O | O | - |
+| **HRMS** | A | A | A | O | O | T | O | O | - |
+| Employee Management | A | A | A | O | O | T | O | O | - |
+| Attendance | A | A | M | O | O | T | O | O | - |
+| Leave | A | A | A | O | O | T | O | O | - |
+| Payroll | A | A | A | O* | O* | O* | O* | O* | - |
 | Recruitment | A | A | A | A | Limited | - | - | - | O |
-| Onboarding | A | A | A/M | Limited | Limited | T | O | - | - |
+| Onboarding | A | A | A/M | O | O | T | O | O | - |
 | Offboarding | A | A | A/M | - | - | T | O | - | - |
-| Performance | A | A | A/M | - | T | T | O | - | - |
+| Performance | A | A | A/M | O | O | T | O | O | - |
 | HR Analytics | A | A | V | - | Limited | T | - | - | - |
 | AI Interview | A | A | M | M | M | - | - | M | O |
 | Candidate Management | A | A | M | M | Assigned | - | - | Assigned | O |
@@ -210,6 +210,7 @@ The matrix above is interpreted by combining each permission with a **data scope
 - `HR Admin` does **not** automatically get `admin.role.manage` or `admin.permission.manage`.
 - `Manager` scope is `team` or `department` depending on the permission.
 - `Employee` and `Candidate` are scoped to `own` or `assigned` only.
+- Every internal staff role shares a common baseline (`STAFF_BASELINE_ALLOW` in `authorization.service.ts`): channels, messages/DMs, meetings, files, projects/tasks, tickets, and self-service HRMS. Roles without an `hrms` data scope resolve to `own`, so self-service records stay limited to the member's own employee record.
 - `Payroll` is highly restricted: only Admin/HR Admin roles with `hrms.payroll.manage` can administer payroll; employees see only their own payslips via `hrms.payroll.view` + `own` scope.
 
 ## Enforcement Layers

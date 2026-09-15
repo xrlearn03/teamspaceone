@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ArrowRight,
   BarChart3,
@@ -9,7 +9,6 @@ import {
   FileText,
   Plane,
   Send,
-  Sparkles,
   Target,
   Ticket,
   TrendingDown,
@@ -17,13 +16,11 @@ import {
   UserPlus,
   Users,
   Wallet,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import {
   useAttendanceAll,
   useAttendanceCorrections,
-  useDailyDigest,
   useEmployees,
   useHrmsAnalytics,
   useHrmsOverview,
@@ -35,8 +32,9 @@ import {
   useTickets,
   useTodos,
 } from "@/hooks/api";
-import { getActiveOrganisation, type DailyDigestResult, type Employee, type LeaveRequest } from "@/lib/api";
-import { normalizeDigest, QuickCheckInCard } from "@/features/dashboard/widgets";
+import { getActiveOrganisation, type Employee, type LeaveRequest } from "@/lib/api";
+import { QuickCheckInCard } from "@/features/dashboard/widgets";
+import { AiDailyBrief } from "@/components/ai-daily-brief";
 import { useUIStore, type View } from "@/stores/ui";
 import { cn, getUserDisplayName } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
@@ -208,130 +206,7 @@ function LegendRow({ color, label, value }: { color: string; label: string; valu
   );
 }
 
-/* =========================================================
-   AI DAILY BRIEF
-========================================================= */
 
-const BRIEF_DOT_COLORS = ["bg-rose-400", "bg-amber-300", "bg-sky-400", "bg-emerald-400", "bg-indigo-300"];
-
-function AiDailyBrief({
-  fallbackPoints,
-  recommendation,
-}: {
-  fallbackPoints: string[];
-  recommendation: string;
-}) {
-  const dailyDigest = useDailyDigest();
-  const [digest, setDigest] = useState<DailyDigestResult | null>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (digest || failed) return;
-    dailyDigest
-      .mutateAsync({ hours: 24 })
-      .then((result) => setDigest(normalizeDigest(result)))
-      .catch(() => {
-        setFailed(true);
-        setDigest(normalizeDigest(null));
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [digest, failed]);
-
-  const digestPoints = useMemo(
-    () => (digest?.sections ?? []).flatMap((s) => s.items).filter(Boolean).slice(0, 5),
-    [digest],
-  );
-  const usableDigest = digestPoints.filter((p) => !/failed to load|no activity to summarize/i.test(p));
-  const points = usableDigest.length > 0 ? usableDigest : fallbackPoints;
-
-  return (
-    <div className="relative min-h-[310px] overflow-hidden rounded-xl border border-white/10 bg-[#020b19] p-6">
-      {/* Background */}
-      <div className="pointer-events-none absolute inset-0">
-        <img
-          src="/about-background-image.png"
-          alt=""
-          className="h-full w-full object-cover object-right"
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#020b19]/90 via-[#020b19]/60 to-[#020b19]/20" />
-      </div>
-      {/* Background decoration */}
-      <div className="pointer-events-none absolute -right-20 -top-16 h-64 w-64 rounded-full bg-info/10 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-20 right-[-40px] h-56 w-96 rotate-[-18deg] rounded-[50%] bg-primary/10 blur-2xl" />
-
-      <div className="relative z-10">
-        {/* Header */}
-        <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/10 text-indigo-300">
-            <Sparkles size={22} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-[21px] font-semibold text-white">AI Daily Brief</h2>
-              <span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-indigo-200">
-                Beta
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-white/70">Key updates and actions for today</p>
-          </div>
-        </div>
-
-        {/* AI insights */}
-        <div className="mt-5 space-y-3">
-          {dailyDigest.isPending && fallbackPoints.length === 0 ? (
-            <p className="text-[13px] leading-5 text-white/70">Generating daily brief…</p>
-          ) : points.length > 0 ? (
-            points.map((point, index) => (
-              <div key={index} className="flex items-start gap-4">
-                <span
-                  className={cn(
-                    "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
-                    BRIEF_DOT_COLORS[index % BRIEF_DOT_COLORS.length],
-                  )}
-                />
-                <p className="text-[13px] leading-5 text-white/75">{point}</p>
-              </div>
-            ))
-          ) : (
-            <p className="text-[13px] leading-5 text-white/70">You're all caught up — nothing needs attention.</p>
-          )}
-        </div>
-
-        {/* Bottom */}
-        <div className="mt-5 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-3 rounded-lg border border-primary/30 bg-surface/80 px-5 py-2.5 text-xs font-medium text-primary transition hover:bg-surface"
-          >
-            {expanded ? "Hide Details" : "View Details"}
-            {expanded ? <X size={14} /> : <ArrowRight size={14} />}
-          </button>
-        </div>
-
-        {/* Expanded AI analysis */}
-        {expanded && (
-          <div className="mt-4 max-h-44 space-y-3 overflow-y-auto rounded-xl border border-primary/15 bg-surface/80 p-4 text-xs leading-5 text-text-secondary">
-            <p>
-              <strong className="text-text">AI recommendation:</strong> {recommendation}
-            </p>
-            {digest?.sections.map((section) => (
-              <div key={section.title}>
-                <p className="text-xs font-semibold text-text">{section.title}</p>
-                <ul className="mt-1 list-disc space-y-1 pl-4">
-                  {section.items.map((item, i) => (
-                    <li key={i}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 /* =========================================================
    QUICK ACTIONS

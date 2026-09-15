@@ -34,7 +34,7 @@ import {
   useTimeEntries,
   useUsers,
   useWorkspaces,
-} from "../hooks/api";
+} from "@/hooks/api";
 import {
   downloadFile,
   getActiveOrganisation,
@@ -45,12 +45,12 @@ import {
   type ProjectActivity,
   type Task,
   type UserDto,
-} from "../lib/api";
-import { useUIStore } from "../stores/ui";
-import { usePermissions } from "../hooks/usePermissions";
-import { toast, toastError } from "../lib/toast";
-import { cn, getUserDisplayName } from "../lib/utils";
-import { UserAvatar } from "../components/user-avatar";
+} from "@/lib/api";
+import { useUIStore } from "@/stores/ui";
+import { usePermissions } from "@/hooks/usePermissions";
+import { toast, toastError } from "@/lib/toast";
+import { cn, getUserDisplayName } from "@/lib/utils";
+import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@teamspace-one/ui/button";
 import { Input } from "@teamspace-one/ui/input";
 import {
@@ -590,12 +590,10 @@ function MilestonesTab({ milestones, projectMap }: { milestones: Task[]; project
 function TimelineTab({
   projects,
   tasksByProject,
-  userMap,
   onOpenProject,
 }: {
   projects: Project[];
   tasksByProject: Map<string, Task[]>;
-  userMap: Map<string, UserDto>;
   onOpenProject: (projectId: string) => void;
 }) {
   const withWork = projects.filter(
@@ -627,7 +625,7 @@ function TimelineTab({
                 <ChevronRight size={14} />
               </span>
             </button>
-            <Gantt project={project} tasks={tasks} userMap={userMap} compact onSelect={() => onOpenProject(project.id)} />
+            <Gantt project={project} tasks={tasks} onSelect={() => onOpenProject(project.id)} />
           </div>
         );
       })}
@@ -1009,7 +1007,6 @@ export function MyProjectsScreen() {
               <TimelineTab
                 projects={projectList}
                 tasksByProject={tasksByProject}
-                userMap={userMap}
                 onOpenProject={openProject}
               />
             )}

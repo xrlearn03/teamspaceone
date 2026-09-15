@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -10,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { HrmsScopeService } from './scope.service.js';
 import { AuthProfileClientService, type AuthProfileUpdate } from './auth-profile.client.js';
+import { AuthAccountsClientService } from './auth-accounts.client.js';
 
 export interface RequestContextInput {
   organisationId: string;
@@ -108,6 +111,7 @@ export class EmployeesService {
     private readonly outbox: OutboxService,
     private readonly scope: HrmsScopeService,
     private readonly authProfiles: AuthProfileClientService,
+    private readonly authAccounts: AuthAccountsClientService,
   ) {}
 
   async list(
@@ -405,6 +409,104 @@ export class EmployeesService {
       await this.authProfiles.updateUserProfile(employee.userId, profile, ctx.correlationId);
     }
 
+    return sanitizeEmployee(employee, user);
+  }
+
+  /**
+   * HR-driven invite: provisions a login account in the auth service
+   * (temporary password for new accounts; unactivated accounts get theirs
+   * rotated), links it to the employee record, and emits
+   * `hrms.employee.invited` so the organisation service can grant the default
+   * membership and the notification service emails the credentials — the same
+   * email admins' member invites produce.
+   */
+  async invite(
+    ctx: RequestContextInput,
+    user: AuthorizableUser,
+    id: string,
+    input: { email?: string },
+  ) {
+    const [resolved, existing] = await Promise.all([
+      this.scope.resolve(user, ctx.organisationId),
+      this.prisma.employee.findFirst({
+        where: { id, organisationId: ctx.organisationId },
+      }),
+    ]);
+    if (!existing) throw new NotFoundException('Employee not found');
+    const isSelf = resolved.actorEmployee?.id === existing.id;
+    if (!this.scope.canSeeEmployee(resolved, existing) && !isSelf) {
+      throw new ForbiddenException('Employee is outside your data scope');
+    }
+    if (existing.userId) {
+      throw new ConflictException('Employee already has a login account');
+    }
+    if (existing.status === 'terminated') {
+      throw new BadRequestException('Cannot invite a terminated employee');
+    }
+
+    const email = (input.email ?? existing.workEmail ?? existing.personalEmail ?? '')
+      .trim()
+      .toLowerCase();
+    if (!email) {
+      throw new BadRequestException('Employee has no email on file — provide one to send the invite');
+    }
+
+    const provisioned = await this.authAccounts.provisionUser(
+      { email, firstName: existing.firstName, lastName: existing.lastName },
+      ctx.correlationId,
+    );
+    let temporaryPassword = provisioned.temporaryPassword ?? undefined;
+    if (!temporaryPassword) {
+      temporaryPassword =
+        (await this.authAccounts.resetTemporaryPassword(provisioned.user.id, ctx.correlationId)) ??
+        undefined;
+    }
+
+    const employee = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.employee.update({
+        where: { id },
+        data: {
+          userId: provisioned.user.id,
+          ...(existing.workEmail ? {} : { workEmail: email }),
+        },
+      });
+
+      await tx.employeeHistory.create({
+        data: {
+          organisationId: ctx.organisationId,
+          employeeId: id,
+          changeType: 'invited',
+          field: 'userId',
+          oldValue: null,
+          newValue: provisioned.user.id,
+          changedBy: ctx.actorId,
+        },
+      });
+
+      const envelope = createEventEnvelope({
+        eventType: 'teamspace-one.hrms.employee.invited',
+        organisationId: ctx.organisationId,
+        actorId: ctx.actorId,
+        correlationId: ctx.correlationId,
+        resourceType: 'employee',
+        resourceId: id,
+        payload: {
+          employeeId: id,
+          userId: provisioned.user.id,
+          email,
+          firstName: existing.firstName,
+          lastName: existing.lastName,
+          temporaryPassword,
+          accountCreated: provisioned.accountCreated,
+          invitedBy: ctx.actorId,
+        },
+      });
+      await this.outbox.createEvent(tx, envelope, envelope.eventType);
+
+      return updated;
+    });
+
+    await this.syncProfile(employee, ctx.correlationId);
     return sanitizeEmployee(employee, user);
   }
 

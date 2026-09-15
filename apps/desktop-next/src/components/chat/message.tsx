@@ -89,7 +89,7 @@ export function MessageItem({
   const reactionEntries = Object.entries(reactions);
 
   return (
-    <div className={cn("flex gap-3", isMe && !compact && "flex-row-reverse")}>
+    <div className={cn("flex gap-3", isMe && "flex-row-reverse")}>
       {compact ? (
         <span className="w-8 shrink-0" />
       ) : (
@@ -97,7 +97,7 @@ export function MessageItem({
           <AvatarFallback>{author.charAt(0).toUpperCase()}</AvatarFallback>
         </Avatar>
       )}
-      <div className={cn("flex max-w-[80%] flex-col", isMe && !compact && "items-end")}>
+      <div className={cn("flex max-w-[80%] flex-col", isMe && "items-end")}>
         {!compact && (
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-text">{author}</span>
@@ -133,7 +133,7 @@ export function MessageItem({
             <div
               className={cn(
                 "mt-0.5 rounded-lg px-3 py-2 text-sm",
-                isMe && !compact ? "bg-primary text-white" : "bg-surface-elevated text-text",
+                isMe ? "bg-primary text-white" : "bg-surface-elevated text-text",
                 message.deletedAt && "italic opacity-60",
                 message.pending && "opacity-70",
               )}
@@ -233,7 +233,7 @@ export function MessageItem({
           </div>
         )}
         {reactionEntries.length > 0 && !message.deletedAt ? (
-          <div className={cn("mt-1 flex flex-wrap gap-1", isMe && !compact && "justify-end")}>
+          <div className={cn("mt-1 flex flex-wrap gap-1", isMe && "justify-end")}>
             {reactionEntries.map(([emoji, users]) => {
               const mine = user ? users.includes(user.id) : false;
               return (

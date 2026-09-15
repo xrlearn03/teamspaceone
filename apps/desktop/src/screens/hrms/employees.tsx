@@ -41,7 +41,7 @@ function employeeTitle(e: Employee) {
   return e.designation?.title ?? e.designation?.name ?? e.designationName ?? "—";
 }
 
-interface Draft {
+export interface Draft {
   isDraft: true;
   id: string;
   userId: string;
@@ -50,6 +50,8 @@ interface Draft {
   lastName: string;
   workEmail: string | null;
   phone: string | null;
+  roleName?: string | null;
+  createdAt?: string;
 }
 
 interface EmployeeFormState {
@@ -490,7 +492,7 @@ function EmployeeDetail({ employeeId, onBack }: { employeeId: string; onBack: ()
   );
 }
 
-function isInternalMember(m: OrganisationMember) {
+export function isInternalMember(m: OrganisationMember) {
   return m.role.roleCategory !== "external" && m.role.roleCategory !== "guest";
 }
 

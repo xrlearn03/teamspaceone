@@ -431,6 +431,110 @@ export class OrganisationService {
   }
 
   /**
+   * HRMS → organisation employee invite: HR already provisioned the login
+   * account and linked it to the employee record before emitting
+   * `hrms.employee.invited`. Grant the default (employee) membership, record
+   * a pending invitation so admins can resend/revoke it like any other
+   * member invite, and emit MEMBER_INVITED so the notification service emails
+   * the credentials. Idempotent on (userId, organisationId).
+   */
+  async provisionEmployeeInvite(
+    tx: Prisma.TransactionClient,
+    organisationId: string,
+    payload: {
+      employeeId?: string;
+      userId: string;
+      email: string;
+      firstName?: string;
+      lastName?: string;
+      temporaryPassword?: string;
+      accountCreated?: boolean;
+      invitedBy?: string;
+    },
+  ) {
+    const [role, org] = await Promise.all([
+      tx.role.findFirst({
+        where: {
+          organisationId,
+          OR: [{ isDefault: true }, { name: 'employee' }],
+        },
+        orderBy: [{ isDefault: 'desc' }],
+      }),
+      tx.organisation.findUnique({ where: { id: organisationId } }),
+    ]);
+    if (!role) {
+      // Organisation predates RBAC seeding; skip rather than fail the event.
+      return null;
+    }
+
+    let membership = await tx.organisationMembership.findUnique({
+      where: { userId_organisationId: { userId: payload.userId, organisationId } },
+    });
+    if (!membership) {
+      membership = await tx.organisationMembership.create({
+        data: {
+          id: randomUUID(),
+          userId: payload.userId,
+          organisationId,
+          roleId: role.id,
+        },
+      });
+      await this.authorization.applyRoleScopesToMembership(tx, membership.id, role.id, organisationId);
+    }
+
+    const pendingInvite = await tx.invitation.findFirst({
+      where: { organisationId, email: payload.email, status: 'pending' },
+    });
+    const invitation =
+      pendingInvite ??
+      (await tx.invitation.create({
+        data: {
+          id: randomUUID(),
+          organisationId,
+          email: payload.email,
+          roleId: role.id,
+          token: randomUUID(),
+          userId: payload.userId,
+          expiresAt: hoursFromNow(168),
+        },
+      }));
+
+    const envelope = createEventEnvelope({
+      eventType: Subjects.MEMBER_INVITED,
+      organisationId,
+      actorId: payload.invitedBy ?? 'system',
+      resourceType: 'invitation',
+      resourceId: invitation.id,
+      payload: {
+        email: payload.email,
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        organisationId,
+        organisationName: org?.name,
+        roleName: role.name,
+        invitedBy: payload.invitedBy,
+        temporaryPassword: payload.temporaryPassword,
+        accountCreated: payload.accountCreated ?? false,
+      },
+    });
+    await this.outbox.createEvent(tx, envelope, Subjects.MEMBER_INVITED);
+
+    await tx.auditLog.create({
+      data: {
+        id: randomUUID(),
+        organisationId,
+        userId: payload.invitedBy ?? null,
+        action: 'employee.invited',
+        resourceType: 'employee',
+        resourceId: payload.employeeId ?? payload.userId,
+        metadata: { email: payload.email, roleId: role.id, membershipId: membership.id },
+      },
+    });
+
+    return membership;
+  }
+
+  /**
    * HRMS → collaboration offboarding: when the HRMS service emits
    * `hrms.employee.terminated`, remove the user's organisation membership so
    * they lose collaboration access. Memberships carry no status flag —

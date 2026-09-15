@@ -2166,6 +2166,14 @@ export function terminateEmployee(id: string) {
   return apiRequest<void>(`/hrms/employees/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+/** Provisions a login account for the employee and emails them their credentials. */
+export function inviteEmployee(id: string, body?: { email?: string }) {
+  return apiRequest<Employee>(`/hrms/employees/${encodeURIComponent(id)}/invite`, {
+    method: "POST",
+    body: body ?? {},
+  });
+}
+
 export function getDepartments() {
   return apiRequest<Department[]>("/hrms/departments");
 }
@@ -2513,6 +2521,7 @@ export interface InterviewAnswer {
 export interface InterviewEvaluation {
   id: string;
   sessionId: string;
+  evaluatorId?: string | null;
   technicalScore?: number;
   communicationScore?: number;
   problemSolvingScore?: number;

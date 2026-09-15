@@ -2,8 +2,6 @@ import { useEffect } from "react";
 import { useUIStore } from "../../stores/ui";
 import { useShallow } from "zustand/shallow";
 import { useTheme } from "../../hooks/useTheme";
-import { AppRail } from "../navigation/app-rail";
-import { WorkspaceSidebar } from "../navigation/workspace-sidebar";
 import { StatusBar } from "./status-bar";
 import { RightPanel } from "./right-panel";
 import { CommandMenu } from "../search/command-menu";
@@ -101,14 +99,7 @@ export function AppShellDesktop() {
           </div>
         ) : null}
         <div className="flex flex-1 overflow-hidden">
-          {shellVariant !== "default" ? (
-            <RoleSidebar variant={shellVariant} />
-          ) : (
-            <>
-              <AppRail />
-              <WorkspaceSidebar />
-            </>
-          )}
+          <RoleSidebar variant={shellVariant} />
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <TopHeader />
             <div className="flex min-h-0 flex-1 overflow-hidden">

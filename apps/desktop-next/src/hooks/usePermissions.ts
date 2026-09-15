@@ -49,16 +49,20 @@ export function usePermissions() {
   };
 }
 
-export type ShellVariant = "admin" | "hr" | "default";
+export type ShellVariant = "admin" | "hr" | "member";
 
 /**
- * Which sidebar chrome the caller gets:
+ * Which sidebar chrome the caller gets — every organisation role uses the
+ * Figma role sidebar (same panel/header/footer); only the middle menu section
+ * differs:
  * - "admin": organisation super admin / org admin (wildcard `*`) and other
- *   administrative roles — Figma admin menu (Assets / Users / Administrations).
- * - "hr": HR Admin and HR Manager — Figma HR menu (Employees / Departments /
+ *   administrative roles — admin menu (Assets / Users / Administrations).
+ * - "hr": HR Admin and HR Manager — HR menu (Employees / Departments /
  *   Designations / Leaves / Tickets). Detected via the role name or HR-ops
  *   permissions that only HR roles carry.
- * - "default": everyone else keeps the collaboration rail + workspace sidebar.
+ * - "member": everyone else (employee, managers, finance/payroll staff,
+ *   recruiting roles, candidates, clients) — the common collaboration +
+ *   self-service menus only.
  */
 export function useShellVariant(): ShellVariant {
   const { data } = useMyContext();
@@ -76,7 +80,7 @@ export function useShellVariant(): ShellVariant {
     );
   if (isHr) return "hr";
   if (data?.roleCategory === "administrative") return "admin";
-  return "default";
+  return "member";
 }
 
 /**

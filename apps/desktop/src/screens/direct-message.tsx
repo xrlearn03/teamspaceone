@@ -17,7 +17,6 @@ import { UserAvatar } from "../components/user-avatar";
 import { getActiveOrganisation } from "../lib/api";
 import { useRealtime } from "../hooks/useRealtime";
 import { usePermissionContext } from "@teamspace-one/authorization/react";
-import { useShellVariant } from "../hooks/usePermissions";
 import { hasPermission } from "@teamspace-one/authorization";
 import { cn, getUserDisplayName } from "../lib/utils";
 import type { Channel, Message, UserDto } from "../lib/api";
@@ -48,7 +47,6 @@ export function DirectMessageScreen() {
     })),
   );
 
-  const shellVariant = useShellVariant();
   const { data: user } = useMe();
   const { data: channels } = useChannels();
   const { data: members } = useMembers(getActiveOrganisation() ?? undefined);
@@ -243,9 +241,8 @@ export function DirectMessageScreen() {
   return (
     <>
     <div className="flex h-full">
-      {/* Conversation list pane (admin/hr shells have no workspace sidebar). */}
-      {shellVariant !== "default" && (
-        <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-surface md:flex lg:w-72">
+      {/* Conversation list pane (the role sidebar has no workspace sidebar). */}
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-surface md:flex lg:w-72">
           <div className="flex h-14 items-center justify-between border-b border-border px-4">
             <h2 className="text-base font-semibold text-text">Messages</h2>
             <button
@@ -307,7 +304,6 @@ export function DirectMessageScreen() {
             )}
           </div>
         </aside>
-      )}
 
       <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-[72px] shrink-0 items-center justify-between gap-3 border-b border-border px-4 sm:px-5">

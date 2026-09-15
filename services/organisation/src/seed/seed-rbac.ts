@@ -5,6 +5,9 @@ import { DEFAULT_ROLES, expandPermissions } from '../organisation/authorization.
 
 const prisma = new PrismaClient();
 
+const scopeKey = (s: { module: string; scope: string; scopeValue: string | null }) =>
+  `${s.module}|${s.scope}|${s.scopeValue ?? ''}`;
+
 /**
  * Full RBAC seed + backfill:
  *  1. Upserts the global permission registry.
@@ -97,49 +100,59 @@ async function main() {
         rolesBackfilled += 1;
       }
 
-      const existingRoleScopes = await prisma.roleScope.count({
+      const existingRoleScopes = await prisma.roleScope.findMany({
         where: { roleId: role.id },
+        select: { module: true, scope: true, scopeValue: true },
       });
-      if (existingRoleScopes === 0 && template.scopes.length > 0) {
+      const existingScopeKeys = new Set(existingRoleScopes.map(scopeKey));
+      const missingScopes = template.scopes.filter(
+        (s) => !existingScopeKeys.has(scopeKey({ ...s, scopeValue: s.scopeValue ?? null })),
+      );
+      // Same top-up rule as permissions: system-managed roles pick up scopes
+      // added to the template after the role was created.
+      if (missingScopes.length > 0 && (role.isSystem || existingRoleScopes.length === 0)) {
         await prisma.roleScope.createMany({
-          data: template.scopes.map((s) => ({
+          data: missingScopes.map((s) => ({
             id: randomUUID(),
             roleId: role.id,
             module: s.module,
             scope: s.scope,
             scopeValue: s.scopeValue ?? null,
           })),
-          skipDuplicates: true,
         });
       }
     }
   }
 
-  // 3. Membership data scopes.
+  // 3. Membership data scopes — top up memberships missing scopes their
+  // role grants (covers both unscoped memberships and roles that gained
+  // scopes after the membership was created).
   const memberships = await prisma.organisationMembership.findMany({
     select: {
       id: true,
       roleId: true,
-      dataScopes: { select: { id: true } },
+      dataScopes: { select: { module: true, scope: true, scopeValue: true } },
     },
   });
   let membershipsBackfilled = 0;
 
   for (const membership of memberships) {
-    if (membership.dataScopes.length > 0 || !membership.roleId) continue;
+    if (!membership.roleId) continue;
     const roleScopes = await prisma.roleScope.findMany({
       where: { roleId: membership.roleId },
     });
     if (roleScopes.length === 0) continue;
+    const existingKeys = new Set(membership.dataScopes.map(scopeKey));
+    const missing = roleScopes.filter((s) => !existingKeys.has(scopeKey(s)));
+    if (missing.length === 0) continue;
     await prisma.dataScope.createMany({
-      data: roleScopes.map((s) => ({
+      data: missing.map((s) => ({
         id: randomUUID(),
         membershipId: membership.id,
         module: s.module,
         scope: s.scope,
         scopeValue: s.scopeValue,
       })),
-      skipDuplicates: true,
     });
     membershipsBackfilled += 1;
   }

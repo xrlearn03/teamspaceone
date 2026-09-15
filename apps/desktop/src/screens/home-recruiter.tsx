@@ -1,43 +1,24 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useQueries } from "@tanstack/react-query";
 import {
-  ArrowUpDown,
-  BriefcaseBusiness,
+  ArrowRight,
   CalendarDays,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
+  Check,
   ClipboardCheck,
   FileText,
-  Filter,
-  MoreHorizontal,
   Phone,
   Plus,
-  Search,
-  ShieldAlert,
+  Sparkles,
+  Star,
   Users,
   Video,
-  X,
 } from "lucide-react";
-import type {
-  Candidate,
-  HiringDecision,
-  InterviewSession,
-} from "../lib/api";
-import {
-  useCandidates,
-  useHiringDecisions,
-  useInterviewOverview,
-  useInterviewSessions,
-  useJobOpenings,
-  usePendingEvaluations,
-} from "../hooks/api";
+import type { InterviewEvaluation, InterviewSession } from "../lib/api";
+import { getSessionEvaluations } from "../lib/api";
+import { useInterviewSessions, useJobOpenings, useMe } from "../hooks/api";
 import { usePermissions } from "../hooks/usePermissions";
-import { QuickCheckInCard } from "../features/dashboard/widgets";
 import { useUIStore } from "../stores/ui";
-import { cn } from "../lib/utils";
-import { Badge } from "@teamspace-one/ui/badge";
-import { Button } from "@teamspace-one/ui/button";
-import { EmptyState } from "@teamspace-one/ui/empty-state";
+import { cn, getUserDisplayName } from "../lib/utils";
 import { Skeleton } from "@teamspace-one/ui/skeleton";
 import {
   CreateCandidateDialog,
@@ -48,36 +29,40 @@ import {
    HELPERS
 ========================================================= */
 
-/** Board columns mapped onto backend application stages. */
-const PIPELINE_STAGES = [
-  { key: "applied", label: "Applied", match: ["applied"], chip: "bg-surface-elevated text-text-secondary" },
-  { key: "screening", label: "Screening", match: ["screening", "shortlisted"], chip: "bg-info/10 text-info" },
-  { key: "interview", label: "Interview", match: ["interview", "evaluation"], chip: "bg-mention/10 text-mention" },
-  { key: "offer", label: "Offer", match: ["offer"], chip: "bg-success/10 text-success" },
-  { key: "hired", label: "Hired", match: ["hired"], chip: "bg-success/10 text-success" },
+/** Evaluation score fields averaged into the "Top Skills" bars. */
+const SKILL_BARS = [
+  { key: "technicalScore", label: "Technical Knowledge", color: "from-blue-500 to-blue-400" },
+  { key: "communicationScore", label: "Communication", color: "from-violet-500 to-purple-400" },
+  { key: "problemSolvingScore", label: "Problem Solving", color: "from-cyan-400 to-cyan-300" },
+  { key: "cultureFitScore", label: "Culture Fit", color: "from-emerald-400 to-green-400" },
 ] as const;
 
-type PipelineStageKey = (typeof PIPELINE_STAGES)[number]["key"];
+type ScoreKey = (typeof SKILL_BARS)[number]["key"];
 
-const BAR_COLORS = ["bg-info", "bg-primary", "bg-mention", "bg-warning", "bg-success"];
-
-function stageKeyFor(raw?: string | null): PipelineStageKey | null {
-  if (!raw) return null;
-  const normalized = raw.toLowerCase();
-  for (const stage of PIPELINE_STAGES) {
-    if ((stage.match as readonly string[]).includes(normalized)) return stage.key;
-  }
-  return null;
+/** Backend scores are 0–100; the dashboard presents them as a 0–5 rating. */
+function scoreToRating(score: number) {
+  return score / 20;
 }
 
-/** The application that places a candidate on the board (latest, or the one for the selected job). */
-function activeApplication(candidate: Candidate, jobId: string | null) {
-  const apps = candidate.applications ?? [];
-  const scoped = jobId ? apps.filter((a) => a.jobOpeningId === jobId) : apps;
-  if (scoped.length === 0) return null;
-  return [...scoped].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  )[0];
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/);
+  return `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`.toUpperCase() || "?";
+}
+
+function formatTime(iso?: string | null) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function endTime(iso: string, durationMin: number) {
+  return formatTime(new Date(new Date(iso).getTime() + durationMin * 60000).toISOString());
+}
+
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
 }
 
 function timeAgo(iso?: string | null) {
@@ -92,503 +77,303 @@ function timeAgo(iso?: string | null) {
   return `${days}d ago`;
 }
 
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/);
-  return `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`.toUpperCase() || "?";
+function mean(values: number[]) {
+  if (values.length === 0) return null;
+  return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-function formatTime(iso?: string | null) {
-  if (!iso) return "";
-  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+function monthBounds(offset: number): [number, number] {
+  const now = new Date();
+  return [
+    new Date(now.getFullYear(), now.getMonth() + offset, 1).getTime(),
+    new Date(now.getFullYear(), now.getMonth() + offset + 1, 1).getTime(),
+  ];
 }
 
-function isToday(iso?: string | null) {
-  return Boolean(iso) && new Date(iso as string).toDateString() === new Date().toDateString();
+function avgInMonth(evals: InterviewEvaluation[], offset: number) {
+  const [start, end] = monthBounds(offset);
+  return mean(
+    evals
+      .filter((e) => {
+        const t = new Date(e.createdAt).getTime();
+        return e.overallScore != null && t >= start && t < end;
+      })
+      .map((e) => e.overallScore as number),
+  );
+}
+
+type SessionTiming = "live" | "upcoming" | "ended" | "cancelled" | "unscheduled";
+
+function sessionTiming(session: InterviewSession, now = new Date()): SessionTiming {
+  if (session.status === "cancelled") return "cancelled";
+  if (session.status === "completed") return "ended";
+  if (!session.scheduledAt) return "unscheduled";
+  const start = new Date(session.scheduledAt).getTime();
+  const end = start + (session.durationMin || 60) * 60000;
+  const t = now.getTime();
+  if (t >= start && t <= end) return "live";
+  if (t < start) return "upcoming";
+  return "ended";
+}
+
+/** Catmull-Rom → cubic bezier for the feedback trend chart. */
+function smoothPath(points: { x: number; y: number }[]) {
+  if (points.length === 0) return "";
+  if (points.length === 1) {
+    const p = points[0];
+    return `M ${p.x - 6} ${p.y} L ${p.x + 6} ${p.y}`;
+  }
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] ?? p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${p2.x} ${p2.y}`;
+  }
+  return d;
 }
 
 /* =========================================================
-   STAT CARD
+   REUSABLE UI
 ========================================================= */
 
-function StatCard({
+function InitialsAvatar({ name, className }: { name: string; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary ring-2 ring-border",
+        className,
+      )}
+    >
+      {initials(name)}
+    </div>
+  );
+}
+
+function BriefItem({
   icon,
-  value,
-  label,
-  note,
   iconClass,
+  title,
+  description,
 }: {
   icon: React.ReactNode;
-  value: string;
-  label: string;
-  note: string;
   iconClass: string;
+  title: string;
+  description: string;
 }) {
   return (
-    <div className="min-w-[185px] flex-1 rounded-xl border border-border bg-surface p-4 shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", iconClass)}>
+    <div className="flex items-center gap-3">
+      <div
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+          iconClass,
+        )}
+      >
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[12px] font-medium text-text">{title}</p>
+        <p className="mt-0.5 text-[10px] leading-4 text-text-muted">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({
+  icon,
+  iconClass,
+  title,
+  value,
+  change,
+  description,
+}: {
+  icon: React.ReactNode;
+  iconClass: string;
+  title: string;
+  value: string;
+  change?: { text: string; positive: boolean };
+  description: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-surface p-5 shadow-sm transition hover:border-primary/30">
+      <div className="flex items-center gap-4">
+        <div
+          className={cn(
+            "flex h-16 w-16 shrink-0 items-center justify-center rounded-xl",
+            iconClass,
+          )}
+        >
           {icon}
         </div>
         <div className="min-w-0">
-          <div className="text-[11px] text-text-muted">{label}</div>
-          <div className="mt-1 text-2xl font-semibold tracking-tight text-text">{value}</div>
-          <div className="mt-1 text-[10px] font-medium text-text-muted">{note}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* =========================================================
-   CANDIDATE CARD
-========================================================= */
-
-function CandidateCard({
-  candidate,
-  jobId,
-}: {
-  candidate: Candidate;
-  jobId: string | null;
-}) {
-  const application = activeApplication(candidate, jobId);
-  const stageKey = stageKeyFor(application?.stage ?? candidate.status);
-  const stage = PIPELINE_STAGES.find((s) => s.key === stageKey);
-
-  return (
-    <div className="group rounded-xl border border-border bg-surface p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
-          {initials(candidate.name)}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-1">
-            <div className="truncate text-xs font-semibold text-text">{candidate.name}</div>
-          </div>
-          <div className="mt-1 truncate text-[10px] text-text-muted">
-            {application?.jobOpening?.title ?? candidate.email}
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {stage && (
-              <span className={cn("inline-flex rounded-md px-2 py-0.5 text-[10px] font-semibold", stage.chip)}>
-                {application?.stage ?? candidate.status}
-              </span>
-            )}
-            {candidate.source && (
-              <span className="inline-flex rounded-md bg-surface-elevated px-2 py-0.5 text-[10px] font-medium text-text-muted">
-                {candidate.source}
+          <p className="text-[13px] text-text-secondary">{title}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-3">
+            <span className="text-[27px] font-semibold tracking-tight text-text">
+              {value}
+            </span>
+            {change && (
+              <span
+                className={cn(
+                  "text-[13px] font-medium",
+                  change.positive ? "text-success" : "text-error",
+                )}
+              >
+                {change.text}
               </span>
             )}
           </div>
-          <div className="mt-2 text-[10px] text-text-muted">{timeAgo(candidate.createdAt)}</div>
+          {description && (
+            <p className="mt-1 text-[11px] text-text-muted">{description}</p>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-/* =========================================================
-   PIPELINE COLUMN
-========================================================= */
-
-function PipelineColumn({
-  stage,
-  candidates,
-  jobId,
-  addCandidate,
+function Panel({
+  title,
+  action,
+  onAction,
+  hint,
+  children,
 }: {
-  stage: (typeof PIPELINE_STAGES)[number];
-  candidates: Candidate[];
-  jobId: string | null;
-  addCandidate?: React.ReactNode;
-}) {
-  return (
-    <div className="flex min-w-[200px] flex-1 flex-col rounded-xl bg-surface-elevated/60">
-      <div className="flex items-center justify-between px-3 py-3">
-        <span className="text-[11px] font-semibold text-text">{stage.label}</span>
-        <span className="text-[11px] font-semibold text-text-muted">{candidates.length}</span>
-      </div>
-      <div className="flex flex-1 flex-col gap-2 px-2 pb-2">
-        {candidates.map((candidate) => (
-          <CandidateCard key={candidate.id} candidate={candidate} jobId={jobId} />
-        ))}
-        {candidates.length === 0 && (
-          <p className="rounded-lg border border-dashed border-border px-2 py-4 text-center text-[10px] text-text-muted">
-            No candidates
-          </p>
-        )}
-        {addCandidate}
-      </div>
-    </div>
-  );
-}
-
-/* =========================================================
-   TODAY'S SCHEDULE
-========================================================= */
-
-function SchedulePanel({ sessions }: { sessions: InterviewSession[] }) {
-  const setActiveView = useUIStore((s) => s.setActiveView);
-  const todays = useMemo(
-    () =>
-      sessions
-        .filter((s) => isToday(s.scheduledAt))
-        .sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime())
-        .slice(0, 5),
-    [sessions],
-  );
-
-  return (
-    <aside className="rounded-xl border border-border bg-surface p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-text">Today's Schedule</h3>
-        <button
-          onClick={() => setActiveView("interview", { interviewTab: "sessions" })}
-          className="text-xs font-medium text-primary"
-        >
-          View All
-        </button>
-      </div>
-
-      {todays.length === 0 ? (
-        <p className="mt-5 text-xs text-text-muted">No interviews scheduled for today.</p>
-      ) : (
-        <div className="mt-4">
-          {todays.map((item, index) => (
-            <div key={item.id} className="relative flex gap-3 pb-4 last:pb-0">
-              {index < todays.length - 1 && (
-                <span className="absolute left-[72px] top-5 h-full w-px bg-border" />
-              )}
-              <div className="w-[62px] shrink-0">
-                <div className="text-[11px] font-semibold text-text">{formatTime(item.scheduledAt)}</div>
-                <div className="mt-1 text-[10px] text-text-muted">{item.durationMin} min</div>
-              </div>
-              <div className="relative flex min-w-0 flex-1 gap-2">
-                <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-primary ring-4 ring-primary/10" />
-                <div className="min-w-0">
-                  <div className="truncate text-[11px] font-semibold text-text">
-                    Interview — {item.candidate?.name ?? "Candidate"}
-                  </div>
-                  <div className="mt-1 text-[10px] leading-4 text-text-muted">
-                    {item.jobOpening?.title ?? "Interview session"}
-                  </div>
-                  {item.interviewType && (
-                    <div className="text-[10px] text-text-muted">({item.interviewType})</div>
-                  )}
-                </div>
-                <button
-                  onClick={() => setActiveView("interview", { interviewTab: "sessions" })}
-                  className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-                >
-                  {item.interviewType?.toLowerCase().includes("phone") ? (
-                    <Phone size={13} />
-                  ) : (
-                    <Video size={13} />
-                  )}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </aside>
-  );
-}
-
-/* =========================================================
-   RECENT ACTIVITY
-========================================================= */
-
-type ActivityItem = {
-  id: string;
   title: string;
-  subtitle: string;
-  at: string;
-};
-
-function decisionLabel(decision: string) {
-  switch (decision) {
-    case "hire":
-      return "hired";
-    case "offer":
-      return "offer extended";
-    case "reject":
-      return "rejected";
-    default:
-      return `marked ${decision}`;
-  }
-}
-
-function RecentActivity({
-  candidates,
-  decisions,
-}: {
-  candidates: Candidate[];
-  decisions: HiringDecision[];
+  action?: string;
+  onAction?: () => void;
+  hint?: string;
+  children: React.ReactNode;
 }) {
-  const setActiveView = useUIStore((s) => s.setActiveView);
-  const items = useMemo<ActivityItem[]>(() => {
-    const list: ActivityItem[] = candidates.map((c) => ({
-      id: `c-${c.id}`,
-      title: `${c.name} applied`,
-      subtitle: c.applications?.[0]?.jobOpening?.title ?? c.source ?? "Candidate",
-      at: c.createdAt,
-    }));
-    for (const d of decisions) {
-      list.push({
-        id: `d-${d.id}`,
-        title: `${d.application?.candidate?.name ?? "Candidate"} — ${decisionLabel(d.decision)}`,
-        subtitle: d.application?.jobOpening?.title ?? "Hiring decision",
-        at: d.createdAt,
-      });
-    }
-    return list
-      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-      .slice(0, 5);
-  }, [candidates, decisions]);
-
   return (
-    <aside className="rounded-xl border border-border bg-surface p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-text">Recent Activity</h3>
-        <button
-          onClick={() => setActiveView("interview")}
-          className="text-xs font-medium text-primary"
-        >
-          View All
-        </button>
-      </div>
-
-      <div className="mt-4 space-y-4">
-        {items.length === 0 && (
-          <p className="text-xs text-text-muted">No recent activity yet.</p>
+    <div className="rounded-xl border border-border bg-surface p-5 shadow-sm">
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <h2 className="text-[18px] font-semibold text-text">{title}</h2>
+        {action && (
+          <button
+            onClick={onAction}
+            className="whitespace-nowrap text-[12px] font-medium text-primary transition hover:text-primary-hover"
+          >
+            {action}
+          </button>
         )}
-        {items.map((item) => (
-          <div key={item.id} className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-mention/10 text-mention">
-              <Users size={15} />
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-[11px] font-semibold text-text">{item.title}</div>
-              <div className="mt-1 truncate text-[10px] text-text-muted">
-                {item.subtitle} · {timeAgo(item.at)}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </aside>
-  );
-}
-
-/* =========================================================
-   TALENT POOL
-========================================================= */
-
-function TalentPool({ total }: { total: number }) {
-  const setActiveView = useUIStore((s) => s.setActiveView);
-  return (
-    <aside className="rounded-xl border border-border bg-surface p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-text">Talent Pool</h3>
-        <button
-          onClick={() => setActiveView("interview", { interviewTab: "candidates" })}
-          className="text-xs font-medium text-primary"
-        >
-          View All
-        </button>
-      </div>
-      <button
-        onClick={() => setActiveView("interview", { interviewTab: "candidates" })}
-        className="mt-4 flex w-full items-center gap-3 text-left"
-      >
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-mention/10 text-mention">
-          <Users size={20} />
-        </div>
-        <div>
-          <div className="text-xl font-semibold text-text">{total}</div>
-          <div className="text-[10px] text-text-muted">Candidates in pool</div>
-        </div>
-        <ChevronRight size={16} className="ml-auto text-text-muted" />
-      </button>
-    </aside>
-  );
-}
-
-/* =========================================================
-   HIRING PIPELINE CHART
-========================================================= */
-
-const STAGE_LABELS: Record<string, string> = {
-  applied: "Applied",
-  screening: "Screening",
-  shortlisted: "Shortlisted",
-  interview: "Interview",
-  evaluation: "Evaluation",
-  offer: "Offer",
-  hired: "Hired",
-  rejected: "Rejected",
-};
-
-const STAGE_ORDER = [
-  "applied",
-  "screening",
-  "shortlisted",
-  "interview",
-  "evaluation",
-  "offer",
-  "hired",
-  "rejected",
-];
-
-function HiringPipelineChart({ byStage }: { byStage: Record<string, number> }) {
-  const bars = STAGE_ORDER.filter((s) => (byStage[s] ?? 0) > 0).map((s) => ({
-    name: STAGE_LABELS[s] ?? s,
-    value: byStage[s],
-  }));
-  const max = Math.max(1, ...bars.map((b) => b.value));
-
-  return (
-    <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
-      <h3 className="text-sm font-semibold text-text">Hiring Pipeline</h3>
-      {bars.length === 0 ? (
-        <p className="mt-6 text-xs text-text-muted">No candidates in the pipeline yet.</p>
-      ) : (
-        <div className="mt-4 flex h-[120px] items-end justify-between gap-3 border-b border-border px-2">
-          {bars.map((bar, i) => (
-            <div key={bar.name} className="flex h-full flex-1 flex-col items-center justify-end">
-              <span className="mb-1 text-[10px] font-semibold text-text-muted">{bar.value}</span>
-              <div
-                className={cn("w-full max-w-[38px] rounded-t-md", BAR_COLORS[i % BAR_COLORS.length])}
-                style={{ height: `${Math.max(6, (bar.value / max) * 78)}px` }}
-              />
-              <span className="mt-2 truncate text-[9px] text-text-muted">{bar.name}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* =========================================================
-   PENDING EVALUATIONS
-========================================================= */
-
-function PendingEvaluations() {
-  const setActiveView = useUIStore((s) => s.setActiveView);
-  const { data: pending, isLoading } = usePendingEvaluations();
-  const items = (pending ?? []) as Array<{
-    id: string;
-    status?: string;
-    session?: { candidate?: { name?: string }; jobOpening?: { title?: string } };
-  }>;
-
-  return (
-    <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-text">Pending Evaluations</h3>
-        <button
-          onClick={() => setActiveView("interview", { interviewTab: "evaluations" })}
-          className="text-xs font-medium text-primary"
-        >
-          Review
-        </button>
-      </div>
-
-      <div className="mt-3 flex items-center gap-2">
-        <span className="text-2xl font-semibold text-text">
-          {isLoading ? "—" : items.length}
-        </span>
-        {items.length > 0 && (
-          <span className="rounded-md bg-warning/10 px-2 py-1 text-[10px] font-semibold text-warning">
-            awaiting feedback
+        {hint && (
+          <span className="rounded-lg border border-border bg-surface-elevated px-3 py-2 text-[11px] text-text-secondary">
+            {hint}
           </span>
         )}
       </div>
-      <div className="mt-1 text-[10px] text-text-muted">Interview evaluations to submit or review</div>
-
-      <div className="mt-3 space-y-2">
-        {items.slice(0, 3).map((e) => (
-          <div key={e.id} className="flex items-center gap-2 text-[11px]">
-            <ClipboardCheck size={12} className="shrink-0 text-text-muted" />
-            <span className="truncate text-text">{e.session?.candidate?.name ?? "Interview"}</span>
-            <span className="ml-auto shrink-0 text-[10px] text-text-muted">
-              {e.session?.jobOpening?.title ?? ""}
-            </span>
-          </div>
-        ))}
-        {!isLoading && items.length === 0 && (
-          <p className="text-[11px] text-text-muted">Nothing waiting on you.</p>
-        )}
-      </div>
+      {children}
     </div>
   );
 }
 
-/* =========================================================
-   SOURCE BREAKDOWN
-========================================================= */
+const TIMING_BADGE: Record<SessionTiming, { label: string; chip: string; dot: string } | null> = {
+  live: { label: "Live Now", chip: "bg-info/15 text-info", dot: "bg-info" },
+  upcoming: { label: "Upcoming", chip: "bg-mention/15 text-mention", dot: "bg-mention" },
+  ended: { label: "Ended", chip: "bg-surface-elevated text-text-muted", dot: "bg-text-muted" },
+  cancelled: { label: "Cancelled", chip: "bg-error/10 text-error", dot: "bg-error" },
+  unscheduled: null,
+};
 
-const SOURCE_COLORS = ["#6366f1", "#0ea5e9", "#8b5cf6", "#f59e0b", "#10b981", "#94a3b8"];
+function InterviewRow({
+  session,
+  timing,
+  evaluated,
+  canConduct,
+  canEvaluate,
+}: {
+  session: InterviewSession;
+  timing: SessionTiming;
+  evaluated: boolean;
+  canConduct: boolean;
+  canEvaluate: boolean;
+}) {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const openSession = () =>
+    setActiveView("ai-interview", { interviewSessionId: session.id });
 
-function SourceBreakdown({ candidates }: { candidates: Candidate[] }) {
-  const segments = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const c of candidates) {
-      const key = c.source?.trim() || "Other";
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-    const top = sorted.slice(0, 4);
-    const rest = sorted.slice(4).reduce((acc, [, n]) => acc + n, 0);
-    const entries = rest > 0 ? [...top, ["Other", rest] as [string, number]] : top;
-    const total = Math.max(
-      1,
-      entries.reduce((acc, [, n]) => acc + n, 0),
-    );
-    let cursor = 0;
-    return {
-      total,
-      entries: entries.map(([name, count], i) => {
-        const start = cursor;
-        cursor += (count / total) * 100;
-        return { name, count, pct: Math.round((count / total) * 100), start, end: cursor, color: SOURCE_COLORS[i % SOURCE_COLORS.length] };
-      }),
-    };
-  }, [candidates]);
+  const badge = TIMING_BADGE[timing];
+  const action =
+    timing === "live" && canConduct
+      ? { label: "Join", primary: true }
+      : timing === "ended" && canEvaluate && !evaluated
+        ? { label: "Add Feedback", primary: false }
+        : timing === "cancelled"
+          ? null
+          : { label: "View Details", primary: false };
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
-      <h3 className="text-sm font-semibold text-text">Source Breakdown</h3>
-      {candidates.length === 0 ? (
-        <p className="mt-6 text-xs text-text-muted">No candidate sources yet.</p>
-      ) : (
-        <div className="mt-4 flex items-center gap-5">
-          <div
-            className="relative h-[100px] w-[100px] shrink-0 rounded-full"
-            style={{
-              background: `conic-gradient(${segments.entries
-                .map((e) => `${e.color} ${e.start}% ${e.end}%`)
-                .join(", ")})`,
-            }}
-          >
-            <div className="absolute inset-[21px] flex items-center justify-center rounded-full bg-surface">
-              <div className="text-center">
-                <div className="text-base font-semibold text-text">{candidates.length}</div>
-                <div className="text-[9px] text-text-muted">Candidates</div>
-              </div>
-            </div>
-          </div>
-          <div className="min-w-0 space-y-2">
-            {segments.entries.map((e) => (
-              <div key={e.name} className="flex items-center gap-2 text-[10px]">
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: e.color }} />
-                <span className="w-[80px] truncate text-text-muted">{e.name}</span>
-                <strong className="text-text-secondary">{e.pct}%</strong>
-              </div>
-            ))}
-          </div>
-        </div>
+    <div className="relative flex min-h-[76px] items-center gap-4 rounded-xl px-1 py-2 transition hover:bg-primary/[0.04]">
+      {/* Timeline dot */}
+      <div className="relative z-10 flex w-6 shrink-0 justify-center">
+        <span
+          className={cn(
+            "h-3.5 w-3.5 rounded-full border-2 border-surface",
+            timing === "live"
+              ? "bg-info shadow-[0_0_15px_rgba(34,211,238,.8)]"
+              : timing === "ended" || timing === "cancelled"
+                ? "bg-text-muted/50"
+                : "bg-primary",
+          )}
+        />
+      </div>
+
+      {/* Time */}
+      <div className="w-[95px] shrink-0">
+        <p className="text-[16px] font-medium text-text">
+          {formatTime(session.scheduledAt)}
+        </p>
+        <p className="mt-1 text-[11px] text-text-muted">{session.durationMin} min</p>
+      </div>
+
+      {/* Avatar */}
+      <InitialsAvatar
+        name={session.candidate?.name ?? "?"}
+        className="h-12 w-12 text-[14px]"
+      />
+
+      {/* Person */}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[14px] font-medium text-text">
+          {session.candidate?.name ?? "Candidate"}
+        </p>
+        <p className="mt-1 truncate text-[12px] text-text-muted">
+          {session.jobOpening?.title ?? session.interviewType}
+        </p>
+      </div>
+
+      {/* Status */}
+      {badge && (
+        <span
+          className={cn(
+            "hidden items-center gap-2 rounded-full px-3 py-1.5 text-[11px] sm:inline-flex",
+            badge.chip,
+          )}
+        >
+          <span className={cn("h-2 w-2 rounded-full", badge.dot)} />
+          {badge.label}
+        </span>
+      )}
+
+      {/* Action */}
+      {action && (
+        <button
+          onClick={openSession}
+          className={cn(
+            "hidden h-11 w-[150px] shrink-0 items-center justify-center gap-2 rounded-lg text-[13px] font-medium md:flex",
+            action.primary
+              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-[0_8px_25px_rgba(37,99,235,.25)] transition hover:brightness-110"
+              : "border border-primary/25 bg-surface-elevated text-text-secondary transition hover:border-primary/40 hover:text-text",
+          )}
+        >
+          {action.primary && <Video size={15} />}
+          {action.label}
+        </button>
       )}
     </div>
   );
@@ -598,366 +383,776 @@ function SourceBreakdown({ candidates }: { candidates: Candidate[] }) {
    MAIN
 ========================================================= */
 
-const DASH_TABS: { label: string; interviewTab?: string }[] = [
-  { label: "Candidates" },
-  { label: "Job Requisitions", interviewTab: "jobs" },
-  { label: "Interviews", interviewTab: "sessions" },
-  { label: "Offers", interviewTab: "decisions" },
-  { label: "Talent Pool", interviewTab: "candidates" },
-];
-
 export function RecruiterHomeScreen() {
   const { can } = usePermissions();
   const setActiveView = useUIStore((s) => s.setActiveView);
+  const { data: user } = useMe();
+  const userId = user?.id;
 
-  const [search, setSearch] = useState("");
-  const [showFilter, setShowFilter] = useState(false);
-  const [sortNewest, setSortNewest] = useState(true);
-  const [stageFilter, setStageFilter] = useState<string>("");
-  const [sourceFilter, setSourceFilter] = useState<string>("");
-  const [jobId, setJobId] = useState<string | null>(null);
-
-  const overview = useInterviewOverview();
   const jobs = useJobOpenings();
-  const candidates = useCandidates();
-  const sessions = useInterviewSessions(true);
-  const canSeeDecisions = can("interview.decision.view");
-  const decisions = useHiringDecisions(canSeeDecisions);
+  const sessions = useInterviewSessions();
+  const upcomingQuery = useInterviewSessions(true);
+
+  const canConduct = can("interview.interview.conduct");
+  const canEvaluate = can("interview.interview.evaluate");
 
   const jobList = jobs.data ?? [];
-  const candidateList = candidates.data ?? [];
-  const byStage = overview.data?.candidatesByStage ?? {};
-  const selectedJob = jobList.find((j) => j.id === jobId) ?? null;
+  const sessionList = useMemo(() => sessions.data ?? [], [sessions.data]);
 
-  const sources = useMemo(
+  /* Sessions the caller is actually a panel member of — "assigned" to them. */
+  const mySessions = useMemo(
     () =>
-      [...new Set(candidateList.map((c) => c.source?.trim()).filter(Boolean))].sort() as string[],
-    [candidateList],
+      userId
+        ? sessionList.filter((s) =>
+            (s.participants ?? []).some((p) => p.userId === userId),
+          )
+        : [],
+    [sessionList, userId],
   );
 
-  const filteredCandidates = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    let result = candidateList.filter((candidate) => {
-      if (q && !`${candidate.name} ${candidate.email}`.toLowerCase().includes(q)) return false;
-      if (sourceFilter && (candidate.source?.trim() ?? "") !== sourceFilter) return false;
-      const application = activeApplication(candidate, jobId);
-      const key = stageKeyFor(application?.stage ?? candidate.status);
-      if (jobId && !application) return false;
-      if (stageFilter && key !== stageFilter) return false;
-      return key !== null;
-    });
-    result = [...result].sort((a, b) => {
-      const diff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      return sortNewest ? -diff : diff;
-    });
-    return result;
-  }, [candidateList, search, sourceFilter, stageFilter, jobId, sortNewest]);
+  /* Evaluations on the caller's sessions — one query per session, then keep
+     only the ones they submitted. Member scope keeps this list small. */
+  const evalQueries = useQueries({
+    queries: mySessions.map((s) => ({
+      queryKey: ["interview", "sessions", s.id, "evaluations"],
+      queryFn: () => getSessionEvaluations(s.id),
+      staleTime: 30 * 1000,
+    })),
+  });
+  const evalsLoading = evalQueries.some((q) => q.isLoading);
 
-  const candidatesByStage = (key: PipelineStageKey) =>
-    filteredCandidates.filter((candidate) => {
-      const application = activeApplication(candidate, jobId);
-      return stageKeyFor(application?.stage ?? candidate.status) === key;
-    });
+  const myEvaluations = useMemo(
+    () =>
+      mySessions.flatMap((session, i) =>
+        (evalQueries[i]?.data ?? [])
+          .filter((e) => e.evaluatorId === userId)
+          .map((e) => ({ ...e, session })),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [evalQueries, mySessions, userId],
+  );
 
-  const stats = [
+  const evaluatedSessionIds = useMemo(
+    () => new Set(myEvaluations.map((e) => e.sessionId)),
+    [myEvaluations],
+  );
+
+  /* ---------------- derived data ---------------- */
+  const { todaySessions, completedToday, remainingToday } = useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    const list = sessionList
+      .filter((s) => {
+        if (!s.scheduledAt) return false;
+        const t = new Date(s.scheduledAt).getTime();
+        return t >= start.getTime() && t < end.getTime();
+      })
+      .sort(
+        (a, b) =>
+          new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime(),
+      );
+    const done = list.filter((s) => s.status === "completed").length;
+    const cancelled = list.filter((s) => s.status === "cancelled").length;
+    return {
+      todaySessions: list,
+      completedToday: done,
+      remainingToday: list.length - done - cancelled,
+    };
+  }, [sessionList]);
+
+  const nextSession = useMemo(
+    () =>
+      mySessions
+        .filter((s) => s.status === "scheduled" && sessionTiming(s) === "upcoming")
+        .sort(
+          (a, b) =>
+            new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime(),
+        )[0],
+    [mySessions],
+  );
+
+  const pendingFeedback = useMemo(
+    () =>
+      mySessions.filter(
+        (s) => sessionTiming(s) === "ended" && !evaluatedSessionIds.has(s.id),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mySessions, evaluatedSessionIds],
+  );
+
+  const ratedEvals = useMemo(
+    () => myEvaluations.filter((e) => e.overallScore != null),
+    [myEvaluations],
+  );
+  const avgScore = mean(ratedEvals.map((e) => e.overallScore as number));
+  const avgRating = avgScore === null ? null : scoreToRating(avgScore);
+  const thisMonthAvg = avgInMonth(ratedEvals, 0);
+  const lastMonthAvg = avgInMonth(ratedEvals, -1);
+  const ratingDelta =
+    thisMonthAvg !== null && lastMonthAvg !== null
+      ? scoreToRating(thisMonthAvg - lastMonthAvg)
+      : null;
+
+  const assignedMom = useMemo(() => {
+    const [cs, ce] = monthBounds(0);
+    const [ps, pe] = monthBounds(-1);
+    const inRange = (s: InterviewSession, start: number, end: number) => {
+      const t = new Date(s.createdAt).getTime();
+      return t >= start && t < end;
+    };
+    const current = mySessions.filter((s) => inRange(s, cs, ce)).length;
+    const previous = mySessions.filter((s) => inRange(s, ps, pe)).length;
+    if (previous === 0) {
+      return current > 0 ? { text: `↑ ${current} this month`, positive: true } : undefined;
+    }
+    const pct = Math.round(((current - previous) / previous) * 100);
+    return { text: `${pct >= 0 ? "↑" : "↓"} ${Math.abs(pct)}%`, positive: pct >= 0 };
+  }, [mySessions]);
+
+  const feedbackThisMonth = useMemo(() => {
+    const [start, end] = monthBounds(0);
+    return myEvaluations.filter((e) => {
+      const t = new Date(e.createdAt).getTime();
+      return t >= start && t < end;
+    }).length;
+  }, [myEvaluations]);
+
+  /* ---------------- feedback trend (avg rating / month, last 6) ---------------- */
+  const trend = useMemo(() => {
+    const now = new Date();
+    return Array.from({ length: 6 }, (_, i) => {
+      const start = new Date(now.getFullYear(), now.getMonth() + i - 5, 1);
+      const avg = avgInMonth(ratedEvals, i - 5);
+      return {
+        label: start.toLocaleDateString([], { month: "short" }),
+        rating: avg === null ? null : scoreToRating(avg),
+      };
+    });
+  }, [ratedEvals]);
+
+  const CHART = { w: 460, top: 15, bottom: 195 };
+  const xFor = (i: number) => 15 + i * ((CHART.w - 30) / 5);
+  const yFor = (v: number) => CHART.bottom - (v / 5) * (CHART.bottom - CHART.top);
+  const trendPoints = trend
+    .map((m, i) => (m.rating === null ? null : { x: xFor(i), y: yFor(m.rating) }))
+    .filter((p): p is { x: number; y: number } => p !== null);
+  const trendLine = smoothPath(trendPoints);
+  const trendArea =
+    trendPoints.length > 0
+      ? `${trendLine} L ${trendPoints[trendPoints.length - 1].x} ${CHART.bottom} L ${trendPoints[0].x} ${CHART.bottom} Z`
+      : "";
+
+  /* ---------------- top skills ---------------- */
+  const skills = useMemo(
+    () =>
+      SKILL_BARS.map((def) => ({
+        ...def,
+        value: Math.round(
+          mean(
+            myEvaluations
+              .map((e) => e[def.key as ScoreKey])
+              .filter((v): v is number => v != null),
+          ) ?? 0,
+        ),
+      })),
+    [myEvaluations],
+  );
+
+  /* ---------------- lists ---------------- */
+  const upcomingSessions = useMemo(
+    () => (upcomingQuery.data ?? []).filter((s) => s.scheduledAt).slice(0, 5),
+    [upcomingQuery.data],
+  );
+
+  const recentFeedback = useMemo(
+    () =>
+      [...myEvaluations]
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )
+        .slice(0, 5),
+    [myEvaluations],
+  );
+
+  const displayName = getUserDisplayName(user, "there");
+  const today = new Date().toLocaleDateString([], {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
+  /* ---------------- daily brief ---------------- */
+  const briefs = [
     {
-      icon: <BriefcaseBusiness size={20} />,
-      value: overview.data?.openJobs ?? jobList.filter((j) => j.status === "open").length,
-      label: "Open Positions",
-      note: `${jobList.length} job${jobList.length === 1 ? "" : "s"} listed`,
+      icon: <Check size={16} />,
+      iconClass: "bg-success/10 text-success",
+      title: `${todaySessions.length} interview${todaySessions.length === 1 ? "" : "s"} scheduled today`,
+      description: `${completedToday} completed · ${remainingToday} upcoming`,
+    },
+    {
+      icon: <CalendarDays size={16} />,
       iconClass: "bg-info/10 text-info",
+      title: nextSession
+        ? `Next interview at ${formatTime(nextSession.scheduledAt)}`
+        : "No upcoming interviews",
+      description: nextSession
+        ? `${nextSession.candidate?.name ?? "Candidate"} · ${nextSession.jobOpening?.title ?? "Interview"}`
+        : "You're all caught up",
     },
     {
-      icon: <Users size={20} />,
-      value: overview.data?.totalCandidates ?? candidateList.length,
-      label: "Total Candidates",
-      note: "Across all openings",
-      iconClass: "bg-success/10 text-success",
-    },
-    {
-      icon: <CalendarDays size={20} />,
-      value: overview.data?.interviewsToday ?? 0,
-      label: "Interviews Today",
-      note: `${overview.data?.upcomingInterviews ?? 0} upcoming`,
+      icon: <ClipboardCheck size={16} />,
       iconClass: "bg-mention/10 text-mention",
+      title: `${pendingFeedback.length} feedback form${pendingFeedback.length === 1 ? "" : "s"} pending`,
+      description: "Complete evaluations after your interviews",
     },
     {
-      icon: <FileText size={20} />,
-      value: byStage.offer ?? 0,
-      label: "Offers Extended",
-      note: "Awaiting response",
+      icon: <Star size={16} />,
       iconClass: "bg-warning/10 text-warning",
-    },
-    {
-      icon: <CheckCircle2 size={20} />,
-      value: byStage.hired ?? 0,
-      label: "Hired",
-      note: "All time",
-      iconClass: "bg-success/10 text-success",
+      title:
+        avgRating === null
+          ? "No ratings submitted yet"
+          : `Average rating is ${avgRating.toFixed(1)} / 5`,
+      description:
+        ratingDelta !== null
+          ? `${ratingDelta >= 0 ? "↑" : "↓"} ${Math.abs(ratingDelta).toFixed(1)} compared with last month`
+          : "across your submitted evaluations",
     },
   ];
 
-  const addCandidateTrigger = (className: string) =>
-    can("interview.candidate.create") ? (
-      <CreateCandidateDialog
-        jobs={jobList}
-        trigger={
-          <button className={className}>
-            <Plus size={13} />
-            Add Candidate
-          </button>
-        }
-      />
-    ) : null;
+  const stats = [
+    {
+      icon: <CalendarDays size={29} />,
+      iconClass: "bg-info/10 text-info",
+      title: "Today's Interviews",
+      value: String(todaySessions.length),
+      description: `${completedToday} completed  ·  ${remainingToday} upcoming`,
+    },
+    {
+      icon: <Users size={29} />,
+      iconClass: "bg-success/10 text-success",
+      title: "Total Assigned",
+      value: String(mySessions.length),
+      change: assignedMom,
+      description: "vs last month",
+    },
+    {
+      icon: <FileText size={29} />,
+      iconClass: "bg-mention/10 text-mention",
+      title: "Feedback Submitted",
+      value: String(myEvaluations.length),
+      change:
+        feedbackThisMonth > 0
+          ? { text: `↑ ${feedbackThisMonth}`, positive: true }
+          : undefined,
+      description: feedbackThisMonth > 0 ? "this month" : "",
+    },
+    {
+      icon: <Star size={29} />,
+      iconClass: "bg-warning/10 text-warning",
+      title: "Average Rating Given",
+      value: avgRating === null ? "—" : `${avgRating.toFixed(1)} / 5`,
+      change:
+        ratingDelta !== null
+          ? {
+              text: `${ratingDelta >= 0 ? "↑" : "↓"} ${Math.abs(ratingDelta).toFixed(1)}`,
+              positive: ratingDelta >= 0,
+            }
+          : undefined,
+      description: "vs last month",
+    },
+  ];
+
+  const goSessions = () => setActiveView("interview", { interviewTab: "sessions" });
+  const goEvaluations = () =>
+    setActiveView("interview", { interviewTab: "evaluations" });
 
   return (
-    <div className="mx-auto flex h-full max-w-[1500px] flex-col overflow-y-auto bg-background px-5 py-5 text-text">
-      {/* =================================================
-          HEADER
-      ================================================= */}
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-text">Recruiter Panel</h1>
-          <p className="mt-1 text-sm text-text-secondary">
-            Find great people. Build amazing teams.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {can("interview.job.create") && (
-            <CreateJobDialog
-              trigger={
-                <button className="flex h-10 items-center gap-2 rounded-lg bg-primary px-5 text-xs font-semibold text-white shadow-sm transition hover:bg-primary-hover">
-                  <Plus size={15} />
-                  Create Job
-                </button>
-              }
-            />
-          )}
-          {addCandidateTrigger(
-            "flex h-10 items-center gap-2 rounded-lg border border-border bg-surface px-5 text-xs font-semibold text-primary transition hover:border-primary/40",
-          )}
-          <button
-            onClick={() => setActiveView("interview")}
-            className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-surface text-text-muted"
-            title="Open interview workspace"
-          >
-            <MoreHorizontal size={16} />
-          </button>
-        </div>
-      </header>
+    <div className="relative h-full w-full overflow-y-auto bg-background text-text">
+      {/* Background glows */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-40 -top-40 h-[500px] w-[500px] rounded-full bg-primary/10 blur-[150px]" />
+        <div className="absolute -right-40 -top-20 h-[500px] w-[500px] rounded-full bg-info/10 blur-[150px]" />
+        <div className="absolute bottom-[-250px] left-[30%] h-[500px] w-[500px] rounded-full bg-mention/10 blur-[160px]" />
+      </div>
 
-      {/* =================================================
-          KPI CARDS
-      ================================================= */}
-      <section className="mt-4 flex gap-3 overflow-x-auto pb-1">
-        {overview.isLoading
-          ? Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-[92px] min-w-[185px] flex-1 rounded-xl" />
-            ))
-          : stats.map((s) => <StatCard key={s.label} {...s} value={String(s.value)} />)}
-      </section>
+      <main className="relative mx-auto max-w-[1500px] px-5 py-6 xl:px-7">
+        {/* =================================================
+            HEADER
+        ================================================= */}
+        <header className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h1 className="text-[30px] font-bold tracking-[-0.04em] text-text sm:text-[32px]">
+              {getGreeting()}, {displayName}!
+            </h1>
+            <p className="mt-1 text-[16px] text-text-secondary">
+              Here’s your interview overview for today.
+            </p>
+          </div>
 
-      {/* =================================================
-          CONTENT GRID
-      ================================================= */}
-      <div className="mt-4 grid gap-4 pb-6 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <section className="min-w-0">
-          {/* Tabs + controls */}
-          <div className="flex flex-col gap-3 border-b border-border pb-2 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex overflow-x-auto">
-              {DASH_TABS.map((tab) => (
-                <button
-                  key={tab.label}
-                  onClick={() =>
-                    tab.interviewTab
-                      ? setActiveView("interview", { interviewTab: tab.interviewTab })
-                      : undefined
+          <div className="flex items-center gap-6">
+            <div className="text-left lg:text-right">
+              <p className="text-[13px] text-text-secondary">{today}</p>
+              <p className="mt-1 text-[14px] italic leading-6 text-text-muted">
+                “Great interviews
+                <br />
+                build great teams.”
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {can("interview.job.create") && (
+                <CreateJobDialog
+                  trigger={
+                    <button className="flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-[13px] font-semibold text-white shadow-sm transition hover:bg-primary-hover">
+                      <Plus size={16} />
+                      Post a New Job
+                    </button>
                   }
-                  className={cn(
-                    "relative whitespace-nowrap px-4 py-3 text-xs font-medium",
-                    tab.interviewTab ? "text-text-muted hover:text-text" : "font-semibold text-primary",
-                  )}
-                >
-                  {tab.label}
-                  {!tab.interviewTab && (
-                    <span className="absolute bottom-[-9px] left-0 right-0 h-0.5 bg-primary" />
-                  )}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-[220px] items-center gap-2 rounded-lg border border-border bg-surface px-3">
-                <Search size={14} className="text-text-muted" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search candidates..."
-                  className="w-full bg-transparent text-xs outline-none placeholder:text-text-muted"
                 />
-                {search && (
-                  <button onClick={() => setSearch("")} className="text-text-muted">
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-              <button
-                onClick={() => setShowFilter(!showFilter)}
-                className={cn(
-                  "flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold",
-                  showFilter
-                    ? "border-primary/40 bg-primary/10 text-primary"
-                    : "border-border bg-surface text-text-secondary",
-                )}
-              >
-                <Filter size={14} />
-                Filter
-              </button>
-              <button
-                onClick={() => setSortNewest(!sortNewest)}
-                className="flex h-9 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-semibold text-text-secondary"
-              >
-                <ArrowUpDown size={13} />
-                {sortNewest ? "Newest" : "Oldest"}
-              </button>
-            </div>
-          </div>
-
-          {/* Filter row */}
-          {showFilter && (
-            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface p-3">
-              <span className="text-xs font-semibold text-text-muted">Filter by:</span>
-              <select
-                value={stageFilter}
-                onChange={(e) => setStageFilter(e.target.value)}
-                className="h-8 rounded-lg border border-border bg-surface px-2 text-xs text-text-secondary"
-              >
-                <option value="">All stages</option>
-                {PIPELINE_STAGES.map((s) => (
-                  <option key={s.key} value={s.key}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={sourceFilter}
-                onChange={(e) => setSourceFilter(e.target.value)}
-                className="h-8 rounded-lg border border-border bg-surface px-2 text-xs text-text-secondary"
-              >
-                <option value="">All sources</option>
-                {sources.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={() => {
-                  setStageFilter("");
-                  setSourceFilter("");
-                  setShowFilter(false);
-                }}
-                className="ml-auto text-xs font-semibold text-primary"
-              >
-                Clear
-              </button>
-            </div>
-          )}
-
-          {/* Job heading */}
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative flex items-center">
-                <select
-                  value={jobId ?? ""}
-                  onChange={(e) => setJobId(e.target.value || null)}
-                  className="h-9 appearance-none rounded-lg border border-transparent bg-transparent pr-7 text-base font-semibold text-text outline-none"
-                >
-                  <option value="">All openings</option>
-                  {jobList.map((j) => (
-                    <option key={j.id} value={j.id}>
-                      {j.title}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={15} className="pointer-events-none absolute right-1 text-text-muted" />
-              </div>
-              <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold text-primary">
-                {filteredCandidates.length} candidate{filteredCandidates.length === 1 ? "" : "s"}
-              </span>
-              {selectedJob?.departmentName && (
-                <span className="rounded-full bg-surface-elevated px-3 py-1 text-[10px] font-medium text-text-muted">
-                  {selectedJob.departmentName}
-                </span>
               )}
-              {selectedJob && (
-                <Badge variant={selectedJob.status === "open" ? "success" : "secondary"}>
-                  {selectedJob.status}
-                </Badge>
+              {can("interview.candidate.create") && (
+                <CreateCandidateDialog
+                  jobs={jobList}
+                  trigger={
+                    <button className="flex h-10 items-center gap-2 rounded-xl border border-border bg-surface px-4 text-[13px] font-semibold text-primary transition hover:border-primary/40">
+                      <Plus size={16} />
+                      Add Candidate
+                    </button>
+                  }
+                />
               )}
             </div>
-            <button
-              onClick={() => setActiveView("interview", { interviewTab: "jobs" })}
-              className="text-xs font-semibold text-primary"
-            >
-              View Details
-            </button>
           </div>
+        </header>
 
-          {/* Pipeline */}
-          <div className="mt-3 overflow-x-auto pb-2">
-            {candidates.isLoading ? (
-              <div className="flex min-w-[1020px] gap-2">
-                {PIPELINE_STAGES.map((s) => (
-                  <Skeleton key={s.key} className="h-[280px] min-w-[200px] flex-1 rounded-xl" />
+        {/* =================================================
+            AI DAILY BRIEF
+        ================================================= */}
+        <section className="relative mt-6 overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-surface to-surface shadow-sm">
+          {/* decorative glows */}
+          <div className="pointer-events-none absolute -right-20 -top-24 h-[330px] w-[500px] rounded-full bg-primary/10 blur-[100px]" />
+          <div className="pointer-events-none absolute bottom-[-100px] right-[25%] h-[250px] w-[400px] rounded-full bg-mention/10 blur-[100px]" />
+
+          {/* decorative rings */}
+          <div className="pointer-events-none absolute right-[8%] top-[-90px] h-[330px] w-[600px] rotate-[-13deg] rounded-[50%] border border-primary/[0.08]" />
+          <div className="pointer-events-none absolute right-[5%] top-[-65px] h-[290px] w-[550px] rotate-[-13deg] rounded-[50%] border border-mention/[0.07]" />
+
+          <div className="relative grid min-h-[250px] lg:grid-cols-[1fr_360px]">
+            {/* Brief content */}
+            <div className="p-6 lg:p-7">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-mention/15 text-mention ring-1 ring-mention/20">
+                  <Sparkles size={25} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-[19px] font-semibold text-text">
+                      AI Daily Brief
+                    </h2>
+                    <span className="rounded-full bg-mention/20 px-2.5 py-1 text-[9px] font-semibold text-mention">
+                      Beta
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[12px] text-text-muted">
+                    Your personalized interview update for today
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                {briefs.map((brief) => (
+                  <BriefItem key={brief.title} {...brief} />
                 ))}
               </div>
-            ) : candidates.isError ? (
-              <EmptyState
-                icon={ShieldAlert}
-                title="Couldn't load candidates"
-                action={
-                  <Button variant="secondary" size="sm" onClick={() => candidates.refetch()}>
-                    Retry
-                  </Button>
-                }
-              />
-            ) : (
-              <div className="flex min-w-[1020px] gap-2">
-                {PIPELINE_STAGES.map((stage) => (
-                  <PipelineColumn
-                    key={stage.key}
-                    stage={stage}
-                    candidates={candidatesByStage(stage.key)}
-                    jobId={jobId}
-                    addCandidate={addCandidateTrigger(
-                      "mt-auto flex h-8 w-full items-center justify-center gap-1 rounded-lg border border-border bg-surface text-[11px] font-semibold text-primary transition hover:border-primary/40",
-                    )}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+            </div>
 
-          {/* Analytics */}
-          <div className="mt-1 grid gap-3 md:grid-cols-3">
-            <HiringPipelineChart byStage={byStage} />
-            <PendingEvaluations />
-            <SourceBreakdown candidates={candidateList} />
+            {/* AI visual */}
+            <div className="relative flex min-h-[230px] items-center justify-center overflow-hidden border-t border-primary/10 lg:border-l lg:border-t-0">
+              <div className="absolute h-[235px] w-[235px] rounded-full border border-primary/[0.1]" />
+              <div className="absolute h-[180px] w-[180px] rounded-full border border-mention/[0.1]" />
+              <div className="absolute h-[135px] w-[135px] rounded-full border border-info/[0.1]" />
+              <div className="absolute h-40 w-40 rounded-full bg-primary/15 blur-[50px]" />
+
+              {/* Orb */}
+              <div className="relative flex h-[118px] w-[118px] items-center justify-center rounded-full border border-primary/20 bg-gradient-to-br from-primary/20 via-mention/10 to-mention/20 shadow-[0_0_70px_rgba(59,130,246,.25)]">
+                <div className="flex h-[82px] w-[82px] items-center justify-center rounded-full border border-primary/20 bg-surface shadow-inner">
+                  <Sparkles size={38} className="text-primary" />
+                </div>
+              </div>
+
+              {/* Status message */}
+              <div className="absolute bottom-5 right-6 rounded-xl border border-border bg-surface/90 px-5 py-3 backdrop-blur-xl">
+                <p className="text-center text-[13px] font-medium leading-5 text-text">
+                  {pendingFeedback.length > 0
+                    ? "Feedback is waiting."
+                    : "Stay focused."}
+                  <br />
+                  <span className="text-primary">
+                    {pendingFeedback.length > 0
+                      ? `${pendingFeedback.length} evaluation${pendingFeedback.length === 1 ? "" : "s"} to complete`
+                      : "You’re on track!"}
+                  </span>
+                </p>
+              </div>
+            </div>
           </div>
         </section>
 
-        {/* Right sidebar */}
-        <aside className="space-y-4">
-          <QuickCheckInCard />
-          <SchedulePanel sessions={sessions.data ?? []} />
-          <RecentActivity
-            candidates={candidateList}
-            decisions={canSeeDecisions ? (decisions.data ?? []) : []}
-          />
-          <TalentPool total={overview.data?.totalCandidates ?? candidateList.length} />
-        </aside>
-      </div>
+        {/* =================================================
+            KPI CARDS
+        ================================================= */}
+        <section className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {sessions.isLoading
+            ? Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-[110px] rounded-xl" />
+              ))
+            : stats.map((s) => <MetricCard key={s.title} {...s} />)}
+        </section>
+
+        {/* =================================================
+            CONTENT GRID
+        ================================================= */}
+        <section className="mt-5 grid gap-5 xl:grid-cols-[1.85fr_0.95fr]">
+          {/* ============ LEFT COLUMN ============ */}
+          <div className="space-y-5">
+            {/* Today's interviews */}
+            <Panel title="Today's Interviews" action="View Calendar  →" onAction={goSessions}>
+              {sessions.isLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-[76px] rounded-xl" />
+                  ))}
+                </div>
+              ) : todaySessions.length === 0 ? (
+                <p className="py-10 text-center text-xs text-text-muted">
+                  No interviews scheduled for today.
+                </p>
+              ) : (
+                <div className="relative">
+                  {/* timeline */}
+                  <div className="absolute bottom-5 left-[12px] top-5 w-px bg-gradient-to-b from-info via-primary to-mention" />
+                  <div className="space-y-1">
+                    {todaySessions.map((session) => (
+                      <InterviewRow
+                        key={session.id}
+                        session={session}
+                        timing={sessionTiming(session)}
+                        evaluated={evaluatedSessionIds.has(session.id)}
+                        canConduct={canConduct}
+                        canEvaluate={canEvaluate}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Panel>
+
+            {/* Analytics */}
+            <div className="grid gap-5 lg:grid-cols-2">
+              {/* Feedback trend */}
+              <Panel title="Interview Feedback Trend" hint="Last 6 months">
+                {trendPoints.length === 0 ? (
+                  <p className="flex h-[235px] items-center justify-center text-center text-xs text-text-muted">
+                    No evaluation scores yet.
+                  </p>
+                ) : (
+                  <div className="relative h-[235px]">
+                    {[0, 1, 2, 3, 4, 5].map((v) => (
+                      <div
+                        key={v}
+                        className="absolute inset-x-0 border-t border-border"
+                        style={{ top: yFor(v) }}
+                      />
+                    ))}
+
+                    <div className="absolute left-0 top-0 flex h-[210px] flex-col justify-between text-[10px] text-text-muted">
+                      {[5, 4, 3, 2, 1, 0].map((v) => (
+                        <span key={v}>{v}</span>
+                      ))}
+                    </div>
+
+                    <svg
+                      viewBox={`0 0 ${CHART.w} 220`}
+                      className="absolute left-7 top-0 h-[220px] w-[calc(100%-30px)]"
+                      preserveAspectRatio="none"
+                    >
+                      <defs>
+                        <linearGradient
+                          id="feedbackFill"
+                          x1="0"
+                          x2="0"
+                          y1="0"
+                          y2="1"
+                        >
+                          <stop offset="0%" stopColor="#7c3aed" stopOpacity=".30" />
+                          <stop offset="100%" stopColor="#2563eb" stopOpacity=".02" />
+                        </linearGradient>
+                        <linearGradient id="feedbackLine" x1="0" x2="1">
+                          <stop offset="0%" stopColor="#8b5cf6" />
+                          <stop offset="100%" stopColor="#6366f1" />
+                        </linearGradient>
+                      </defs>
+
+                      {trendArea && (
+                        <path d={trendArea} fill="url(#feedbackFill)" />
+                      )}
+                      {trendLine && (
+                        <path
+                          d={trendLine}
+                          fill="none"
+                          stroke="url(#feedbackLine)"
+                          strokeWidth="3"
+                        />
+                      )}
+                      {trendPoints.map((p, index) => (
+                        <circle
+                          key={index}
+                          cx={p.x}
+                          cy={p.y}
+                          r="5"
+                          fill="var(--color-surface, #172554)"
+                          stroke="#a78bfa"
+                          strokeWidth="2"
+                        />
+                      ))}
+                    </svg>
+
+                    {avgRating !== null && (
+                      <div className="absolute right-0 top-0 rounded-lg border border-mention/20 bg-mention/20 px-4 py-2 text-center">
+                        <p className="text-[18px] font-semibold text-text">
+                          {avgRating.toFixed(1)}
+                        </p>
+                        <p className="text-[10px] text-mention">Avg. Rating</p>
+                      </div>
+                    )}
+
+                    <div className="absolute bottom-0 left-8 right-0 flex justify-between text-[11px] text-text-muted">
+                      {trend.map((m) => (
+                        <span key={m.label}>{m.label}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </Panel>
+
+              {/* Top skills */}
+              <Panel title="Top Skills Evaluated" hint="All time">
+                {evalsLoading ? (
+                  <div className="space-y-6 pt-2">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="h-8 rounded-lg" />
+                    ))}
+                  </div>
+                ) : myEvaluations.length === 0 ? (
+                  <p className="flex h-[235px] items-center justify-center text-center text-xs text-text-muted">
+                    Submit evaluations to see your skill breakdown.
+                  </p>
+                ) : (
+                  <div className="space-y-6 pt-2">
+                    {skills.map((skill) => (
+                      <div key={skill.label}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[13px] text-text-secondary">
+                            {skill.label}
+                          </span>
+                          <span className="text-[12px] text-text-secondary">
+                            {skill.value}%
+                          </span>
+                        </div>
+                        <div className="mt-2 h-3 rounded-full bg-surface-elevated">
+                          <div
+                            className={cn(
+                              "h-full rounded-full bg-gradient-to-r",
+                              skill.color,
+                            )}
+                            style={{ width: `${skill.value}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Panel>
+            </div>
+          </div>
+
+          {/* ============ RIGHT COLUMN ============ */}
+          <div className="space-y-5">
+            {/* Upcoming */}
+            <Panel title="Upcoming Interviews" action="View All  →" onAction={goSessions}>
+              {upcomingQuery.isLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Skeleton key={i} className="h-14 rounded-lg" />
+                  ))}
+                </div>
+              ) : upcomingSessions.length === 0 ? (
+                <p className="py-8 text-center text-xs text-text-muted">
+                  No interviews scheduled.
+                </p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {upcomingSessions.map((session) => {
+                    const date = new Date(session.scheduledAt!);
+                    const isPhone = session.interviewType
+                      ?.toLowerCase()
+                      .includes("phone");
+                    return (
+                      <button
+                        key={session.id}
+                        onClick={() =>
+                          setActiveView("ai-interview", {
+                            interviewSessionId: session.id,
+                          })
+                        }
+                        className="flex w-full items-center gap-3 py-3.5 text-left transition hover:bg-primary/[0.04]"
+                      >
+                        <div className="flex h-12 w-11 shrink-0 flex-col items-center justify-center rounded-lg bg-primary/10">
+                          <span className="text-[9px] font-semibold uppercase text-text-muted">
+                            {date.toLocaleDateString([], { month: "short" })}
+                          </span>
+                          <span className="text-[16px] font-semibold text-text">
+                            {date.getDate()}
+                          </span>
+                        </div>
+
+                        <InitialsAvatar
+                          name={session.candidate?.name ?? "?"}
+                          className="h-10 w-10 text-[12px] ring-1"
+                        />
+
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] font-medium text-text">
+                            {session.candidate?.name ?? "Candidate"}
+                          </p>
+                          <p className="mt-1 truncate text-[11px] text-text-muted">
+                            {session.jobOpening?.title ?? "Interview"}
+                          </p>
+                        </div>
+
+                        <div className="hidden text-right sm:block">
+                          <p className="whitespace-nowrap text-[10px] text-text-muted">
+                            {formatTime(session.scheduledAt)} –{" "}
+                            {endTime(session.scheduledAt!, session.durationMin)}
+                          </p>
+                          <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-info">
+                            {isPhone ? <Phone size={11} /> : <Video size={11} />}
+                            {isPhone ? "Phone" : "Video"}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </Panel>
+
+            {/* AI interview assistant */}
+            <div className="overflow-hidden rounded-xl border border-primary/25 bg-gradient-to-br from-primary/15 via-surface to-surface p-5">
+              <div className="flex gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/20 text-primary ring-1 ring-primary/20">
+                  <Sparkles size={28} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-[17px] font-semibold text-text">
+                      AI Interview Assistant
+                    </h2>
+                    <span className="rounded-full bg-success/20 px-2 py-0.5 text-[9px] font-semibold text-success">
+                      Beta
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[12px] leading-5 text-text-muted">
+                    Get real-time insights, suggested questions, and evaluation
+                    support during interviews.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={goSessions}
+                className="mt-5 flex h-12 w-full items-center justify-center gap-3 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 text-[13px] font-medium text-white shadow-[0_10px_35px_rgba(79,70,229,.25)] transition hover:brightness-110"
+              >
+                <Sparkles size={18} />
+                Open AI Assistant
+                <ArrowRight size={16} />
+              </button>
+            </div>
+
+            {/* Recent feedback */}
+            <Panel
+              title="Recent Feedback"
+              action="View All  →"
+              onAction={goEvaluations}
+            >
+              {evalsLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Skeleton key={i} className="h-14 rounded-lg" />
+                  ))}
+                </div>
+              ) : recentFeedback.length === 0 ? (
+                <p className="py-8 text-center text-xs text-text-muted">
+                  No feedback submitted yet.
+                </p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {recentFeedback.map((item) => {
+                    const rating = scoreToRating(item.overallScore ?? 0);
+                    const filled = Math.round(rating);
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-3 py-3.5"
+                      >
+                        <InitialsAvatar
+                          name={item.session?.candidate?.name ?? "?"}
+                          className="h-10 w-10 text-[12px] ring-1"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] font-medium text-text">
+                            {item.session?.candidate?.name ?? "Candidate"}
+                          </p>
+                          <p className="mt-1 truncate text-[11px] text-text-muted">
+                            {item.session?.jobOpening?.title ?? "Interview"}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <div className="flex items-center gap-0.5">
+                            {[0, 1, 2, 3, 4].map((star) => (
+                              <span
+                                key={star}
+                                className={cn(
+                                  "text-[14px]",
+                                  star < filled
+                                    ? "text-warning"
+                                    : "text-border",
+                                )}
+                              >
+                                ★
+                              </span>
+                            ))}
+                            <span className="ml-1 text-[12px] text-text">
+                              {rating.toFixed(1)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[10px] text-text-muted">
+                            {timeAgo(item.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Panel>
+          </div>
+        </section>
+      </main>
     </div>
   );
 }

@@ -1106,6 +1106,16 @@ export function useFiles() {
   });
 }
 
+export function useProjectFiles() {
+  return useQuery({
+    queryKey: ["files", orgId(), "resource:project"],
+    queryFn: () => api.getFiles({ resourceType: "project" }),
+    enabled: getActiveOrganisation() !== null,
+    staleTime: 60 * 1000,
+    retry: 2,
+  });
+}
+
 export function useMeetingRecordings(enabled = true) {
   return useQuery({
     queryKey: ["meeting-recordings", orgId()],
@@ -1307,6 +1317,20 @@ export function useTerminateEmployee() {
       client.invalidateQueries({ queryKey: ["hrms", "overview"] });
       client.invalidateQueries({ queryKey: ["hrms", "analytics"] });
       client.invalidateQueries({ queryKey: ["users"] });
+    },
+  });
+}
+
+/** POST /hrms/employees/:id/invite — provisions the account and emails credentials. */
+export function useInviteEmployee() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; email?: string }) => api.inviteEmployee(args.id, { email: args.email }),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["hrms", "employees", orgId()] });
+      client.invalidateQueries({ queryKey: ["hrms", "employees", orgId(), args.id] });
+      client.invalidateQueries({ queryKey: ["members", orgId()] });
+      client.invalidateQueries({ queryKey: ["invitations", orgId()] });
     },
   });
 }

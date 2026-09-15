@@ -85,6 +85,7 @@ interface UIState {
   hrmsTab: string | null;
   helpTab: string | null;
   interviewTab: string | null;
+  projectsTab: string | null;
   activeInterviewSessionId: string | null;
   sidebarCollapsed: boolean;
   sidebarWidth: number;
@@ -103,10 +104,11 @@ interface UIState {
   setTheme: (theme: "light" | "dark" | "system") => void;
   setActiveView: (
     view: View,
-    params?: { channelId?: string; projectId?: string; meetingId?: string; employeeId?: string; hrmsTab?: string; helpTab?: string; interviewTab?: string; interviewSessionId?: string },
+    params?: { channelId?: string; projectId?: string; meetingId?: string; employeeId?: string; hrmsTab?: string; helpTab?: string; interviewTab?: string; projectsTab?: string; interviewSessionId?: string },
   ) => void;
   setHrmsTab: (tab: string | null) => void;
   setHelpTab: (tab: string | null) => void;
+  setProjectsTab: (tab: string | null) => void;
   setActiveMeetingId: (meetingId: string | null) => void;
   setPendingActionFilter: (filter: string | null) => void;
   setGuestMeetingToken: (token: string | null) => void;
@@ -132,6 +134,7 @@ export const useUIStore = create<UIState>((set) => ({
   hrmsTab: null,
   helpTab: null,
   interviewTab: null,
+  projectsTab: null,
   activeInterviewSessionId: null,
   sidebarCollapsed: false,
   sidebarWidth: getSidebarWidthDefault(),
@@ -157,6 +160,7 @@ export const useUIStore = create<UIState>((set) => ({
       hrmsTab: null,
       helpTab: null,
       interviewTab: null,
+      projectsTab: null,
       activeInterviewSessionId: null,
       rightPanelOpen: false,
       searchOpen: false,
@@ -181,10 +185,12 @@ export const useUIStore = create<UIState>((set) => ({
       hrmsTab: params?.hrmsTab ?? (view === "hrms" ? "overview" : null),
       helpTab: params?.helpTab ?? (view === "help" ? "tutorials" : null),
       interviewTab: params?.interviewTab ?? null,
+      projectsTab: params?.projectsTab ?? (view === "my-projects" ? "projects" : null),
       activeInterviewSessionId: params?.interviewSessionId ?? null,
     }),
   setHrmsTab: (tab) => set({ hrmsTab: tab }),
   setHelpTab: (tab) => set({ helpTab: tab }),
+  setProjectsTab: (tab) => set({ projectsTab: tab }),
   setActiveMeetingId: (meetingId) => set({ activeMeetingId: meetingId }),
   setPendingActionFilter: (filter) => set({ pendingActionFilter: filter }),
   setGuestMeetingToken: (token) => set({ guestMeetingToken: token }),

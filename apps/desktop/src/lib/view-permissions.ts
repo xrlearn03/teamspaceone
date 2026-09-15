@@ -51,5 +51,13 @@ export function canAccessView(user: AuthorizableUser | null, view: View): boolea
   if (view === "hrms" && user.permissions.some((p) => p.startsWith("hrms."))) {
     return true;
   }
+  // Same for the interview workspace: staff roles carry interview.* grants
+  // (interview.access is the candidate-facing umbrella permission).
+  if (
+    view === "interview" &&
+    user.permissions.some((p) => p.startsWith("interview."))
+  ) {
+    return true;
+  }
   return false;
 }

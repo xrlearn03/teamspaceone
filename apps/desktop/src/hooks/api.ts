@@ -1328,6 +1328,20 @@ export function useTerminateEmployee() {
   });
 }
 
+/** POST /hrms/employees/:id/invite — provisions the account and emails credentials. */
+export function useInviteEmployee() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; email?: string }) => api.inviteEmployee(args.id, { email: args.email }),
+    onSuccess: (_, args) => {
+      client.invalidateQueries({ queryKey: ["hrms", "employees", orgId()] });
+      client.invalidateQueries({ queryKey: ["hrms", "employees", orgId(), args.id] });
+      client.invalidateQueries({ queryKey: ["members", orgId()] });
+      client.invalidateQueries({ queryKey: ["invitations", orgId()] });
+    },
+  });
+}
+
 export function useDepartments() {
   return useQuery({
     queryKey: ["hrms", "departments", orgId()],

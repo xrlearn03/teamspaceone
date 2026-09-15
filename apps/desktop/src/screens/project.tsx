@@ -226,7 +226,7 @@ function TaskList({ tasks, onSelect }: { tasks: Task[]; onSelect: (task: Task) =
   return <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6"><div className="overflow-x-auto rounded-lg border">{tasks.map((task) => <button key={task.id} type="button" onClick={() => onSelect(task)} className="grid w-full min-w-[640px] grid-cols-[1fr_140px_100px_120px] gap-3 border-b px-4 py-3 text-left text-sm last:border-0 hover:bg-surface-elevated"><span>{task.title}</span><span className="capitalize text-text-muted">{labels[task.status]}</span><span className="capitalize text-text-muted">{task.priority}</span><span className="text-text-muted">{task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "No due date"}</span></button>)}{!tasks.length ? <p className="p-8 text-center text-sm text-text-muted">No tasks yet.</p> : null}</div></div>;
 }
 
-function ProjectDialog({ mode, project, open, onOpenChange, members, userMap, workspaces, clients }: { mode: "create" | "settings"; project?: Project; open: boolean; onOpenChange: (open: boolean) => void; members: { userId: string; role: { name: string } }[]; userMap: Map<string, UserDto>; workspaces: { id: string; name: string }[]; clients: { id: string; name: string }[] }) {
+export function ProjectDialog({ mode, project, open, onOpenChange, members, userMap, workspaces, clients }: { mode: "create" | "settings"; project?: Project; open: boolean; onOpenChange: (open: boolean) => void; members: { userId: string; role: { name: string } }[]; userMap: Map<string, UserDto>; workspaces: { id: string; name: string }[]; clients: { id: string; name: string }[] }) {
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
   const deleteProject = useDeleteProject();
@@ -694,7 +694,7 @@ function GanttStat({ icon, value, label, iconClass }: { icon: React.ReactNode; v
   );
 }
 
-function Gantt({ project, tasks, userMap, onSelect }: { project: Project; tasks: Task[]; userMap: Map<string, UserDto>; onSelect?: (task: Task) => void }) {
+export function Gantt({ project, tasks, userMap, onSelect, compact }: { project: Project; tasks: Task[]; userMap: Map<string, UserDto>; onSelect?: (task: Task) => void; compact?: boolean }) {
   const [view, setView] = useState("Month");
   const [dayWidth, setDayWidth] = useState(GANTT_VIEW_DAY_WIDTH.Month);
   const [offset, setOffset] = useState(0);
@@ -801,8 +801,9 @@ function Gantt({ project, tasks, userMap, onSelect }: { project: Project; tasks:
   const dayGridBg = `repeating-linear-gradient(to right, var(--border) 0, var(--border) 1px, transparent 1px, transparent ${dayWidth}px)`;
 
   return (
-    <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
+    <div className={cn("flex-1 overflow-y-auto", compact ? "" : "p-3 sm:p-4 lg:p-6")}>
       {/* Stats */}
+      {!compact ? (
       <section className="grid grid-cols-2 gap-2 lg:grid-cols-5">
         <GanttStat icon={<ListTodo size={20} />} iconClass="bg-primary/10 text-primary" value={String(total)} label="Total Tasks" />
         <GanttStat icon={<CheckCircle2 size={20} />} iconClass="bg-success/10 text-success" value={String(done)} label="Completed" />
@@ -810,8 +811,10 @@ function Gantt({ project, tasks, userMap, onSelect }: { project: Project; tasks:
         <GanttStat icon={<Users size={20} />} iconClass="bg-mention/10 text-mention" value={String(project.members.length)} label="Team Members" />
         <GanttStat icon={<CalendarDays size={20} />} iconClass="bg-warning/10 text-warning" value={daysLeft === null ? "—" : String(daysLeft)} label="Days Left" />
       </section>
+      ) : null}
 
       {/* Toolbar */}
+      {!compact ? (
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-surface p-2">
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => setOffset((o) => o - 30)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-text-secondary hover:bg-surface-elevated" aria-label="Earlier">
@@ -851,9 +854,10 @@ function Gantt({ project, tasks, userMap, onSelect }: { project: Project; tasks:
           </button>
         </div>
       </div>
+      ) : null}
 
       {/* Filter strip */}
-      {showFilter ? (
+      {!compact && showFilter ? (
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-primary/20 bg-surface p-3">
           <span className="mr-1 text-[10px] font-semibold text-text-secondary">Status:</span>
           {statuses.map((status) => (
@@ -882,7 +886,7 @@ function Gantt({ project, tasks, userMap, onSelect }: { project: Project; tasks:
       ) : null}
 
       {/* Chart */}
-      <section className="mt-3 overflow-hidden rounded-xl border border-border bg-surface">
+      <section className={cn("overflow-hidden rounded-xl border border-border bg-surface", compact ? "" : "mt-3")}>
         <div className="relative overflow-x-auto">
           <div style={{ minWidth: GANTT_LEFT_W + totalWidth }}>
             {/* Header row */}

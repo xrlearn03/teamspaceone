@@ -7,6 +7,7 @@ export const Subjects = {
   ORGANISATION_MEMBER_ADDED: 'teamspace-one.organisation.member_added',
   MEMBER_INVITED: 'teamspace-one.organisation.member_invited',
   HRMS_EMPLOYEE_CREATE: 'teamspace-one.hrms.employee.created',
+  HRMS_EMPLOYEE_INVITED: 'teamspace-one.hrms.employee.invited',
   HRMS_LEAVE_REQUESTED: 'teamspace-one.hrms.leave.requested',
   HRMS_LEAVE_APPROVED: 'teamspace-one.hrms.leave.approved',
   HRMS_LEAVE_REJECTED: 'teamspace-one.hrms.leave.rejected',

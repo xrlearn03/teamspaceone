@@ -69,6 +69,10 @@ export class UpdateEmployeeDto {
   salary?: unknown;
 }
 
+export class InviteEmployeeDto {
+  email?: string;
+}
+
 export class DepartmentDto {
   name?: string;
   description?: string;
@@ -157,6 +161,17 @@ export class EmployeesController {
     @Param('id') id: string,
   ) {
     return this.employees.getById(toCtx(org), user, id);
+  }
+
+  @Post(':id/invite')
+  @RequirePermissions('hrms.employee.edit')
+  invite(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+    @Body() dto: InviteEmployeeDto,
+  ) {
+    return this.employees.invite(toCtx(org), user, id, { email: dto?.email });
   }
 
   @Patch(':id')

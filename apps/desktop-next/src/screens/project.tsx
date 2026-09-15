@@ -224,7 +224,7 @@ function TaskList({ tasks, onSelect }: { tasks: Task[]; onSelect: (task: Task) =
   return <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6"><div className="overflow-x-auto rounded-lg border">{tasks.map((task) => <button key={task.id} type="button" onClick={() => onSelect(task)} className="grid w-full min-w-[640px] grid-cols-[1fr_140px_100px_120px] gap-3 border-b px-4 py-3 text-left text-sm last:border-0 hover:bg-surface-elevated"><span>{task.title}</span><span className="capitalize text-text-muted">{labels[task.status]}</span><span className="capitalize text-text-muted">{task.priority}</span><span className="text-text-muted">{task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "No due date"}</span></button>)}{!tasks.length ? <p className="p-8 text-center text-sm text-text-muted">No tasks yet.</p> : null}</div></div>;
 }
 
-function ProjectDialog({ mode, project, open, onOpenChange, members, userMap, workspaces, clients }: { mode: "create" | "settings"; project?: Project; open: boolean; onOpenChange: (open: boolean) => void; members: { userId: string; role: { name: string } }[]; userMap: Map<string, UserDto>; workspaces: { id: string; name: string }[]; clients: { id: string; name: string }[] }) {
+export function ProjectDialog({ mode, project, open, onOpenChange, members, userMap, workspaces, clients }: { mode: "create" | "settings"; project?: Project; open: boolean; onOpenChange: (open: boolean) => void; members: { userId: string; role: { name: string } }[]; userMap: Map<string, UserDto>; workspaces: { id: string; name: string }[]; clients: { id: string; name: string }[] }) {
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
   const deleteProject = useDeleteProject();
@@ -653,7 +653,7 @@ function stringToHsl(value: string) {
   return `hsl(${hue}, 70%, 50%)`;
 }
 
-function Gantt({ project, tasks, onSelect }: { project: Project; tasks: Task[]; onSelect?: (task: Task) => void }) {
+export function Gantt({ project, tasks, onSelect }: { project: Project; tasks: Task[]; onSelect?: (task: Task) => void }) {
   const items = useMemo(() => {
     const ranges = tasks.map((task) => {
       const start = toLocalDay(task.startDate ?? task.createdAt);
