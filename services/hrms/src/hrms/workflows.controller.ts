@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -23,6 +24,7 @@ import {
 import { AttendanceService } from './attendance.service.js';
 import { LeaveService } from './leave.service.js';
 import { PayrollService } from './payroll.service.js';
+import type { IndiaPayrollPolicy } from './india-payroll.js';
 import { DocumentsService } from './documents.service.js';
 import { CalendarService } from './calendar.service.js';
 
@@ -56,6 +58,14 @@ export class LeaveTypeDto {
   isPaid?: boolean;
 }
 
+export class UpdateLeaveTypeDto {
+  name?: string;
+  code?: string;
+  annualQuota?: number;
+  isPaid?: boolean;
+  isActive?: boolean;
+}
+
 export class LeaveRequestDto {
   leaveTypeId!: string;
   startDate!: string;
@@ -68,6 +78,28 @@ export class PayrollPeriodDto {
   name!: string;
   startDate!: string;
   endDate!: string;
+}
+
+export class TaxDocumentDto {
+  financialYear!: string;
+  category!: string;
+  fileId!: string;
+  name!: string;
+  declaredAmount?: number;
+}
+
+export class ReimbursementDto {
+  category!: string;
+  description!: string;
+  amount!: number;
+  currency?: string;
+  expenseDate!: string;
+  receiptFileId?: string;
+}
+
+export class ReimbursementReviewDto {
+  status!: 'approved' | 'rejected' | 'paid';
+  reviewNote?: string;
 }
 
 export class DocumentDto {
@@ -208,6 +240,25 @@ export class LeaveController {
     return this.leave.createType(org.organisationId, dto);
   }
 
+  @Patch('types/:id')
+  @RequirePermissions('hrms.leave.manage')
+  updateType(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @Param('id') id: string,
+    @Body() dto: UpdateLeaveTypeDto,
+  ) {
+    return this.leave.updateType(org.organisationId, id, dto);
+  }
+
+  @Delete('types/:id')
+  @RequirePermissions('hrms.leave.manage')
+  deleteType(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @Param('id') id: string,
+  ) {
+    return this.leave.deleteType(org.organisationId, id);
+  }
+
   @Get('balances')
   @RequirePermissions('hrms.leave.view')
   balances(
@@ -294,6 +345,72 @@ export class LeaveController {
 export class PayrollController {
   constructor(private readonly payroll: PayrollService) {}
 
+  @Get('policy')
+  @RequirePermissions('hrms.payroll.view')
+  getPolicy(@CurrentOrganisation() org: OrganisationContextValue) {
+    return this.payroll.getPolicy(org.organisationId);
+  }
+
+  @Patch('policy')
+  @RequirePermissions('hrms.payroll.manage')
+  updatePolicy(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @Body() dto: Partial<IndiaPayrollPolicy>,
+  ) {
+    return this.payroll.updatePolicy(org.organisationId, dto);
+  }
+
+  @Get('tax-documents')
+  @RequirePermissions('hrms.payroll.view')
+  listTaxDocuments(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Query('employeeId') employeeId?: string,
+  ) {
+    return this.payroll.listTaxDocuments(toCtx(org), user, employeeId);
+  }
+
+  @Post('tax-documents')
+  @RequirePermissions('hrms.payroll.view')
+  createTaxDocument(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Body() dto: TaxDocumentDto,
+  ) {
+    return this.payroll.createTaxDocument(toCtx(org), user, dto);
+  }
+
+  @Get('reimbursements')
+  @RequirePermissions('hrms.payroll.view')
+  listReimbursements(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Query('employeeId') employeeId?: string,
+  ) {
+    return this.payroll.listReimbursements(toCtx(org), user, employeeId);
+  }
+
+  @Post('reimbursements')
+  @RequirePermissions('hrms.payroll.view')
+  createReimbursement(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Body() dto: ReimbursementDto,
+  ) {
+    return this.payroll.createReimbursement(toCtx(org), user, { ...dto, expenseDate: new Date(dto.expenseDate) });
+  }
+
+  @Patch('reimbursements/:id')
+  @RequirePermissions('hrms.payroll.manage')
+  reviewReimbursement(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @Param('id') id: string,
+    @Body() dto: ReimbursementReviewDto,
+  ) {
+    if (!['approved', 'rejected', 'paid'].includes(dto.status)) throw new BadRequestException('Invalid reimbursement status');
+    return this.payroll.reviewReimbursement(toCtx(org), id, dto);
+  }
+
   @Get('periods')
   @RequirePermissions('hrms.payroll.view')
   listPeriods(@CurrentOrganisation() org: OrganisationContextValue) {
@@ -331,6 +448,35 @@ export class PayrollController {
     @Query('periodId') periodId?: string,
   ) {
     return this.payroll.listPayslips(toCtx(org), user, { employeeId, periodId });
+  }
+
+  @Get('payslips/:id/pdf')
+  @RequirePermissions('hrms.payroll.view')
+  async downloadPayslip(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+    @Res() res: any,
+  ) {
+    const document = await this.payroll.payslipPdf(toCtx(org), user, id);
+    res
+      .set('Content-Type', 'application/pdf')
+      .set('Content-Disposition', `attachment; filename="${document.filename}"`)
+      .send(document.buffer);
+  }
+
+  @Get('salary-certificate/pdf')
+  @RequirePermissions('hrms.payroll.view')
+  async downloadSalaryCertificate(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Res() res: any,
+  ) {
+    const document = await this.payroll.salaryCertificatePdf(toCtx(org), user);
+    res
+      .set('Content-Type', 'application/pdf')
+      .set('Content-Disposition', `attachment; filename="${document.filename}"`)
+      .send(document.buffer);
   }
 
   @Get('payslips/:id')

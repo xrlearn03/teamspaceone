@@ -15,12 +15,17 @@ import { cn } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@teamspace-one/ui/card";
 import { Badge } from "@teamspace-one/ui/badge";
 import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
 import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { Skeleton } from "@teamspace-one/ui/skeleton";
 import {
   useHiringDecisions,
   useInterviewOverview,
+  useOffers,
   usePendingEvaluations,
+  useUpdateOfferStatus,
+  useUpsertOffer,
 } from "../hooks/api";
 import { TemplatesSection } from "../components/interview/templates-panel";
 import { TalentPool } from "../components/interview/talent-pool";
@@ -169,37 +174,21 @@ function EvaluationsSection() {
 
 function DecisionsSection() {
   const { data: decisions, isLoading } = useHiringDecisions();
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <CardTitle className="text-sm">Hiring decisions</CardTitle>
-          <Badge variant="secondary">{decisions?.length ?? 0}</Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <SectionSkeletonRows />
-        ) : decisions && decisions.length > 0 ? (
-          <div className="divide-y">
-            {decisions.map((d) => (
-              <div key={d.id} className="flex items-center justify-between py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-text">{d.application?.candidate?.name ?? "Candidate"}</p>
-                  <p className="truncate text-xs text-text-muted">{d.application?.jobOpening?.title ?? d.applicationId}</p>
-                </div>
-                <Badge variant={d.decision === "hire" ? "success" : d.decision === "offer" ? "success" : d.decision === "reject" ? "error" : "secondary"}>
-                  {d.decision}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState icon={Scale} title="No hiring decisions" />
-        )}
-      </CardContent>
-    </Card>
-  );
+  const offers = useOffers();
+  const saveOffer = useUpsertOffer();
+  const updateStatus = useUpdateOfferStatus();
+  const [applicationId, setApplicationId] = useState<string | null>(null);
+  const [form, setForm] = useState({ title: "Employment Offer", amount: "", currency: "INR", joiningDate: "", expiresAt: "", content: "" });
+  async function submitOffer() {
+    if (!applicationId || !form.amount) return;
+    await saveOffer.mutateAsync({ applicationId, title: form.title, joiningDate: form.joiningDate || undefined, expiresAt: form.expiresAt || undefined, compensation: { amount: Number(form.amount), currency: form.currency, period: "annual" }, content: form.content || undefined });
+    setApplicationId(null);
+  }
+  return <div className="grid gap-4 xl:grid-cols-2">
+    <Card><CardHeader><CardTitle className="text-sm">Hiring decisions</CardTitle></CardHeader><CardContent>{isLoading ? <SectionSkeletonRows /> : decisions?.length ? <div className="divide-y">{decisions.map((decision) => <div key={decision.id} className="flex items-center justify-between gap-2 py-2"><div><p className="text-sm text-text">{decision.application?.candidate?.name ?? "Candidate"}</p><p className="text-xs text-text-muted">{decision.application?.jobOpening?.title ?? decision.applicationId}</p></div><div className="flex items-center gap-2"><Badge variant={decision.decision === "reject" ? "error" : "success"}>{decision.decision}</Badge>{decision.decision === "offer" && !offers.data?.some((offer) => offer.applicationId === decision.applicationId) ? <Button size="sm" variant="secondary" onClick={() => setApplicationId(decision.applicationId)}>Create offer</Button> : null}</div></div>)}</div> : <EmptyState icon={Scale} title="No hiring decisions" />}</CardContent></Card>
+    <Card><CardHeader><CardTitle className="text-sm">Offers</CardTitle></CardHeader><CardContent>{offers.isLoading ? <SectionSkeletonRows /> : offers.data?.length ? <div className="divide-y">{offers.data.map((offer) => <div key={offer.id} className="py-3"><div className="flex justify-between"><div><p className="text-sm font-medium">{offer.application?.candidate?.name ?? offer.title}</p><p className="text-xs text-text-muted">{offer.compensation.currency} {offer.compensation.amount.toLocaleString()}</p></div><Badge variant={offer.status === "accepted" ? "success" : offer.status === "declined" || offer.status === "withdrawn" ? "error" : "secondary"}>{offer.status}</Badge></div><div className="mt-2 flex gap-2">{offer.status === "draft" ? <Button size="sm" onClick={() => updateStatus.mutate({ id: offer.id, status: "sent" })}>Send</Button> : null}{offer.status === "sent" ? <><Button size="sm" variant="secondary" onClick={() => updateStatus.mutate({ id: offer.id, status: "accepted" })}>Accept</Button><Button size="sm" variant="secondary" onClick={() => updateStatus.mutate({ id: offer.id, status: "declined" })}>Decline</Button></> : null}</div></div>)}</div> : <EmptyState icon={FileText} title="No offers created" />}</CardContent></Card>
+    <Dialog open={Boolean(applicationId)} onOpenChange={(open) => { if (!open) setApplicationId(null); }}><DialogContent><DialogHeader><DialogTitle>Create offer</DialogTitle></DialogHeader><div className="grid gap-3 sm:grid-cols-2"><Input placeholder="Offer title" value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /><Input type="number" min={1} placeholder="Annual compensation" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} /><Input placeholder="Currency" value={form.currency} onChange={(event) => setForm({ ...form, currency: event.target.value.toUpperCase() })} /><Input type="date" value={form.joiningDate} onChange={(event) => setForm({ ...form, joiningDate: event.target.value })} /><Input type="date" value={form.expiresAt} onChange={(event) => setForm({ ...form, expiresAt: event.target.value })} /><textarea className="min-h-24 rounded-md border bg-surface p-2 text-sm sm:col-span-2" placeholder="Offer terms" value={form.content} onChange={(event) => setForm({ ...form, content: event.target.value })} /><Button className="sm:col-span-2" disabled={!form.amount || saveOffer.isPending} onClick={() => void submitOffer()}>Save draft offer</Button></div></DialogContent></Dialog>
+  </div>;
 }
 
 function SectionSkeletonRows() {

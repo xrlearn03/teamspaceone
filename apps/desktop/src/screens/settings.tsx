@@ -12,7 +12,6 @@ import {
   CircleHelp,
   Code,
   Command,
-  CreditCard,
   FileText,
   HardDrive,
   Info,
@@ -21,7 +20,6 @@ import {
   Monitor,
   Moon,
   Palette,
-  Plug,
   RefreshCw,
   Scale,
   ScrollText,
@@ -35,23 +33,31 @@ import {
 import { useUIStore } from "../stores/ui";
 import { useShallow } from "zustand/shallow";
 import {
+  useApiTokens,
   useChangePassword,
   useClients,
+  useCreateApiToken,
   useCreateClient,
   useCreateOrganisation,
   useCreateWorkspace,
   useDeleteClient,
+  useFileUsage,
   useInvitations,
   useInviteMember,
   useMe,
   useNotificationPreference,
   useOrganisations,
   useResendInvitation,
+  useRevokeApiToken,
   useRevokeInvitation,
+  useRevokeSession,
   useRoles,
+  useSessions,
   useSetNotificationPreference,
   useUpdateProfile,
+  useUpdateUserPreferences,
   useUploadFile,
+  useUserPreferences,
   useWorkspaces,
 } from "../hooks/api";
 import { getActiveOrganisation, setActiveOrganisation, type UserDto } from "../lib/api";
@@ -59,7 +65,6 @@ import { Button } from "@teamspace-one/ui/button";
 import { Card } from "@teamspace-one/ui/card";
 import { Input } from "@teamspace-one/ui/input";
 import { UserAvatar } from "../components/user-avatar";
-import { Badge } from "@teamspace-one/ui/badge";
 import { cn, getUserDisplayName } from "../lib/utils";
 import { copyToClipboard } from "../lib/desktop";
 import {
@@ -79,9 +84,7 @@ const sections = [
   { id: "privacy", label: "Privacy & security", icon: Shield },
   { id: "devices", label: "Connected devices", icon: Monitor },
   { id: "sessions", label: "Active sessions", icon: KeyRound },
-  { id: "billing", label: "Billing", icon: CreditCard },
   { id: "storage", label: "Storage", icon: HardDrive },
-  { id: "integrations", label: "Integrations", icon: Plug },
   { id: "ai", label: "AI preferences", icon: Bot },
   { id: "developer", label: "Developer", icon: Code },
   { id: "organisation", label: "Organisation", icon: Users },
@@ -112,9 +115,7 @@ export function SettingsScreen() {
           {section === "privacy" ? <PasswordSettings /> : null}
           {section === "devices" ? <ConnectedDevicesSettings /> : null}
           {section === "sessions" ? <SessionsSettings /> : null}
-          {section === "billing" ? <BillingSettings /> : null}
           {section === "storage" ? <StorageSettings /> : null}
-          {section === "integrations" ? <IntegrationsSettings /> : null}
           {section === "ai" ? <AISettings /> : null}
           {section === "developer" ? <DeveloperSettings /> : null}
           {section === "organisation" ? <OrganisationSettings organisationId={activeOrgId} organisationName={organisation?.name} workspaces={workspaces ?? []} roles={roles ?? []} /> : null}
@@ -210,38 +211,22 @@ function PasswordSettings() {
 }
 
 function ConnectedDevicesSettings() {
-  const devices = [{ id: "1", name: "This device", type: "desktop", lastActive: "Active now" }];
-  return <SettingsSection title="Connected devices"><p className="mb-3 text-sm text-text-muted">Manage devices that are signed in to your account.</p><div className="space-y-2">{devices.map((device) => <div key={device.id} className="flex items-center justify-between rounded-md border p-3"><div><p className="text-sm font-medium">{device.name}</p><p className="text-xs text-text-muted capitalize">{device.type} · {device.lastActive}</p></div><Button variant="ghost" size="sm" className="text-error">Remove</Button></div>)}</div></SettingsSection>;
+  const { data: sessions, isLoading } = useSessions();
+  const revoke = useRevokeSession();
+  return <SettingsSection title="Connected devices"><p className="mb-3 text-sm text-text-muted">Manage devices that are signed in to your account.</p><div className="space-y-2">{sessions?.map((session) => <div key={session.id} className="flex items-center justify-between rounded-md border p-3"><div><p className="text-sm font-medium">{session.deviceName || session.userAgent?.split(" ").slice(0, 3).join(" ") || "Unknown device"}</p><p className="text-xs text-text-muted">Last active {new Date(session.lastUsedAt).toLocaleString()}</p></div><Button variant="ghost" size="sm" className="text-error" disabled={revoke.isPending} onClick={() => revoke.mutate(session.id)}>Remove</Button></div>)}{isLoading ? <p className="text-sm text-text-muted">Loading devices…</p> : null}{!isLoading && !sessions?.length ? <p className="text-sm text-text-muted">No active devices.</p> : null}</div></SettingsSection>;
 }
 
 function SessionsSettings() {
-  const sessions = [{ id: "1", name: "Current session", createdAt: new Date().toLocaleDateString(), location: "Local" }];
-  return <SettingsSection title="Active sessions"><p className="mb-3 text-sm text-text-muted">Review and revoke active sign-in sessions.</p><div className="space-y-2">{sessions.map((session) => <div key={session.id} className="flex items-center justify-between rounded-md border p-3"><div><p className="text-sm font-medium">{session.name}</p><p className="text-xs text-text-muted">{session.location} · {session.createdAt}</p></div><Button variant="ghost" size="sm" className="text-error"><Trash2 className="mr-1 h-4 w-4" />Revoke</Button></div>)}</div></SettingsSection>;
-}
-
-function BillingSettings() {
-  return (
-    <SettingsSection title="Billing">
-      <div className="max-w-lg space-y-4">
-        <div className="rounded-md border p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Current plan</p>
-              <p className="text-xs text-text-muted">Free</p>
-            </div>
-            <Badge variant="secondary">Free</Badge>
-          </div>
-        </div>
-        <p className="text-sm text-text-muted">Billing management and invoices will be available once a paid plan is configured.</p>
-      </div>
-    </SettingsSection>
-  );
+  const { data: sessions, isLoading } = useSessions();
+  const revoke = useRevokeSession();
+  return <SettingsSection title="Active sessions"><p className="mb-3 text-sm text-text-muted">Review and revoke active sign-in sessions.</p><div className="space-y-2">{sessions?.map((session) => <div key={session.id} className="flex items-center justify-between rounded-md border p-3"><div><p className="text-sm font-medium">{session.deviceName || "Signed-in session"}</p><p className="text-xs text-text-muted">{session.ipAddress || "Unknown location"} · expires {new Date(session.expiresAt).toLocaleDateString()}</p></div><Button variant="ghost" size="sm" className="text-error" disabled={revoke.isPending} onClick={() => revoke.mutate(session.id)}><Trash2 className="mr-1 h-4 w-4" />Revoke</Button></div>)}{isLoading ? <p className="text-sm text-text-muted">Loading sessions…</p> : null}{!isLoading && !sessions?.length ? <p className="text-sm text-text-muted">No active sessions.</p> : null}</div></SettingsSection>;
 }
 
 function StorageSettings() {
-  const used = 0;
-  const total = 10 * 1024 * 1024 * 1024;
-  const percent = 0;
+  const { data: usage, isLoading, error } = useFileUsage();
+  const used = usage?.organisation.usedBytes ?? 0;
+  const total = usage?.organisation.limitBytes ?? 0;
+  const percent = total > 0 ? Math.min(100, (used / total) * 100) : 0;
   function formatBytes(bytes: number) {
     if (bytes === 0) return "0 B";
     const k = 1024;
@@ -253,70 +238,49 @@ function StorageSettings() {
     <SettingsSection title="Storage">
       <div className="max-w-lg space-y-4">
         <div>
-          <div className="mb-1 flex justify-between text-sm"><span>Used</span><span>{formatBytes(used)} of {formatBytes(total)}</span></div>
+          <div className="mb-1 flex justify-between text-sm"><span>Organisation storage</span><span>{isLoading ? "Loading…" : `${formatBytes(used)} of ${formatBytes(total)}`}</span></div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-surface-elevated"><div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} /></div>
         </div>
-        <p className="text-sm text-text-muted">Storage usage will be calculated from file uploads and meeting recordings.</p>
-      </div>
-    </SettingsSection>
-  );
-}
-
-function IntegrationsSettings() {
-  const integrations = [
-    { id: "slack", name: "Slack", status: "disconnected" },
-    { id: "github", name: "GitHub", status: "disconnected" },
-    { id: "linear", name: "Linear", status: "disconnected" },
-    { id: "calendar", name: "Google Calendar", status: "disconnected" },
-  ];
-  return (
-    <SettingsSection title="Integrations">
-      <div className="space-y-2">
-        {integrations.map((item) => (
-          <div key={item.id} className="flex items-center justify-between rounded-md border p-3">
-            <div>
-              <p className="text-sm font-medium">{item.name}</p>
-              <p className="text-xs capitalize text-text-muted">{item.status}</p>
-            </div>
-            <Button variant="secondary" size="sm" disabled>Connect</Button>
-          </div>
-        ))}
+        {usage ? <p className="text-sm text-text-muted">Quota is shared across {usage.organisation.memberCount} organisation member{usage.organisation.memberCount === 1 ? "" : "s"}.</p> : null}
+        {error ? <p className="text-sm text-error">{error instanceof Error ? error.message : "Could not load storage usage"}</p> : null}
       </div>
     </SettingsSection>
   );
 }
 
 function AISettings() {
-  const [suggest, setSuggest] = useState(false);
-  const [summarize, setSummarize] = useState(false);
+  const { data: preferences } = useUserPreferences();
+  const update = useUpdateUserPreferences();
   return (
     <SettingsSection title="AI preferences">
       <div className="max-w-lg space-y-3">
         <label className="flex items-center justify-between rounded-md border p-3">
           <span className="text-sm">Smart reply suggestions</span>
-          <input type="checkbox" checked={suggest} onChange={(event) => setSuggest(event.target.checked)} className="h-4 w-4 accent-primary" />
+          <input type="checkbox" checked={preferences?.smartReplySuggestions ?? false} disabled={update.isPending} onChange={(event) => update.mutate({ smartReplySuggestions: event.target.checked })} className="h-4 w-4 accent-primary" />
         </label>
         <label className="flex items-center justify-between rounded-md border p-3">
           <span className="text-sm">Auto-summarize long channels</span>
-          <input type="checkbox" checked={summarize} onChange={(event) => setSummarize(event.target.checked)} className="h-4 w-4 accent-primary" />
+          <input type="checkbox" checked={preferences?.autoSummarizeChannels ?? false} disabled={update.isPending} onChange={(event) => update.mutate({ autoSummarizeChannels: event.target.checked })} className="h-4 w-4 accent-primary" />
         </label>
-        <p className="text-sm text-text-muted">AI preferences are stored locally until a backend preferences service is available.</p>
+        {update.error ? <p className="text-sm text-error">{update.error.message}</p> : null}
       </div>
     </SettingsSection>
   );
 }
 
 function DeveloperSettings() {
-  const [copied, setCopied] = useState(false);
-  const token = "dev-token-placeholder";
+  const { data: tokens } = useApiTokens();
+  const create = useCreateApiToken();
+  const revoke = useRevokeApiToken();
+  const [name, setName] = useState("");
+  const [newToken, setNewToken] = useState<string | null>(null);
   return (
     <SettingsSection title="Developer">
       <div className="max-w-lg space-y-3">
-        <p className="text-sm text-text-muted">API tokens for third-party integrations and scripts.</p>
-        <div className="flex gap-2">
-          <Input readOnly value={token} />
-          <Button variant="secondary" onClick={() => { void copyToClipboard(token); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? "Copied" : "Copy"}</Button>
-        </div>
+        <p className="text-sm text-text-muted">API tokens authenticate scripts with the same organisation permissions as your account. The full token is shown once.</p>
+        <div className="flex gap-2"><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Token name" /><Button disabled={!name.trim() || create.isPending} onClick={() => create.mutate(name, { onSuccess: (result) => { setNewToken(result.token ?? null); setName(""); } })}>Create</Button></div>
+        {newToken ? <div className="flex gap-2"><Input readOnly value={newToken} /><Button variant="secondary" onClick={() => void copyToClipboard(newToken)}>Copy</Button></div> : null}
+        <div className="space-y-2">{tokens?.map((token) => <div key={token.id} className="flex items-center justify-between rounded-md border p-3"><div><p className="text-sm font-medium">{token.name}</p><p className="text-xs text-text-muted">{token.prefix}… · created {new Date(token.createdAt).toLocaleDateString()}</p></div><Button variant="ghost" size="sm" className="text-error" disabled={revoke.isPending} onClick={() => revoke.mutate(token.id)}>Revoke</Button></div>)}</div>
       </div>
     </SettingsSection>
   );

@@ -21,6 +21,7 @@ import {
   Users,
   X,
   XCircle,
+  type LucideIcon,
 } from "lucide-react";
 import {
   useAssets,
@@ -199,7 +200,7 @@ function StatCard({
   value,
   iconClass,
 }: {
-  icon: React.ElementType;
+  icon: LucideIcon;
   label: string;
   value: number;
   iconClass: string;

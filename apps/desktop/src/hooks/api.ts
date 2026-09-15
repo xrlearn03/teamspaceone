@@ -34,6 +34,38 @@ export function useUsers(ids?: string[]) {
   });
 }
 
+export function useSessions() {
+  return useQuery({ queryKey: ["auth-sessions"], queryFn: api.getSessions });
+}
+
+export function useRevokeSession() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: api.revokeSession, onSuccess: () => client.invalidateQueries({ queryKey: ["auth-sessions"] }) });
+}
+
+export function useUserPreferences() {
+  return useQuery({ queryKey: ["user-preferences"], queryFn: api.getUserPreferences });
+}
+
+export function useUpdateUserPreferences() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: api.updateUserPreferences, onSuccess: (data) => client.setQueryData(["user-preferences"], data) });
+}
+
+export function useApiTokens() {
+  return useQuery({ queryKey: ["api-tokens"], queryFn: api.getApiTokens });
+}
+
+export function useCreateApiToken() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: (name: string) => api.createApiToken(name), onSuccess: () => client.invalidateQueries({ queryKey: ["api-tokens"] }) });
+}
+
+export function useRevokeApiToken() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: api.revokeApiToken, onSuccess: () => client.invalidateQueries({ queryKey: ["api-tokens"] }) });
+}
+
 export function useUpdateProfile() {
   const client = useQueryClient();
   return useMutation({ mutationFn: api.updateProfile, onSuccess: (user) => { client.setQueryData(["me"], user); client.invalidateQueries({ queryKey: ["users"] }); } });
@@ -643,6 +675,78 @@ export function useCreateProjectFromTemplate() {
   });
 }
 
+export function useMilestones(projectId?: string) {
+  return useQuery({
+    queryKey: ["milestones", projectId],
+    queryFn: () => api.getMilestones(projectId as string),
+    enabled: Boolean(projectId),
+    staleTime: 60 * 1000,
+    retry: 2,
+  });
+}
+
+export function useCreateMilestone() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; body: Parameters<typeof api.createMilestone>[1] }) =>
+      api.createMilestone(args.projectId, args.body),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["milestones", args.projectId] }),
+  });
+}
+
+export function useUpdateMilestone() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; milestoneId: string; body: Parameters<typeof api.updateMilestone>[2] }) =>
+      api.updateMilestone(args.projectId, args.milestoneId, args.body),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["milestones", args.projectId] }),
+  });
+}
+
+export function useDeleteMilestone() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; milestoneId: string }) => api.deleteMilestone(args.projectId, args.milestoneId),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["milestones", args.projectId] }),
+  });
+}
+
+export function useSprints(projectId?: string) {
+  return useQuery({
+    queryKey: ["sprints", projectId],
+    queryFn: () => api.getSprints(projectId as string),
+    enabled: Boolean(projectId),
+    staleTime: 60 * 1000,
+    retry: 2,
+  });
+}
+
+export function useCreateSprint() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; body: Parameters<typeof api.createSprint>[1] }) =>
+      api.createSprint(args.projectId, args.body),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["sprints", args.projectId] }),
+  });
+}
+
+export function useUpdateSprint() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; sprintId: string; body: Parameters<typeof api.updateSprint>[2] }) =>
+      api.updateSprint(args.projectId, args.sprintId, args.body),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["sprints", args.projectId] }),
+  });
+}
+
+export function useDeleteSprint() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; sprintId: string }) => api.deleteSprint(args.projectId, args.sprintId),
+    onSuccess: (_, args) => client.invalidateQueries({ queryKey: ["sprints", args.projectId] }),
+  });
+}
+
 export function useTasks(projectId?: string) {
   const { connected, joinRealtimeProject, leaveRealtimeProject } = useRealtime();
   useEffect(() => {
@@ -1114,6 +1218,15 @@ export function useFile(fileId?: string) {
   });
 }
 
+export function useFileUsage() {
+  return useQuery({
+    queryKey: ["file-usage", orgId()],
+    queryFn: api.getFileUsage,
+    enabled: getActiveOrganisation() !== null,
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useFiles() {
   return useQuery({
     queryKey: ["files", orgId()],
@@ -1274,6 +1387,17 @@ export function useMyEmployee() {
     enabled: hrmsEnabled(),
     staleTime: 60 * 1000,
     retry: 1,
+  });
+}
+
+export function useEmployeeBirthdays(days = 7) {
+  return useQuery({
+    queryKey: ["hrms", "employee-birthdays", orgId(), days],
+    queryFn: () => api.getEmployeeBirthdays(days),
+    enabled: hrmsEnabled(),
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+    meta: { suppressErrorToast: true },
   });
 }
 
@@ -1583,6 +1707,24 @@ export function usePayslips(params?: { employeeId?: string; payrollPeriodId?: st
   });
 }
 
+export function usePayrollTaxDocuments() {
+  return useQuery({ queryKey: ["hrms", "payroll-tax-documents", orgId()], queryFn: api.getPayrollTaxDocuments, enabled: hrmsEnabled() });
+}
+
+export function useCreatePayrollTaxDocument() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: api.createPayrollTaxDocument, onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "payroll-tax-documents", orgId()] }) });
+}
+
+export function useReimbursements() {
+  return useQuery({ queryKey: ["hrms", "reimbursements", orgId()], queryFn: api.getReimbursements, enabled: hrmsEnabled() });
+}
+
+export function useCreateReimbursement() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: api.createReimbursement, onSuccess: () => client.invalidateQueries({ queryKey: ["hrms", "reimbursements", orgId()] }) });
+}
+
 export function usePayslip(id?: string) {
   return useQuery({
     queryKey: ["hrms", "payslips", orgId(), id ?? ""],
@@ -1694,6 +1836,20 @@ export function useUploadCandidateResume() {
       client.invalidateQueries({ queryKey: ["interview", "overview"] });
     },
   });
+}
+
+export function useOffers(enabled = true) {
+  return useQuery({ queryKey: ["interview", "offers", orgId()], queryFn: api.getOffers, enabled: enabled && interviewEnabled() });
+}
+
+export function useUpsertOffer() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: api.upsertOffer, onSuccess: () => client.invalidateQueries({ queryKey: ["interview", "offers"] }) });
+}
+
+export function useUpdateOfferStatus() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: ({ id, status }: { id: string; status: "sent" | "accepted" | "declined" | "withdrawn" }) => api.updateOfferStatus(id, status), onSuccess: () => { client.invalidateQueries({ queryKey: ["interview", "offers"] }); client.invalidateQueries({ queryKey: ["interview", "overview"] }); } });
 }
 
 export function useHiringDecisions(enabled = true) {

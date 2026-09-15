@@ -7,16 +7,21 @@ import {
   useApprovals,
   useClients,
   useCreateApproval,
+  useCreateMilestone,
   useCreateProject,
   useCreateProjectComment,
+  useCreateSprint,
   useCreateTask,
+  useDeleteMilestone,
   useDeleteProject,
   useDeleteProjectComment,
+  useDeleteSprint,
   useDeleteTask,
   useFile,
   useFiles,
   useMe,
   useMembers,
+  useMilestones,
   useProjectActivity,
   useProjectAttachments,
   useProjectComments,
@@ -24,6 +29,7 @@ import {
   useRemoveProjectAttachment,
   useRemoveTaskAttachment,
   useResolveApproval,
+  useSprints,
   useTaskAttachments,
   useTasks,
   useUpdateProject,
@@ -52,7 +58,7 @@ function useCan(permission: string) {
   return user ? hasPermission(user, permission) : false;
 }
 
-const tabs = ["overview", "board", "list", "timeline", "files", "discussions", "approvals", "activity"] as const;
+const tabs = ["overview", "board", "list", "timeline", "milestones", "sprints", "files", "discussions", "approvals", "activity"] as const;
 const statuses = ["backlog", "todo", "in_progress", "in_review", "blocked", "done"];
 const priorities = ["low", "medium", "high", "urgent"];
 const labels: Record<string, string> = { backlog: "Backlog", todo: "Todo", in_progress: "In Progress", in_review: "In Review", blocked: "Blocked", done: "Done" };
@@ -192,6 +198,8 @@ export function ProjectScreen() {
         ) : null}
         {tab === "list" ? <TaskList tasks={tasks ?? []} onSelect={setSelectedTask} /> : null}
         {tab === "timeline" ? <Gantt project={project} tasks={tasks ?? []} userMap={userMap} onSelect={setSelectedTask} /> : null}
+        {tab === "milestones" ? <MilestonesView projectId={project.id} /> : null}
+        {tab === "sprints" ? <SprintsView projectId={project.id} /> : null}
         {tab === "files" ? <ProjectFiles projectId={project.id} /> : null}
         {tab === "discussions" ? <ProjectDiscussions projectId={project.id} userMap={userMap} /> : null}
         {tab === "approvals" ? <ProjectApprovals projectId={project.id} tasks={tasks ?? []} userMap={userMap} /> : null}
@@ -265,8 +273,12 @@ function TaskDialog({ task, members, userMap, open, onOpenChange, onSave }: { ta
   const [assigneeId, setAssigneeId] = useState(task?.assigneeId ?? "");
   const [startDate, setStartDate] = useState(task?.startDate?.slice(0, 10) ?? "");
   const [dueDate, setDueDate] = useState(task?.dueDate?.slice(0, 10) ?? "");
+  const [milestoneId, setMilestoneId] = useState(task?.milestoneId ?? "");
+  const [sprintId, setSprintId] = useState(task?.sprintId ?? "");
   const [copied, setCopied] = useState(false);
   const { data: activity } = useProjectActivity(task?.projectId);
+  const { data: milestones } = useMilestones(task?.projectId);
+  const { data: sprints } = useSprints(task?.projectId);
   const actorMap = useActorMap(activity);
   const taskActivity = useMemo(
     () => (activity ?? []).filter((item) => item.resourceId === task?.id).slice(0, 8),
@@ -280,6 +292,8 @@ function TaskDialog({ task, members, userMap, open, onOpenChange, onSave }: { ta
     setAssigneeId(task?.assigneeId ?? "");
     setStartDate(task?.startDate?.slice(0, 10) ?? "");
     setDueDate(task?.dueDate?.slice(0, 10) ?? "");
+    setMilestoneId(task?.milestoneId ?? "");
+    setSprintId(task?.sprintId ?? "");
     setCopied(false);
   }, [task]);
   if (!task) return null;
@@ -334,6 +348,12 @@ function TaskDialog({ task, members, userMap, open, onOpenChange, onSave }: { ta
             <label className="text-xs text-text-muted">Due date
               <Input type="date" className="mt-1" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
             </label>
+            <label className="text-xs text-text-muted">Milestone
+              <select className={cn(selectClass, "mt-1")} value={milestoneId} onChange={(event) => setMilestoneId(event.target.value)}><option value="">No milestone</option>{(milestones ?? []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
+            </label>
+            <label className="text-xs text-text-muted">Sprint
+              <select className={cn(selectClass, "mt-1")} value={sprintId} onChange={(event) => setSprintId(event.target.value)}><option value="">No sprint</option>{(sprints ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+            </label>
           </div>
           {taskActivity.length > 0 ? (
             <div>
@@ -373,7 +393,7 @@ function TaskDialog({ task, members, userMap, open, onOpenChange, onSave }: { ta
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button disabled={!canEditTask} onClick={() => onSave({ title: title.trim(), description: description.trim() || null, status, priority, assigneeId: assigneeId || null, startDate: startDate || null, dueDate: dueDate || null })}>Save</Button>
+              <Button disabled={!canEditTask} onClick={() => onSave({ title: title.trim(), description: description.trim() || null, status, priority, assigneeId: assigneeId || null, milestoneId: milestoneId || null, sprintId: sprintId || null, startDate: startDate || null, dueDate: dueDate || null })}>Save</Button>
             </div>
           </div>
         </div>
@@ -539,11 +559,15 @@ function CreateTaskDialog({
   userMap: Map<string, UserDto>;
 }) {
   const createTask = useCreateTask();
+  const { data: milestones } = useMilestones(projectId);
+  const { data: sprints } = useSprints(projectId);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("todo");
   const [priority, setPriority] = useState("medium");
   const [assigneeId, setAssigneeId] = useState("");
+  const [milestoneId, setMilestoneId] = useState("");
+  const [sprintId, setSprintId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
 
@@ -554,6 +578,8 @@ function CreateTaskDialog({
     setStatus("todo");
     setPriority("medium");
     setAssigneeId("");
+    setMilestoneId("");
+    setSprintId("");
     setStartDate("");
     setDueDate("");
   }, [open]);
@@ -569,6 +595,8 @@ function CreateTaskDialog({
         status,
         priority,
         assigneeId: assigneeId || undefined,
+        milestoneId: milestoneId || undefined,
+        sprintId: sprintId || undefined,
         startDate: startDate || undefined,
         dueDate: dueDate || undefined,
       },
@@ -607,6 +635,12 @@ function CreateTaskDialog({
             </label>
             <label className="text-xs text-text-muted">Due date
               <Input type="date" className="mt-1" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
+            </label>
+            <label className="text-xs text-text-muted">Milestone
+              <select className={cn(selectClass, "mt-1")} value={milestoneId} onChange={(event) => setMilestoneId(event.target.value)}><option value="">No milestone</option>{(milestones ?? []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
+            </label>
+            <label className="text-xs text-text-muted">Sprint
+              <select className={cn(selectClass, "mt-1")} value={sprintId} onChange={(event) => setSprintId(event.target.value)}><option value="">No sprint</option>{(sprints ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
             </label>
           </div>
           <div className="flex justify-end gap-2">
@@ -1126,6 +1160,131 @@ function ProjectActivityView({ projectId }: { projectId: string }) {
         })}
         {hasNextPage ? <div className="text-center"><Button variant="ghost" onClick={() => void fetchNextPage()}>Load more</Button></div> : null}
         {!activity?.length ? <p className="py-12 text-center text-sm text-text-muted">No activity yet.</p> : null}
+      </div>
+    </div>
+  );
+}
+
+const MILESTONE_STATUS_OPTIONS = ["pending", "in_progress", "completed"];
+
+function MilestonesView({ projectId }: { projectId: string }) {
+  const canManage = useCan("collaboration.project.manage");
+  const { data: milestones } = useMilestones(projectId);
+  const create = useCreateMilestone();
+  const remove = useDeleteMilestone();
+  const [name, setName] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [status, setStatus] = useState("pending");
+
+  function submit() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    create.mutate(
+      { projectId, body: { name: trimmed, dueDate: dueDate || undefined, status } },
+      {
+        onSuccess: () => {
+          setName("");
+          setDueDate("");
+          setStatus("pending");
+        },
+      },
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
+      <div className="rounded-xl border border-border bg-surface p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Milestones</h3>
+          <span className="text-xs text-text-muted">{(milestones ?? []).length} total</span>
+        </div>
+        {!milestones?.length ? <p className="py-6 text-center text-xs text-text-muted">No milestones yet.</p> : null}
+        <div className="space-y-2">
+          {milestones?.map((m) => (
+            <div key={m.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+              <div className="min-w-0">
+                <p className="font-medium text-text">{m.name}</p>
+                <p className="text-xs text-text-muted">{m.dueDate ? `Due ${new Date(m.dueDate).toLocaleDateString()}` : "No due date"} · {m.status}</p>
+              </div>
+              {canManage ? (
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-error" onClick={() => remove.mutate({ projectId, milestoneId: m.id })} aria-label="Delete milestone">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+        {canManage ? (
+          <div className="mt-4 grid grid-cols-1 gap-2 border-t pt-3 sm:grid-cols-4">
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Milestone name" className="text-xs" />
+            <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="text-xs" />
+            <select className={cn(selectClass, "text-xs")} value={status} onChange={(e) => setStatus(e.target.value)}>{MILESTONE_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}</select>
+            <Button disabled={!name.trim() || create.isPending} onClick={submit} className="text-xs">Add</Button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SprintsView({ projectId }: { projectId: string }) {
+  const canManage = useCan("collaboration.project.manage");
+  const { data: sprints } = useSprints(projectId);
+  const create = useCreateSprint();
+  const remove = useDeleteSprint();
+  const [name, setName] = useState("");
+  const [goal, setGoal] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  function submit() {
+    const trimmed = name.trim();
+    if (!trimmed || !startDate || !endDate) return;
+    create.mutate(
+      { projectId, body: { name: trimmed, goal: goal.trim() || undefined, startDate, endDate } },
+      {
+        onSuccess: () => {
+          setName("");
+          setGoal("");
+          setStartDate("");
+          setEndDate("");
+        },
+      },
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
+      <div className="rounded-xl border border-border bg-surface p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Sprints</h3>
+          <span className="text-xs text-text-muted">{(sprints ?? []).length} total</span>
+        </div>
+        {!sprints?.length ? <p className="py-6 text-center text-xs text-text-muted">No sprints yet.</p> : null}
+        <div className="space-y-2">
+          {sprints?.map((s) => (
+            <div key={s.id} className="rounded-lg border px-3 py-2 text-sm">
+              <div className="flex items-center justify-between">
+                <p className="font-medium text-text">{s.name}</p>
+                {canManage ? (
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-error" onClick={() => remove.mutate({ projectId, sprintId: s.id })} aria-label="Delete sprint">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                ) : null}
+              </div>
+              <p className="text-xs text-text-muted">{s.goal ? `${s.goal} · ` : ""}{new Date(s.startDate).toLocaleDateString()} — {new Date(s.endDate).toLocaleDateString()}</p>
+            </div>
+          ))}
+        </div>
+        {canManage ? (
+          <div className="mt-4 grid grid-cols-1 gap-2 border-t pt-3 sm:grid-cols-5">
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Sprint name" className="text-xs" />
+            <Input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Goal" className="text-xs" />
+            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="text-xs" />
+            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="text-xs" />
+            <Button disabled={!name.trim() || !startDate || !endDate || create.isPending} onClick={submit} className="text-xs">Add</Button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

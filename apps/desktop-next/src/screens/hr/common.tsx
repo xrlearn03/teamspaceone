@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
+  type LucideIcon,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -33,7 +34,7 @@ export function PrimaryAction({
   label,
   onClick,
 }: {
-  icon: React.ElementType;
+  icon: LucideIcon;
   label: string;
   onClick?: () => void;
 }) {

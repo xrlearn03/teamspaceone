@@ -12,6 +12,27 @@ import { OutboxService } from '../outbox/outbox.service.js';
 import { HrmsScopeService } from './scope.service.js';
 import type { RequestContextInput } from './employees.service.js';
 
+function dateOnly(value: Date): Date {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+}
+
+function workingDays(start: Date, end: Date, holidays: { date: Date; isRecurring: boolean }[]): number {
+  const holidayKeys = new Set(
+    holidays.map(({ date, isRecurring }) =>
+      isRecurring
+        ? `${date.getUTCMonth()}-${date.getUTCDate()}`
+        : dateOnly(date).toISOString(),
+    ),
+  );
+  let days = 0;
+  for (const current = dateOnly(start); current <= end; current.setUTCDate(current.getUTCDate() + 1)) {
+    const day = current.getUTCDay();
+    const holiday = holidayKeys.has(current.toISOString()) || holidayKeys.has(`${current.getUTCMonth()}-${current.getUTCDate()}`);
+    if (day !== 0 && day !== 6 && !holiday) days++;
+  }
+  return days;
+}
+
 @Injectable()
 export class LeaveService {
   constructor(
@@ -40,6 +61,34 @@ export class LeaveService {
         isPaid: input.isPaid ?? true,
       },
     });
+  }
+
+  async getType(organisationId: string, id: string) {
+    const type = await this.prisma.leaveType.findFirst({
+      where: { id, organisationId },
+    });
+    if (!type) throw new NotFoundException('Leave type not found');
+    return type;
+  }
+
+  async updateType(
+    organisationId: string,
+    id: string,
+    input: { name?: string; code?: string; annualQuota?: number; isPaid?: boolean; isActive?: boolean },
+  ) {
+    await this.getType(organisationId, id);
+    const data: Prisma.LeaveTypeUpdateInput = {};
+    if (input.name !== undefined) data.name = input.name;
+    if (input.code !== undefined) data.code = input.code;
+    if (input.annualQuota !== undefined) data.annualQuota = input.annualQuota;
+    if (input.isPaid !== undefined) data.isPaid = input.isPaid;
+    if (input.isActive !== undefined) data.isActive = input.isActive;
+    return this.prisma.leaveType.update({ where: { id }, data });
+  }
+
+  async deleteType(organisationId: string, id: string) {
+    await this.getType(organisationId, id);
+    return this.prisma.leaveType.delete({ where: { id } });
   }
 
   async listBalances(
@@ -97,17 +146,48 @@ export class LeaveService {
     if (!employee) {
       throw new NotFoundException('No employee record for current user');
     }
-    if (input.days <= 0) {
-      throw new BadRequestException('days must be positive');
+    const startDate = dateOnly(input.startDate);
+    const endDate = dateOnly(input.endDate);
+    if (endDate < startDate) {
+      throw new BadRequestException('endDate must be on or after startDate');
+    }
+    if (startDate.getUTCFullYear() !== endDate.getUTCFullYear()) {
+      throw new BadRequestException('Leave requests cannot span calendar years');
     }
 
-    const year = input.startDate.getFullYear();
+    const year = startDate.getUTCFullYear();
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const leaveType = await tx.leaveType.findFirst({
         where: { id: input.leaveTypeId, organisationId: ctx.organisationId, isActive: true },
       });
       if (!leaveType) throw new NotFoundException('Leave type not found');
+
+      const [holidays, overlapping] = await Promise.all([
+        tx.holiday.findMany({
+          where: {
+            organisationId: ctx.organisationId,
+            OR: [
+              { isRecurring: true },
+              { date: { gte: startDate, lte: endDate } },
+            ],
+          },
+          select: { date: true, isRecurring: true },
+        }),
+        tx.leaveRequest.findFirst({
+          where: {
+            organisationId: ctx.organisationId,
+            employeeId: employee.id,
+            status: { in: ['pending', 'manager_approved', 'approved'] },
+            startDate: { lte: endDate },
+            endDate: { gte: startDate },
+          },
+          select: { id: true },
+        }),
+      ]);
+      if (overlapping) throw new BadRequestException('Leave request overlaps an existing request');
+      const days = workingDays(startDate, endDate, holidays);
+      if (days <= 0) throw new BadRequestException('Leave request contains no working days');
 
       const balance = await tx.leaveBalance.findUnique({
         where: {
@@ -118,7 +198,7 @@ export class LeaveService {
           },
         },
       });
-      if (balance && balance.entitled - balance.used < input.days) {
+      if (balance && balance.entitled - balance.used < days) {
         throw new BadRequestException('Insufficient leave balance');
       }
 
@@ -127,9 +207,9 @@ export class LeaveService {
           organisationId: ctx.organisationId,
           employeeId: employee.id,
           leaveTypeId: leaveType.id,
-          startDate: input.startDate,
-          endDate: input.endDate,
-          days: input.days,
+          startDate,
+          endDate,
+          days,
           reason: input.reason,
           managerId: employee.managerEmployeeId,
         },
@@ -156,9 +236,9 @@ export class LeaveService {
           employeeName: `${employee.firstName} ${employee.lastName}`,
           leaveTypeId: leaveType.id,
           leaveTypeName: leaveType.name,
-          days: input.days,
-          startDate: input.startDate.toISOString(),
-          endDate: input.endDate.toISOString(),
+          days,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
         },
       });
       await this.outbox.createEvent(tx, envelope, envelope.eventType);

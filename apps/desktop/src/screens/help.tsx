@@ -7,8 +7,6 @@ import {
   Film,
   HelpCircle,
   Image,
-  Mail,
-  MessageCircle,
   Paperclip,
   Search,
   Send,
@@ -53,9 +51,7 @@ interface ChatMessage {
 const tabs: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
   { id: "tutorials", label: "Tutorials", icon: BookOpen },
   { id: "faqs", label: "FAQs", icon: HelpCircle },
-  { id: "tickets", label: "Tickets", icon: Ticket },
-  { id: "chat", label: "Live Chat", icon: MessageCircle },
-  { id: "contact", label: "Contact us", icon: Mail },
+  { id: "tickets", label: "Support Tickets", icon: Ticket },
 ];
 
 const tutorials: Tutorial[] = [
@@ -213,7 +209,7 @@ const faqs: Faq[] = [
     id: "contact-support",
     question: "How do I contact support?",
     answer:
-      "Use the Contact us tab to send an email, or start a Live Chat to talk with the AI assistant and, if needed, be transferred to a real support agent.",
+      "Use the Support Tickets tab to submit an issue, attach relevant files, and track its status with your support team.",
   },
 ];
 

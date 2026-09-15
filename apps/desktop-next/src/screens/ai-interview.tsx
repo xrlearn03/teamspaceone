@@ -43,16 +43,26 @@ import {
   useSessionEvaluations,
   useSubmitAiAnswer,
 } from "@/hooks/api";
-import { joinAiInterview, startAiInterview } from "@/lib/api";
+import { apiRequest, joinAiInterview, startAiInterview } from "@/lib/api";
 import { cn, getUserDisplayName } from "@/lib/utils";
 import type { InterviewEvaluation } from "@/lib/api";
 import { EvaluationReviewForm } from "@/components/interview/ai-interview-dialog";
+import { useElevenLabsSpeech, useLipSync } from "@teamspace-one/avatar";
+import dynamic from "next/dynamic";
+
+const AiAvatar3D = dynamic(
+  () => import("@teamspace-one/avatar").then((m) => ({ default: m.AiAvatar3D })),
+  { ssr: false, loading: () => <AIAvatar /> },
+);
 
 /* =========================================================
    TYPES
 ========================================================= */
 
 type LiveLine = { time: string; text: string; speaker?: string };
+
+/** GLB path for the 3D AI interviewer.  Set to undefined to use the CSS fallback. */
+const AVATAR_MODEL_URL = "/assets/ai-interviewer.glb?v=4";
 
 /* =========================================================
    AI AVATAR
@@ -507,13 +517,24 @@ export function AiInterviewScreen() {
   const [liveLines, setLiveLines] = useState<LiveLine[]>([]);
 
   const startedRef = useRef(false);
+  const lastSpokenQuestionRef = useRef<string | null>(null);
+
+  const fetchAudio = useCallback(async (text: string) => {
+    const { audioBase64, mimeType } = await apiRequest<{ audioBase64: string; mimeType: string }>("/ai/interview/speak", {
+      method: "POST",
+      body: { text },
+    });
+    return { audioUrl: `data:${mimeType};base64,${audioBase64}` };
+  }, []);
+
+  const { speaking, wordBoundaries, audioLevel, speak, cancel } = useElevenLabsSpeech({ fetchAudio });
 
   const formatElapsed = (seconds: number) =>
     `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
   /* -----------------------------------------------
-     Start + join: generate questions (ai_voice),
-     create the SFU room, join with mic on.
+     Start + join: generate questions (ai_video),
+     create the SFU room, join with camera and mic on.
   ----------------------------------------------- */
   useEffect(() => {
     if (!sessionId || !session || startedRef.current) return;
@@ -523,7 +544,7 @@ export function AiInterviewScreen() {
     (async () => {
       try {
         if (session.status !== "in_progress") {
-          await startAiInterview(sessionId, { interviewType: "ai_voice" });
+          await startAiInterview(sessionId, { interviewType: "ai_video" });
           await refetchTranscript();
         }
         try {
@@ -532,7 +553,7 @@ export function AiInterviewScreen() {
           await sfuRef.current.join(
             join.roomId,
             displayName,
-            { audioEnabled: true, videoEnabled: false },
+            { audioEnabled: true, videoEnabled: true },
             join.userId,
             join.token,
           );
@@ -610,6 +631,22 @@ export function AiInterviewScreen() {
   const candidateName = session?.candidate?.name ?? candidate?.name ?? "Candidate";
   const jobTitle = session?.jobOpening?.title;
   const skills = screening?.skillsFound ?? [];
+
+  const lipSyncWeights = useLipSync({
+    speaking,
+    text: currentQuestion?.question ?? "",
+    wordBoundaries,
+    audioLevel,
+  });
+
+  useEffect(() => {
+    if (currentQuestion?.question && currentQuestion.question !== lastSpokenQuestionRef.current) {
+      lastSpokenQuestionRef.current = currentQuestion.question;
+      speak(currentQuestion.question);
+    }
+  }, [currentQuestion?.question, speak]);
+
+  useEffect(() => cancel, [cancel]);
 
   async function runEvaluation() {
     try {
@@ -758,7 +795,12 @@ export function AiInterviewScreen() {
             <div className="grid h-[460px] gap-3 lg:grid-cols-[minmax(0,2.2fr)_285px]">
               {/* AI interviewer */}
               <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm">
-                <AIAvatar />
+                <AiAvatar3D
+                  url={AVATAR_MODEL_URL}
+                  weights={lipSyncWeights}
+                  speaking={speaking}
+                  fallback={<AIAvatar />}
+                />
 
                 <div className="absolute left-4 top-4 flex items-center gap-2 rounded-lg bg-slate-950/80 px-3 py-2 backdrop-blur">
                   <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-indigo-500 to-violet-500">

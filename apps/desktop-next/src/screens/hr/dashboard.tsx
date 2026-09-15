@@ -36,6 +36,7 @@ import { getActiveOrganisation, type Employee, type LeaveRequest } from "@/lib/a
 import { QuickCheckInCard } from "@/features/dashboard/widgets";
 import { AiDailyBrief } from "@/components/ai-daily-brief";
 import { useUIStore, type View } from "@/stores/ui";
+import { usePermissions } from "@/hooks/usePermissions";
 import { cn, getUserDisplayName } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
 import { SectionError, SectionSkeleton, formatDate } from "@/screens/hrms/common";
@@ -214,14 +215,24 @@ function LegendRow({ color, label, value }: { color: string; label: string; valu
 
 function QuickActions() {
   const setActiveView = useUIStore((s) => s.setActiveView);
-  const actions: { title: string; icon: LucideIcon; className: string; view: View; hrmsTab?: string }[] = [
-    { title: "Approve Leave", icon: CalendarCheck, className: "bg-mention/10 text-mention hover:bg-mention/20", view: "leaves" },
-    { title: "Run Payroll", icon: Wallet, className: "bg-primary/10 text-primary hover:bg-primary/20", view: "payroll" },
-    { title: "Start Review Cycle", icon: BarChart3, className: "bg-info/10 text-info hover:bg-info/20", view: "hrms", hrmsTab: "performance" },
-    { title: "Add Employee", icon: UserPlus, className: "bg-success/10 text-success hover:bg-success/20", view: "employees" },
-    { title: "Manage Policies", icon: FileText, className: "bg-warning/10 text-warning hover:bg-warning/20", view: "leaves" },
-    { title: "View Reports", icon: BarChart3, className: "bg-primary/10 text-primary hover:bg-primary/20", view: "hrms", hrmsTab: "analytics" },
+  const { can } = usePermissions();
+  const actions: {
+    title: string;
+    icon: LucideIcon;
+    className: string;
+    view: View;
+    hrmsTab?: string;
+    visible: boolean;
+  }[] = [
+    { title: "Approve Leave", icon: CalendarCheck, className: "bg-mention/10 text-mention hover:bg-mention/20", view: "leaves", visible: can("hrms.leave.approve") },
+    { title: "Run Payroll", icon: Wallet, className: "bg-primary/10 text-primary hover:bg-primary/20", view: "payroll", visible: can("hrms.payroll.process") || can("hrms.payroll.manage") },
+    { title: "Start Review Cycle", icon: BarChart3, className: "bg-info/10 text-info hover:bg-info/20", view: "hrms", hrmsTab: "performance", visible: can("hrms.performance.manage") },
+    { title: "Add Employee", icon: UserPlus, className: "bg-success/10 text-success hover:bg-success/20", view: "employees", visible: can("hrms.employee.create") },
+    { title: "Manage Policies", icon: FileText, className: "bg-warning/10 text-warning hover:bg-warning/20", view: "leaves", visible: can("hrms.leave.manage") },
+    { title: "View Reports", icon: BarChart3, className: "bg-primary/10 text-primary hover:bg-primary/20", view: "hrms", hrmsTab: "analytics", visible: can("hrms.analytics.view") },
   ];
+
+  const visibleActions = actions.filter((a) => a.visible);
 
   return (
     <Card
@@ -232,22 +243,26 @@ function QuickActions() {
         </div>
       }
     >
-      <div className="mt-4 grid grid-cols-3 gap-3">
-        {actions.map((action) => (
-          <button
-            key={action.title}
-            type="button"
-            onClick={() => setActiveView(action.view, action.hrmsTab ? { hrmsTab: action.hrmsTab } : undefined)}
-            className={cn(
-              "flex min-h-[88px] flex-col items-center justify-center gap-2 rounded-lg px-1 transition",
-              action.className,
-            )}
-          >
-            <action.icon size={21} />
-            <span className="text-center text-[10px] font-medium leading-tight text-text">{action.title}</span>
-          </button>
-        ))}
-      </div>
+      {visibleActions.length === 0 ? (
+        <p className="py-8 text-center text-xs text-text-muted">No quick actions available.</p>
+      ) : (
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          {visibleActions.map((action) => (
+            <button
+              key={action.title}
+              type="button"
+              onClick={() => setActiveView(action.view, action.hrmsTab ? { hrmsTab: action.hrmsTab } : undefined)}
+              className={cn(
+                "flex min-h-[88px] flex-col items-center justify-center gap-2 rounded-lg px-1 transition",
+                action.className,
+              )}
+            >
+              <action.icon size={21} />
+              <span className="text-center text-[10px] font-medium leading-tight text-text">{action.title}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </Card>
   );
 }
@@ -603,7 +618,7 @@ export function HrDashboardScreen() {
             title="Attendance Rate"
             value={attendanceWeek.isLoading ? "…" : `${todayPct}%`}
             footer={`${attendanceByDay.get(today)?.size ?? 0} present today`}
-            onClick={() => setActiveView("my-attendance")}
+            onClick={() => setActiveView("attendance")}
           />
           <KpiCard
             icon={<Ticket size={21} />}
@@ -665,7 +680,7 @@ export function HrDashboardScreen() {
           <Card
             title="Attendance Trend"
             icon={<TrendingUp size={19} className="text-primary" />}
-            action={<ViewAllLink label="View Report" onClick={() => setActiveView("my-attendance")} />}
+            action={<ViewAllLink label="View Report" onClick={() => setActiveView("attendance")} />}
           >
             {attendanceWeek.isLoading ? (
               <SectionSkeleton rows={3} />
@@ -768,7 +783,7 @@ export function HrDashboardScreen() {
                     {pendingCorrections.slice(0, Math.max(0, 3 - Math.min(3, pendingLeaves.length))).map((c) => (
                       <tr
                         key={c.id}
-                        onClick={() => setActiveView("my-attendance")}
+                        onClick={() => setActiveView("attendance")}
                         className="cursor-pointer border-b border-border transition hover:bg-primary-subtle/40"
                       >
                         <td className="px-2 py-3 text-[10px] font-medium text-text-secondary">

@@ -33,14 +33,14 @@ describe('FileStorageController', () => {
   it('should list files', async () => {
     const result = await controller.list(ctx);
     expect(result.length).toBe(1);
-    expect(mockService.list).toHaveBeenCalledWith(ctx);
+    expect(mockService.list).toHaveBeenCalledWith(ctx, undefined, undefined, undefined);
   });
 
   it('should presign an upload', async () => {
     const dto = { fileName: 'doc.pdf', mimeType: 'application/pdf', size: 123, category: 'attachments', sha256: 'deadbeef' };
-    const result = await controller.presignUpload(ctx, dto);
+    const result = await controller.presignUpload(ctx, dto, { user: undefined });
     expect(result.uploadUrl).toBe('http://signed');
-    expect(mockService.presignUpload).toHaveBeenCalledWith(ctx, dto);
+    expect(mockService.presignUpload).toHaveBeenCalledWith(ctx, dto, undefined);
   });
 
   it('should complete an upload', async () => {

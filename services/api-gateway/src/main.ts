@@ -46,14 +46,35 @@ function stripSpoofableHeaders(req: Request, _res: Response, next: NextFunction)
   next();
 }
 
-function createAuthMiddleware(jwtSecret: string) {
-  return (req: Request, res: Response, next: NextFunction) => {
+function createAuthMiddleware(jwtSecret: string, authUrl: string, internalApiKey: string) {
+  return async (req: Request, res: Response, next: NextFunction) => {
     const header = req.headers['authorization'] as string | undefined;
     if (!header?.startsWith('Bearer ')) {
       res.status(401).json({ error: 'Missing access token' });
       return;
     }
     const token = header.slice(7);
+    if (token.startsWith('tso_')) {
+      try {
+        const response = await fetch(`${authUrl}/auth/internal/api-tokens/validate`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-internal-api-key': internalApiKey,
+            'x-internal-caller': 'api-gateway',
+          },
+          body: JSON.stringify({ token }),
+        });
+        const result = response.ok ? await response.json() as { userId?: string } | null : null;
+        if (!result?.userId) throw new Error('Invalid API token');
+        req.headers['x-actor-id'] = result.userId;
+        next();
+        return;
+      } catch {
+        res.status(401).json({ error: 'Invalid API token' });
+        return;
+      }
+    }
     try {
       const payload = verify(token, jwtSecret, { algorithms: ['HS256'] }) as { sub: string };
       req.headers['x-actor-id'] = payload.sub;
@@ -229,47 +250,47 @@ async function bootstrap() {
 
   app.use('/auth', proxy(authUrl));
 
-  app.use('/organisations', createAuthMiddleware(jwtSecret));
+  app.use('/organisations', createAuthMiddleware(jwtSecret, authUrl, internalApiKey));
   app.use('/organisations', proxy(orgUrl));
 
   // Platform administration lives in the organisation service but is gated by
   // PlatformAdminGuard — the caller's x-organisation-id must be the dedicated
   // platform organisation and the actor must hold admin.system.settings.
-  app.use('/platform', createAuthMiddleware(jwtSecret));
+  app.use('/platform', createAuthMiddleware(jwtSecret, authUrl, internalApiKey));
   app.use('/platform', proxy(orgUrl));
 
-  app.use(['/channels', '/messages'], createAuthMiddleware(jwtSecret));
+  app.use(['/channels', '/messages'], createAuthMiddleware(jwtSecret, authUrl, internalApiKey));
   app.use(['/channels', '/messages'], proxy(msgUrl));
 
-  app.use(['/projects', '/tasks', '/project-comments', '/approvals', '/todos', '/time-entries'], createAuthMiddleware(jwtSecret));
+  app.use(['/projects', '/tasks', '/project-comments', '/approvals', '/todos', '/time-entries'], createAuthMiddleware(jwtSecret, authUrl, internalApiKey));
   app.use(['/projects', '/tasks', '/project-comments', '/approvals', '/todos', '/time-entries'], proxy(projectsUrl));
 
-  app.use('/notifications', createAuthMiddleware(jwtSecret));
+  app.use('/notifications', createAuthMiddleware(jwtSecret, authUrl, internalApiKey));
   app.use('/notifications', proxy(notificationUrl));
 
-  app.use('/audit', createAuthMiddleware(jwtSecret));
+  app.use('/audit', createAuthMiddleware(jwtSecret, authUrl, internalApiKey));
   app.use('/audit', proxy(auditUrl));
 
   app.use('/meetings/public', proxy(meetingUrl));
-  app.use('/meetings', createAuthMiddleware(jwtSecret));
+  app.use('/meetings', createAuthMiddleware(jwtSecret, authUrl, internalApiKey));
   app.use('/meetings', proxy(meetingUrl));
 
   app.use('/shares', proxy(fileStorageUrl));
 
-  app.use('/files', createAuthMiddleware(jwtSecret));
+  app.use('/files', createAuthMiddleware(jwtSecret, authUrl, internalApiKey));
   app.use('/files', proxy(fileStorageUrl));
 
-  app.use('/search', createAuthMiddleware(jwtSecret));
+  app.use('/search', createAuthMiddleware(jwtSecret, authUrl, internalApiKey));
   app.use('/search', proxy(searchUrl));
 
-  app.use('/ai', createAuthMiddleware(jwtSecret));
+  app.use('/ai', createAuthMiddleware(jwtSecret, authUrl, internalApiKey));
   app.use('/ai', proxy(aiUrl));
 
-  app.use('/hrms', createAuthMiddleware(jwtSecret));
+  app.use('/hrms', createAuthMiddleware(jwtSecret, authUrl, internalApiKey));
   app.use('/hrms', proxy(hrmsUrl));
 
   app.use('/interview/public', proxy(interviewUrl));
-  app.use('/interview', createAuthMiddleware(jwtSecret));
+  app.use('/interview', createAuthMiddleware(jwtSecret, authUrl, internalApiKey));
   app.use('/interview', proxy(interviewUrl));
 
   app.enableShutdownHooks();

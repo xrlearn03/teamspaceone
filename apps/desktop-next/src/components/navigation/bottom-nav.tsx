@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Search,
   Sparkles,
+  type LucideIcon,
 } from "lucide-react";
 import { usePermissionContext } from "@teamspace-one/authorization/react";
 import { hasAnyPermission } from "@teamspace-one/authorization";
@@ -29,7 +30,7 @@ export function BottomNav() {
 
   const items: Array<{
     id: string;
-    icon: React.ElementType;
+    icon: LucideIcon;
     label: string;
     badge?: number;
     permissions?: string[];

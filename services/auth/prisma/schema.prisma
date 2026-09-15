@@ -19,10 +19,12 @@ model User {
   active        Boolean  @default(true)
   emailVerified Boolean  @default(false)
   mustChangePassword Boolean @default(false)
+  preferences   Json?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   refreshTokens RefreshToken[]
+  apiTokens     ApiToken[]
 
   @@index([email])
   @@map("users")
@@ -34,11 +36,32 @@ model RefreshToken {
   tokenHash String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  deviceName String?
+  userAgent  String?
+  ipAddress  String?
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([tokenHash])
   @@map("refresh_tokens")
+}
+
+model ApiToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique
+  prefix     String
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("api_tokens")
 }
 
 model OutboxEvent {

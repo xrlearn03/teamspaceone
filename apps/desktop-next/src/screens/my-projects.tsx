@@ -38,9 +38,11 @@ import {
 import {
   downloadFile,
   getActiveOrganisation,
+  getMilestones,
   getProjectActivity,
   getTasks,
   type FileRecord,
+  type Milestone,
   type Project,
   type ProjectActivity,
   type Task,
@@ -62,7 +64,7 @@ import {
 } from "@teamspace-one/ui/dialog";
 import { PageHeader } from "./hr/common";
 import { SectionError, SectionSkeleton, formatDate } from "./hrms/common";
-import { MyTasksBoard, isBugTask, severityClasses, severityLabel, timeAgo, TASK_STATUS_LABELS } from "./my-tasks-board";
+import { MyTasksBoard, isBugTask, severityClasses, severityLabel, timeAgo } from "./my-tasks-board";
 import { Gantt, ProjectDialog } from "./project";
 
 /* =========================================================
@@ -318,7 +320,7 @@ function RecentBugReports({ bugs, projectMap, userMap, onReport }: { bugs: Task[
   );
 }
 
-function UpcomingMilestonesPanel({ milestones, projectMap, onViewAll }: { milestones: Task[]; projectMap: Map<string, Project>; onViewAll: () => void }) {
+function UpcomingMilestonesPanel({ milestones, projectMap, onViewAll }: { milestones: Milestone[]; projectMap: Map<string, Project>; onViewAll: () => void }) {
   return (
     <Panel
       icon={<Flag size={17} className="text-primary" />}
@@ -331,18 +333,18 @@ function UpcomingMilestonesPanel({ milestones, projectMap, onViewAll }: { milest
     >
       <div className="px-4 py-2">
         {milestones.length === 0 ? (
-          <p className="py-6 text-center text-[11px] text-text-muted">No upcoming due dates.</p>
+          <p className="py-6 text-center text-[11px] text-text-muted">No upcoming milestones.</p>
         ) : (
-          milestones.map((task, index) => (
-            <div key={task.id} className="relative grid grid-cols-[92px_18px_1fr] gap-2 py-2.5">
+          milestones.map((milestone, index) => (
+            <div key={milestone.id} className="relative grid grid-cols-[92px_18px_1fr] gap-2 py-2.5">
               {index !== milestones.length - 1 && <div className="absolute left-[100px] top-7 h-10 w-px bg-border" />}
-              <p className="text-[10px] text-text-secondary">{formatDate(task.dueDate)}</p>
+              <p className="text-[10px] text-text-secondary">{formatDate(milestone.dueDate)}</p>
               <div className="relative z-10 flex justify-center">
-                <span className={cn("mt-1 h-2.5 w-2.5 rounded-full", task.priority === "urgent" || task.priority === "high" ? "bg-warning" : "bg-primary")} />
+                <span className={cn("mt-1 h-2.5 w-2.5 rounded-full", milestone.status === "completed" ? "bg-success" : "bg-primary")} />
               </div>
               <div className="min-w-0">
-                <p className="truncate text-[11px] font-medium text-text">{task.title}</p>
-                <p className="mt-0.5 text-[9px] text-text-muted">{projectMap.get(task.projectId)?.name ?? "Project"}</p>
+                <p className="truncate text-[11px] font-medium text-text">{milestone.name}</p>
+                <p className="mt-0.5 text-[9px] text-text-muted">{projectMap.get(milestone.projectId)?.name ?? "Project"}</p>
               </div>
             </div>
           ))
@@ -562,23 +564,23 @@ function RequestJoinDialog({ open, onOpenChange }: { open: boolean; onOpenChange
    TAB PANELS
 ========================================================= */
 
-function MilestonesTab({ milestones, projectMap }: { milestones: Task[]; projectMap: Map<string, Project> }) {
+function MilestonesTab({ milestones, projectMap }: { milestones: Milestone[]; projectMap: Map<string, Project> }) {
   if (milestones.length === 0) {
-    return <EmptyTab icon={<Flag size={28} />} title="Milestones" description="Upcoming task due dates across your projects will appear here." />;
+    return <EmptyTab icon={<Flag size={28} />} title="Milestones" description="Project milestones will appear here once they are created." />;
   }
   return (
     <div className="px-2 py-2">
-      {milestones.map((task, index) => (
-        <div key={task.id} className="relative grid grid-cols-[110px_20px_1fr] gap-2 py-2.5">
+      {milestones.map((milestone, index) => (
+        <div key={milestone.id} className="relative grid grid-cols-[110px_20px_1fr] gap-2 py-2.5">
           {index !== milestones.length - 1 && <div className="absolute left-[118px] top-7 h-10 w-px bg-border" />}
-          <p className="text-[11px] text-text-secondary">{formatDate(task.dueDate)}</p>
+          <p className="text-[11px] text-text-secondary">{formatDate(milestone.dueDate)}</p>
           <div className="relative z-10 flex justify-center">
-            <span className={cn("mt-1 h-2.5 w-2.5 rounded-full", task.priority === "urgent" || task.priority === "high" ? "bg-warning" : "bg-primary")} />
+            <span className={cn("mt-1 h-2.5 w-2.5 rounded-full", milestone.status === "completed" ? "bg-success" : "bg-primary")} />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-[12px] font-medium text-text">{task.title}</p>
+            <p className="truncate text-[12px] font-medium text-text">{milestone.name}</p>
             <p className="mt-0.5 text-[10px] text-text-muted">
-              {projectMap.get(task.projectId)?.name ?? "Project"} · {TASK_STATUS_LABELS[task.status] ?? task.status}
+              {projectMap.get(milestone.projectId)?.name ?? "Project"} · {milestone.status.replace("_", " ")}
             </p>
           </div>
         </div>
@@ -734,6 +736,13 @@ export function MyProjectsScreen() {
       staleTime: 60 * 1000,
     })),
   });
+  const milestoneQueries = useQueries({
+    queries: projectIds.map((id) => ({
+      queryKey: ["milestones", id],
+      queryFn: () => getMilestones(id),
+      staleTime: 60 * 1000,
+    })),
+  });
 
   const tasksByProject = useMemo(() => {
     const map = new Map<string, Task[]>();
@@ -781,10 +790,11 @@ export function MyProjectsScreen() {
     [allTasks],
   );
   const milestones = useMemo(
-    () => allTasks
-      .filter((t) => t.dueDate && t.status !== "done" && new Date(t.dueDate).getTime() >= Date.now() - 24 * 60 * 60 * 1000)
+    () => milestoneQueries
+      .flatMap((q) => q.data ?? [])
+      .filter((m) => m.dueDate && m.status !== "completed" && new Date(m.dueDate).getTime() >= Date.now() - 24 * 60 * 60 * 1000)
       .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime()),
-    [allTasks],
+    [milestoneQueries],
   );
   const activityItems = useMemo(
     () => activityQueries

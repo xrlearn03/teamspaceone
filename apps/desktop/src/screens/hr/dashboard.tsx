@@ -603,7 +603,7 @@ export function HrDashboardScreen() {
             title="Attendance Rate"
             value={attendanceWeek.isLoading ? "…" : `${todayPct}%`}
             footer={`${attendanceByDay.get(today)?.size ?? 0} present today`}
-            onClick={() => setActiveView("my-attendance")}
+            onClick={() => setActiveView("attendance")}
           />
           <KpiCard
             icon={<Ticket size={21} />}
@@ -665,7 +665,7 @@ export function HrDashboardScreen() {
           <Card
             title="Attendance Trend"
             icon={<TrendingUp size={19} className="text-primary" />}
-            action={<ViewAllLink label="View Report" onClick={() => setActiveView("my-attendance")} />}
+            action={<ViewAllLink label="View Report" onClick={() => setActiveView("attendance")} />}
           >
             {attendanceWeek.isLoading ? (
               <SectionSkeleton rows={3} />
@@ -768,7 +768,7 @@ export function HrDashboardScreen() {
                     {pendingCorrections.slice(0, Math.max(0, 3 - Math.min(3, pendingLeaves.length))).map((c) => (
                       <tr
                         key={c.id}
-                        onClick={() => setActiveView("my-attendance")}
+                        onClick={() => setActiveView("attendance")}
                         className="cursor-pointer border-b border-border transition hover:bg-primary-subtle/40"
                       >
                         <td className="px-2 py-3 text-[10px] font-medium text-text-secondary">

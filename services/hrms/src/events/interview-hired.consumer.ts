@@ -88,13 +88,18 @@ export class InterviewHiredConsumer implements OnModuleInit, OnModuleDestroy {
         const jobTitle =
           typeof payload?.jobTitle === 'string' ? payload.jobTitle : undefined;
 
-        await this.inbox.handle(data, SUBJECT, () =>
-          this.lifecycle.createPendingFromHire(data.organisationId, {
-            candidateName,
-            candidateEmail,
-            sourceId: applicationId,
-            jobTitle,
-          }),
+        await this.inbox.handle(data, SUBJECT, (tx) =>
+          this.lifecycle.createPendingFromHire(
+            data.organisationId,
+            {
+              candidateName,
+              candidateEmail,
+              sourceId: applicationId,
+              jobTitle,
+            },
+            tx,
+            data.actorId,
+          ),
         );
         jsMsg.ack();
       } catch (err) {

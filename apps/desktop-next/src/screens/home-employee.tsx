@@ -1,47 +1,49 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import {
-  ArrowRight,
-  Bell,
+  BriefcaseBusiness,
+  Building2,
+  CalendarClock,
   CalendarDays,
   Check,
-  ChevronRight,
+  CheckSquare,
   FileText,
-  Mail,
-  Megaphone,
+  FolderKanban,
+  GraduationCap,
+  LifeBuoy,
   MessageSquare,
-  Sparkles,
+  MessageSquarePlus,
   Users,
   Video,
-  BriefcaseBusiness,
 } from "lucide-react";
 import {
-  useAttendance,
+  useActiveOrganisation,
+  useChannels,
   useDailyDigest,
   useEmployeeBirthdays,
   useMe,
   useMeetings,
-  useMyEmployee,
+  useMembers,
   useNotifications,
   useProjects,
-  useTimeEntries,
   useTodos,
   useUpdateTodo,
+  useUsers,
 } from "@/hooks/api";
 import * as api from "@/lib/api";
-import type { DailyDigestResult, Meeting, Todo } from "@/lib/api";
-import { normalizeDigest, QuickCheckInCard } from "@/features/dashboard/widgets";
-import { useUIStore } from "@/stores/ui";
+import type { Meeting, Todo } from "@/lib/api";
+import { QuickCheckInCard } from "@/features/dashboard/widgets";
+import { useUIStore, type View } from "@/stores/ui";
 import { cn, getUserDisplayName } from "@/lib/utils";
-import { formatMinutes, formatTime } from "@/screens/hrms/common";
+import { formatTime } from "@/screens/hrms/common";
+import { AiDailyBrief } from "@/components/ai-daily-brief";
+import { UserAvatar } from "@/components/user-avatar";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
+import { EmptyState } from "@teamspace-one/ui/empty-state";
 
 /* =========================================================
    HELPERS
 ========================================================= */
-
-const DAY_TARGET_MIN = 8 * 60;
-const WEEK_TARGET_MIN = 40 * 60;
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -54,32 +56,6 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-/**
- * Week containing today. `to` is exclusive (next Monday) — the
- * time-entries API filters `date < to`.
- */
-function weekRange() {
-  const now = new Date();
-  const mondayOffset = (now.getDay() + 6) % 7;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - mondayOffset);
-  const nextMonday = new Date(monday);
-  nextMonday.setDate(monday.getDate() + 7);
-  return {
-    from: monday.toISOString().slice(0, 10),
-    to: nextMonday.toISOString().slice(0, 10),
-  };
-}
-
-function useNow(intervalMs = 30_000) {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), intervalMs);
-    return () => clearInterval(t);
-  }, [intervalMs]);
-  return now;
-}
-
 function timeAgo(iso?: string | null) {
   if (!iso) return "";
   const diff = Date.now() - new Date(iso).getTime();
@@ -90,13 +66,6 @@ function timeAgo(iso?: string | null) {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
-}
-
-function meetingDuration(m: Meeting) {
-  if (!m.durationMinutes) return null;
-  return m.durationMinutes >= 60
-    ? `${Math.floor(m.durationMinutes / 60)}h${m.durationMinutes % 60 ? ` ${m.durationMinutes % 60}m` : ""}`
-    : `${m.durationMinutes} min`;
 }
 
 function initials(firstName?: string, lastName?: string) {
@@ -117,436 +86,195 @@ function dailyQuote() {
   return QUOTES[dayOfYear % QUOTES.length];
 }
 
+function meetingStart(m: Meeting) {
+  return m.scheduledAt ?? m.startedAt ?? m.createdAt;
+}
+
+function meetingTimeRange(m: Meeting) {
+  const start = m.scheduledAt ?? m.startedAt;
+  if (!start) return m.type ?? "Meeting";
+  const s = formatTime(start);
+  if (!m.durationMinutes) return s;
+  const end = new Date(new Date(start).getTime() + m.durationMinutes * 60000);
+  return `${s} – ${formatTime(end.toISOString())}`;
+}
+
 /* =========================================================
-   AI DAILY BRIEF
+   SHARED PIECES
 ========================================================= */
 
-const BRIEF_ICONS = [
-  { icon: Check, iconClass: "bg-white/10 text-emerald-300" },
-  { icon: CalendarDays, iconClass: "bg-white/10 text-indigo-300" },
-  { icon: Mail, iconClass: "bg-white/10 text-amber-300" },
-  { icon: Sparkles, iconClass: "bg-white/10 text-rose-300" },
-];
-
-function AIDailyBrief({
-  digest,
-  loading,
-  fallbackItems,
+function Panel({
+  children,
+  className = "",
 }: {
-  digest: DailyDigestResult | null;
-  loading: boolean;
-  fallbackItems: { title: string; description: string }[];
+  children: React.ReactNode;
+  className?: string;
 }) {
-  const setActiveView = useUIStore((s) => s.setActiveView);
-
-  const items = useMemo(() => {
-    if (!digest) return fallbackItems;
-    const flat = digest.sections.flatMap((s) =>
-      s.items.map((item) => ({ title: item, description: s.title })),
-    );
-    return flat.length > 0 ? flat.slice(0, 4) : fallbackItems;
-  }, [digest, fallbackItems]);
-
   return (
-    <section className="relative min-h-[300px] overflow-hidden rounded-xl border border-white/10 bg-[#020b19] p-6">
-      <div className="pointer-events-none absolute inset-0">
-        <img
-          src="/about-background-image.png"
-          alt=""
-          className="h-full w-full object-cover object-right"
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#020b19]/90 via-[#020b19]/60 to-[#020b19]/20" />
-      </div>
-      <div className="pointer-events-none absolute -right-8 -top-16 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
-      <div className="pointer-events-none absolute bottom-0 right-8 h-48 w-48 rounded-full bg-info/10 blur-3xl" />
-
-      <div className="relative z-10 max-w-[70%] lg:max-w-[62%]">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-indigo-300">
-            <Sparkles size={22} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold text-white">AI Daily Brief</h2>
-              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-indigo-200">
-                Beta
-              </span>
-            </div>
-            <p className="text-xs text-white/70">Your personalized update for today</p>
-          </div>
-        </div>
-
-        <div className="mt-6 space-y-4">
-          {loading ? (
-            <p className="text-xs leading-5 text-white/70">Generating daily brief…</p>
-          ) : (
-            items.map((item, i) => {
-              const preset = BRIEF_ICONS[i % BRIEF_ICONS.length];
-              const Icon = preset.icon;
-              return (
-                <BriefItem
-                  key={`${item.title}-${i}`}
-                  icon={<Icon size={16} />}
-                  iconClass={preset.iconClass}
-                  title={item.title}
-                  description={item.description}
-                />
-              );
-            })
-          )}
-        </div>
-
-        <button
-          onClick={() => setActiveView("ai")}
-          className="mt-5 flex items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/15"
-        >
-          View Details
-          <ArrowRight size={13} />
-        </button>
-      </div>
-
-      {/* AI Orb */}
-      <div className="absolute right-[6%] top-[26%] hidden lg:block">
-        <div className="relative flex h-36 w-36 items-center justify-center rounded-full bg-primary/10 shadow-[0_0_60px_rgba(99,102,241,0.15)]">
-          <div className="absolute inset-5 rounded-full border border-white/40" />
-          <div className="absolute inset-10 rounded-full border border-white/50" />
-          <Sparkles size={34} className="text-indigo-300" />
-        </div>
-        <div className="mt-4 text-center">
-          <p className="text-xs font-semibold text-white/90">Stay focused.</p>
-          <p className="text-xs font-semibold text-white/90">You're on track!</p>
-        </div>
-      </div>
+    <section className={`rounded-xl border border-border bg-surface p-4 ${className}`}>
+      {children}
     </section>
   );
 }
 
-function BriefItem({
-  icon,
-  iconClass,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  iconClass: string;
-  title: string;
-  description: string;
-}) {
+function PanelHeader({ title, onViewAll }: { title: string; onViewAll?: () => void }) {
   return (
-    <div className="flex items-center gap-3">
-      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconClass}`}>
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="truncate text-xs font-semibold text-white">{title}</p>
-        <p className="mt-0.5 truncate text-[11px] text-white/60">{description}</p>
-      </div>
+    <div className="flex items-center justify-between">
+      <h2 className="text-[15px] font-semibold text-text">{title}</h2>
+      {onViewAll ? (
+        <button onClick={onViewAll} className="text-xs font-medium text-primary hover:text-primary/80">
+          View All →
+        </button>
+      ) : null}
     </div>
   );
 }
 
-/* =========================================================
-   TODAY'S SCHEDULE
-========================================================= */
-
-const SCHEDULE_DOT_COLORS = ["bg-success", "bg-primary", "bg-warning", "bg-info", "bg-mention"];
-
-function TodaysSchedule({ meetings }: { meetings: Meeting[] }) {
-  const setActiveView = useUIStore((s) => s.setActiveView);
-
-  return (
-    <section className="rounded-xl border border-border bg-surface p-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-text">Today's Schedule</h2>
-        <button
-          onClick={() => setActiveView("meeting")}
-          className="text-xs font-medium text-primary"
-        >
-          View All
-        </button>
-      </div>
-
-      {meetings.length === 0 ? (
-        <p className="mt-6 text-xs text-text-muted">No meetings scheduled for today.</p>
-      ) : (
-        <div className="relative mt-5">
-          <div className="absolute bottom-3 left-[5px] top-3 w-px bg-border" />
-          <div className="space-y-5">
-            {meetings.map((m, i) => (
-              <button
-                key={m.id}
-                onClick={() => setActiveView("meeting", { meetingId: m.id })}
-                className="relative grid w-full grid-cols-[12px_62px_1fr] gap-3 text-left"
-              >
-                <div className="relative z-10 mt-1.5 flex justify-center">
-                  <span
-                    className={cn(
-                      "h-2.5 w-2.5 rounded-full",
-                      m.status === "started"
-                        ? "bg-success"
-                        : SCHEDULE_DOT_COLORS[i % SCHEDULE_DOT_COLORS.length],
-                    )}
-                  />
-                </div>
-                <div>
-                  <p className="text-[11px] font-medium text-text">{formatTime(m.scheduledAt)}</p>
-                  <p className="mt-1 text-[10px] text-text-muted">{meetingDuration(m) ?? ""}</p>
-                </div>
-                <div className="border-b border-border pb-3">
-                  <p className="truncate text-xs font-semibold text-text">{m.title}</p>
-                  <p className="mt-1 flex items-center gap-1 text-[10px] text-text-muted">
-                    <Video size={10} />
-                    {m.participants?.length
-                      ? `${m.participants.length} participant${m.participants.length === 1 ? "" : "s"}`
-                      : (m.type ?? "Meeting")}
-                  </p>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-/* =========================================================
-   METRIC CARDS
-========================================================= */
-
 function MetricCard({
   icon,
   iconClass,
-  title,
   value,
-  subtitle,
-  progress,
-  ring,
+  label,
   badge,
-  action,
+  footer,
   onClick,
 }: {
   icon: React.ReactNode;
   iconClass: string;
-  title: string;
-  value: string;
-  subtitle: string;
-  progress?: number;
-  ring?: number;
-  badge?: React.ReactNode;
-  action?: React.ReactNode;
+  value: string | number;
+  label: string;
+  badge?: string;
+  footer: string;
   onClick?: () => void;
 }) {
   return (
     <div
       onClick={onClick}
       className={cn(
-        "rounded-xl border border-border bg-surface p-4",
+        "rounded-xl border border-border bg-surface p-5",
         onClick && "cursor-pointer transition hover:border-primary/40",
       )}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-5">
         <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}
+          className={`flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-xl ${iconClass}`}
         >
           {icon}
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] text-text-muted">{title}</p>
-          <p className="mt-0.5 text-xl font-semibold text-text">{value}</p>
-          <p className="truncate text-[10px] text-text-muted">{subtitle}</p>
-        </div>
-        {badge}
-        {action}
-        {ring !== undefined && (
-          <div
-            className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full"
-            style={{
-              background: `conic-gradient(var(--primary) ${ring}%, var(--surface-elevated) ${ring}% 100%)`,
-            }}
-          >
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface">
-              <span className="text-xs font-semibold text-text">{ring}%</span>
-            </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-3">
+            <span className="text-[28px] font-semibold leading-8 text-text">{value}</span>
+            {badge ? <span className="text-[13px] text-success">{badge}</span> : null}
           </div>
-        )}
-      </div>
-      {progress !== undefined && (
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-elevated">
-          <div
-            className="h-full rounded-full bg-primary"
-            style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-          />
+          <div className="text-xs text-text-secondary">{label}</div>
+          <div className="mt-1 text-[10px] text-text-muted">{footer}</div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
+
+
 /* =========================================================
-   MY TASKS
+   MY FOCUS TODAY (personal todos)
 ========================================================= */
 
-type TaskTab = "today" | "week" | "all";
-
-function todoLabel(todo: Todo): { text: string; className: string } | null {
-  const done = Boolean(todo.completedAt);
-  if (done) return { text: "Done", className: "bg-primary/10 text-primary" };
-  if (!todo.dueDate) return null;
+function todoDueLabel(todo: Todo): { text: string; className: string } {
+  if (todo.completedAt) return { text: "Done", className: "text-success" };
+  if (!todo.dueDate) return { text: "—", className: "text-text-muted" };
   const due = todo.dueDate.slice(0, 10);
   const today = todayStr();
-  if (due < today) return { text: "Overdue", className: "bg-error/10 text-error" };
-  if (due === today) return { text: "Today", className: "bg-warning/10 text-warning" };
+  if (due < today) return { text: "Overdue", className: "text-error" };
+  if (due === today) return { text: "Today", className: "text-warning" };
   return {
     text: new Date(todo.dueDate).toLocaleDateString([], { day: "numeric", month: "short" }),
-    className: "bg-surface-elevated text-text-muted",
+    className: "text-text-muted",
   };
 }
 
-function MyTasks({ todos }: { todos: Todo[] }) {
+function MyFocusPanel({ todos }: { todos: Todo[] }) {
+  const setActiveView = useUIStore((s) => s.setActiveView);
   const updateTodo = useUpdateTodo();
-  const [tab, setTab] = useState<TaskTab>("today");
 
-  const today = todayStr();
-  const weekEnd = new Date();
-  weekEnd.setDate(weekEnd.getDate() + 7);
-  const weekEndStr = weekEnd.toISOString().slice(0, 10);
-
-  const lists = useMemo<Record<TaskTab, Todo[]>>(() => {
-    const sorted = [...todos].sort((a, b) => {
-      if (Boolean(a.completedAt) !== Boolean(b.completedAt)) return a.completedAt ? 1 : -1;
-      return (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999");
-    });
-    const due = (t: Todo) => t.dueDate?.slice(0, 10);
-    return {
-      today: sorted.filter((t) => due(t) !== undefined && due(t)! <= today),
-      week: sorted.filter((t) => due(t) !== undefined && due(t)! <= weekEndStr),
-      all: sorted,
-    };
-  }, [todos, today, weekEndStr]);
-
-  const visible = lists[tab].slice(0, 6);
-
-  const tabs: { key: TaskTab; label: string }[] = [
-    { key: "today", label: `Today (${lists.today.length})` },
-    { key: "week", label: `This Week (${lists.week.length})` },
-    { key: "all", label: `All (${lists.all.length})` },
-  ];
+  const sorted = useMemo(
+    () =>
+      [...todos].sort((a, b) => {
+        if (Boolean(a.completedAt) !== Boolean(b.completedAt)) return a.completedAt ? 1 : -1;
+        return (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999");
+      }),
+    [todos],
+  );
+  const visible = sorted.slice(0, 5);
+  const completed = todos.filter((t) => t.completedAt).length;
+  const progress = todos.length ? Math.round((completed / todos.length) * 100) : 0;
 
   return (
-    <section className="overflow-hidden rounded-xl border border-border bg-surface">
-      <div className="flex items-center justify-between px-4 pt-4">
-        <h2 className="text-sm font-semibold text-text">My Tasks</h2>
+    <Panel>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-[15px] font-semibold text-text">My Focus Today</h2>
+          <p className="mt-1 text-xs text-text-muted">
+            {completed} / {todos.length} completed
+          </p>
+        </div>
+        <span className="text-xs text-text-secondary">{progress}%</span>
       </div>
 
-      <div className="mt-3 flex gap-1 border-b border-border px-4">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={cn(
-              "rounded-t-lg px-3 py-2 text-[11px]",
-              tab === t.key ? "bg-primary font-medium text-white" : "text-text-secondary",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-elevated">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-info to-primary transition-all"
+          style={{ width: `${progress}%` }}
+        />
       </div>
 
-      <div>
+      <div className="mt-4 space-y-3">
         {visible.length === 0 ? (
-          <p className="px-4 py-6 text-xs text-text-muted">No tasks here. You're all caught up.</p>
+          <p className="py-3 text-xs text-text-muted">No tasks yet — you're all caught up.</p>
         ) : (
           visible.map((todo) => {
             const done = Boolean(todo.completedAt);
-            const label = todoLabel(todo);
+            const label = todoDueLabel(todo);
             return (
-              <div
+              <button
                 key={todo.id}
-                className="flex items-center gap-3 border-b border-border px-4 py-3.5 last:border-0"
+                onClick={() =>
+                  updateTodo.mutate({ todoId: todo.id, body: { completed: !done } })
+                }
+                className="flex w-full items-center gap-3 text-left"
               >
-                <button
-                  onClick={() => updateTodo.mutate({ todoId: todo.id, body: { completed: !done } })}
+                <span
                   className={cn(
-                    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition",
-                    done ? "border-primary bg-primary text-white" : "border-border hover:border-primary",
+                    "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition",
+                    done
+                      ? "border-success bg-success text-white"
+                      : "border-border hover:border-primary",
                   )}
                 >
-                  {done && <Check size={12} />}
-                </button>
-                <div className="min-w-0 flex-1">
-                  <p
-                    className={cn(
-                      "truncate text-xs font-medium",
-                      done ? "text-text-muted line-through" : "text-text",
-                    )}
-                  >
-                    {todo.title}
-                  </p>
-                  {(todo.notes || todo.dueDate) && (
-                    <p className="mt-1 truncate text-[10px] text-text-muted">
-                      {todo.notes ?? `Due ${new Date(todo.dueDate!).toLocaleDateString()}`}
-                    </p>
+                  {done && <Check size={12} strokeWidth={3} />}
+                </span>
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-xs",
+                    done ? "text-text-muted line-through" : "text-text",
                   )}
-                </div>
-                {label && (
-                  <span className={`rounded-md px-2 py-1 text-[10px] font-medium ${label.className}`}>
-                    {label.text}
-                  </span>
-                )}
-              </div>
+                >
+                  {todo.title}
+                </span>
+                <span className={`text-[11px] ${label.className}`}>{label.text}</span>
+              </button>
             );
           })
         )}
       </div>
-    </section>
-  );
-}
 
-/* =========================================================
-   TEAM BIRTHDAYS
-========================================================= */
-
-function TeamBirthdays() {
-  const { data: birthdays, isError } = useEmployeeBirthdays(7);
-  if (isError || !birthdays || birthdays.length === 0) return null;
-
-  return (
-    <section className="rounded-xl border border-border bg-surface p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-text">Team Birthdays This Week</h2>
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {birthdays.slice(0, 4).map((person) => (
-          <div
-            key={person.id}
-            className="rounded-lg bg-gradient-to-b from-primary/10 to-surface p-2 text-center"
-          >
-            <div className="relative mx-auto h-12 w-12">
-              <Avatar className="h-12 w-12">
-                <AvatarFallback className="text-xs">
-                  {initials(person.firstName, person.lastName)}
-                </AvatarFallback>
-              </Avatar>
-              <span className="absolute -right-1 -top-2 text-[15px]">🎉</span>
-            </div>
-            <p className="mt-2 truncate text-[10px] font-semibold text-text">
-              {person.firstName} {person.lastName}
-            </p>
-            <p className="mt-1 text-[10px] font-medium text-success">
-              {person.daysUntil === 0
-                ? "Today"
-                : new Date(person.date).toLocaleDateString([], { day: "numeric", month: "short" })}
-            </p>
-            <p className="mt-0.5 truncate text-[9px] text-text-muted">
-              {person.departmentName ?? ""}
-            </p>
-          </div>
-        ))}
-      </div>
-    </section>
+      <button
+        onClick={() => setActiveView("my-projects", { projectsTab: "tasks" })}
+        className="mt-4 block w-full text-right text-xs font-medium text-primary hover:text-primary/80"
+      >
+        View All Tasks →
+      </button>
+    </Panel>
   );
 }
 
@@ -554,9 +282,15 @@ function TeamBirthdays() {
    MY PROJECTS
 ========================================================= */
 
-const PROJECT_BAR_COLORS = ["bg-primary", "bg-info", "bg-success", "bg-warning"];
+const PROJECT_TINTS = [
+  "bg-info/15 text-info",
+  "bg-mention/15 text-mention",
+  "bg-primary/15 text-primary",
+  "bg-success/15 text-success",
+];
+const PROJECT_BAR_COLORS = ["bg-info", "bg-primary", "bg-mention", "bg-success"];
 
-function MyProjects() {
+function MyProjectsPanel() {
   const setActiveView = useUIStore((s) => s.setActiveView);
   const { data: projects } = useProjects();
 
@@ -578,12 +312,10 @@ function MyProjects() {
   });
 
   return (
-    <section className="rounded-xl border border-border bg-surface p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-text">My Projects</h2>
-      </div>
+    <Panel>
+      <PanelHeader title="My Projects" onViewAll={() => setActiveView("my-projects")} />
 
-      <div className="mt-3">
+      <div className="mt-2">
         {topProjects.length === 0 ? (
           <p className="py-4 text-xs text-text-muted">You're not a member of any project yet.</p>
         ) : (
@@ -593,36 +325,163 @@ function MyProjects() {
               tasks.length > 0
                 ? Math.round((tasks.filter((t) => t.status === "done").length / tasks.length) * 100)
                 : 0;
+            const done = project.status !== "active";
             return (
               <button
                 key={project.id}
                 onClick={() => setActiveView("project", { projectId: project.id })}
-                className="flex w-full items-center gap-3 border-b border-border py-2.5 text-left last:border-0"
+                className="flex w-full items-center gap-3 border-b border-border py-3 text-left last:border-0"
               >
-                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <BriefcaseBusiness size={12} />
+                <div
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${PROJECT_TINTS[i % PROJECT_TINTS.length]}`}
+                >
+                  <BriefcaseBusiness size={18} />
                 </div>
+
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-text">{project.name}</p>
+                  <div className="truncate text-xs font-medium text-text">{project.name}</div>
+                  <div className="mt-1 text-[10px] text-text-muted">
+                    {project.members?.length ?? 0} member{project.members?.length === 1 ? "" : "s"}
+                    <span className="mx-1">•</span>
+                    <span className={done ? "text-success" : "text-info"}>
+                      {done ? "Completed" : "In Progress"}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex w-28 items-center gap-2">
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-elevated">
+
+                <div className="w-[100px]">
+                  <div className="h-2 overflow-hidden rounded-full bg-surface-elevated">
                     <div
                       className={`h-full rounded-full ${PROJECT_BAR_COLORS[i % PROJECT_BAR_COLORS.length]}`}
                       style={{ width: `${progress}%` }}
                     />
                   </div>
-                  <span className="w-8 text-right text-[10px] font-medium text-text-secondary">
-                    {progress}%
-                  </span>
                 </div>
-                <ChevronRight size={13} className="text-text-muted" />
+
+                <span className="w-8 text-right text-[11px] text-text-secondary">{progress}%</span>
               </button>
             );
           })
         )}
       </div>
-    </section>
+    </Panel>
+  );
+}
+
+/* =========================================================
+   TEAM BIRTHDAYS
+========================================================= */
+
+function TeamBirthdaysPanel() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const { data: birthdays } = useEmployeeBirthdays(7);
+  const list = (birthdays ?? []).slice(0, 4);
+
+  return (
+    <Panel>
+      <PanelHeader title="Team Birthdays This Week" />
+
+      <div className="mt-2">
+        {list.length === 0 ? (
+          <p className="py-4 text-xs text-text-muted">No birthdays coming up this week.</p>
+        ) : (
+          list.map((person) => (
+            <div key={person.id} className="flex items-center gap-3 py-2.5">
+              <Avatar className="h-10 w-10 border border-border">
+                <AvatarFallback className="text-xs">
+                  {initials(person.firstName, person.lastName)}
+                </AvatarFallback>
+              </Avatar>
+
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-medium text-text">
+                  {person.firstName} {person.lastName}
+                </div>
+                <div className="truncate text-[10px] text-text-muted">
+                  {person.departmentName ?? ""}
+                </div>
+              </div>
+
+              <div className="mr-2 text-right">
+                <div className="text-[11px] text-text-secondary">
+                  {new Date(person.date).toLocaleDateString([], { day: "numeric", month: "short" })}
+                </div>
+                <div
+                  className={cn(
+                    "text-[10px]",
+                    person.daysUntil === 0 ? "font-semibold text-warning" : "text-text-muted",
+                  )}
+                >
+                  {person.daysUntil === 0
+                    ? "Today 🎂"
+                    : `In ${person.daysUntil} day${person.daysUntil === 1 ? "" : "s"}`}
+                </div>
+              </div>
+
+              <button
+                onClick={() => setActiveView("dm")}
+                className="flex h-9 items-center gap-2 rounded-lg bg-primary/80 px-3.5 text-[11px] font-medium text-white transition hover:bg-primary"
+              >
+                <MessageSquare size={13} />
+                Message
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+/* =========================================================
+   UPCOMING MEETINGS
+========================================================= */
+
+function UpcomingMeetingsPanel({ meetings }: { meetings: Meeting[] }) {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+
+  return (
+    <Panel>
+      <PanelHeader title="Upcoming Meetings" onViewAll={() => setActiveView("meeting")} />
+
+      <div className="mt-3 space-y-2">
+        {meetings.length === 0 ? (
+          <p className="py-4 text-xs text-text-muted">No upcoming meetings.</p>
+        ) : (
+          meetings.map((meeting) => {
+            const day = new Date(meetingStart(meeting));
+            return (
+              <div
+                key={meeting.id}
+                className="flex items-center gap-3 rounded-lg bg-surface-elevated p-3"
+              >
+                <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-lg bg-surface text-[10px] font-semibold text-text">
+                  <span className="text-text-muted">
+                    {day.toLocaleDateString([], { month: "short" }).toUpperCase()}
+                  </span>
+                  <span>{day.getDate()}</span>
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-medium text-text">{meeting.title}</div>
+                  <div className="mt-1 text-[10px] text-text-muted">
+                    {meetingTimeRange(meeting)}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setActiveView("meeting", { meetingId: meeting.id })}
+                  className="flex h-9 items-center gap-2 rounded-lg bg-primary/80 px-3 text-[11px] font-medium text-white transition hover:bg-primary"
+                >
+                  <Video size={13} />
+                  {meeting.status === "started" ? "Join" : "View"}
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </Panel>
   );
 }
 
@@ -630,90 +489,180 @@ function MyProjects() {
    ANNOUNCEMENTS
 ========================================================= */
 
-function notificationIcon(eventType: string) {
+const ANNOUNCEMENT_DOT_COLORS = ["bg-info", "bg-mention", "bg-primary", "bg-success"];
+
+function notificationDot(eventType: string, index: number) {
   const t = eventType.toLowerCase();
-  if (t.includes("meeting")) return { icon: Video, cls: "bg-primary/10 text-primary" };
-  if (t.includes("message") || t.includes("channel")) return { icon: MessageSquare, cls: "bg-info/10 text-info" };
-  if (t.includes("file")) return { icon: FileText, cls: "bg-success/10 text-success" };
-  if (t.includes("ticket")) return { icon: Bell, cls: "bg-warning/10 text-warning" };
-  return { icon: Megaphone, cls: "bg-mention/10 text-mention" };
+  if (t.includes("meeting")) return "bg-info";
+  if (t.includes("message") || t.includes("channel")) return "bg-mention";
+  if (t.includes("ticket")) return "bg-warning";
+  return ANNOUNCEMENT_DOT_COLORS[index % ANNOUNCEMENT_DOT_COLORS.length];
 }
 
-function Announcements() {
+function AnnouncementsPanel() {
   const setActiveView = useUIStore((s) => s.setActiveView);
   const { data: notifications } = useNotifications();
   const items = (notifications ?? []).slice(0, 4);
 
   return (
-    <section className="rounded-xl border border-border bg-surface p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-text">Announcements</h2>
-        <button
-          onClick={() => setActiveView("inbox")}
-          className="text-xs font-medium text-primary"
-        >
-          View All
-        </button>
-      </div>
+    <Panel>
+      <PanelHeader title="Announcements" onViewAll={() => setActiveView("inbox")} />
 
-      <div className="mt-3">
+      <div className="mt-3 space-y-4">
         {items.length === 0 ? (
-          <p className="py-4 text-xs text-text-muted">No announcements right now.</p>
+          <p className="py-2 text-xs text-text-muted">No announcements right now.</p>
         ) : (
-          items.map((item) => {
-            const preset = notificationIcon(item.eventType);
-            const Icon = preset.icon;
-            return (
-              <div key={item.id} className="flex gap-3 border-b border-border py-3 last:border-0">
-                <div
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${preset.cls}`}
-                >
-                  <Icon size={16} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex justify-between gap-2">
-                    <p className="truncate text-xs font-semibold text-text">{item.title}</p>
-                    <span className="shrink-0 text-[10px] text-text-muted">
-                      {timeAgo(item.createdAt)}
-                    </span>
-                  </div>
-                  <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-text-muted">
-                    {item.body}
-                  </p>
-                </div>
+          items.map((item, i) => (
+            <div key={item.id} className="flex gap-3">
+              <span className={`mt-1 h-3 w-3 shrink-0 rounded-full ${notificationDot(item.eventType, i)}`} />
+              <div className="min-w-0">
+                <div className="text-xs leading-5 text-text">{item.title}</div>
+                <div className="text-[10px] text-text-muted">{timeAgo(item.createdAt)}</div>
               </div>
-            );
-          })
+            </div>
+          ))
         )}
       </div>
-    </section>
+    </Panel>
   );
 }
 
 /* =========================================================
-   QUOTE BANNER
+   RECENT CONVERSATIONS
 ========================================================= */
 
-function MotivationBanner() {
-  return (
-    <section className="relative overflow-hidden rounded-xl border border-border bg-gradient-to-r from-primary/10 via-primary/5 to-surface p-6">
-      <div className="relative z-10 max-w-[65%]">
-        <p className="text-lg font-semibold leading-6 text-text">
-          A better you
-          <br />
-          builds a brighter tomorrow.
-        </p>
-        <div className="mt-4 h-0.5 w-9 bg-primary" />
-      </div>
+function RecentConversationsPanel() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+  const { data: user } = useMe();
+  // Channels arrive ordered by updatedAt desc — the first few are the
+  // most recently active conversations.
+  const { data: channels } = useChannels();
+  const recentChannels = useMemo(() => (channels ?? []).slice(0, 4), [channels]);
 
-      <div className="absolute bottom-[-30px] right-8 opacity-60">
-        <div className="relative h-28 w-24">
-          <div className="absolute bottom-0 left-1/2 h-20 w-2 -translate-x-1/2 rounded-full bg-primary/40" />
-          <div className="absolute right-0 top-1 h-16 w-10 rotate-[35deg] rounded-[100%_0_100%_0] bg-primary/40" />
-          <div className="absolute left-0 top-7 h-14 w-9 -rotate-[35deg] rounded-[0_100%_0_100%] bg-primary/25" />
+  const previewQueries = useQueries({
+    queries: recentChannels.map((c) => ({
+      queryKey: ["messages", c.id, "preview"],
+      queryFn: () => api.getMessages(c.id, undefined, 1),
+      staleTime: 30 * 1000,
+    })),
+  });
+
+  const userIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const channel of recentChannels) {
+      for (const member of channel.members ?? []) {
+        if (member.userId !== user?.id) ids.add(member.userId);
+      }
+    }
+    for (const query of previewQueries) {
+      const senderId = query.data?.items?.[0]?.senderId;
+      if (senderId) ids.add(senderId);
+    }
+    return [...ids];
+  }, [recentChannels, user?.id, previewQueries]);
+
+  const { data: users } = useUsers(userIds);
+  const userMap = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
+
+  const rows = recentChannels
+    .map((channel, i) => {
+      const last = previewQueries[i]?.data?.items?.[0];
+      const counterpart =
+        channel.type === "direct"
+          ? channel.members?.find((m) => m.userId !== user?.id)
+          : undefined;
+      const counterpartUser = counterpart ? userMap.get(counterpart.userId) : undefined;
+      const title =
+        channel.type === "direct" ? getUserDisplayName(counterpartUser, "Direct message") : channel.name;
+      return { channel, last, counterpartUser, title };
+    })
+    .filter((row) => row.last);
+
+  return (
+    <Panel>
+      <PanelHeader title="Recent Conversations" onViewAll={() => setActiveView("dm")} />
+
+      {rows.length === 0 ? (
+        <EmptyState
+          icon={MessageSquare}
+          title="No conversations"
+          description="Send a message to start a conversation."
+        />
+      ) : (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {rows.map(({ channel, last, counterpartUser, title }) => (
+            <button
+              key={channel.id}
+              onClick={() =>
+                setActiveView(channel.type === "direct" ? "dm" : "channel", { channelId: channel.id })
+              }
+              className="flex items-center gap-3 rounded-lg bg-surface-elevated p-3 text-left transition hover:bg-primary-subtle"
+            >
+              <UserAvatar user={counterpartUser} className="h-10 w-10 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="truncate text-xs font-medium text-text">
+                    {channel.type === "direct" ? title : `# ${title}`}
+                  </p>
+                  <span className="shrink-0 text-[10px] text-text-muted">
+                    {timeAgo(last?.createdAt)}
+                  </span>
+                </div>
+                <p className="mt-1 truncate text-[11px] text-text-muted">
+                  {last?.content || "No messages yet"}
+                </p>
+              </div>
+            </button>
+          ))}
         </div>
+      )}
+    </Panel>
+  );
+}
+
+/* =========================================================
+   QUICK LINKS
+========================================================= */
+
+const QUICK_LINKS: {
+  icon: React.ComponentType<{ size?: number | string; className?: string }>;
+  label: string;
+  view: View;
+  helpTab?: string;
+}[] = [
+  { icon: CalendarClock, label: "Request Time Off", view: "my-leaves" },
+  { icon: LifeBuoy, label: "IT Support", view: "help", helpTab: "tickets" },
+  { icon: Building2, label: "HR Portal", view: "hrms" },
+  { icon: GraduationCap, label: "Learning & Development", view: "help", helpTab: "tutorials" },
+  { icon: FileText, label: "Company Policies", view: "files" },
+  { icon: MessageSquarePlus, label: "Submit Feedback", view: "help", helpTab: "contact" },
+];
+
+function QuickLinksPanel() {
+  const setActiveView = useUIStore((s) => s.setActiveView);
+
+  return (
+    <Panel>
+      <PanelHeader title="Quick Links" />
+
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        {QUICK_LINKS.map((link) => {
+          const Icon = link.icon;
+          return (
+            <button
+              key={link.label}
+              onClick={() =>
+                setActiveView(link.view, link.helpTab ? { helpTab: link.helpTab } : undefined)
+              }
+              className="flex min-h-[82px] flex-col items-center justify-center rounded-lg border border-border bg-surface-elevated px-2 text-center transition hover:border-primary/50 hover:bg-primary-subtle"
+            >
+              <Icon size={22} className="mb-2 text-primary" />
+              <span className="text-[10px] leading-4 text-text-secondary">{link.label}</span>
+            </button>
+          );
+        })}
       </div>
-    </section>
+    </Panel>
   );
 }
 
@@ -724,17 +673,13 @@ function MotivationBanner() {
 export function EmployeeHomeScreen() {
   const { data: user } = useMe();
   const setActiveView = useUIStore((s) => s.setActiveView);
-  const now = useNow(30_000);
+  const { id: organisationId } = useActiveOrganisation();
 
-  const me = useMyEmployee();
   const todos = useTodos();
   const meetings = useMeetings();
+  const projects = useProjects();
+  const members = useMembers(organisationId ?? undefined);
   const notifications = useNotifications();
-
-  const today = todayStr();
-  const week = useMemo(weekRange, []);
-  const attendance = useAttendance({ employeeId: me.data?.id, from: today, to: today });
-  const timeEntries = useTimeEntries({ from: week.from, to: week.to });
 
   const displayName = getUserDisplayName(user, "there");
 
@@ -742,192 +687,197 @@ export function EmployeeHomeScreen() {
 
   const todoList = todos.data ?? [];
   const meetingList = meetings.data ?? [];
-  const notificationList = notifications.data ?? [];
+  const projectList = useMemo(
+    () => (projects.data ?? []).filter((p) => !p.isTemplate && !p.archivedAt),
+    [projects.data],
+  );
 
-  const todaysMeetings = useMemo(() => {
-    const todayDate = new Date().toDateString();
+  const openTodos = useMemo(() => todoList.filter((t) => !t.completedAt), [todoList]);
+  const dueToday = useMemo(
+    () => openTodos.filter((t) => t.dueDate && t.dueDate.slice(0, 10) <= todayStr()),
+    [openTodos],
+  );
+
+  const upcomingMeetings = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
     return meetingList
       .filter(
         (m) =>
-          m.status !== "ended" &&
-          m.scheduledAt &&
-          new Date(m.scheduledAt).toDateString() === todayDate,
+          m.status === "started" ||
+          (m.status !== "ended" && m.scheduledAt && new Date(m.scheduledAt) >= startOfToday),
       )
-      .sort(
-        (a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime(),
-      )
-      .slice(0, 5);
+      .sort((a, b) => new Date(meetingStart(a)).getTime() - new Date(meetingStart(b)).getTime())
+      .slice(0, 4);
   }, [meetingList]);
 
-  const todayRecord = useMemo(
-    () => (attendance.data ?? []).find((r) => r.date.slice(0, 10) === today),
-    [attendance.data, today],
-  );
-  // workedMinutes is only persisted at checkout — tick it live while punched in.
-  const workedTodayMin = useMemo(() => {
-    if (!todayRecord) return 0;
-    if (todayRecord.checkInAt && !todayRecord.checkOutAt) {
-      return Math.max(
-        0,
-        (now.getTime() - new Date(todayRecord.checkInAt).getTime()) / 60000,
-      );
-    }
-    return todayRecord.workedMinutes ?? 0;
-  }, [todayRecord, now]);
+  const meetingsToday = useMemo(() => {
+    const today = new Date().toDateString();
+    return meetingList.filter((m) => m.scheduledAt && new Date(m.scheduledAt).toDateString() === today).length;
+  }, [meetingList]);
 
-  const timesheetMinutes = useMemo(
-    () => (timeEntries.data ?? []).reduce((acc, e) => acc + (e.minutes ?? 0), 0),
-    [timeEntries.data],
-  );
-
-  const unreadCount = useMemo(
-    () => notificationList.filter((n) => !n.read).length,
-    [notificationList],
-  );
-
-  const tasksDueToday = useMemo(
-    () => todoList.filter((t) => !t.completedAt && t.dueDate && t.dueDate.slice(0, 10) <= today),
-    [todoList, today],
-  );
+  const activeProjects = projectList.filter((p) => p.status === "active");
 
   /* ---------- AI daily brief ---------- */
 
-  const dailyDigest = useDailyDigest();
-  const [digest, setDigest] = useState<DailyDigestResult | null>(null);
-  const digestError = useRef<string | null>(null);
+  const unreadCount = useMemo(
+    () => (notifications.data ?? []).filter((n) => !n.read).length,
+    [notifications.data],
+  );
 
-  useEffect(() => {
-    if (digest || dailyDigest.isPending || digestError.current) return;
-    dailyDigest
-      .mutateAsync({ hours: 24 })
-      .then((result) => setDigest(normalizeDigest(result)))
-      .catch((err) => {
-        digestError.current = err instanceof Error ? err.message : "Unknown error";
-        setDigest(normalizeDigest(null));
-      });
-  }, [digest, dailyDigest]);
-
-  const fallbackBriefItems = useMemo(() => {
-    const items: { title: string; description: string }[] = [];
-    if (tasksDueToday.length > 0) {
-      items.push({
-        title: `${tasksDueToday.length} task${tasksDueToday.length === 1 ? "" : "s"} due today`,
-        description: tasksDueToday[0].title,
-      });
+  const briefFallback = useMemo(() => {
+    const points: string[] = [];
+    if (dueToday.length > 0) {
+      points.push(`${dueToday.length} task${dueToday.length === 1 ? "" : "s"} due today`);
     }
-    if (todaysMeetings.length > 0) {
-      items.push({
-        title: `${todaysMeetings[0].title} at ${formatTime(todaysMeetings[0].scheduledAt)}`,
-        description:
-          todaysMeetings.length > 1
-            ? `Plus ${todaysMeetings.length - 1} more meeting${todaysMeetings.length > 2 ? "s" : ""} today`
-            : "Your next meeting today",
-      });
+    if (upcomingMeetings.length > 0) {
+      const first = upcomingMeetings[0];
+      points.push(
+        `Next meeting: ${first.title} at ${formatTime(meetingStart(first))}`,
+      );
     }
     if (unreadCount > 0) {
-      items.push({
-        title: `You have ${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`,
-        description: "Open your inbox to catch up",
-      });
+      points.push(`You have ${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`);
     }
-    if (items.length === 0) {
-      items.push({ title: "You're all caught up", description: "Nothing needs your attention" });
+    if (activeProjects.length > 0) {
+      points.push(`${activeProjects.length} active project${activeProjects.length === 1 ? "" : "s"}`);
     }
-    return items;
-  }, [tasksDueToday, todaysMeetings, unreadCount]);
+    if (points.length === 0) {
+      points.push("You're all caught up — nothing needs your attention.");
+    }
+    return points.slice(0, 5);
+  }, [dueToday, upcomingMeetings, unreadCount, activeProjects]);
+
+  const briefRecommendation = useMemo(() => {
+    const parts: string[] = [];
+    if (dueToday.length > 0) {
+      parts.push(`complete your ${dueToday.length} task${dueToday.length === 1 ? "" : "s"} due today`);
+    }
+    if (upcomingMeetings.length > 0) {
+      parts.push(`prepare for ${upcomingMeetings[0].title}`);
+    }
+    if (parts.length === 0) {
+      return "Nothing urgent — focus on your projects or check in with your team.";
+    }
+    return `Start by ${parts.join(", then ")}.`;
+  }, [dueToday, upcomingMeetings]);
 
   return (
-    <div className="mx-auto flex h-full max-w-[1500px] flex-col overflow-y-auto bg-background px-5 py-5 text-text">
-      {/* =================================================
-          TOP HEADER
-      ================================================= */}
-      <header className="relative overflow-hidden">
-        <div className="relative z-10 flex flex-col gap-4 pb-5 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-text">
-              {getGreeting()}, {displayName}! <span className="text-xl">👋</span>
-            </h1>
-            <p className="mt-1 text-sm text-text-secondary">
-              Let's make today productive. Here's your overview.
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-xs font-medium text-text-secondary">
+    <div className="h-full overflow-y-auto bg-background text-text">
+      <main className="mx-auto flex max-w-[1500px] flex-col gap-4 px-4 py-5 xl:px-6">
+        {/* =================================================
+            HEADER
+        ================================================= */}
+        <header className="relative overflow-hidden rounded-2xl border border-border">
+          <div
+            className="absolute inset-0 bg-cover bg-center opacity-70"
+            style={{
+              backgroundImage:
+                "linear-gradient(90deg, rgba(2,13,26,.96) 0%, rgba(2,13,26,.8) 48%, rgba(2,13,26,.28) 100%), url('/teamspace-one-background-dark.jpg')",
+            }}
+          />
+
+          <div className="relative flex min-h-[125px] items-start justify-between px-6 py-4">
+            <div>
+              <h1 className="text-[30px] font-semibold tracking-tight text-white">
+                {getGreeting()}, {displayName}! <span className="text-[26px]">👋</span>
+              </h1>
+              <p className="mt-1 text-[15px] text-slate-300">
+                Let's make today productive and meaningful.
+              </p>
+            </div>
+
+            <div className="hidden items-start gap-10 pt-1 md:flex">
+              <div className="max-w-[220px] text-[13px] italic leading-6 text-slate-300">
+                “{dailyQuote()}”
+              </div>
+              <div className="text-right text-[13px] text-slate-300">
                 {new Date().toLocaleDateString([], {
-                  weekday: "long",
+                  weekday: "short",
                   day: "numeric",
                   month: "short",
                   year: "numeric",
                 })}
-              </p>
-              <p className="mt-2 text-xs italic text-text-muted">“{dailyQuote()}”</p>
+              </div>
             </div>
-            <div className="hidden h-10 w-px bg-border lg:block" />
           </div>
+        </header>
+
+        {/* =================================================
+            KPI CARDS
+        ================================================= */}
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            icon={<CheckSquare size={30} />}
+            iconClass="bg-mention/15 text-mention"
+            value={openTodos.length}
+            label="My Tasks"
+            badge={dueToday.length > 0 ? `${dueToday.length} due today` : undefined}
+            footer="open personal todos"
+            onClick={() => setActiveView("my-projects", { projectsTab: "tasks" })}
+          />
+          <MetricCard
+            icon={<FolderKanban size={30} />}
+            iconClass="bg-info/15 text-info"
+            value={activeProjects.length}
+            label="Active Projects"
+            footer="you're a member of"
+            onClick={() => setActiveView("my-projects")}
+          />
+          <MetricCard
+            icon={<Users size={30} />}
+            iconClass="bg-success/15 text-success"
+            value={members.data?.length ?? 0}
+            label="Team Members"
+            footer="in your organisation"
+            onClick={() => setActiveView("members")}
+          />
+          <MetricCard
+            icon={<CalendarDays size={30} />}
+            iconClass="bg-primary/15 text-primary"
+            value={upcomingMeetings.length}
+            label="Upcoming Meetings"
+            badge={meetingsToday > 0 ? `${meetingsToday} today` : undefined}
+            footer="scheduled"
+            onClick={() => setActiveView("meeting")}
+          />
+        </section>
+
+        {/* =================================================
+            MAIN GRID
+        ================================================= */}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_385px]">
+          {/* LEFT SIDE */}
+          <div className="space-y-4">
+            {/* AI BRIEF + FOCUS */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(330px,1fr)]">
+              <AiDailyBrief
+                subtitle="Your personalized update for today"
+                fallbackPoints={briefFallback}
+                recommendation={briefRecommendation}
+              />
+              <MyFocusPanel todos={todoList} />
+            </div>
+
+            {/* PROJECTS + BIRTHDAYS */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+              <MyProjectsPanel />
+              <TeamBirthdaysPanel />
+            </div>
+
+            {/* RECENT CONVERSATIONS */}
+            <RecentConversationsPanel />
+          </div>
+
+          {/* RIGHT COLUMN */}
+          <aside className="space-y-4">
+            <QuickCheckInCard />
+            <UpcomingMeetingsPanel meetings={upcomingMeetings} />
+            <AnnouncementsPanel />
+            <QuickLinksPanel />
+          </aside>
         </div>
-      </header>
-
-      {/* =================================================
-          AI + SCHEDULE
-      ================================================= */}
-      <section className="grid gap-4 lg:grid-cols-[2fr_0.92fr]">
-        <AIDailyBrief
-          digest={digest}
-          loading={dailyDigest.isPending}
-          fallbackItems={fallbackBriefItems}
-        />
-        <TodaysSchedule meetings={todaysMeetings} />
-      </section>
-
-      {/* =================================================
-          ATTENDANCE
-      ================================================= */}
-      <section className="mt-4">
-        <QuickCheckInCard />
-      </section>
-
-      {/* =================================================
-          PERSONAL METRICS
-      ================================================= */}
-      <section className="mt-4 grid gap-3 md:grid-cols-2">
-        <MetricCard
-          icon={<Users size={22} />}
-          iconClass="bg-primary/10 text-primary"
-          title="Work Hours"
-          value={workedTodayMin > 0 ? formatMinutes(Math.floor(workedTodayMin)) : "0h 0m"}
-          subtitle={`of ${DAY_TARGET_MIN / 60}h`}
-          progress={(workedTodayMin / DAY_TARGET_MIN) * 100}
-          onClick={() => setActiveView("my-attendance")}
-        />
-
-        <MetricCard
-          icon={<CalendarDays size={22} />}
-          iconClass="bg-info/10 text-info"
-          title="Timesheet"
-          value={formatMinutes(timesheetMinutes)}
-          subtitle="This Week"
-          ring={Math.min(100, Math.round((timesheetMinutes / WEEK_TARGET_MIN) * 100))}
-          onClick={() => setActiveView("my-timesheet")}
-        />
-      </section>
-
-      {/* =================================================
-          MAIN CONTENT
-      ================================================= */}
-      <section className="mt-4 grid gap-4 pb-6 lg:grid-cols-[1fr_1.05fr_1fr]">
-        <MyTasks todos={todoList} />
-
-        <div className="space-y-3">
-          <TeamBirthdays />
-          <MyProjects />
-        </div>
-
-        <div className="space-y-3">
-          <Announcements />
-          <MotivationBanner />
-        </div>
-      </section>
+      </main>
     </div>
   );
 }

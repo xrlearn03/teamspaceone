@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { Body, Controller, Delete, ForbiddenException, Get, Headers, NotFoundException, Param, Patch, Post, Query, UnauthorizedException, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Headers, HttpCode, HttpStatus, NotFoundException, Param, Patch, Post, Query, UnauthorizedException, UseGuards, Request } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service.js';
 import { AuthGuard } from './auth.guard.js';
@@ -31,8 +31,12 @@ export class AuthController {
   }
 
   @Post('login')
-  async login(@Body() dto: LoginDto) {
-    return this.auth.login(dto);
+  async login(@Body() dto: LoginDto, @Request() req: any) {
+    return this.auth.login(dto, {
+      deviceName: req.headers['x-device-name'],
+      userAgent: req.headers['user-agent'],
+      ipAddress: req.ip,
+    });
   }
 
   @Post('forgot-password')
@@ -128,6 +132,16 @@ export class AuthController {
     return user;
   }
 
+  @Post('internal/api-tokens/validate')
+  async validateApiToken(
+    @Body() body: { token: string },
+    @Headers('x-internal-api-key') internalApiKey?: string,
+    @Headers('x-internal-caller') internalCaller?: string,
+  ) {
+    this.assertInternal(internalApiKey, internalCaller);
+    return this.auth.validateApiToken(body.token);
+  }
+
   @Patch('internal/users/:id/profile')
   async internalUpdateProfile(
     @Param('id') id: string,
@@ -174,8 +188,56 @@ export class AuthController {
   }
 
   @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
   async logout(@Body() dto: RefreshDto) {
     await this.auth.logout(dto.refreshToken);
+  }
+
+  @Get('sessions')
+  @UseGuards(AuthGuard)
+  listSessions(@Request() req: any) {
+    return this.auth.listSessions(req.user.sub as string);
+  }
+
+  @Delete('sessions/:id')
+  @UseGuards(AuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  revokeSession(@Request() req: any, @Param('id') id: string) {
+    return this.auth.revokeSession(req.user.sub as string, id);
+  }
+
+  @Get('preferences')
+  @UseGuards(AuthGuard)
+  getPreferences(@Request() req: any) {
+    return this.auth.getPreferences(req.user.sub as string);
+  }
+
+  @Patch('preferences')
+  @UseGuards(AuthGuard)
+  updatePreferences(
+    @Request() req: any,
+    @Body() body: { smartReplySuggestions?: boolean; autoSummarizeChannels?: boolean },
+  ) {
+    return this.auth.updatePreferences(req.user.sub as string, body);
+  }
+
+  @Get('api-tokens')
+  @UseGuards(AuthGuard)
+  listApiTokens(@Request() req: any) {
+    return this.auth.listApiTokens(req.user.sub as string);
+  }
+
+  @Post('api-tokens')
+  @UseGuards(AuthGuard)
+  createApiToken(@Request() req: any, @Body() body: { name: string; expiresAt?: string }) {
+    return this.auth.createApiToken(req.user.sub as string, body.name, body.expiresAt ? new Date(body.expiresAt) : undefined);
+  }
+
+  @Delete('api-tokens/:id')
+  @UseGuards(AuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  revokeApiToken(@Request() req: any, @Param('id') id: string) {
+    return this.auth.revokeApiToken(req.user.sub as string, id);
   }
 
   @Patch('me')
@@ -186,6 +248,7 @@ export class AuthController {
 
   @Post('change-password')
   @UseGuards(AuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
   async changePassword(@Request() req: any, @Body() dto: ChangePasswordDto) {
     await this.auth.changePassword(req.user.sub as string, dto.currentPassword, dto.newPassword);
   }

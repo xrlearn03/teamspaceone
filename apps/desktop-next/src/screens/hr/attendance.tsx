@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import {
+  Check,
   CheckCircle2,
   Clock3,
   Download,
@@ -13,10 +14,13 @@ import {
 } from "lucide-react";
 import {
   useAttendanceAll,
+  useAttendanceCorrections,
   useEmployees,
   useHrmsOverview,
   useLeaveRequests,
+  useReviewAttendanceCorrection,
 } from "@/hooks/api";
+import { usePermissions } from "@/hooks/usePermissions";
 import type { AttendanceRecord, Employee, LeaveRequest } from "@/lib/api";
 import { useUIStore } from "@/stores/ui";
 import { Avatar, AvatarFallback } from "@teamspace-one/ui/avatar";
@@ -30,6 +34,8 @@ import { FilterDropdown, PageHeader, Pagination } from "./common";
 import {
   SectionError,
   SectionSkeleton,
+  StatusBadge,
+  formatDate,
   formatMinutes,
   formatTime,
 } from "@/screens/hrms/common";
@@ -611,6 +617,95 @@ function applyFilters(rows: TableRow[], filters: TableFilters) {
 }
 
 /* =========================================================
+   PENDING CORRECTIONS
+========================================================= */
+
+function CorrectionsPanel() {
+  const { can } = usePermissions();
+  const canApprove = can("hrms.attendance.approve");
+  const corrections = useAttendanceCorrections("pending");
+  const review = useReviewAttendanceCorrection();
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-text">Pending Attendance Corrections</h2>
+        <span className="text-xs text-text-muted">{(corrections.data ?? []).length} pending</span>
+      </div>
+      {corrections.isLoading ? (
+        <div className="mt-4">
+          <SectionSkeleton rows={3} />
+        </div>
+      ) : corrections.isError ? (
+        <div className="mt-4">
+          <SectionError onRetry={() => corrections.refetch()} />
+        </div>
+      ) : (corrections.data ?? []).length === 0 ? (
+        <p className="mt-4 py-2 text-center text-xs text-text-muted">No pending corrections.</p>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[600px] text-left text-xs">
+            <thead className="bg-surface-elevated text-text-secondary">
+              <tr>
+                <th className="px-3 py-2">Employee</th>
+                <th className="px-3 py-2">Date</th>
+                <th className="px-3 py-2">Requested In</th>
+                <th className="px-3 py-2">Requested Out</th>
+                <th className="px-3 py-2">Reason</th>
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(corrections.data ?? []).map((c) => (
+                <tr key={c.id} className="border-t border-border">
+                  <td className="px-3 py-2 font-medium text-text">{c.employeeName ?? c.employeeId}</td>
+                  <td className="px-3 py-2 text-text-secondary">{formatDate(c.date)}</td>
+                  <td className="px-3 py-2 text-text-secondary">{formatTime(c.requestedCheckInAt)}</td>
+                  <td className="px-3 py-2 text-text-secondary">{formatTime(c.requestedCheckOutAt)}</td>
+                  <td className="max-w-[200px] truncate px-3 py-2 text-text-secondary" title={c.reason ?? undefined}>
+                    {c.reason ?? "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    <StatusBadge status={c.status} />
+                  </td>
+                  <td className="px-3 py-2">
+                    {canApprove ? (
+                      <span className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => review.mutate({ id: c.id, action: "approve" })}
+                          disabled={review.isPending}
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-success/10 text-success"
+                          aria-label="Approve"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => review.mutate({ id: c.id, action: "reject" })}
+                          disabled={review.isPending}
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-error/10 text-error"
+                          aria-label="Reject"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    ) : (
+                      <span className="text-text-muted">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* =========================================================
    MAIN
 ========================================================= */
 
@@ -863,6 +958,10 @@ export function HrAttendanceScreen() {
         <AttendanceTrend days={trend} />
         <AttendanceDistribution total={totalEmployees} counts={todayCounts} />
         <DepartmentAttendance rows={departmentRows} />
+      </section>
+
+      <section className="mt-4">
+        <CorrectionsPanel />
       </section>
 
       <section className="mt-4">

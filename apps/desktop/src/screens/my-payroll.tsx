@@ -30,13 +30,21 @@ import {
 } from "@teamspace-one/ui/dialog";
 import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { Button } from "@teamspace-one/ui/button";
+import { Input } from "@teamspace-one/ui/input";
 import {
+  useCreatePayrollTaxDocument,
+  useCreateReimbursement,
   useMyEmployee,
+  usePayrollTaxDocuments,
   usePayslips,
   usePayrollPeriods,
+  useReimbursements,
 } from "../hooks/api";
 import {
-  getPayslip,
+  downloadFile,
+  downloadPayslipPdf,
+  downloadSalaryCertificatePdf,
+  uploadFile,
   type Employee,
   type PayrollPeriod,
   type Payslip,
@@ -126,41 +134,15 @@ function daysUntil(date: Date) {
   return Math.max(0, Math.ceil((date.getTime() - Date.now()) / 86400000));
 }
 
-/* ------------------------------------------------------------------ */
-/* Client-side document generation (no PDF service exists yet — these  */
-/* download a printable HTML document the user can save as PDF).       */
-/* ------------------------------------------------------------------ */
-
-const DOC_STYLES =
-  "body{font-family:system-ui,sans-serif;color:#1c1917;max-width:640px;margin:40px auto;padding:0 24px}" +
-  "h1{font-size:20px}table{width:100%;border-collapse:collapse;margin:16px 0}" +
-  "td,th{padding:8px 4px;border-bottom:1px solid #e7e5e4;font-size:13px;text-align:left}" +
-  "td:last-child,th:last-child{text-align:right}.muted{color:#78716c;font-size:12px}" +
-  ".total td{font-weight:600;border-bottom:none;border-top:2px solid #1c1917}";
-
-function saveHtmlDocument(filename: string, title: string, bodyHtml: string) {
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>${DOC_STYLES}</style></head><body>${bodyHtml}</body></html>`;
-  const blob = new Blob([html], { type: "text/html" });
+function saveBlobDocument(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
   URL.revokeObjectURL(url);
-}
-
-function breakdownRows(
-  entries: Record<string, number> | null | undefined,
-  currency?: string | null,
-) {
-  return Object.entries(entries ?? {})
-    .map(
-      ([key, value]) =>
-        `<tr><td>${prettyLabel(key)}</td><td>${money(value, currency)}</td></tr>`,
-    )
-    .join("");
 }
 
 /* ------------------------------------------------------------------ */
@@ -746,6 +728,28 @@ function TaxInvestments({
   currency?: string | null;
   year: number;
 }) {
+  const documents = usePayrollTaxDocuments();
+  const createDocument = useCreatePayrollTaxDocument();
+  const [category, setCategory] = useState("investment_proof");
+  const [declaredAmount, setDeclaredAmount] = useState("");
+  const financialYear = `${year}-${String((year + 1) % 100).padStart(2, "0")}`;
+
+  async function submitDocument(file: File) {
+    const uploaded = await uploadFile(file);
+    await createDocument.mutateAsync({
+      financialYear,
+      category,
+      fileId: uploaded.id,
+      name: file.name,
+      declaredAmount: declaredAmount ? Number(declaredAmount) : undefined,
+    });
+    setDeclaredAmount("");
+  }
+
+  async function downloadDocument(fileId: string, name: string) {
+    saveBlobDocument(await downloadFile(fileId), name);
+  }
+
   const items = [
     {
       title: `Gross Income (${year})`,
@@ -797,12 +801,26 @@ function TaxInvestments({
             Tax declarations and submitted proofs will appear here.
           </p>
         </div>
-        <div className="mt-4">
-          <EmptyState
-            icon={FileText}
-            title="No tax documents yet"
-            description="Documents like Form 16 and investment proofs appear once your organisation uploads them."
-          />
+        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <select className="h-9 rounded-md border bg-background px-2 text-sm" value={category} onChange={(event) => setCategory(event.target.value)}>
+            <option value="investment_proof">Investment proof</option>
+            <option value="rent_receipt">Rent receipt</option>
+            <option value="form_16">Form 16</option>
+            <option value="other">Other</option>
+          </select>
+          <Input type="number" min={0} placeholder="Declared amount (optional)" value={declaredAmount} onChange={(event) => setDeclaredAmount(event.target.value)} />
+          <label className="inline-flex h-9 cursor-pointer items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-white">
+            {createDocument.isPending ? "Uploading…" : "Upload proof"}
+            <input type="file" className="hidden" disabled={createDocument.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (file) void submitDocument(file); event.target.value = ""; }} />
+          </label>
+        </div>
+        <div className="mt-4 space-y-2">
+          {(documents.data ?? []).length ? (documents.data ?? []).map((document) => (
+            <button key={document.id} type="button" onClick={() => void downloadDocument(document.fileId, document.name)} className="flex w-full items-center justify-between rounded-lg border border-border px-3 py-2 text-left">
+              <span><span className="block text-sm font-medium text-text">{document.name}</span><span className="text-xs text-text-muted">{prettyLabel(document.category)} · {document.financialYear}</span></span>
+              <StatusBadge status={document.status} />
+            </button>
+          )) : <EmptyState icon={FileText} title="No tax documents yet" description="Upload tax declarations and investment proofs for payroll review." />}
         </div>
       </div>
     </div>
@@ -810,20 +828,46 @@ function TaxInvestments({
 }
 
 function Reimbursements() {
+  const claims = useReimbursements();
+  const createClaim = useCreateReimbursement();
+  const [form, setForm] = useState({ category: "travel", description: "", amount: "", expenseDate: "", receiptFileId: "" });
+
+  async function submit() {
+    if (!form.description.trim() || !form.amount || !form.expenseDate) return;
+    await createClaim.mutateAsync({ category: form.category, description: form.description.trim(), amount: Number(form.amount), currency: "INR", expenseDate: form.expenseDate, receiptFileId: form.receiptFileId || undefined });
+    setForm({ category: "travel", description: "", amount: "", expenseDate: "", receiptFileId: "" });
+  }
+
+  async function attach(file: File) {
+    const uploaded = await uploadFile(file);
+    setForm((current) => ({ ...current, receiptFileId: uploaded.id }));
+  }
+
   return (
     <div className="rounded-xl border border-border bg-surface p-5">
       <div>
         <h2 className="text-base font-semibold text-text">Reimbursements</h2>
-        <p className="mt-1 text-xs text-text-secondary">
-          Track your submitted expense claims.
-        </p>
+        <p className="mt-1 text-xs text-text-secondary">Submit and track expense claims.</p>
       </div>
-      <div className="mt-4">
-        <EmptyState
-          icon={CreditCard}
-          title="No reimbursements"
-          description="Expense claims you submit will show up here once reimbursements are enabled."
-        />
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>
+          <option value="travel">Travel</option><option value="meals">Meals</option><option value="internet">Internet</option><option value="medical">Medical</option><option value="other">Other</option>
+        </select>
+        <Input type="date" value={form.expenseDate} onChange={(event) => setForm({ ...form, expenseDate: event.target.value })} />
+        <Input placeholder="Description" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+        <Input type="number" min={0.01} step={0.01} placeholder="Amount (INR)" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} />
+        <label className="inline-flex h-9 cursor-pointer items-center justify-center rounded-md border border-border px-3 text-sm text-text-secondary">
+          {form.receiptFileId ? "Receipt attached" : "Attach receipt"}<input type="file" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void attach(file); }} />
+        </label>
+        <Button disabled={createClaim.isPending || !form.description.trim() || !form.amount || !form.expenseDate} onClick={() => void submit()}>{createClaim.isPending ? "Submitting…" : "Submit claim"}</Button>
+      </div>
+      <div className="mt-5 space-y-2">
+        {(claims.data ?? []).length ? (claims.data ?? []).map((claim) => (
+          <div key={claim.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-3">
+            <div><p className="text-sm font-medium text-text">{claim.description}</p><p className="text-xs text-text-muted">{prettyLabel(claim.category)} · {formatDate(claim.expenseDate)}</p></div>
+            <div className="text-right"><p className="text-sm font-semibold text-text">{money(claim.amount, claim.currency)}</p><StatusBadge status={claim.status} /></div>
+          </div>
+        )) : <EmptyState icon={CreditCard} title="No reimbursements" description="Your submitted expense claims will appear here." />}
       </div>
     </div>
   );
@@ -1127,21 +1171,10 @@ export function MyPayrollScreen() {
   async function handleDownloadPayslip(p: Payslip) {
     setDownloading(p.id);
     try {
-      const detail = await getPayslip(p.id);
-      const label = monthLabel(detail, periodById);
-      const cur = detail.currency ?? currency;
-      const rows =
-        breakdownRows(detail.earnings, cur) ||
-        `<tr><td>Gross</td><td>${money(grossOf(detail), cur)}</td></tr>`;
-      const deductions = breakdownRows(detail.deductions, cur);
-      saveHtmlDocument(
-        `payslip-${label.replace(/[^\w-]+/g, "-").toLowerCase()}.html`,
-        `Payslip — ${label}`,
-        `<h1>Payslip — ${label}</h1>` +
-          `<p class="muted">Status: ${detail.status} · Reference: ${detail.id}</p>` +
-          `<table><tr><th>Earnings</th><th></th></tr>${rows}` +
-          (deductions ? `<tr><th>Deductions</th><th></th></tr>${deductions}` : "") +
-          `<tr class="total"><td>Net pay</td><td>${money(netOf(detail), cur)}</td></tr></table>`,
+      const label = monthLabel(p, periodById);
+      saveBlobDocument(
+        await downloadPayslipPdf(p.id),
+        `payslip-${label.replace(/[^\w-]+/g, "-").toLowerCase()}.pdf`,
       );
       showToast(`${label} payslip downloaded.`);
     } catch {
@@ -1151,30 +1184,17 @@ export function MyPayrollScreen() {
     }
   }
 
-  function handleDownloadCertificate() {
-    const employee = me.data;
-    const name = employee
-      ? `${employee.firstName} ${employee.lastName}`.trim()
-      : "Employee";
-    const gross = latest ? grossOf(latest) : null;
-    const cur = latest?.currency ?? currency;
-    saveHtmlDocument(
-      `salary-certificate-${new Date().getFullYear()}.html`,
-      "Salary Certificate",
-      `<h1>Salary Certificate</h1>` +
-        `<p class="muted">Generated ${formatDate(new Date().toISOString())}</p>` +
-        `<table>` +
-        `<tr><td>Employee</td><td>${name}</td></tr>` +
-        `<tr><td>Designation</td><td>${employee?.designation?.title ?? employee?.designation?.name ?? employee?.designationName ?? "—"}</td></tr>` +
-        `<tr><td>Department</td><td>${employee?.department?.name ?? employee?.departmentName ?? "—"}</td></tr>` +
-        `<tr><td>Employment type</td><td>${employee?.employmentType ?? "—"}</td></tr>` +
-        `<tr><td>Joining date</td><td>${formatDate(employee?.joiningDate)}</td></tr>` +
-        `<tr><td>Monthly gross</td><td>${money(gross, cur)}</td></tr>` +
-        `<tr class="total"><td>Annual gross</td><td>${money(gross != null ? gross * 12 : null, cur)}</td></tr>` +
-        `</table>`,
-    );
-    setShowCertificate(false);
-    showToast("Salary certificate downloaded.");
+  async function handleDownloadCertificate() {
+    try {
+      saveBlobDocument(
+        await downloadSalaryCertificatePdf(),
+        `salary-certificate-${new Date().getFullYear()}.pdf`,
+      );
+      setShowCertificate(false);
+      showToast("Salary certificate downloaded.");
+    } catch {
+      showToast("Couldn't generate the salary certificate. Try again.");
+    }
   }
 
   if (!can("hrms.payroll.view")) {

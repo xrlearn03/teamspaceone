@@ -97,6 +97,12 @@ export class HolidayDto {
   isRecurring?: boolean;
 }
 
+export class UpdateHolidayDto {
+  name?: string;
+  date?: string;
+  isRecurring?: boolean;
+}
+
 function toCtx(org: OrganisationContextValue) {
   return {
     organisationId: org.organisationId,
@@ -329,5 +335,27 @@ export class OrgChartController {
       ...dto,
       date: dto.date ? new Date(dto.date) : undefined,
     } as HolidayInput);
+  }
+
+  @Patch('holidays/:id')
+  @RequirePermissions('hrms.leave.manage')
+  updateHoliday(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @Param('id') id: string,
+    @Body() dto: UpdateHolidayDto,
+  ) {
+    return this.structure.updateHoliday(org.organisationId, id, {
+      ...dto,
+      date: dto.date ? new Date(dto.date) : undefined,
+    } as HolidayInput);
+  }
+
+  @Delete('holidays/:id')
+  @RequirePermissions('hrms.leave.manage')
+  deleteHoliday(
+    @CurrentOrganisation() org: OrganisationContextValue,
+    @Param('id') id: string,
+  ) {
+    return this.structure.deleteHoliday(org.organisationId, id);
   }
 }

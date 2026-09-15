@@ -44,6 +44,11 @@ export class EvaluateDto {
   criteria?: string[];
 }
 
+export class SpeakDto {
+  text!: string;
+  voiceId?: string;
+}
+
 @UseGuards(RemotePermissionGuard)
 @Controller('ai')
 export class InterviewAiController {
@@ -65,5 +70,11 @@ export class InterviewAiController {
   @RequirePermissions(INTERVIEW_PERMISSIONS.INTERVIEW_EVALUATE)
   async evaluate(@CurrentOrganisation() ctx: OrganisationContextValue, @Body() dto: EvaluateDto) {
     return this.ai.evaluateInterview(ctx, dto);
+  }
+
+  @Post('interview/speak')
+  @RequirePermissions(INTERVIEW_PERMISSIONS.INTERVIEW_CONDUCT)
+  async speak(@CurrentOrganisation() _ctx: OrganisationContextValue, @Body() dto: SpeakDto) {
+    return this.ai.speak(dto.text, dto.voiceId);
   }
 }

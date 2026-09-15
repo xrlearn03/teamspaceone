@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Teamspace One — native desktop collaboration platform",
   "scripts": {
-   "build:desktop": "pnpm --filter @teamspace-one/authorization build && pnpm --filter @teamspace-one/desktop tauri:build",
+    "build:desktop": "pnpm --filter @teamspace-one/authorization build && pnpm --filter @teamspace-one/desktop tauri:build",
     "build:ipad": "pnpm --filter @teamspace-one/authorization build && pnpm --filter @teamspace-one/desktop tauri:ios:build",
     "build:mobile:android": "pnpm --filter @teamspace-one/authorization build && pnpm --filter @teamspace-one/desktop tauri:android:build",
     "dev:web": "pnpm --filter @teamspace-one/web dev",
@@ -60,5 +60,10 @@
     "turbo": "^2.0.0",
     "typescript": "^5.5.4"
   },
-  "packageManager": "pnpm@9.15.9"
+  "packageManager": "pnpm@9.15.9",
+  "pnpm": {
+    "patchedDependencies": {
+      "lucide-react@0.474.0": "patches/lucide-react@0.474.0.patch"
+    }
+  }
 }

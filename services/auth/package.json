@@ -4,7 +4,10 @@
   "private": true,
   "type": "commonjs",
   "imports": {
-    "#prisma": "./node_modules/.prisma/client/index.js"
+    "#prisma": {
+      "types": "./node_modules/.prisma/client/index.d.ts",
+      "default": "./node_modules/.prisma/client/index.js"
+    }
   },
   "scripts": {
     "build": "nest build",

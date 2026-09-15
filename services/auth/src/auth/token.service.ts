@@ -11,6 +11,12 @@ export interface TokenPair {
   expiresIn: number;
 }
 
+export interface SessionMetadata {
+  deviceName?: string;
+  userAgent?: string;
+  ipAddress?: string;
+}
+
 @Injectable()
 export class TokenService {
   constructor(
@@ -19,7 +25,7 @@ export class TokenService {
     private readonly prisma: PrismaService,
   ) {}
 
-  async issuePair(user: User): Promise<TokenPair> {
+  async issuePair(user: User, metadata: SessionMetadata = {}): Promise<TokenPair> {
     const accessTtl = Number(this.config.get('ACCESS_TOKEN_TTL', 900));
     const refreshTtl = Number(this.config.get('REFRESH_TOKEN_TTL', 604800));
     const secret = this.config.get<string>('JWT_SECRET');
@@ -49,6 +55,9 @@ export class TokenService {
         userId: user.id,
         tokenHash,
         expiresAt,
+        deviceName: metadata.deviceName,
+        userAgent: metadata.userAgent,
+        ipAddress: metadata.ipAddress,
       },
     });
 
@@ -71,7 +80,11 @@ export class TokenService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    const pair = await this.issuePair(existing.user);
+    const pair = await this.issuePair(existing.user, {
+      deviceName: existing.deviceName ?? undefined,
+      userAgent: existing.userAgent ?? undefined,
+      ipAddress: existing.ipAddress ?? undefined,
+    });
     await this.prisma.refreshToken.delete({ where: { id: existing.id } });
     return pair;
   }

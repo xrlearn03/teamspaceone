@@ -126,6 +126,21 @@ export interface MakeDecisionInput {
   rationale?: string;
 }
 
+export interface UpsertOfferInput {
+  applicationId: string;
+  title: string;
+  employmentType?: string;
+  joiningDate?: string;
+  expiresAt?: string;
+  compensation: { amount: number; currency: string; period?: 'annual' | 'monthly'; components?: Record<string, number> };
+  content?: string;
+  documentFileId?: string;
+}
+
+export interface UpdateOfferStatusInput {
+  status: 'sent' | 'accepted' | 'declined' | 'withdrawn';
+}
+
 @Injectable()
 export class InterviewService {
   constructor(
@@ -163,7 +178,12 @@ export class InterviewService {
     }
     return {
       ...base,
-      OR: [{ recruiterId: user.id }, { hiringManagerId: user.id }, { createdBy: user.id }],
+      OR: [
+        { recruiterId: user.id },
+        { hiringManagerId: user.id },
+        { createdBy: user.id },
+        { sessions: { some: { participants: { some: { userId: user.id } } } } },
+      ],
     };
   }
 
@@ -456,12 +476,11 @@ export class InterviewService {
       include: { jobOpening: true },
     });
     if (!application) throw new NotFoundException('Application not found');
-    if (
-      !this.hasOrganisationScope(user) &&
-      ![application.jobOpening.recruiterId, application.jobOpening.hiringManagerId, application.jobOpening.createdBy].includes(user.id)
-    ) {
-      throw new NotFoundException('Application not found');
-    }
+    const jobWhere = await this.jobWhereForUser(organisationId, user);
+    const scopedJob = await this.prisma.jobOpening.findFirst({
+      where: { ...jobWhere, id: application.jobOpeningId },
+    });
+    if (!scopedJob) throw new NotFoundException('Application not found');
     const candidate =
       stage === 'hired'
         ? await this.prisma.candidate.findUnique({ where: { id: application.candidateId } })
@@ -804,9 +823,20 @@ export class InterviewService {
       },
     });
 
-    const recipientIds = [job.recruiterId, job.hiringManagerId, job.createdBy].filter(
-      (id): id is string => Boolean(id),
-    );
+    const sessionParticipants = await this.prisma.interviewParticipant.findMany({
+      where: {
+        organisationId: ctx.organisationId,
+        session: { candidateId: candidate.id, jobOpeningId: job.id },
+      },
+      select: { userId: true },
+    });
+    const recipientIds = [
+      ...new Set(
+        [job.recruiterId, job.hiringManagerId, job.createdBy, ...sessionParticipants.map((p) => p.userId)].filter(
+          (id): id is string => Boolean(id),
+        ),
+      ),
+    ];
 
     return this.prisma.$transaction(async (tx) => {
       const screening = await tx.screeningResult.upsert({
@@ -1114,10 +1144,7 @@ export class InterviewService {
     if (session.interviewType === 'ai_text') {
       throw new BadRequestException('This is a text-only AI interview; use the text transcript endpoints');
     }
-    if (session.interviewType === 'ai_video') {
-      throw new BadRequestException('Video AI interviews are not yet supported');
-    }
-    if (session.interviewType !== 'ai_voice') {
+    if (!['ai_voice', 'ai_video'].includes(session.interviewType)) {
       throw new BadRequestException(`Unsupported interview type: ${session.interviewType}`);
     }
 
@@ -1184,9 +1211,16 @@ export class InterviewService {
 
     const result = await this.ai.evaluate(ctx, { job, transcript });
 
-    const recipientIds = (session.participants ?? [])
-      .map((p) => p.userId)
-      .filter((id, index, arr) => id && arr.indexOf(id) === index);
+    const recipientIds = [
+      ...new Set(
+        [
+          ...(session.participants ?? []).map((p) => p.userId),
+          session.jobOpening?.recruiterId,
+          session.jobOpening?.hiringManagerId,
+          session.jobOpening?.createdBy,
+        ].filter((id): id is string => Boolean(id)),
+      ),
+    ];
 
     return this.prisma.$transaction(async (tx) => {
       const evaluation = await tx.interviewEvaluation.upsert({
@@ -1258,6 +1292,58 @@ export class InterviewService {
   }
 
   // ---- Hiring decisions ----
+
+  async listOffers(ctx: OrganisationContextValue, user: AuthorizableUser) {
+    const where: Prisma.OfferWhereInput = { organisationId: ctx.organisationId };
+    if (!this.hasOrganisationScope(user)) {
+      const jobIds = await this.userJobIds(ctx.organisationId, user);
+      if (!jobIds.length) return [];
+      where.application = { is: { jobOpeningId: { in: jobIds } } };
+    }
+    return this.prisma.offer.findMany({
+      where,
+      include: { application: { include: { candidate: true, jobOpening: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async upsertOffer(ctx: OrganisationContextValue, user: AuthorizableUser, input: UpsertOfferInput) {
+    const inScope = await this.applicationInScope(ctx.organisationId, user, input.applicationId);
+    if (!inScope) throw new NotFoundException('Application not found');
+    if (!input.title?.trim()) throw new BadRequestException('Offer title is required');
+    if (!Number.isFinite(input.compensation?.amount) || input.compensation.amount <= 0 || !input.compensation.currency?.trim()) {
+      throw new BadRequestException('A positive compensation amount and currency are required');
+    }
+    const joiningDate = input.joiningDate ? new Date(input.joiningDate) : null;
+    const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
+    if (joiningDate && Number.isNaN(joiningDate.getTime())) throw new BadRequestException('Invalid joining date');
+    if (expiresAt && (Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date())) throw new BadRequestException('Offer expiry must be in the future');
+    const data = {
+      title: input.title.trim(), employmentType: input.employmentType ?? null, joiningDate, expiresAt,
+      compensation: input.compensation, content: input.content?.trim() || null, documentFileId: input.documentFileId ?? null,
+    };
+    const offer = await this.prisma.offer.upsert({
+      where: { applicationId: input.applicationId },
+      update: data,
+      create: { id: randomUUID(), organisationId: ctx.organisationId, applicationId: input.applicationId, createdBy: ctx.actorId as string, ...data },
+    });
+    await this.updateApplicationStage(ctx.organisationId, user, input.applicationId, 'offer');
+    return offer;
+  }
+
+  async updateOfferStatus(ctx: OrganisationContextValue, user: AuthorizableUser, id: string, input: UpdateOfferStatusInput) {
+    const offer = await this.prisma.offer.findFirst({ where: { id, organisationId: ctx.organisationId } });
+    if (!offer || !(await this.applicationInScope(ctx.organisationId, user, offer.applicationId))) throw new NotFoundException('Offer not found');
+    const transitions: Record<string, string[]> = { draft: ['sent', 'withdrawn'], sent: ['accepted', 'declined', 'withdrawn'] };
+    if (!transitions[offer.status]?.includes(input.status)) throw new BadRequestException(`Cannot change offer from ${offer.status} to ${input.status}`);
+    const updated = await this.prisma.offer.update({
+      where: { id },
+      data: { status: input.status, sentAt: input.status === 'sent' ? new Date() : undefined, respondedAt: ['accepted', 'declined'].includes(input.status) ? new Date() : undefined },
+    });
+    if (input.status === 'accepted') await this.updateApplicationStage(ctx.organisationId, user, offer.applicationId, 'hired');
+    if (input.status === 'declined') await this.updateApplicationStage(ctx.organisationId, user, offer.applicationId, 'rejected');
+    return updated;
+  }
 
   async makeHiringDecision(
     ctx: OrganisationContextValue,

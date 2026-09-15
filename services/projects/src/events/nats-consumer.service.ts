@@ -15,10 +15,10 @@ export class NatsConsumerService implements OnModuleInit {
 
   async onModuleInit() {
     const js = await this.natsClient.getJetStream();
-    const subscription = await js.subscribe('teamspace-one.template.>', {
+    const subscription = await js.subscribe('teamspace-one.hrms.attendance.checked_out', {
       config: {
-        durable_name: 'template-consumer',
-        deliver_subject: 'template-consumer',
+        durable_name: 'projects-attendance-timesheet',
+        deliver_subject: 'projects-attendance-timesheet',
         ack_policy: AckPolicy.Explicit,
         deliver_policy: 'all' as any,
       },

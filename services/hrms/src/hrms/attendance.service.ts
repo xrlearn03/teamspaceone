@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { can, type AuthorizableUser } from '@teamspace-one/authorization';
-import { createEventEnvelope } from '@teamspace-one/event-contracts';
+import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import type { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
@@ -38,10 +38,24 @@ export class AttendanceService {
     const employee = await this.requireActorEmployee(ctx, user);
     const today = startOfDay(new Date());
     const now = new Date();
+    const existing = await this.prisma.attendanceRecord.findUnique({
+      where: { employeeId_date: { employeeId: employee.id, date: today } },
+    });
+    if (existing?.checkInAt) {
+      throw new BadRequestException('Already checked in for today');
+    }
 
     return this.prisma.attendanceRecord.upsert({
       where: { employeeId_date: { employeeId: employee.id, date: today } },
-      update: { checkInAt: now, status: 'present' },
+      update: {
+        checkInAt: now,
+        checkOutAt: null,
+        workMinutes: null,
+        breakMinutes: 0,
+        breakStartedAt: null,
+        presenceStatus: null,
+        status: 'present',
+      },
       create: {
         organisationId: ctx.organisationId,
         employeeId: employee.id,
@@ -63,15 +77,50 @@ export class AttendanceService {
     if (!record || !record.checkInAt) {
       throw new BadRequestException('No check-in found for today');
     }
+    if (record.checkOutAt) {
+      throw new BadRequestException('Already checked out for today');
+    }
 
+    const checkInAt = record.checkInAt;
+    const activeBreakMinutes = record.breakStartedAt
+      ? Math.max(0, Math.round((now.getTime() - record.breakStartedAt.getTime()) / 60000))
+      : 0;
+    const breakMinutes = record.breakMinutes + activeBreakMinutes;
     const workMinutes = Math.max(
       0,
-      Math.round((now.getTime() - record.checkInAt.getTime()) / 60000),
+      Math.round((now.getTime() - checkInAt.getTime()) / 60000) - breakMinutes,
     );
 
-    return this.prisma.attendanceRecord.update({
-      where: { id: record.id },
-      data: { checkOutAt: now, workMinutes, presenceStatus: null },
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.attendanceRecord.update({
+        where: { id: record.id },
+        data: {
+          checkOutAt: now,
+          workMinutes,
+          breakMinutes,
+          breakStartedAt: null,
+          presenceStatus: null,
+        },
+      });
+      const envelope = createEventEnvelope({
+        eventType: Subjects.HRMS_ATTENDANCE_CHECKED_OUT,
+        organisationId: ctx.organisationId,
+        actorId: user.id,
+        correlationId: ctx.correlationId,
+        resourceType: 'attendance-record',
+        resourceId: record.id,
+        payload: {
+          attendanceRecordId: record.id,
+          userId: user.id,
+          date: record.date.toISOString(),
+          checkInAt: checkInAt.toISOString(),
+          checkOutAt: now.toISOString(),
+          workMinutes,
+          breakMinutes,
+        },
+      });
+      await this.outbox.createEvent(tx, envelope, envelope.eventType);
+      return updated;
     });
   }
 
@@ -93,9 +142,21 @@ export class AttendanceService {
       throw new BadRequestException('Already checked out for today');
     }
 
+    const now = new Date();
+    const wasOnBreak = record.presenceStatus != null;
+    const isStartingBreak = status != null && !wasOnBreak;
+    const isEndingBreak = status == null && wasOnBreak;
+    const completedBreakMinutes = isEndingBreak && record.breakStartedAt
+      ? Math.max(0, Math.round((now.getTime() - record.breakStartedAt.getTime()) / 60000))
+      : 0;
+
     return this.prisma.attendanceRecord.update({
       where: { id: record.id },
-      data: { presenceStatus: status },
+      data: {
+        presenceStatus: status,
+        breakStartedAt: isStartingBreak ? now : isEndingBreak ? null : record.breakStartedAt,
+        breakMinutes: { increment: completedBreakMinutes },
+      },
     });
   }
 
@@ -156,6 +217,11 @@ export class AttendanceService {
       },
     });
     if (!record) throw new NotFoundException('Attendance record not found');
+    const requestedCheckInAt = input.requestedCheckInAt ?? record.checkInAt;
+    const requestedCheckOutAt = input.requestedCheckOutAt ?? record.checkOutAt;
+    if (requestedCheckInAt && requestedCheckOutAt && requestedCheckOutAt <= requestedCheckInAt) {
+      throw new BadRequestException('Check-out must be after check-in');
+    }
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const correction = await tx.attendanceCorrection.create({
@@ -307,12 +373,21 @@ export class AttendanceService {
       });
 
       if (action === 'approved') {
+        const record = await tx.attendanceRecord.findUnique({
+          where: { id: correction.attendanceId },
+        });
+        if (!record) throw new NotFoundException('Attendance record not found');
+        const checkInAt = correction.requestedCheckInAt ?? record.checkInAt;
+        const checkOutAt = correction.requestedCheckOutAt ?? record.checkOutAt;
+        if (checkInAt && checkOutAt && checkOutAt <= checkInAt) {
+          throw new BadRequestException('Check-out must be after check-in');
+        }
+        const workMinutes = checkInAt && checkOutAt
+          ? Math.max(0, Math.round((checkOutAt.getTime() - checkInAt.getTime()) / 60000))
+          : null;
         await tx.attendanceRecord.update({
           where: { id: correction.attendanceId },
-          data: {
-            checkInAt: correction.requestedCheckInAt ?? undefined,
-            checkOutAt: correction.requestedCheckOutAt ?? undefined,
-          },
+          data: { checkInAt, checkOutAt, workMinutes },
         });
       }
 

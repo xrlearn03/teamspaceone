@@ -16,6 +16,7 @@ import {
   Stethoscope,
   Sun,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import {
   useApplyLeave,
@@ -596,7 +597,7 @@ export function LeaveSection() {
   if (balances.isError) return <SectionError onRetry={() => balances.refetch()} />;
 
   const nextUpcoming = upcoming[0];
-  const tabs: { id: LeaveTab; label: string; icon: React.ElementType }[] = [
+  const tabs: { id: LeaveTab; label: string; icon: LucideIcon }[] = [
     { id: "calendar", label: "Calendar View", icon: CalendarDays },
     { id: "requests", label: "My Requests", icon: FileText },
     { id: "policy", label: "Leave Policy", icon: Info },

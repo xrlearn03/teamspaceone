@@ -15,6 +15,7 @@ import {
   Star,
   UserPlus,
   Video,
+  type LucideIcon,
 } from "lucide-react";
 import { useUIStore } from "@/stores/ui";
 import { useShallow } from "zustand/shallow";
@@ -55,7 +56,7 @@ import { cn, getUserDisplayName } from "@/lib/utils";
 
 type ChannelTab = "messages" | "files" | "tasks" | "events" | "links" | "polls" | "board";
 
-const TABS: { id: ChannelTab; label: string; icon: React.ElementType }[] = [
+const TABS: { id: ChannelTab; label: string; icon: LucideIcon }[] = [
   { id: "messages", label: "Messages", icon: MessageSquare },
   { id: "files", label: "Files", icon: FileText },
   { id: "tasks", label: "Tasks", icon: ListTodo },

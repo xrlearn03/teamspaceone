@@ -19,6 +19,7 @@ import {
   Sparkles,
   UserCheck,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import {
   useCancelOnboardingInstance,
@@ -128,7 +129,7 @@ function StatCard({
   label,
   suffix,
 }: {
-  icon: React.ElementType;
+  icon: LucideIcon;
   iconClass: string;
   value: number;
   label: string;

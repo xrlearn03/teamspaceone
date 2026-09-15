@@ -35,6 +35,8 @@ import {
   type AiAnswerInput,
   type ReviewEvaluationInput,
   type MakeDecisionInput,
+  type UpsertOfferInput,
+  type UpdateOfferStatusInput,
 } from './interview.service.js';
 
 @UseGuards(InterviewPermissionGuard)
@@ -299,6 +301,33 @@ export class InterviewController {
     @Body() dto: ReviewEvaluationInput,
   ) {
     return this.interview.reviewEvaluation(ctx, user, id, dto);
+  }
+
+  @Get('offers')
+  @RequirePermissions('interview.decision.view')
+  listOffers(@CurrentOrganisation() ctx: OrganisationContextValue, @CurrentUser() user: AuthorizableUser) {
+    return this.interview.listOffers(ctx, user);
+  }
+
+  @Post('offers')
+  @RequirePermissions('interview.decision.make')
+  upsertOffer(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Body() dto: UpsertOfferInput,
+  ) {
+    return this.interview.upsertOffer(ctx, user, dto);
+  }
+
+  @Patch('offers/:id/status')
+  @RequirePermissions('interview.decision.make')
+  updateOfferStatus(
+    @CurrentOrganisation() ctx: OrganisationContextValue,
+    @CurrentUser() user: AuthorizableUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateOfferStatusInput,
+  ) {
+    return this.interview.updateOfferStatus(ctx, user, id, dto);
   }
 
   @Post('applications/:id/decision')

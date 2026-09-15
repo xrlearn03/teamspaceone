@@ -1,14 +1,14 @@
 import { BadRequestException, Injectable, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
-import { randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
 import { createEventEnvelope, Subjects, type PasswordResetRequestedPayload } from '@teamspace-one/event-contracts';
 import { OrganisationContext } from '@teamspace-one/organisation-context';
 import { Prisma, type User } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
-import { TokenService, type TokenPair } from './token.service.js';
+import { TokenService, type SessionMetadata, type TokenPair } from './token.service.js';
 import { type RegisterDto } from './dto/register.dto.js';
 import { type ProvisionUserDto } from './dto/provision-user.dto.js';
 import { type LoginDto } from './dto/login.dto.js';
@@ -361,7 +361,7 @@ export class AuthService {
     return { user: this.toDto(user), tokens };
   }
 
-  async login(input: LoginDto): Promise<{ user: UserDto; tokens: TokenPair }> {
+  async login(input: LoginDto, metadata: SessionMetadata = {}): Promise<{ user: UserDto; tokens: TokenPair }> {
     if (!input?.email || !input?.password) {
       throw new BadRequestException('Email and password are required');
     }
@@ -378,7 +378,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const tokens = await this.tokens.issuePair(user);
+    const tokens = await this.tokens.issuePair(user, metadata);
     return { user: this.toDto(user), tokens };
   }
 
@@ -388,6 +388,77 @@ export class AuthService {
 
   async logout(rawRefresh: string): Promise<void> {
     await this.tokens.revoke(rawRefresh);
+  }
+
+  listSessions(userId: string) {
+    return this.prisma.refreshToken.findMany({
+      where: { userId, expiresAt: { gt: new Date() } },
+      select: { id: true, deviceName: true, userAgent: true, ipAddress: true, createdAt: true, lastUsedAt: true, expiresAt: true },
+      orderBy: { lastUsedAt: 'desc' },
+    });
+  }
+
+  async revokeSession(userId: string, id: string): Promise<void> {
+    const result = await this.prisma.refreshToken.deleteMany({ where: { id, userId } });
+    if (result.count === 0) throw new NotFoundException('Session not found');
+  }
+
+  async getPreferences(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } });
+    if (!user) throw new NotFoundException('User not found');
+    const preferences = (user.preferences ?? {}) as Record<string, unknown>;
+    return {
+      smartReplySuggestions: preferences.smartReplySuggestions === true,
+      autoSummarizeChannels: preferences.autoSummarizeChannels === true,
+    };
+  }
+
+  async updatePreferences(userId: string, input: { smartReplySuggestions?: boolean; autoSummarizeChannels?: boolean }) {
+    const current = await this.getPreferences(userId);
+    const preferences = {
+      smartReplySuggestions: typeof input.smartReplySuggestions === 'boolean' ? input.smartReplySuggestions : current.smartReplySuggestions,
+      autoSummarizeChannels: typeof input.autoSummarizeChannels === 'boolean' ? input.autoSummarizeChannels : current.autoSummarizeChannels,
+    };
+    await this.prisma.user.update({ where: { id: userId }, data: { preferences } });
+    return preferences;
+  }
+
+  listApiTokens(userId: string) {
+    return this.prisma.apiToken.findMany({
+      where: { userId, revokedAt: null },
+      select: { id: true, name: true, prefix: true, createdAt: true, lastUsedAt: true, expiresAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createApiToken(userId: string, name: string, expiresAt?: Date) {
+    const normalizedName = name.trim();
+    if (!normalizedName || normalizedName.length > 100) throw new BadRequestException('Token name must be between 1 and 100 characters');
+    if (expiresAt && expiresAt <= new Date()) throw new BadRequestException('Token expiry must be in the future');
+    const token = `tso_${randomBytes(32).toString('base64url')}`;
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const created = await this.prisma.apiToken.create({
+      data: { userId, name: normalizedName, tokenHash, prefix: token.slice(0, 12), expiresAt },
+      select: { id: true, name: true, prefix: true, createdAt: true, expiresAt: true },
+    });
+    return { ...created, token };
+  }
+
+  async revokeApiToken(userId: string, id: string): Promise<void> {
+    const result = await this.prisma.apiToken.updateMany({
+      where: { id, userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    if (result.count === 0) throw new NotFoundException('API token not found');
+  }
+
+  async validateApiToken(token: string): Promise<{ userId: string } | null> {
+    if (!token.startsWith('tso_')) return null;
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const record = await this.prisma.apiToken.findUnique({ where: { tokenHash } });
+    if (!record || record.revokedAt || (record.expiresAt && record.expiresAt <= new Date())) return null;
+    await this.prisma.apiToken.update({ where: { id: record.id }, data: { lastUsedAt: new Date() } });
+    return { userId: record.userId };
   }
 
   async updateProfile(userId: string, input: UpdateProfileDto): Promise<UserDto> {

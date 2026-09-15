@@ -680,6 +680,18 @@ export function useSfu() {
           }
         }
       }
+      if (stream && mediaOptions.videoEnabled && stream.getVideoTracks().length === 0 && canUseMediaDevices) {
+        try {
+          const camera = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: mediaOptions.videoInputId ? { deviceId: { exact: mediaOptions.videoInputId } } : true,
+          });
+          const videoTrack = camera.getVideoTracks()[0];
+          if (videoTrack) stream.addTrack(videoTrack);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Could not access camera");
+        }
+      }
       // No captured tracks (Tauri permission denied, or browser in an insecure
       // context) — join anyway with an empty stream so the user can still
       // watch/listen.

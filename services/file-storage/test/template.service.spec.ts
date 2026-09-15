@@ -22,6 +22,6 @@ describe('FileStorageController', () => {
     const ctx = { organisationId: 'org-1', actorId: 'user-1' } as any;
     const result = await controller.list(ctx);
     expect(result.length).toBe(1);
-    expect(mockService.list).toHaveBeenCalledWith(ctx);
+    expect(mockService.list).toHaveBeenCalledWith(ctx, undefined, undefined, undefined);
   });
 });

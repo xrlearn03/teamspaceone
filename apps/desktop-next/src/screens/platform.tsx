@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   UserRound,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@teamspace-one/ui/badge";
 import { Input } from "@teamspace-one/ui/input";
@@ -64,7 +65,7 @@ function StatCard({
   value,
   loading,
 }: {
-  icon: React.ElementType;
+  icon: LucideIcon;
   label: string;
   value?: number;
   loading?: boolean;

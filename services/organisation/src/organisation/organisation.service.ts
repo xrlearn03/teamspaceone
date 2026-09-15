@@ -556,6 +556,50 @@ export class OrganisationService {
     return membership;
   }
 
+  /**
+   * Internal lookup for other services: user IDs of members holding any of the
+   * given role names (primary or extra role), plus the organisation owner.
+   * Used e.g. by the notification service to fan out hire/onboarding alerts
+   * to hr_admin/hr_manager members.
+   */
+  async listMemberUserIdsByRoleNames(organisationId: string, roleNames: string[]) {
+    const names = roleNames.map((n) => n.trim()).filter(Boolean);
+    const [org, roles] = await Promise.all([
+      this.prisma.organisation.findUnique({
+        where: { id: organisationId },
+        select: { ownerId: true },
+      }),
+      names.length
+        ? this.prisma.role.findMany({
+            where: { organisationId, name: { in: names } },
+            select: { id: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    if (!org) throw new NotFoundException('Organisation not found');
+
+    const userIds = new Set<string>();
+    const roleIds = roles.map((r) => r.id);
+    if (roleIds.length) {
+      const [memberships, extraRoles] = await Promise.all([
+        this.prisma.organisationMembership.findMany({
+          where: { organisationId, roleId: { in: roleIds } },
+          select: { userId: true },
+        }),
+        this.prisma.userRole.findMany({
+          where: { roleId: { in: roleIds }, membership: { organisationId } },
+          select: { membership: { select: { userId: true } } },
+        }),
+      ]);
+      for (const m of memberships) userIds.add(m.userId);
+      for (const ur of extraRoles) {
+        if (ur.membership?.userId) userIds.add(ur.membership.userId);
+      }
+    }
+    if (org.ownerId) userIds.add(org.ownerId);
+    return { userIds: [...userIds] };
+  }
+
   async createWorkspace(
     organisationId: string,
     dto: CreateWorkspaceDto,

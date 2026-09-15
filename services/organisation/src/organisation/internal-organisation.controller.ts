@@ -1,4 +1,4 @@
-import { Controller, ForbiddenException, Get, Headers, Param, UnauthorizedException } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Headers, Param, Query, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { OrganisationService } from './organisation.service.js';
@@ -28,6 +28,18 @@ export class InternalOrganisationController {
   ) {
     this.assertNotificationCaller(internalApiKey, internalCaller);
     return this.organisation.getEmailProviderForUser(userId);
+  }
+
+  @Get(':id/members-by-role')
+  async getMembersByRole(
+    @Param('id') organisationId: string,
+    @Query('names') names?: string,
+    @Headers('x-internal-api-key') internalApiKey?: string,
+    @Headers('x-internal-caller') internalCaller?: string,
+  ) {
+    this.assertNotificationCaller(internalApiKey, internalCaller);
+    const roleNames = (names ?? '').split(',');
+    return this.organisation.listMemberUserIdsByRoleNames(organisationId, roleNames);
   }
 
   private assertNotificationCaller(internalApiKey?: string, internalCaller?: string): void {

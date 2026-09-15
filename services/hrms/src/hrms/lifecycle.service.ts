@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { can, type AuthorizableUser } from '@teamspace-one/authorization';
-import { createEventEnvelope } from '@teamspace-one/event-contracts';
+import { createEventEnvelope, Subjects } from '@teamspace-one/event-contracts';
 import type { Prisma } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
@@ -283,13 +283,18 @@ export class LifecycleService {
     return this.getInstance(ctx, instanceId);
   }
 
-  async createPendingFromHire(organisationId: string, input: HireInput) {
-    const existing = await this.prisma.onboardingInstance.findFirst({
+  async createPendingFromHire(
+    organisationId: string,
+    input: HireInput,
+    tx: Prisma.TransactionClient,
+    actorId?: string,
+  ) {
+    const existing = await tx.onboardingInstance.findFirst({
       where: { organisationId, sourceId: input.sourceId },
     });
     if (existing) return existing;
 
-    return this.prisma.onboardingInstance.create({
+    const instance = await tx.onboardingInstance.create({
       data: {
         organisationId,
         candidateName: input.candidateName,
@@ -299,6 +304,24 @@ export class LifecycleService {
         status: 'pending',
       },
     });
+
+    const envelope = createEventEnvelope({
+      eventType: Subjects.HRMS_ONBOARDING_PENDING,
+      organisationId,
+      actorId,
+      resourceType: 'onboarding-instance',
+      resourceId: instance.id,
+      payload: {
+        instanceId: instance.id,
+        candidateName: input.candidateName,
+        candidateEmail: input.candidateEmail ?? null,
+        jobTitle: input.jobTitle ?? null,
+        applicationId: input.sourceId,
+      },
+    });
+    await this.outbox.createEvent(tx, envelope, Subjects.HRMS_ONBOARDING_PENDING);
+
+    return instance;
   }
 
   /**

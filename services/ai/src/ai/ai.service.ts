@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { AiProvider } from './providers/ai-provider.js';
+import { ElevenLabsTts } from './providers/elevenlabs-tts.js';
 import { ElevenLabsTranscriber, wordsToUtterances } from './providers/elevenlabs-transcriber.js';
 import {
   EVALUATION_PROMPT,
@@ -34,6 +35,7 @@ export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly provider: AiProvider;
   private readonly transcriber: ElevenLabsTranscriber;
+  private readonly tts: ElevenLabsTts;
 
   constructor(
     private readonly outbox: OutboxService,
@@ -43,6 +45,7 @@ export class AiService {
   ) {
     this.provider = new AiProvider(config);
     this.transcriber = new ElevenLabsTranscriber(config);
+    this.tts = new ElevenLabsTts(config);
   }
 
   async summarize(prompt: string, sourceText?: string, options?: { system?: string }): Promise<{ result: string; model: string }> {
@@ -55,10 +58,10 @@ export class AiService {
     const { text, status, model } = await this.provider.complete({ system, user: content });
 
     if (status === 'no_provider') {
-      return { result: `No AI provider configured. Placeholder summary for: ${prompt}`, model: 'none' };
+      throw new ServiceUnavailableException('AI summarization is not configured');
     }
     if (status !== 'ok' || !text) {
-      return { result: 'AI summarization failed.', model: 'none' };
+      throw new ServiceUnavailableException('AI summarization failed');
     }
     return { result: text, model };
   }
@@ -66,6 +69,24 @@ export class AiService {
   /** Mints a single-use ElevenLabs realtime Scribe token for client-side live transcription. */
   async createScribeToken(): Promise<{ token: string } | null> {
     return this.transcriber.createRealtimeToken();
+  }
+
+  /**
+   * Generates interview question audio via ElevenLabs TTS.
+   * Returns a base64-encoded MP3 that the client can play immediately.
+   */
+  async speak(text: string, voiceId?: string): Promise<{ audioBase64: string; mimeType: string; model: string }> {
+    if (!text.trim()) {
+      throw new BadRequestException('TTS text is required');
+    }
+    const { audioBase64, mimeType, model, status } = await this.tts.speak(text, voiceId);
+    if (status === 'no_provider') {
+      throw new ServiceUnavailableException('ElevenLabs TTS is not configured');
+    }
+    if (status !== 'ok' || !audioBase64) {
+      throw new ServiceUnavailableException('ElevenLabs TTS generation failed');
+    }
+    return { audioBase64, mimeType, model };
   }
 
   async embed(text: string): Promise<number[]> {
@@ -1161,9 +1182,7 @@ Do not include the meeting ID or a generic opening such as "The meeting with ID 
     });
 
     if (status === 'no_provider') {
-      return field === 'tasks'
-        ? ([{ title: 'Placeholder extracted task', description: 'No AI provider configured', assigneeId: null }] as unknown as T[])
-        : ([{ decision: 'Placeholder decision: No AI provider configured.' }] as unknown as T[]);
+      throw new ServiceUnavailableException('AI extraction is not configured');
     }
 
     if (status !== 'ok') {

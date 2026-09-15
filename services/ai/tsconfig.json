@@ -12,8 +12,10 @@
     "outDir": "dist",
     "rootDir": "src",
     "sourceMap": true,
+    "baseUrl": ".",
     "paths": {
-      "#prisma": ["./node_modules/.prisma/client"]
+      "#prisma": ["./node_modules/.prisma/client"],
+      "@teamspace-one/authorization/nest": ["../../packages/authorization/dist/nest"]
     },
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,

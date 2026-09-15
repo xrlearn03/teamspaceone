@@ -318,7 +318,7 @@ export function HrEmployeesScreen() {
                             <MoreVertical className="h-4 w-4" />
                           </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenuItem
                             onClick={() => setEditingDraft(d)}
                             className="flex items-center gap-2 text-xs"
@@ -390,7 +390,7 @@ export function HrEmployeesScreen() {
                           <MoreVertical className="h-4 w-4" />
                         </button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenuItem
                           onClick={() => setActiveView("employee-detail", { employeeId: e.id })}
                           className="flex items-center gap-2 text-xs"

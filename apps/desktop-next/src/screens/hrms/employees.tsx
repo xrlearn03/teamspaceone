@@ -69,6 +69,13 @@ interface EmployeeFormState {
   employeeNumber: string;
   status: string;
   salaryBase: string;
+  salaryHra: string;
+  salarySpecialAllowance: string;
+  salaryOtherAllowances: string;
+  salaryProfessionalTax: string;
+  salaryAnnualTaxableDeductions: string;
+  salaryPfEnabled: boolean;
+  salaryEsiEnabled: boolean;
   salaryCurrency: string;
 }
 
@@ -89,6 +96,13 @@ const EMPTY_FORM: EmployeeFormState = {
   employeeNumber: "",
   status: "active",
   salaryBase: "",
+  salaryHra: "",
+  salarySpecialAllowance: "",
+  salaryOtherAllowances: "",
+  salaryProfessionalTax: "",
+  salaryAnnualTaxableDeductions: "",
+  salaryPfEnabled: true,
+  salaryEsiEnabled: true,
   salaryCurrency: "INR",
 };
 
@@ -122,6 +136,13 @@ export function EmployeeFormDialog({
         employeeNumber: employee.employeeNumber ?? "",
         status: employee.status || "active",
         salaryBase: employee.salary?.base != null ? String(employee.salary.base) : "",
+        salaryHra: employee.salary?.hra != null ? String(employee.salary.hra) : "",
+        salarySpecialAllowance: employee.salary?.specialAllowance != null ? String(employee.salary.specialAllowance) : "",
+        salaryOtherAllowances: employee.salary?.otherAllowances != null ? String(employee.salary.otherAllowances) : "",
+        salaryProfessionalTax: employee.salary?.professionalTax != null ? String(employee.salary.professionalTax) : "",
+        salaryAnnualTaxableDeductions: employee.salary?.annualTaxableDeductions != null ? String(employee.salary.annualTaxableDeductions) : "",
+        salaryPfEnabled: employee.salary?.pfEnabled ?? true,
+        salaryEsiEnabled: employee.salary?.esiEnabled ?? true,
         salaryCurrency: employee.salary?.currency ?? "INR",
       };
     }
@@ -141,6 +162,13 @@ export function EmployeeFormDialog({
         employeeNumber: "",
         status: "active",
         salaryBase: "",
+        salaryHra: "",
+        salarySpecialAllowance: "",
+        salaryOtherAllowances: "",
+        salaryProfessionalTax: "",
+        salaryAnnualTaxableDeductions: "",
+        salaryPfEnabled: true,
+        salaryEsiEnabled: true,
         salaryCurrency: "INR",
       };
     }
@@ -232,9 +260,24 @@ export function EmployeeFormDialog({
   function submit() {
     if (!form.firstName.trim() || !form.lastName.trim()) return;
     const salaryNum = Number(form.salaryBase);
+    const optionalAmount = (value: string) => {
+      if (!value.trim()) return undefined;
+      const amount = Number(value);
+      return Number.isFinite(amount) && amount >= 0 ? amount : undefined;
+    };
     const salary =
       canSeePayroll && form.salaryBase.trim() && Number.isFinite(salaryNum) && salaryNum > 0
-        ? { base: salaryNum, currency: form.salaryCurrency || "INR" }
+        ? {
+            base: salaryNum,
+            hra: optionalAmount(form.salaryHra),
+            specialAllowance: optionalAmount(form.salarySpecialAllowance),
+            otherAllowances: optionalAmount(form.salaryOtherAllowances),
+            professionalTax: optionalAmount(form.salaryProfessionalTax),
+            annualTaxableDeductions: optionalAmount(form.salaryAnnualTaxableDeductions),
+            pfEnabled: form.salaryPfEnabled,
+            esiEnabled: form.salaryEsiEnabled,
+            currency: form.salaryCurrency || "INR",
+          }
         : undefined;
     if (employee) {
       const body = {
@@ -401,6 +444,41 @@ export function EmployeeFormDialog({
                   ))}
                 </select>
               </label>
+              {[
+                ["salaryHra", "HRA"],
+                ["salarySpecialAllowance", "Special allowance"],
+                ["salaryOtherAllowances", "Other allowances"],
+                ["salaryProfessionalTax", "Monthly professional tax"],
+                ["salaryAnnualTaxableDeductions", "Annual taxable deductions"],
+              ].map(([key, text]) => (
+                <label key={key} className="flex flex-col gap-1">
+                  <span className={label}>{text}</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={form[key as keyof EmployeeFormState] as string}
+                    onChange={(e) => field(key as keyof EmployeeFormState, e.target.value)}
+                  />
+                </label>
+              ))}
+              <div className="col-span-2 flex flex-wrap gap-5 py-1">
+                <label className="flex items-center gap-2 text-sm text-text">
+                  <input
+                    type="checkbox"
+                    checked={form.salaryPfEnabled}
+                    onChange={(e) => field("salaryPfEnabled", e.target.checked)}
+                  />
+                  Enroll in Provident Fund (PF)
+                </label>
+                <label className="flex items-center gap-2 text-sm text-text">
+                  <input
+                    type="checkbox"
+                    checked={form.salaryEsiEnabled}
+                    onChange={(e) => field("salaryEsiEnabled", e.target.checked)}
+                  />
+                  Enroll in Employee State Insurance (ESI)
+                </label>
+              </div>
             </>
           ) : null}
           <label className="flex flex-col gap-1">

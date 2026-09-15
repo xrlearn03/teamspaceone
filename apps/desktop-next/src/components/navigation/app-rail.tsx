@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Sparkles,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import { usePermissionContext } from "@teamspace-one/authorization/react";
 import { hasAnyPermission } from "@teamspace-one/authorization";
@@ -69,7 +70,7 @@ export function AppRail() {
 
   const topItems: Array<{
     id: string;
-    icon: React.ElementType;
+    icon: LucideIcon;
     label: string;
     onClick?: () => void;
     badge?: number;
@@ -88,7 +89,7 @@ export function AppRail() {
 
   const bottomItems: Array<{
     id: string;
-    icon: React.ElementType;
+    icon: LucideIcon;
     label: string;
     onClick: () => void;
     permissions?: string[];

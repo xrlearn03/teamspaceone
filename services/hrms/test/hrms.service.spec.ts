@@ -12,6 +12,7 @@ import { PayrollService } from '../src/hrms/payroll.service.js';
 import { LifecycleService } from '../src/hrms/lifecycle.service.js';
 import { PerformanceService } from '../src/hrms/performance.service.js';
 import { AnalyticsService } from '../src/hrms/analytics.service.js';
+import { calculateIndiaPayslip, INDIA_NEW_REGIME_SLABS } from '../src/hrms/india-payroll.js';
 
 const ctx = { organisationId: 'org-1', actorId: 'user-1', correlationId: 'corr-1' };
 
@@ -384,6 +385,36 @@ describe('LeaveService.approve', () => {
   });
 });
 
+describe('India payroll calculations', () => {
+  const policy = {
+    employeePfRate: 0.12,
+    employerPfRate: 0.12,
+    pfMonthlyWageCeiling: 15000,
+    employeeEsiRate: 0.0075,
+    employerEsiRate: 0.0325,
+    esiMonthlyGrossCeiling: 21000,
+    standardDeductionAnnual: 75000,
+    rebateTaxableIncomeLimit: 1200000,
+    rebateMaximum: 60000,
+    cessRate: 0.04,
+    taxSlabs: INDIA_NEW_REGIME_SLABS,
+  };
+
+  it('calculates PF, ESI, professional tax and employer contributions', () => {
+    const result = calculateIndiaPayslip({ base: 12000, hra: 4000, professionalTax: 200 }, policy);
+    expect(result.grossPay).toBe(16000);
+    expect(result.deductions).toEqual({ employeePf: 1440, employeeEsi: 120, professionalTax: 200, tds: 0 });
+    expect(result.employerContributions).toEqual({ employerPf: 1440, employerEsi: 520 });
+    expect(result.netPay).toBe(14240);
+  });
+
+  it('prorates every recurring component', () => {
+    const result = calculateIndiaPayslip({ base: 20000, hra: 10000, pfEnabled: false, esiEnabled: false }, policy, 0.5);
+    expect(result.earnings).toEqual({ base: 10000, hra: 5000, specialAllowance: 0, otherAllowances: 0 });
+    expect(result.grossPay).toBe(15000);
+  });
+});
+
 describe('PayrollService', () => {
   it('restricts payslip listing to own employee record without manage permission', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
@@ -444,14 +475,31 @@ describe('PayrollService', () => {
       },
       employee: {
         findMany: jest.fn().mockResolvedValue([
-          { id: 'emp-1', salary: { base: 5000, currency: 'EUR' } },
-          { id: 'emp-2', salary: { base: 3000 } },
+          { id: 'emp-1', joiningDate: null, salary: { base: 5000, currency: 'EUR', pfEnabled: false, esiEnabled: false } },
+          { id: 'emp-2', joiningDate: null, salary: { base: 3000, pfEnabled: false, esiEnabled: false } },
         ]),
       },
+      payrollPolicy: {
+        upsert: jest.fn().mockResolvedValue({
+          employeePfRate: 0.12,
+          employerPfRate: 0.12,
+          pfMonthlyWageCeiling: 15000,
+          employeeEsiRate: 0.0075,
+          employerEsiRate: 0.0325,
+          esiMonthlyGrossCeiling: 21000,
+          standardDeductionAnnual: 75000,
+          rebateTaxableIncomeLimit: 1200000,
+          rebateMaximum: 60000,
+          cessRate: 0.04,
+          taxSlabs: [{ upTo: null, rate: 0 }],
+        }),
+      },
+      attendanceRecord: { findMany: jest.fn().mockResolvedValue([]) },
+      leaveRequest: { findMany: jest.fn().mockResolvedValue([]) },
       payslip: { upsert },
     };
     const prisma = {
-      payrollPeriod: { findFirst: jest.fn().mockResolvedValue({ id: 'pp-1', status: 'draft' }) },
+      payrollPeriod: { findFirst: jest.fn().mockResolvedValue({ id: 'pp-1', status: 'draft', startDate: new Date('2026-09-01'), endDate: new Date('2026-09-30') }) },
       $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
     };
     const outbox = { createEvent: jest.fn().mockResolvedValue(undefined) };
@@ -473,7 +521,7 @@ describe('PayrollService', () => {
     );
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: expect.objectContaining({ employeeId: 'emp-2', currency: 'USD' }),
+        create: expect.objectContaining({ employeeId: 'emp-2', currency: 'INR' }),
       }),
     );
     expect(outbox.createEvent).toHaveBeenCalledWith(

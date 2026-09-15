@@ -44,19 +44,43 @@ export class InboxService {
   ): Promise<void> {
     this.logger.log({ eventId: envelope.eventId, eventType: envelope.eventType }, 'Processing event');
 
-    if (envelope.eventType === 'teamspace-one.template.created') {
-      const payload = envelope.payload as { name?: string } | undefined;
-      if (payload?.name) {
-        await tx.templateEntity.upsert({
-          where: { id: envelope.resourceId },
-          update: { name: payload.name },
+    if (envelope.eventType === 'teamspace-one.hrms.attendance.checked_out') {
+      const payload = envelope.payload as {
+        attendanceRecordId?: string;
+        userId?: string;
+        date?: string;
+        checkInAt?: string;
+        checkOutAt?: string;
+        workMinutes?: number;
+      } | undefined;
+      const date = payload?.date ? new Date(payload.date) : null;
+      const minutes = Math.trunc(payload?.workMinutes ?? 0);
+      if (
+        payload?.attendanceRecordId &&
+        payload.userId &&
+        date &&
+        !Number.isNaN(date.getTime()) &&
+        minutes > 0
+      ) {
+        const description = payload.checkInAt && payload.checkOutAt
+          ? `Check in ${payload.checkInAt} · Check out ${payload.checkOutAt}`
+          : undefined;
+        await tx.timeEntry.upsert({
+          where: { attendanceRecordId: payload.attendanceRecordId },
+          update: { date, minutes, description },
           create: {
-            id: envelope.resourceId,
             organisationId: envelope.organisationId,
-            name: payload.name,
+            userId: payload.userId,
+            attendanceRecordId: payload.attendanceRecordId,
+            label: 'Attendance',
+            description,
+            date,
+            minutes,
+            billable: false,
           },
         });
       }
     }
+
   }
 }

@@ -14,6 +14,7 @@ import {
   Users,
   Video,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { useUIStore } from "@/stores/ui";
 import { useShallow } from "zustand/shallow";
@@ -61,7 +62,7 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function AboutRow({ icon: Icon, label, children }: { icon: React.ElementType; label: string; children: React.ReactNode }) {
+function AboutRow({ icon: Icon, label, children }: { icon: LucideIcon; label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3">
       <Icon className="mt-0.5 h-4 w-4 shrink-0 text-text-muted" />

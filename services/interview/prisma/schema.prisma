@@ -97,6 +97,7 @@ model CandidateApplication {
   jobOpening     JobOpening      @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
   screeningResult ScreeningResult?
   hiringDecision  HiringDecision?
+  offer           Offer?
 
   @@unique([candidateId, jobOpeningId])
   @@index([organisationId])
@@ -246,6 +247,30 @@ model InterviewAnswer {
   @@index([sessionId])
   @@index([sessionId, sortOrder])
   @@map("interview_answers")
+}
+
+model Offer {
+  id               String   @id @default(cuid())
+  organisationId   String
+  applicationId    String   @unique
+  application      CandidateApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  title             String
+  employmentType    String?
+  joiningDate       DateTime?
+  expiresAt         DateTime?
+  compensation      Json
+  content           String?
+  documentFileId    String?
+  status            String   @default("draft")
+  createdBy         String
+  sentAt            DateTime?
+  respondedAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([organisationId])
+  @@index([organisationId, status])
+  @@map("offers")
 }
 
 model HiringDecision {

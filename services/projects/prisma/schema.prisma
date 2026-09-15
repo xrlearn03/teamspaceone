@@ -30,6 +30,8 @@ model Project {
   attachments    ProjectAttachment[]
   activities     ProjectActivity[]
   timeEntries    TimeEntry[]
+  milestones     Milestone[]
+  sprints        Sprint[]
 
   @@index([organisationId])
   @@index([organisationId, isTemplate])
@@ -37,6 +39,45 @@ model Project {
   @@index([clientId])
   @@index([templateId])
   @@map("projects")
+}
+
+model Milestone {
+  id             String   @id @default(cuid())
+  organisationId String
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  dueDate        DateTime?
+  status         String   @default("pending")
+  position       Int      @default(0)
+  tasks          Task[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organisationId])
+  @@index([projectId, position])
+  @@map("milestones")
+}
+
+model Sprint {
+  id             String   @id @default(cuid())
+  organisationId String
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name           String
+  goal           String?
+  startDate      DateTime
+  endDate        DateTime
+  status         String   @default("planned")
+  tasks          Task[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organisationId])
+  @@index([projectId, startDate])
+  @@index([projectId, status])
+  @@map("sprints")
 }
 
 model ProjectMember {
@@ -70,6 +111,10 @@ model Task {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  milestoneId     String?
+  milestone       Milestone?       @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  sprintId        String?
+  sprint           Sprint?          @relation(fields: [sprintId], references: [id], onDelete: SetNull)
   attachments     TaskAttachment[]
   dependencies    TaskDependency[] @relation("TaskDependencies")
   blockedBy       TaskDependency[] @relation("TaskBlockedBy")
@@ -181,6 +226,7 @@ model TimeEntry {
   id             String    @id @default(cuid())
   organisationId String
   userId         String
+  attendanceRecordId String? @unique
   projectId      String?
   taskId         String?
   label          String?

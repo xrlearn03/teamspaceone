@@ -10,6 +10,7 @@ import {
   UserCheck,
   UserPlus,
   UserX,
+  type LucideIcon,
 } from "lucide-react";
 import { useEmployees, useInviteEmployee, useMembers, useTerminateEmployee, useUpdateEmployee, useUsers } from "@/hooks/api";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -59,7 +60,7 @@ function StatCard({
   value,
   iconClass,
 }: {
-  icon: React.ElementType;
+  icon: LucideIcon;
   label: string;
   value: number;
   iconClass: string;
@@ -318,7 +319,7 @@ export function HrEmployeesScreen() {
                             <MoreVertical className="h-4 w-4" />
                           </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenuItem
                             onClick={() => setEditingDraft(d)}
                             className="flex items-center gap-2 text-xs"
@@ -390,7 +391,7 @@ export function HrEmployeesScreen() {
                           <MoreVertical className="h-4 w-4" />
                         </button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenuItem
                           onClick={() => setActiveView("employee-detail", { employeeId: e.id })}
                           className="flex items-center gap-2 text-xs"

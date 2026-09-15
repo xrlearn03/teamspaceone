@@ -92,6 +92,68 @@ export class ProjectsService {
     return this.viewableProject(ctx, projectId);
   }
 
+  async listMilestones(ctx: OrganisationContextValue, projectId: string) {
+    await this.viewableProject(ctx, projectId);
+    return this.prisma.milestone.findMany({ where: { projectId, organisationId: ctx.organisationId }, include: { _count: { select: { tasks: true } } }, orderBy: [{ position: 'asc' }, { dueDate: 'asc' }] });
+  }
+
+  async createMilestone(ctx: OrganisationContextValue, projectId: string, dto: { name: string; description?: string; dueDate?: string; status?: string }) {
+    await this.ownerProject(ctx, projectId);
+    const name = this.required(dto.name, 'Milestone name', 120);
+    const status = dto.status ?? 'pending';
+    if (!['pending', 'in_progress', 'completed'].includes(status)) throw new BadRequestException('Invalid milestone status');
+    const dueDate = dto.dueDate ? new Date(dto.dueDate) : null;
+    if (dueDate && Number.isNaN(dueDate.getTime())) throw new BadRequestException('Invalid milestone due date');
+    const position = await this.prisma.milestone.count({ where: { projectId } });
+    return this.prisma.milestone.create({ data: { id: randomUUID(), organisationId: ctx.organisationId, projectId, name, description: this.optional(dto.description, 2000), dueDate, status, position } });
+  }
+
+  async updateMilestone(ctx: OrganisationContextValue, projectId: string, id: string, dto: { name?: string; description?: string; dueDate?: string | null; status?: string; position?: number }) {
+    await this.ownerProject(ctx, projectId);
+    const existing = await this.prisma.milestone.findFirst({ where: { id, projectId, organisationId: ctx.organisationId } });
+    if (!existing) throw new NotFoundException('Milestone not found');
+    if (dto.status && !['pending', 'in_progress', 'completed'].includes(dto.status)) throw new BadRequestException('Invalid milestone status');
+    const dueDate = dto.dueDate === null ? null : dto.dueDate ? new Date(dto.dueDate) : undefined;
+    if (dueDate && Number.isNaN(dueDate.getTime())) throw new BadRequestException('Invalid milestone due date');
+    return this.prisma.milestone.update({ where: { id }, data: { name: dto.name === undefined ? undefined : this.required(dto.name, 'Milestone name', 120), description: dto.description === undefined ? undefined : this.optional(dto.description, 2000), dueDate, status: dto.status, position: dto.position } });
+  }
+
+  async deleteMilestone(ctx: OrganisationContextValue, projectId: string, id: string) {
+    await this.ownerProject(ctx, projectId);
+    const result = await this.prisma.milestone.deleteMany({ where: { id, projectId, organisationId: ctx.organisationId } });
+    if (!result.count) throw new NotFoundException('Milestone not found');
+  }
+
+  async listSprints(ctx: OrganisationContextValue, projectId: string) {
+    await this.viewableProject(ctx, projectId);
+    return this.prisma.sprint.findMany({ where: { projectId, organisationId: ctx.organisationId }, include: { _count: { select: { tasks: true } } }, orderBy: { startDate: 'desc' } });
+  }
+
+  async createSprint(ctx: OrganisationContextValue, projectId: string, dto: { name: string; goal?: string; startDate: string; endDate: string }) {
+    await this.ownerProject(ctx, projectId);
+    const startDate = new Date(dto.startDate);
+    const endDate = new Date(dto.endDate);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate < startDate) throw new BadRequestException('Sprint end date must be on or after its start date');
+    return this.prisma.sprint.create({ data: { id: randomUUID(), organisationId: ctx.organisationId, projectId, name: this.required(dto.name, 'Sprint name', 120), goal: this.optional(dto.goal, 2000), startDate, endDate } });
+  }
+
+  async updateSprint(ctx: OrganisationContextValue, projectId: string, id: string, dto: { name?: string; goal?: string; startDate?: string; endDate?: string; status?: string }) {
+    await this.ownerProject(ctx, projectId);
+    const existing = await this.prisma.sprint.findFirst({ where: { id, projectId, organisationId: ctx.organisationId } });
+    if (!existing) throw new NotFoundException('Sprint not found');
+    if (dto.status && !['planned', 'active', 'completed', 'cancelled'].includes(dto.status)) throw new BadRequestException('Invalid sprint status');
+    const startDate = dto.startDate ? new Date(dto.startDate) : existing.startDate;
+    const endDate = dto.endDate ? new Date(dto.endDate) : existing.endDate;
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate < startDate) throw new BadRequestException('Sprint end date must be on or after its start date');
+    return this.prisma.sprint.update({ where: { id }, data: { name: dto.name === undefined ? undefined : this.required(dto.name, 'Sprint name', 120), goal: dto.goal === undefined ? undefined : this.optional(dto.goal, 2000), startDate: dto.startDate ? startDate : undefined, endDate: dto.endDate ? endDate : undefined, status: dto.status } });
+  }
+
+  async deleteSprint(ctx: OrganisationContextValue, projectId: string, id: string) {
+    await this.ownerProject(ctx, projectId);
+    const result = await this.prisma.sprint.deleteMany({ where: { id, projectId, organisationId: ctx.organisationId } });
+    if (!result.count) throw new NotFoundException('Sprint not found');
+  }
+
   async markProjectAsTemplate(ctx: OrganisationContextValue, projectId: string) {
     const project = await this.ownerProject(ctx, projectId);
     if (project.isTemplate) return project;
@@ -240,6 +302,8 @@ export class ProjectsService {
           status,
           priority,
           position,
+          milestoneId: dto.milestoneId,
+          sprintId: dto.sprintId,
           completedAt: status === 'done' ? new Date() : null,
         },
       });
@@ -269,6 +333,8 @@ export class ProjectsService {
     if (dto.dueDate !== undefined) data.dueDate = dto.dueDate === null ? null : this.date(dto.dueDate);
     if (dto.priority !== undefined) data.priority = this.priority(dto.priority);
     if (dto.position !== undefined) data.position = Math.max(0, Math.trunc(dto.position));
+    if (dto.milestoneId !== undefined) data.milestone = dto.milestoneId === null ? { disconnect: true } : { connect: { id: dto.milestoneId } };
+    if (dto.sprintId !== undefined) data.sprint = dto.sprintId === null ? { disconnect: true } : { connect: { id: dto.sprintId } };
     if (!Object.keys(data).length) throw new BadRequestException('No task changes supplied');
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {

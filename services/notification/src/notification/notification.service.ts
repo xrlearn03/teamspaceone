@@ -78,6 +78,7 @@ export class NotificationService {
         Subjects.HRMS_LEAVE_REJECTED,
         Subjects.HRMS_ATTENDANCE_CORRECTION_REQUESTED,
         Subjects.HRMS_ATTENDANCE_CORRECTION_RESOLVED,
+        Subjects.HRMS_ONBOARDING_PENDING,
         Subjects.INTERVIEW_SESSION_SCHEDULED,
         Subjects.INTERVIEW_SCREENING_COMPLETED,
         Subjects.INTERVIEW_EVALUATION_READY,
@@ -638,6 +639,27 @@ export class NotificationService {
             title: 'AI evaluation ready',
             body: `AI evaluation for ${candidateName} (${jobTitle}) is ready for review.`,
             link: this.interviewLink(organisationId),
+          }));
+      }
+      case Subjects.HRMS_ONBOARDING_PENDING: {
+        const recipientIds = Array.isArray(payload.recipientIds) ? (payload.recipientIds as string[]).filter(Boolean) : [];
+        if (!recipientIds.length) return [];
+        const candidateName = String(payload.candidateName ?? 'A candidate');
+        const jobTitle = payload.jobTitle ? ` for ${String(payload.jobTitle)}` : '';
+        return recipientIds
+          .filter((userId) => userId !== actorId)
+          .map((userId) => ({
+            organisationId,
+            workspaceId,
+            userId,
+            actorId,
+            eventId: envelope.eventId,
+            eventType,
+            resourceType: 'onboarding-instance',
+            resourceId: envelope.resourceId,
+            title: 'New hire pending onboarding',
+            body: `${candidateName} was hired${jobTitle} — convert them to an employee to start onboarding.`,
+            link: this.hrmsLink(organisationId),
           }));
       }
       case Subjects.TICKET_CREATED: {

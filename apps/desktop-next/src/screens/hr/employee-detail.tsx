@@ -16,6 +16,7 @@ import {
   Users,
   Wallet,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { useEmployee, useUpdateEmployee } from "@/hooks/api";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -132,7 +133,7 @@ function CompensationSection({ employee }: { employee: Employee }) {
   );
 }
 
-function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value?: React.ReactNode }) {
+function InfoRow({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4 py-2.5">
       <span className="flex items-center gap-2 text-sm text-text-secondary">
@@ -164,6 +165,8 @@ function CompensationGate({ employee }: { employee: Employee }) {
 export function EmployeeDetailScreen() {
   const { activeEmployeeId, setActiveView } = useUIStore();
   const employee = useEmployee(activeEmployeeId ?? undefined);
+  const { can } = usePermissions();
+  const canEdit = can("hrms.employee.edit");
   const [editOpen, setEditOpen] = useState(false);
 
   const e = employee.data;
@@ -238,14 +241,16 @@ export function EmployeeDetailScreen() {
                 />
               </div>
               <div className="flex gap-3 p-5">
-                <button
-                  type="button"
-                  onClick={() => setEditOpen(true)}
-                  className="flex h-9 flex-1 items-center justify-center gap-2 rounded-md bg-text text-sm font-medium text-surface"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  Edit Info
-                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => setEditOpen(true)}
+                    className="flex h-9 flex-1 items-center justify-center gap-2 rounded-md bg-text text-sm font-medium text-surface"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit Info
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setActiveView("dm")}

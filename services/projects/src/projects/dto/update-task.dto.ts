@@ -7,4 +7,6 @@ export class UpdateTaskDto {
   dueDate?: string | null;
   priority?: string;
   position?: number;
+  milestoneId?: string | null;
+  sprintId?: string | null;
 }

@@ -4,7 +4,7 @@ import { Eye, EyeOff, KeyRound } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@teamspace-one/ui/dialog";
 import { Button } from "@teamspace-one/ui/button";
 import { Input } from "@teamspace-one/ui/input";
-import { changePassword, friendlyAuthMessage, login, type UserDto } from "@/lib/api";
+import { changePassword, clearAccessToken, friendlyAuthMessage, login, type UserDto } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
 interface ForcePasswordChangeDialogProps {
@@ -23,6 +23,7 @@ export function ForcePasswordChangeDialog({ me }: ForcePasswordChangeDialogProps
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -48,8 +49,6 @@ export function ForcePasswordChangeDialog({ me }: ForcePasswordChangeDialogProps
     setSaving(true);
     try {
       await changePassword(currentPassword, newPassword);
-      const result = await login(email, newPassword);
-      queryClient.setQueryData(["me"], result.user);
     } catch (err) {
       const raw = err instanceof Error ? err.message : "";
       toast.error(
@@ -57,6 +56,21 @@ export function ForcePasswordChangeDialog({ me }: ForcePasswordChangeDialogProps
           ? "The temporary password you entered is incorrect — check your invite email and try again."
           : friendlyAuthMessage(err, "Failed to update password"),
       );
+      setSaving(false);
+      return;
+    }
+    try {
+      // The old refresh token was revoked by the password change, so mint a
+      // fresh session with the new credentials.
+      const result = await login(email, newPassword);
+      queryClient.setQueryData(["me"], result.user);
+      toast.success("Password updated — you're signed in.");
+    } catch {
+      // The password was already changed; if re-login fails, drop back to the
+      // sign-in screen instead of a dead end where the temp password no
+      // longer works.
+      await clearAccessToken();
+      toast.success("Password updated — sign in with your new password.");
     } finally {
       setSaving(false);
     }
@@ -81,15 +95,24 @@ export function ForcePasswordChangeDialog({ me }: ForcePasswordChangeDialogProps
         </DialogHeader>
 
         <form onSubmit={submit} noValidate className="mt-2 flex flex-col gap-3">
-          <label className="flex flex-col gap-1">
+          <label className="relative flex flex-col gap-1">
             <span className="text-xs font-medium text-text-secondary">Temporary password</span>
             <Input
-              type="password"
+              type={showCurrentPassword ? "text" : "password"}
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
+              className="pr-9"
               autoComplete="current-password"
               required
             />
+            <button
+              type="button"
+              onClick={() => setShowCurrentPassword((v) => !v)}
+              aria-label={showCurrentPassword ? "Hide temporary password" : "Show temporary password"}
+              className="absolute bottom-2 right-2 rounded p-1 text-text-muted hover:text-text-secondary"
+            >
+              {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
           </label>
           <label className="relative flex flex-col gap-1">
             <span className="text-xs font-medium text-text-secondary">New password</span>

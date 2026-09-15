@@ -28,6 +28,7 @@ import {
   UserRound,
   Users,
   Wallet,
+  type LucideIcon,
 } from "lucide-react";
 import { usePermissionContext } from "@teamspace-one/authorization/react";
 import { useUIStore, type View } from "@/stores/ui";
@@ -40,7 +41,7 @@ import { cn } from "@/lib/utils";
 interface MenuItem {
   view: View;
   label: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   hrmsTab?: string;
   projectsTab?: string;
   interviewTab?: string;
@@ -122,6 +123,7 @@ const ROLE_MENU_SECTIONS: Record<ShellVariant, MenuItem[][]> = {
       { view: "leaves", label: "Leaves", icon: CalendarDays },
       { view: "attendance", label: "Overall Attendance", icon: CalendarClock },
       { view: "payroll", label: "Payroll", icon: Wallet },
+      { view: "interview", label: "Recruitment", icon: Briefcase },
       { view: "onboarding", label: "Onboarding", icon: UserPlus },
       { view: "offboarding", label: "Offboarding", icon: UserMinus },
       { view: "tickets", label: "Tickets", icon: Ticket },

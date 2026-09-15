@@ -84,7 +84,9 @@ export class StructureService {
     if (input.parentId !== undefined) {
       data.parent = input.parentId ? { connect: { id: input.parentId } } : { disconnect: true };
     }
-    if (input.headEmployeeId !== undefined) data.headEmployeeId = input.headEmployeeId;
+    if (input.headEmployeeId !== undefined) {
+      data.headEmployee = input.headEmployeeId ? { connect: { id: input.headEmployeeId } } : { disconnect: true };
+    }
     if (input.isActive !== undefined) data.isActive = input.isActive;
     return this.prisma.department.update({ where: { id }, data });
   }
@@ -162,6 +164,32 @@ export class StructureService {
         isRecurring: input.isRecurring ?? false,
       },
     });
+  }
+
+  async getHoliday(organisationId: string, id: string) {
+    const holiday = await this.prisma.holiday.findFirst({
+      where: { id, organisationId },
+    });
+    if (!holiday) throw new NotFoundException('Holiday not found');
+    return holiday;
+  }
+
+  async updateHoliday(
+    organisationId: string,
+    id: string,
+    input: HolidayInput,
+  ) {
+    await this.getHoliday(organisationId, id);
+    const data: Prisma.HolidayUpdateInput = {};
+    if (input.name !== undefined) data.name = input.name;
+    if (input.date !== undefined) data.date = input.date;
+    if (input.isRecurring !== undefined) data.isRecurring = input.isRecurring;
+    return this.prisma.holiday.update({ where: { id }, data });
+  }
+
+  async deleteHoliday(organisationId: string, id: string) {
+    await this.getHoliday(organisationId, id);
+    return this.prisma.holiday.delete({ where: { id } });
   }
 
   // ---- Org chart ----

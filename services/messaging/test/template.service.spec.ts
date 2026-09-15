@@ -46,7 +46,7 @@ describe('MessagingController', () => {
   it('passes cursor pagination to message listing', async () => {
     mockService.listMessages.mockResolvedValue({ items: [], nextCursor: null });
     await controller.listMessages(ctx, 'ch-1', 'message-50', '25');
-    expect(mockService.listMessages).toHaveBeenCalledWith(ctx, 'ch-1', 'message-50', 25);
+    expect(mockService.listMessages).toHaveBeenCalledWith(ctx, 'ch-1', 'message-50', 25, undefined);
   });
 
   it('updates and deletes only through actor-scoped service methods', async () => {

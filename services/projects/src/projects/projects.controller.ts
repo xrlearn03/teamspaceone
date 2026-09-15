@@ -68,6 +68,54 @@ export class ProjectsController {
     return this.projects.createProjectFromTemplate(ctx, templateId, dto);
   }
 
+  @Get('projects/:id/milestones')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_VIEW)
+  listMilestones(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string) {
+    return this.projects.listMilestones(ctx, projectId);
+  }
+
+  @Post('projects/:id/milestones')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_MANAGE)
+  createMilestone(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Body() dto: { name: string; description?: string; dueDate?: string; status?: string }) {
+    return this.projects.createMilestone(ctx, projectId, dto);
+  }
+
+  @Patch('projects/:id/milestones/:milestoneId')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_MANAGE)
+  updateMilestone(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Param('milestoneId') milestoneId: string, @Body() dto: { name?: string; description?: string; dueDate?: string | null; status?: string; position?: number }) {
+    return this.projects.updateMilestone(ctx, projectId, milestoneId, dto);
+  }
+
+  @Delete('projects/:id/milestones/:milestoneId')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_MANAGE)
+  deleteMilestone(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Param('milestoneId') milestoneId: string) {
+    return this.projects.deleteMilestone(ctx, projectId, milestoneId);
+  }
+
+  @Get('projects/:id/sprints')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_VIEW)
+  listSprints(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string) {
+    return this.projects.listSprints(ctx, projectId);
+  }
+
+  @Post('projects/:id/sprints')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_MANAGE)
+  createSprint(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Body() dto: { name: string; goal?: string; startDate: string; endDate: string }) {
+    return this.projects.createSprint(ctx, projectId, dto);
+  }
+
+  @Patch('projects/:id/sprints/:sprintId')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_MANAGE)
+  updateSprint(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Param('sprintId') sprintId: string, @Body() dto: { name?: string; goal?: string; startDate?: string; endDate?: string; status?: string }) {
+    return this.projects.updateSprint(ctx, projectId, sprintId, dto);
+  }
+
+  @Delete('projects/:id/sprints/:sprintId')
+  @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_MANAGE)
+  deleteSprint(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string, @Param('sprintId') sprintId: string) {
+    return this.projects.deleteSprint(ctx, projectId, sprintId);
+  }
+
   @Get('projects/:id')
   @RequirePermissions(COLLABORATION_PERMISSIONS.PROJECT_VIEW)
   getProject(@CurrentOrganisation() ctx: OrganisationContextValue, @Param('id') projectId: string) {

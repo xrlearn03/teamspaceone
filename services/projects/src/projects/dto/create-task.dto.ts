@@ -8,4 +8,6 @@ export class CreateTaskDto {
   status?: string;
   priority?: string;
   position?: number;
+  milestoneId?: string;
+  sprintId?: string;
 }

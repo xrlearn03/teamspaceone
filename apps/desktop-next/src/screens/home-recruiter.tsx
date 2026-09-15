@@ -162,6 +162,7 @@ function MetricCard({
   value,
   change,
   description,
+  onClick,
 }: {
   icon: React.ReactNode;
   iconClass: string;
@@ -169,9 +170,14 @@ function MetricCard({
   value: string;
   change?: { text: string; positive: boolean };
   description: string;
+  onClick: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-5 shadow-sm transition hover:border-primary/30">
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-xl border border-border bg-surface p-5 text-left shadow-sm transition hover:border-primary/30"
+    >
       <div className="flex items-center gap-4">
         <div
           className={cn(
@@ -203,7 +209,7 @@ function MetricCard({
           )}
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -592,6 +598,7 @@ export function RecruiterHomeScreen() {
       title: "Today's Interviews",
       value: String(todaySessions.length),
       description: `${completedToday} completed  ·  ${remainingToday} upcoming`,
+      onClick: () => setActiveView("interview", { interviewTab: "sessions" }),
     },
     {
       icon: <Users size={29} />,
@@ -600,6 +607,7 @@ export function RecruiterHomeScreen() {
       value: String(mySessions.length),
       change: assignedMom,
       description: "vs last month",
+      onClick: () => setActiveView("interview", { interviewTab: "sessions" }),
     },
     {
       icon: <FileText size={29} />,
@@ -611,6 +619,7 @@ export function RecruiterHomeScreen() {
           ? { text: `↑ ${feedbackThisMonth}`, positive: true }
           : undefined,
       description: feedbackThisMonth > 0 ? "this month" : "",
+      onClick: () => setActiveView("interview", { interviewTab: "evaluations" }),
     },
     {
       icon: <Star size={29} />,
@@ -625,6 +634,7 @@ export function RecruiterHomeScreen() {
             }
           : undefined,
       description: "vs last month",
+      onClick: () => setActiveView("interview", { interviewTab: "evaluations" }),
     },
   ];
 

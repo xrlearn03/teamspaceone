@@ -648,10 +648,10 @@ export function HrmsOverviewWidget() {
 
   const stats = overview
     ? [
-        { label: "Employees", value: overview.totalEmployees },
-        { label: "Present today", value: overview.presentToday },
-        { label: "Pending leave", value: overview.pendingLeaveRequests },
-        { label: "Pending corrections", value: overview.pendingCorrections },
+        { label: "Employees", value: overview.totalEmployees, onClick: () => setActiveView("employees") },
+        { label: "Present today", value: overview.presentToday, onClick: () => setActiveView("attendance") },
+        { label: "Pending leave", value: overview.pendingLeaveRequests, onClick: () => setActiveView("leaves") },
+        { label: "Pending corrections", value: overview.pendingCorrections, onClick: () => setActiveView("attendance") },
       ]
     : [];
 
@@ -676,10 +676,15 @@ export function HrmsOverviewWidget() {
           <>
             <div className="grid grid-cols-2 gap-3">
               {stats.map((s) => (
-                <div key={s.label} className="rounded-md border bg-surface p-3">
+                <button
+                  key={s.label}
+                  type="button"
+                  onClick={s.onClick}
+                  className="rounded-md border bg-surface p-3 text-left transition hover:border-primary/40"
+                >
                   <p className="text-lg font-semibold text-text">{s.value}</p>
                   <p className="text-xs text-text-muted">{s.label}</p>
-                </div>
+                </button>
               ))}
             </div>
             {overview.byDepartment.length > 0 ? (

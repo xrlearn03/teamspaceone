@@ -232,7 +232,11 @@ export async function apiRequest<T>(
   if (response.status === 204) {
     return undefined as T;
   }
-  return response.json() as Promise<T>;
+  // Success responses can legitimately have an empty body (e.g. POST
+  // /auth/change-password); response.json() throws a SyntaxError on those —
+  // in WebKit the cryptic "The string did not match the expected pattern."
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export interface UserDto {
@@ -446,12 +450,40 @@ export interface Task {
   title: string;
   description?: string | null;
   assigneeId?: string | null;
+  milestoneId?: string | null;
+  sprintId?: string | null;
   status: string;
   priority: string;
   position: number;
   startDate?: string | null;
   dueDate?: string | null;
   completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Milestone {
+  id: string;
+  projectId: string;
+  name: string;
+  description?: string | null;
+  dueDate?: string | null;
+  status: string;
+  position: number;
+  _count?: { tasks: number };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Sprint {
+  id: string;
+  projectId: string;
+  name: string;
+  goal?: string | null;
+  startDate: string;
+  endDate: string;
+  status: string;
+  _count?: { tasks: number };
   createdAt: string;
   updatedAt: string;
 }
@@ -589,6 +621,12 @@ export interface FileRecord {
   createdAt: string;
 }
 
+export interface FileUsage {
+  perUserQuotaBytes: number;
+  user: { usedBytes: number; limitBytes: number; remainingBytes: number };
+  organisation: { usedBytes: number; limitBytes: number; remainingBytes: number; memberCount: number };
+}
+
 export interface SearchResult {
   id: string;
   resourceType: string;
@@ -627,8 +665,9 @@ export interface Meeting {
 
 export interface MeetingInvitee {
   id: string;
-  meetingId?: string;
+  meetingId: string;
   userId: string;
+  createdAt: string;
 }
 
 export interface MeetingParticipant {
@@ -680,6 +719,31 @@ export interface MeetingRecordingState {
   recordedBy?: string;
 }
 
+export interface AuthSession {
+  id: string;
+  deviceName?: string | null;
+  userAgent?: string | null;
+  ipAddress?: string | null;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+}
+
+export interface UserPreferences {
+  smartReplySuggestions: boolean;
+  autoSummarizeChannels: boolean;
+}
+
+export interface ApiTokenRecord {
+  id: string;
+  name: string;
+  prefix: string;
+  createdAt: string;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  token?: string;
+}
+
 // Auth
 export async function register(
   email: string,
@@ -721,6 +785,34 @@ export function getUsers(ids?: string[]) {
   }
   const query = params.toString();
   return apiRequest<UserDto[]>(`/auth/users${query ? `?${query}` : ""}`);
+}
+
+export function getSessions() {
+  return apiRequest<AuthSession[]>("/auth/sessions");
+}
+
+export function revokeSession(id: string) {
+  return apiRequest<void>(`/auth/sessions/${id}`, { method: "DELETE" });
+}
+
+export function getUserPreferences() {
+  return apiRequest<UserPreferences>("/auth/preferences");
+}
+
+export function updateUserPreferences(body: Partial<UserPreferences>) {
+  return apiRequest<UserPreferences>("/auth/preferences", { method: "PATCH", body });
+}
+
+export function getApiTokens() {
+  return apiRequest<ApiTokenRecord[]>("/auth/api-tokens");
+}
+
+export function createApiToken(name: string, expiresAt?: string) {
+  return apiRequest<ApiTokenRecord>("/auth/api-tokens", { method: "POST", body: { name, expiresAt } });
+}
+
+export function revokeApiToken(id: string) {
+  return apiRequest<void>(`/auth/api-tokens/${id}`, { method: "DELETE" });
 }
 
 export function updateProfile(body: { firstName?: string; lastName?: string; avatarFileId?: string | null }) {
@@ -1206,16 +1298,48 @@ export function getTasks(projectId: string) {
   return apiRequest<Task[]>(`/projects/${projectId}/tasks`);
 }
 
-export function createTask(body: { projectId: string; title: string; description?: string; assigneeId?: string; startDate?: string; dueDate?: string; status?: string; priority?: string; position?: number }) {
+export function createTask(body: { projectId: string; title: string; description?: string; assigneeId?: string; milestoneId?: string; sprintId?: string; startDate?: string; dueDate?: string; status?: string; priority?: string; position?: number }) {
   return apiRequest<Task>("/tasks", { method: "POST", body });
 }
 
-export function updateTask(taskId: string, body: { status?: string; title?: string; description?: string | null; assigneeId?: string | null; startDate?: string | null; dueDate?: string | null; priority?: string; position?: number }) {
+export function updateTask(taskId: string, body: { status?: string; title?: string; description?: string | null; assigneeId?: string | null; milestoneId?: string | null; sprintId?: string | null; startDate?: string | null; dueDate?: string | null; priority?: string; position?: number }) {
   return apiRequest<Task>(`/tasks/${taskId}`, { method: "PATCH", body });
 }
 
 export function deleteTask(taskId: string) {
   return apiRequest<void>(`/tasks/${taskId}`, { method: "DELETE" });
+}
+
+export function getMilestones(projectId: string) {
+  return apiRequest<Milestone[]>(`/projects/${projectId}/milestones`);
+}
+
+export function createMilestone(projectId: string, body: { name: string; description?: string; dueDate?: string; status?: string }) {
+  return apiRequest<Milestone>(`/projects/${projectId}/milestones`, { method: "POST", body });
+}
+
+export function updateMilestone(projectId: string, milestoneId: string, body: { name?: string; description?: string; dueDate?: string | null; status?: string; position?: number }) {
+  return apiRequest<Milestone>(`/projects/${projectId}/milestones/${milestoneId}`, { method: "PATCH", body });
+}
+
+export function deleteMilestone(projectId: string, milestoneId: string) {
+  return apiRequest<void>(`/projects/${projectId}/milestones/${milestoneId}`, { method: "DELETE" });
+}
+
+export function getSprints(projectId: string) {
+  return apiRequest<Sprint[]>(`/projects/${projectId}/sprints`);
+}
+
+export function createSprint(projectId: string, body: { name: string; goal?: string; startDate: string; endDate: string }) {
+  return apiRequest<Sprint>(`/projects/${projectId}/sprints`, { method: "POST", body });
+}
+
+export function updateSprint(projectId: string, sprintId: string, body: { name?: string; goal?: string; startDate?: string; endDate?: string; status?: string }) {
+  return apiRequest<Sprint>(`/projects/${projectId}/sprints/${sprintId}`, { method: "PATCH", body });
+}
+
+export function deleteSprint(projectId: string, sprintId: string) {
+  return apiRequest<void>(`/projects/${projectId}/sprints/${sprintId}`, { method: "DELETE" });
 }
 
 // Time tracking
@@ -1355,6 +1479,10 @@ export function getProjectActivity(projectId: string, cursor?: string) {
 }
 
 // Files
+export function getFileUsage() {
+  return apiRequest<FileUsage>("/files/usage");
+}
+
 export function getFiles(filters?: { resourceType?: string; resourceId?: string }) {
   const params = new URLSearchParams();
   if (filters?.resourceType) params.set("resourceType", filters.resourceType);
@@ -1458,28 +1586,24 @@ async function authHeaders(): Promise<Record<string, string>> {
   return headers;
 }
 
-export async function downloadFile(fileId: string): Promise<Blob> {
-  const response = await fetch(`${GATEWAY_URL}/files/${fileId}/download?stream=true`, {
+async function fetchAuthenticatedBlob(path: string, errorLabel: string, extraHeaders?: Record<string, string>): Promise<Blob> {
+  const response = await fetch(`${GATEWAY_URL}${path}`, {
     method: "GET",
-    headers: await authHeaders(),
+    headers: { ...(await authHeaders()), ...extraHeaders },
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Download error ${response.status}: ${text}`);
+    throw new Error(`${errorLabel} error ${response.status}: ${text}`);
   }
   return response.blob();
 }
 
+export async function downloadFile(fileId: string): Promise<Blob> {
+  return fetchAuthenticatedBlob(`/files/${fileId}/download?stream=true`, "Download");
+}
+
 export async function fetchFilePreview(fileId: string, type: "thumbnail" | "preview"): Promise<Blob> {
-  const response = await fetch(`${GATEWAY_URL}/files/${fileId}/preview?type=${type}`, {
-    method: "GET",
-    headers: await authHeaders(),
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Preview error ${response.status}: ${text}`);
-  }
-  return response.blob();
+  return fetchAuthenticatedBlob(`/files/${fileId}/preview?type=${type}`, "Preview");
 }
 
 // Search
@@ -1815,6 +1939,18 @@ export function createScribeToken() {
 // HRMS (Phase 4)
 // ---------------------------------------------------------------------------
 
+export interface SalaryConfig {
+  base?: number;
+  hra?: number;
+  specialAllowance?: number;
+  otherAllowances?: number;
+  currency?: string;
+  pfEnabled?: boolean;
+  esiEnabled?: boolean;
+  professionalTax?: number;
+  annualTaxableDeductions?: number;
+}
+
 export interface Employee {
   id: string;
   organisationId: string;
@@ -1830,7 +1966,7 @@ export interface Employee {
   joiningDate?: string | null;
   employmentType: string;
   /** Compensation JSON — only returned to callers with hrms.payroll.view. */
-  salary?: { base?: number; currency?: string } | null;
+  salary?: SalaryConfig | null;
   status: string;
   employeeNumber?: string | null;
   dateOfBirth?: string | null;
@@ -1878,7 +2014,10 @@ export interface AttendanceRecord {
   date: string;
   checkInAt?: string | null;
   checkOutAt?: string | null;
+  workMinutes?: number | null;
   workedMinutes?: number | null;
+  breakMinutes?: number;
+  breakStartedAt?: string | null;
   status: string;
   presenceStatus?: string | null;
   createdAt?: string;
@@ -1941,7 +2080,7 @@ export interface Holiday {
   organisationId?: string;
   name: string;
   date: string;
-  description?: string | null;
+  isRecurring?: boolean;
 }
 
 export interface PayrollPeriod {
@@ -1969,6 +2108,34 @@ export interface Payslip {
   currency?: string | null;
   status: string;
   createdAt?: string;
+}
+
+export interface PayrollTaxDocument {
+  id: string;
+  employeeId: string;
+  financialYear: string;
+  category: string;
+  fileId: string;
+  name: string;
+  declaredAmount?: number | null;
+  status: string;
+  reviewNote?: string | null;
+  createdAt: string;
+}
+
+export interface ReimbursementClaim {
+  id: string;
+  employeeId: string;
+  category: string;
+  description: string;
+  amount: number;
+  currency: string;
+  expenseDate: string;
+  receiptFileId?: string | null;
+  status: string;
+  reviewNote?: string | null;
+  paidAt?: string | null;
+  createdAt: string;
 }
 
 export interface EmployeeDocument {
@@ -2077,7 +2244,7 @@ export function createEmployee(body: {
   joiningDate?: string;
   employmentType?: string;
   employeeNumber?: string;
-  salary?: { base: number; currency?: string };
+  salary?: SalaryConfig;
 }) {
   return apiRequest<Employee>("/hrms/employees", { method: "POST", body });
 }
@@ -2207,6 +2374,21 @@ export function getLeaveTypes() {
   return apiRequest<LeaveType[]>("/hrms/leave/types");
 }
 
+export function createLeaveType(body: { name: string; code: string; annualQuota?: number; isPaid?: boolean }) {
+  return apiRequest<LeaveType>("/hrms/leave/types", { method: "POST", body });
+}
+
+export function updateLeaveType(
+  id: string,
+  body: { name?: string; code?: string; annualQuota?: number; isPaid?: boolean; isActive?: boolean },
+) {
+  return apiRequest<LeaveType>(`/hrms/leave/types/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function deleteLeaveType(id: string) {
+  return apiRequest<void>(`/hrms/leave/types/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 export function getLeaveBalances(employeeId?: string) {
   const qs = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : "";
   return apiRequest<LeaveBalance[]>(`/hrms/leave/balances${qs}`);
@@ -2236,6 +2418,18 @@ export function getHolidays() {
   return apiRequest<Holiday[]>("/hrms/holidays");
 }
 
+export function createHoliday(body: { name: string; date: string; isRecurring?: boolean }) {
+  return apiRequest<Holiday>("/hrms/holidays", { method: "POST", body });
+}
+
+export function updateHoliday(id: string, body: { name?: string; date?: string; isRecurring?: boolean }) {
+  return apiRequest<Holiday>(`/hrms/holidays/${encodeURIComponent(id)}`, { method: "PATCH", body });
+}
+
+export function deleteHoliday(id: string) {
+  return apiRequest<void>(`/hrms/holidays/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 export function getPayrollPeriods() {
   return apiRequest<PayrollPeriod[]>("/hrms/payroll/periods");
 }
@@ -2251,6 +2445,30 @@ export function getPayslips(params?: { employeeId?: string; payrollPeriodId?: st
 
 export function getPayslip(id: string) {
   return apiRequest<Payslip>(`/hrms/payroll/payslips/${encodeURIComponent(id)}`);
+}
+
+export function getPayrollTaxDocuments() {
+  return apiRequest<PayrollTaxDocument[]>("/hrms/payroll/tax-documents");
+}
+
+export function createPayrollTaxDocument(body: { financialYear: string; category: string; fileId: string; name: string; declaredAmount?: number }) {
+  return apiRequest<PayrollTaxDocument>("/hrms/payroll/tax-documents", { method: "POST", body });
+}
+
+export function getReimbursements() {
+  return apiRequest<ReimbursementClaim[]>("/hrms/payroll/reimbursements");
+}
+
+export function createReimbursement(body: { category: string; description: string; amount: number; currency?: string; expenseDate: string; receiptFileId?: string }) {
+  return apiRequest<ReimbursementClaim>("/hrms/payroll/reimbursements", { method: "POST", body });
+}
+
+export function downloadPayslipPdf(id: string) {
+  return fetchAuthenticatedBlob(`/hrms/payroll/payslips/${encodeURIComponent(id)}/pdf`, "Download");
+}
+
+export function downloadSalaryCertificatePdf() {
+  return fetchAuthenticatedBlob("/hrms/payroll/salary-certificate/pdf", "Download");
 }
 
 export function getEmployeeDocuments(employeeId?: string) {
@@ -2396,6 +2614,18 @@ export function getHiringDecisions() {
   return apiRequest<HiringDecision[]>("/interview/decisions");
 }
 
+export function getOffers() {
+  return apiRequest<Offer[]>("/interview/offers");
+}
+
+export function upsertOffer(body: { applicationId: string; title: string; employmentType?: string; joiningDate?: string; expiresAt?: string; compensation: Offer["compensation"]; content?: string; documentFileId?: string }) {
+  return apiRequest<Offer>("/interview/offers", { method: "POST", body });
+}
+
+export function updateOfferStatus(id: string, status: "sent" | "accepted" | "declined" | "withdrawn") {
+  return apiRequest<Offer>(`/interview/offers/${encodeURIComponent(id)}/status`, { method: "PATCH", body: { status } });
+}
+
 export function updateApplicationStage(applicationId: string, stage: string) {
   return apiRequest<CandidateApplication>(`/interview/applications/${encodeURIComponent(applicationId)}/stage`, {
     method: "PATCH",
@@ -2490,6 +2720,21 @@ export interface InterviewEvaluation {
   status?: string;
   aiMetadata?: { suggestedFollowUps: string[]; model: string; promptVersion: string } | null;
   createdAt: string;
+}
+
+export interface Offer {
+  id: string;
+  applicationId: string;
+  title: string;
+  employmentType?: string | null;
+  joiningDate?: string | null;
+  expiresAt?: string | null;
+  compensation: { amount: number; currency: string; period?: "annual" | "monthly"; components?: Record<string, number> };
+  content?: string | null;
+  documentFileId?: string | null;
+  status: "draft" | "sent" | "accepted" | "declined" | "withdrawn";
+  createdAt: string;
+  application?: { candidate?: { id: string; name: string; email?: string } | null; jobOpening?: { id: string; title: string } | null } | null;
 }
 
 export interface HiringDecision {
@@ -2987,20 +3232,8 @@ export function getPayrollSummary() {
   return apiRequest<PayrollSummaryRow[]>("/hrms/payroll/summary");
 }
 
-/**
- * Downloads the payroll period CSV. `apiRequest` is JSON-only, so this uses
- * the same fetch/auth-header pattern as `downloadFile`.
- */
 export async function exportPayrollPeriodCsv(periodId: string): Promise<Blob> {
-  const response = await fetch(`${GATEWAY_URL}/hrms/payroll/periods/${encodeURIComponent(periodId)}/export`, {
-    method: "GET",
-    headers: { ...(await authHeaders()), Accept: "text/csv" },
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Export error ${response.status}: ${text}`);
-  }
-  return response.blob();
+  return fetchAuthenticatedBlob(`/hrms/payroll/periods/${encodeURIComponent(periodId)}/export`, "Export", { Accept: "text/csv" });
 }
 
 // ── Platform administration ────────────────────────────────────────────────

@@ -17,6 +17,7 @@ import { MemberInvitationEmailService } from './member-invitation-email.service.
 import { InterviewCandidateInvitationEmailService } from './interview-candidate-invitation-email.service.js';
 import { PasswordResetEmailService } from './password-reset-email.service.js';
 import { OrganisationEmailProviderClient } from './organisation-email-provider.client.js';
+import { OrganisationMembersClient } from './organisation-members.client.js';
 
 @Module({
   imports: [
@@ -44,7 +45,8 @@ import { OrganisationEmailProviderClient } from './organisation-email-provider.c
     InterviewCandidateInvitationEmailService,
     PasswordResetEmailService,
     OrganisationEmailProviderClient,
+    OrganisationMembersClient,
   ],
-  exports: [NotificationService, PushService, GuestInvitationEmailService, MemberInvitationEmailService, InterviewCandidateInvitationEmailService, PasswordResetEmailService, OrganisationEmailProviderClient],
+  exports: [NotificationService, PushService, GuestInvitationEmailService, MemberInvitationEmailService, InterviewCandidateInvitationEmailService, PasswordResetEmailService, OrganisationEmailProviderClient, OrganisationMembersClient],
 })
 export class NotificationModule {}

@@ -7,7 +7,11 @@ import { GuestInvitationEmailService } from '../notification/guest-invitation-em
 import { MemberInvitationEmailService } from '../notification/member-invitation-email.service.js';
 import { InterviewCandidateInvitationEmailService } from '../notification/interview-candidate-invitation-email.service.js';
 import { PasswordResetEmailService } from '../notification/password-reset-email.service.js';
+import { OrganisationMembersClient } from '../notification/organisation-members.client.js';
 import { NatsClientService } from './nats-client.service.js';
+
+/** Roles that receive the new-hire onboarding handoff notification. */
+const ONBOARDING_NOTIFY_ROLES = ['hr_admin', 'hr_manager'];
 
 interface ConsumerDefinition {
   stream: string;
@@ -29,6 +33,7 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
     private readonly memberInvitation: MemberInvitationEmailService,
     private readonly interviewCandidateInvitation: InterviewCandidateInvitationEmailService,
     private readonly passwordReset: PasswordResetEmailService,
+    private readonly organisationMembers: OrganisationMembersClient,
   ) {}
 
   async onModuleInit() {
@@ -141,6 +146,34 @@ export class NatsConsumerService implements OnModuleInit, OnModuleDestroy {
         if (data.eventType === Subjects.INTERVIEW_SESSION_SCHEDULED) {
           await this.inbox.handle(data, async (tx, envelope) => {
             await this.interviewCandidateInvitation.send(envelope);
+            const created = await this.notification.createFromEvent(tx, envelope);
+            for (const n of created) {
+              if (n?.deliveryIds?.length && n.enqueue !== false) {
+                await this.notification.enqueueDeliveries(n.deliveryIds);
+              }
+            }
+            return created;
+          });
+          jsMsg.ack();
+          continue;
+        }
+
+        // New hire → onboarding handoff: the producing HRMS consumer cannot see
+        // organisation memberships, so recipients (hr_admin/hr_manager) are
+        // resolved here before the notification fan-out.
+        if (data.eventType === Subjects.HRMS_ONBOARDING_PENDING) {
+          const recipientIds = await this.organisationMembers.getUserIdsByRoleNames(
+            data.organisationId,
+            ONBOARDING_NOTIFY_ROLES,
+          );
+          const enriched: EventEnvelope = {
+            ...data,
+            payload: {
+              ...((data.payload as Record<string, unknown> | undefined) ?? {}),
+              recipientIds,
+            },
+          };
+          await this.inbox.handle(enriched, async (tx, envelope) => {
             const created = await this.notification.createFromEvent(tx, envelope);
             for (const n of created) {
               if (n?.deliveryIds?.length && n.enqueue !== false) {

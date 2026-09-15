@@ -72,6 +72,12 @@ export class RemotePermissionGuard implements CanActivate {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const requirement = this.reflector.getAllAndOverride<PermissionRequirement>(PERMISSION_METADATA_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!requirement) return true;
+
     const request = context.switchToHttp().getRequest();
     const headers = request.headers ?? {};
     const organisationId = headers['x-organisation-id'] as string | undefined;
@@ -86,12 +92,6 @@ export class RemotePermissionGuard implements CanActivate {
     }
 
     request.user = user;
-
-    const requirement = this.reflector.getAllAndOverride<PermissionRequirement>(PERMISSION_METADATA_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (!requirement) return true;
 
     const allowed = requirement.requireAll
       ? requirement.permissions.every((p) => can(user, p))

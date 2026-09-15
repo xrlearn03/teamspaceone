@@ -52,14 +52,21 @@ import {
 import { FilterDropdown } from "../hr/common";
 import { cn, getUserDisplayName } from "../../lib/utils";
 
+function dateKey(d: Date) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return dateKey(new Date());
 }
 
 function daysAgo(n: number) {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+  return dateKey(d);
 }
 
 /** Standard full working day: 9h. */
@@ -263,33 +270,47 @@ export function AttendanceSection() {
   const checkedIn = Boolean(todayRecord?.checkInAt);
   const checkedOut = Boolean(todayRecord?.checkOutAt);
   // workedMinutes is only persisted at checkout — tick it live while punched in.
-  const liveWorkedSecs = todayRecord?.checkInAt
-    ? Math.max(0, (now.getTime() - new Date(todayRecord.checkInAt).getTime()) / 1000)
+  const elapsedMinutes = todayRecord?.checkInAt
+    ? Math.max(0, (now.getTime() - new Date(todayRecord.checkInAt).getTime()) / 60000)
     : 0;
+  const activeBreakMinutes = todayRecord?.breakStartedAt
+    ? Math.max(0, (now.getTime() - new Date(todayRecord.breakStartedAt).getTime()) / 60000)
+    : 0;
+  const breakMinutesToday = (todayRecord?.breakMinutes ?? 0) + activeBreakMinutes;
+  const storedWorked = (r: AttendanceRecord) => r.workMinutes ?? r.workedMinutes ?? 0;
   const effectiveWorked = (r: AttendanceRecord) =>
     r.id === todayRecord?.id && checkedIn && !checkedOut
-      ? liveWorkedSecs / 60
-      : (r.workedMinutes ?? 0);
+      ? Math.max(0, elapsedMinutes - breakMinutesToday)
+      : storedWorked(r);
   const sumRange = (startDate: string, endDate: string) =>
     records
       .filter((r) => r.date.slice(0, 10) >= startDate && r.date.slice(0, 10) <= endDate)
       .reduce((acc, r) => acc + effectiveWorked(r), 0);
 
   const minsToday = todayRecord ? effectiveWorked(todayRecord) : 0;
-  const minsYesterday = records.find((r) => r.date.slice(0, 10) === daysAgo(1))?.workedMinutes ?? 0;
-  const minsWeek = sumRange(daysAgo(7), today);
-  const minsPrevWeek = sumRange(daysAgo(14), daysAgo(8));
+  const yesterdayRecord = records.find((r) => r.date.slice(0, 10) === daysAgo(1));
+  const minsYesterday = yesterdayRecord ? storedWorked(yesterdayRecord) : 0;
+  const weekStartDate = new Date();
+  weekStartDate.setDate(weekStartDate.getDate() - ((weekStartDate.getDay() + 6) % 7));
+  const weekStart = dateKey(weekStartDate);
+  const prevWeekEndDate = new Date(weekStartDate);
+  prevWeekEndDate.setDate(prevWeekEndDate.getDate() - 1);
+  const prevWeekStartDate = new Date(prevWeekEndDate);
+  prevWeekStartDate.setDate(prevWeekStartDate.getDate() - 6);
+  const minsWeek = sumRange(weekStart, today);
+  const minsPrevWeek = sumRange(dateKey(prevWeekStartDate), dateKey(prevWeekEndDate));
   const monthStart = today.slice(0, 7) + "-01";
   const minsMonth = sumRange(monthStart, today);
-  const prevMonthEnd = new Date(new Date(monthStart).getTime() - 86400000).toISOString().slice(0, 10);
-  const prevMonthStart = prevMonthEnd.slice(0, 7) + "-01";
+  const prevMonthEndDate = new Date(new Date().getFullYear(), new Date().getMonth(), 0);
+  const prevMonthEnd = dateKey(prevMonthEndDate);
+  const prevMonthStart = `${prevMonthEnd.slice(0, 7)}-01`;
   const minsPrevMonth = sumRange(prevMonthStart, prevMonthEnd);
   const overtimeMonth = records
     .filter((r) => r.date.slice(0, 10) >= monthStart)
-    .reduce((acc, r) => acc + Math.max(0, (r.workedMinutes ?? 0) - DAY_TARGET_MIN), 0);
+    .reduce((acc, r) => acc + Math.max(0, effectiveWorked(r) - DAY_TARGET_MIN), 0);
   const overtimePrevMonth = records
     .filter((r) => r.date.slice(0, 10) >= prevMonthStart && r.date.slice(0, 10) <= prevMonthEnd)
-    .reduce((acc, r) => acc + Math.max(0, (r.workedMinutes ?? 0) - DAY_TARGET_MIN), 0);
+    .reduce((acc, r) => acc + Math.max(0, storedWorked(r) - DAY_TARGET_MIN), 0);
 
   const pct = (cur: number, prev: number) =>
     prev > 0 ? ((cur - prev) / prev) * 100 : null;
@@ -308,7 +329,7 @@ export function AttendanceSection() {
   const segEnd = inMin != null && outMin != null ? Math.min(Math.max((outMin - axisMin) / axisSpan, 0), 1) : null;
   const productiveEnd =
     segStart != null && segEnd != null
-      ? Math.min(segEnd, segStart + (Math.min(minsToday, DAY_TARGET_MIN) / axisSpan))
+      ? Math.min(segEnd, segStart + (minsToday / axisSpan))
       : null;
   const spanToday = inMin != null && outMin != null ? outMin - inMin : null;
   const overtimeToday = Math.max(0, minsToday - DAY_TARGET_MIN);
@@ -407,7 +428,7 @@ export function AttendanceSection() {
 
           <span className="rounded bg-primary px-3 py-1 text-xs font-medium text-white">
             Production :{" "}
-            {checkedIn && !checkedOut ? timerLabel(liveWorkedSecs) : `${hoursLabel(minsToday)} hrs`}
+            {checkedIn && !checkedOut ? timerLabel(minsToday * 60) : `${hoursLabel(minsToday)} hrs`}
           </span>
           <span className="flex items-center gap-1.5 text-xs text-text-secondary">
             <Fingerprint className="h-3.5 w-3.5" />
@@ -442,8 +463,13 @@ export function AttendanceSection() {
                     key={p}
                     type="button"
                     disabled={!canCheckin || presence.isPending}
-                    onClick={() => presence.mutate(p)}
-                    className="rounded-md border border-border px-2.5 py-1 text-xs text-text-secondary hover:bg-surface-elevated disabled:opacity-50"
+                    onClick={() => presence.mutate(todayRecord?.presenceStatus === p ? null : p)}
+                    className={cn(
+                      "rounded-md border px-2.5 py-1 text-xs disabled:opacity-50",
+                      todayRecord?.presenceStatus === p
+                        ? "border-warning bg-warning/10 text-warning"
+                        : "border-border text-text-secondary hover:bg-surface-elevated",
+                    )}
                   >
                     {p === "lunch" ? "Lunch" : p === "tea_break" ? "Tea break" : "OOO"}
                   </button>
@@ -489,7 +515,7 @@ export function AttendanceSection() {
                     />
                     {productiveEnd != null && segEnd > productiveEnd && (
                       <div
-                        className="absolute top-0 h-4 rounded bg-info"
+                        className="absolute top-0 h-4 rounded bg-warning"
                         style={{ left: `${productiveEnd * 100}%`, width: `${(segEnd - productiveEnd) * 100}%` }}
                       />
                     )}
@@ -635,7 +661,7 @@ export function AttendanceSection() {
                           >
                             <Clock className="h-3 w-3" />
                             {r.id === todayRecord?.id && checkedIn && !checkedOut
-                              ? timerLabel(liveWorkedSecs)
+                              ? timerLabel(minsToday * 60)
                               : `${hoursLabel(worked)} Hrs`}
                           </span>
                         </td>

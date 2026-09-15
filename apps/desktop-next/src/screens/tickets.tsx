@@ -10,6 +10,7 @@ import {
   PlusCircle,
   Ticket,
   TrendingUp,
+  type LucideIcon,
 } from "lucide-react";
 import {
   DATE_RANGE_OPTIONS,
@@ -103,7 +104,7 @@ function StatCard({
   softClass,
   barClass,
 }: {
-  icon: React.ElementType;
+  icon: LucideIcon;
   label: string;
   value: number;
   iconClass: string;

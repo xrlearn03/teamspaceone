@@ -44,13 +44,15 @@ model Department {
   parent         Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
   children       Department[] @relation("DepartmentHierarchy")
   headEmployeeId String?
+  headEmployee   Employee?    @relation("DepartmentHead", fields: [headEmployeeId], references: [id], onDelete: SetNull)
   isActive       Boolean      @default(true)
-  employees      Employee[]
+  employees      Employee[]   @relation("EmployeeDepartment")
   designations   Designation[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   @@index([organisationId])
+  @@index([headEmployeeId])
   @@map("departments")
 }
 
@@ -84,7 +86,8 @@ model Employee {
   phone                 String?
   avatarFileId          String?
   departmentId          String?
-  department            Department?          @relation(fields: [departmentId], references: [id])
+  department            Department?          @relation("EmployeeDepartment", fields: [departmentId], references: [id])
+  headedDepartments     Department[]         @relation("DepartmentHead")
   designationId         String?
   designation           Designation?         @relation(fields: [designationId], references: [id])
   managerEmployeeId     String?
@@ -106,6 +109,9 @@ model Employee {
   performanceReviews    PerformanceReview[]
   goals                 Goal[]
   payslips              Payslip[]
+  taxDocuments          PayrollTaxDocument[]
+  reimbursements        ReimbursementClaim[]
+  calendarEvents        CalendarEvent[]
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
 
@@ -160,6 +166,8 @@ model AttendanceRecord {
   checkOutAt     DateTime?
   status         String    @default("present")
   presenceStatus String?
+  breakStartedAt DateTime?
+  breakMinutes   Int       @default(0)
   workMinutes    Int?
   notes          String?
   createdAt      DateTime  @default(now())
@@ -261,6 +269,27 @@ model Holiday {
   @@map("holidays")
 }
 
+model PayrollPolicy {
+  id                       String   @id @default(cuid())
+  organisationId           String   @unique
+  countryCode              String   @default("IN")
+  employeePfRate           Float    @default(0.12)
+  employerPfRate           Float    @default(0.12)
+  pfMonthlyWageCeiling     Float    @default(15000)
+  employeeEsiRate          Float    @default(0.0075)
+  employerEsiRate          Float    @default(0.0325)
+  esiMonthlyGrossCeiling   Float    @default(21000)
+  standardDeductionAnnual  Float    @default(75000)
+  rebateTaxableIncomeLimit Float    @default(1200000)
+  rebateMaximum            Float    @default(60000)
+  cessRate                 Float    @default(0.04)
+  taxSlabs                 Json
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@map("payroll_policies")
+}
+
 model PayrollPeriod {
   id             String    @id @default(cuid())
   organisationId String
@@ -280,6 +309,54 @@ model PayrollPeriod {
 
   @@index([organisationId])
   @@map("payroll_periods")
+}
+
+model PayrollTaxDocument {
+  id             String   @id @default(cuid())
+  organisationId String
+  employeeId     String
+  employee       Employee @relation(fields: [employeeId], references: [id])
+  financialYear  String
+  category       String
+  fileId         String
+  name           String
+  declaredAmount Float?
+  status         String   @default("submitted")
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  reviewNote     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organisationId])
+  @@index([employeeId, financialYear])
+  @@index([status])
+  @@map("payroll_tax_documents")
+}
+
+model ReimbursementClaim {
+  id             String   @id @default(cuid())
+  organisationId String
+  employeeId     String
+  employee       Employee @relation(fields: [employeeId], references: [id])
+  category       String
+  description    String
+  amount         Float
+  currency       String   @default("INR")
+  expenseDate    DateTime @db.Date
+  receiptFileId  String?
+  status         String   @default("submitted")
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  reviewNote     String?
+  paidAt         DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organisationId])
+  @@index([employeeId, createdAt])
+  @@index([status])
+  @@map("reimbursement_claims")
 }
 
 model Payslip {
@@ -314,6 +391,7 @@ model CalendarEvent {
   allDay         Boolean  @default(true)
   visibility     String   @default("organisation")
   employeeId     String?
+  employee       Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
   sourceType     String?
   sourceId       String?
   createdBy      String?
@@ -323,6 +401,7 @@ model CalendarEvent {
   @@unique([sourceType, sourceId])
   @@index([organisationId])
   @@index([organisationId, startAt])
+  @@index([employeeId])
   @@map("calendar_events")
 }
 
