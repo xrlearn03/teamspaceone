@@ -95,6 +95,18 @@ jobs:
           printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY" > /tmp/tauri-sign/key
           chmod 600 /tmp/tauri-sign/key
 
+      - name: Prepare Apple API key
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "$APPLE_API_KEY_BASE64" ]; then
+            mkdir -p /tmp/apple
+            printf '%s\n' "$APPLE_API_KEY_BASE64" | base64 -D > /tmp/apple/api-key.p8
+            chmod 600 /tmp/apple/api-key.p8
+            printf 'APPLE_API_KEY_PATH=/tmp/apple/api-key.p8\n' >> "$GITHUB_ENV"
+          fi
+
       - name: Build Tauri bundle
         working-directory: apps/desktop
         run: pnpm tauri build --target universal-apple-darwin --ci
@@ -106,7 +118,7 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
