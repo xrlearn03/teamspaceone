@@ -1,0 +1,325 @@
+name: Publish downloads to GCE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+  NODE_VERSION: '20'
+  PNPM_VERSION: '9.15.9'
+
+jobs:
+  configure-desktop:
+    name: Configure desktop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Wire desktop to production
+        run: ./infra/gce/update-desktop.sh "teamspaceone.in" ""
+
+      - name: Upload desktop config
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-config
+          path: |
+            apps/desktop/.env.production
+            apps/desktop/src-tauri/capabilities/default.json
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS universal
+    needs: configure-desktop
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build authorization package
+        run: pnpm --filter @teamspace-one/authorization build
+
+      - name: Download desktop config
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-config
+          path: /tmp/desktop-config
+
+      - name: Apply desktop config
+        run: |
+          set -euo pipefail
+          cp /tmp/desktop-config/apps/desktop/.env.production apps/desktop/.env.production
+          cp /tmp/desktop-config/apps/desktop/src-tauri/capabilities/default.json apps/desktop/src-tauri/capabilities/default.json
+
+      - name: Set CI build version
+        working-directory: apps/desktop
+        run: node scripts/bump-version.mjs ci
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+
+      - name: Prepare updater signing key
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY secret is not set" >&2
+            exit 1
+          fi
+          mkdir -p /tmp/tauri-sign
+          printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY" > /tmp/tauri-sign/key
+          chmod 600 /tmp/tauri-sign/key
+
+      - name: Build Tauri bundle
+        working-directory: apps/desktop
+        run: pnpm tauri build --target universal-apple-darwin --ci
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: /tmp/tauri-sign/key
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundles-universal-apple-darwin
+          path: apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows x86_64
+    needs: configure-desktop
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build authorization package
+        run: pnpm --filter @teamspace-one/authorization build
+
+      - name: Download desktop config
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-config
+          path: /tmp/desktop-config
+
+      - name: Apply desktop config
+        run: |
+          set -euo pipefail
+          cp /tmp/desktop-config/apps/desktop/.env.production apps/desktop/.env.production
+          cp /tmp/desktop-config/apps/desktop/src-tauri/capabilities/default.json apps/desktop/src-tauri/capabilities/default.json
+
+      - name: Set CI build version
+        working-directory: apps/desktop
+        run: node scripts/bump-version.mjs ci
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+
+      - name: Prepare updater signing key
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY secret is not set" >&2
+            exit 1
+          fi
+          mkdir -p /tmp/tauri-sign
+          printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY" > /tmp/tauri-sign/key
+          chmod 600 /tmp/tauri-sign/key
+
+      - name: Build Tauri bundle
+        working-directory: apps/desktop
+        run: pnpm tauri build --target x86_64-pc-windows-msvc --ci
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: /tmp/tauri-sign/key
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundles-x86_64-pc-windows-msvc
+          path: apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle
+          if-no-files-found: error
+
+  stage-downloads:
+    name: Generate manifest + stage downloads
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download bundles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bundles-*
+          path: /tmp/bundles
+          merge-multiple: false
+
+      - name: Collect bundles
+        run: |
+          set -euo pipefail
+          for d in /tmp/bundles/bundles-*; do
+            [ -d "$d" ] || continue
+            triple=${d##*bundles-}
+            mkdir -p "apps/desktop/src-tauri/target/$triple/release/bundle"
+            cp -r "$d/"* "apps/desktop/src-tauri/target/$triple/release/bundle/"
+          done
+
+      - name: Generate updater manifest + stage downloads
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          node scripts/bump-version.mjs ci
+          node scripts/rename-release.mjs
+          node scripts/generate-update-manifest.mjs \
+            --base-url https://teamspaceone.in/downloads \
+            --root src-tauri/target \
+            --copy-to ../web/public/downloads \
+            --out ../web/public/downloads/update.json
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+
+      - name: Upload downloads artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: downloads
+          path: apps/web/public/downloads
+          if-no-files-found: error
+
+  deploy-gce:
+    name: Deploy to GCE
+    needs: stage-downloads
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Download downloads artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: downloads
+          path: downloads
+
+      - name: Install SSH key
+        env:
+          GCE_SSH_KEY: ${{ secrets.GCE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GCE_SSH_KEY" ]; then
+            echo "GCE_SSH_KEY secret is not set" >&2
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$GCE_SSH_KEY" > ~/.ssh/gce
+          chmod 600 ~/.ssh/gce
+
+      - name: Deploy downloads to GCE web host
+        env:
+          GCE_HOST: ${{ secrets.GCE_HOST }}
+          GCE_USER: ${{ secrets.GCE_USER }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GCE_HOST" ] || [ -z "$GCE_USER" ]; then
+            echo "GCE_HOST and GCE_USER secrets must be set" >&2
+            exit 1
+          fi
+
+          KEY=~/.ssh/gce
+          RUN_ID=${{ github.run_id }}
+          BUILD_ID=${{ github.run_number }}
+
+          tar -C downloads -czf - . |
+            ssh -o StrictHostKeyChecking=no -i "$KEY" "$GCE_USER@$GCE_HOST" \
+              "mkdir -p /tmp/downloads-$RUN_ID && tar -xzf - -C /tmp/downloads-$RUN_ID"
+
+          ssh -o StrictHostKeyChecking=no -i "$KEY" "$GCE_USER@$GCE_HOST" \
+            "bash -s $RUN_ID $BUILD_ID" <<'EOF'
+            set -euo pipefail
+            run_id="$1"
+            build_id="$2"
+            staging="/tmp/downloads-$run_id"
+            marker=/opt/teamspace-one/.last-download-build
+
+            previous_build=0
+            if [ -f "$marker" ]; then
+              previous_build=$(cat "$marker")
+            fi
+            if [ "$build_id" -le "$previous_build" ]; then
+              echo "Build $build_id already deployed (last: $previous_build)"
+              exit 0
+            fi
+
+            install -d /data/downloads /opt/teamspace-one/repo/apps/web/public/downloads
+            cp -a "$staging"/. /data/downloads/
+            cp -a "$staging"/. /opt/teamspace-one/repo/apps/web/public/downloads/
+
+            docker inspect teamspace-one-web >/dev/null
+            docker exec teamspace-one-web mkdir -p /usr/share/nginx/html/downloads
+            docker cp /data/downloads/. teamspace-one-web:/usr/share/nginx/html/downloads/
+            docker exec teamspace-one-web nginx -s reload
+            docker run --rm --network repo_default alpine:latest \
+              wget -qO- http://web/downloads/update.json >/dev/null
+
+            printf '%s\n' "$build_id" > "$marker"
+            rm -rf "$staging"
+          EOF
