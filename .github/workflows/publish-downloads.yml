@@ -15,28 +15,9 @@ env:
   PNPM_VERSION: '9.15.9'
 
 jobs:
-  configure-desktop:
-    name: Configure desktop
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Wire desktop to production
-        run: ./infra/gce/update-desktop.sh "teamspaceone.in" ""
-
-      - name: Upload desktop config
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-config
-          path: |
-            apps/desktop/.env.production
-            apps/desktop/src-tauri/capabilities/default.json
-          if-no-files-found: error
-
   build-macos:
     name: Build macOS universal
-    needs: configure-desktop
+
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -64,17 +45,8 @@ jobs:
       - name: Build authorization package
         run: pnpm --filter @teamspace-one/authorization build
 
-      - name: Download desktop config
-        uses: actions/download-artifact@v4
-        with:
-          name: desktop-config
-          path: desktop-config
-
-      - name: Apply desktop config
-        run: |
-          set -euo pipefail
-          cp desktop-config/apps/desktop/.env.production apps/desktop/.env.production
-          cp desktop-config/apps/desktop/src-tauri/capabilities/default.json apps/desktop/src-tauri/capabilities/default.json
+      - name: Wire desktop to production
+        run: ./infra/gce/update-desktop.sh "teamspaceone.in" ""
 
       - name: Set CI build version
         working-directory: apps/desktop
@@ -132,7 +104,7 @@ jobs:
 
   build-windows:
     name: Build Windows x86_64
-    needs: configure-desktop
+
     runs-on: windows-latest
     defaults:
       run:
@@ -163,17 +135,8 @@ jobs:
       - name: Build authorization package
         run: pnpm --filter @teamspace-one/authorization build
 
-      - name: Download desktop config
-        uses: actions/download-artifact@v4
-        with:
-          name: desktop-config
-          path: desktop-config
-
-      - name: Apply desktop config
-        run: |
-          set -euo pipefail
-          cp desktop-config/apps/desktop/.env.production apps/desktop/.env.production
-          cp desktop-config/apps/desktop/src-tauri/capabilities/default.json apps/desktop/src-tauri/capabilities/default.json
+      - name: Wire desktop to production
+        run: ./infra/gce/update-desktop.sh "teamspaceone.in" ""
 
       - name: Set CI build version
         working-directory: apps/desktop
