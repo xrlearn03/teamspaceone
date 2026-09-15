@@ -69,6 +69,7 @@ import {
   type UpdateCheckResult,
 } from "../components/update/update-checker";
 import { LegalDocumentScreen, type LegalDocumentId } from "../components/about/legal-document";
+import appPackage from "../../package.json";
 
 const sections = [
   { id: "account", label: "My account", icon: User },
@@ -348,7 +349,7 @@ function ClientSettings({ organisationId }: { organisationId: string | null }) {
 }
 
 function AboutSettings() {
-  const [version, setVersion] = useState<string | null>(null);
+  const [version, setVersion] = useState<string>(appPackage.version);
   const [checking, setChecking] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<"idle" | UpdateCheckResult>("idle");
   const [legalDoc, setLegalDoc] = useState<LegalDocumentId | null>(null);
@@ -366,7 +367,8 @@ function AboutSettings() {
         if (mounted) setVersion(info.version);
       })
       .catch(() => {
-        if (mounted) setVersion("Unavailable");
+        // Keep the bundled package version — bump-version.mjs keeps it in
+        // sync with tauri.conf.json, so it always matches the app build.
       });
     return () => {
       mounted = false;
@@ -479,7 +481,7 @@ function AboutSettings() {
                 <RefreshCw size={29} />
               </div>
               <div>
-                <div className="text-[17px] font-bold">Version {version ?? "…"}</div>
+                <div className="text-[17px] font-bold">Version {version}</div>
                 <div className="mt-1 text-[14px] text-white/60">{versionStatus}</div>
               </div>
             </div>

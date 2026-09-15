@@ -1,0 +1,13 @@
+[[permission]]
+identifier = "app-commands"
+description = "Allow the app's built-in commands (app info, secure token storage, deep links, native file picker, notifications)"
+commands.allow = [
+  "get_app_info",
+  "get_deep_link",
+  "store_secure_token",
+  "get_secure_token",
+  "delete_secure_token",
+  "show_notification",
+  "pick_file",
+  "greet",
+]

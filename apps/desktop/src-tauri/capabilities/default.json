@@ -74,6 +74,7 @@
     "core:window:allow-set-focus",
     "native-media",
     "screen-share",
+    "app-commands",
     "clipboard-manager:allow-write-text"
   ]
 }
