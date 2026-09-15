@@ -508,7 +508,7 @@ stages:
       - job: Stage
         displayName: 'Generate manifest + stage downloads'
         pool:
-          vmImage: 'ubuntu-latest'
+          name: gce
         steps:
           - checkout: self
             clean: true
