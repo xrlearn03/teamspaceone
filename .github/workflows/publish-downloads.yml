@@ -29,9 +29,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-config
+          root-directory: apps/desktop
           path: |
-            apps/desktop/.env.production
-            apps/desktop/src-tauri/capabilities/default.json
+            .env.production
+            src-tauri/capabilities/default.json
           if-no-files-found: error
 
   build-macos:
@@ -68,13 +69,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: desktop-config
-          path: /tmp/desktop-config
+          path: desktop-config
 
       - name: Apply desktop config
         run: |
           set -euo pipefail
-          cp /tmp/desktop-config/apps/desktop/.env.production apps/desktop/.env.production
-          cp /tmp/desktop-config/apps/desktop/src-tauri/capabilities/default.json apps/desktop/src-tauri/capabilities/default.json
+          cp desktop-config/.env.production apps/desktop/.env.production
+          cp desktop-config/src-tauri/capabilities/default.json apps/desktop/src-tauri/capabilities/default.json
 
       - name: Set CI build version
         working-directory: apps/desktop
@@ -167,13 +168,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: desktop-config
-          path: /tmp/desktop-config
+          path: desktop-config
 
       - name: Apply desktop config
         run: |
           set -euo pipefail
-          cp /tmp/desktop-config/apps/desktop/.env.production apps/desktop/.env.production
-          cp /tmp/desktop-config/apps/desktop/src-tauri/capabilities/default.json apps/desktop/src-tauri/capabilities/default.json
+          cp desktop-config/.env.production apps/desktop/.env.production
+          cp desktop-config/src-tauri/capabilities/default.json apps/desktop/src-tauri/capabilities/default.json
 
       - name: Set CI build version
         working-directory: apps/desktop
