@@ -63,9 +63,13 @@ jobs:
             echo "TAURI_SIGNING_PRIVATE_KEY secret is not set" >&2
             exit 1
           fi
-          mkdir -p /tmp/tauri-sign
-          printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY" > /tmp/tauri-sign/key
-          chmod 600 /tmp/tauri-sign/key
+          # Tauri wants the base64 key as a single line without the comment
+          key=$(printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY" | grep -v '^untrusted comment:' | tr -d '\n')
+          if [ -z "$key" ]; then
+            echo "Could not extract TAURI_SIGNING_PRIVATE_KEY" >&2
+            exit 1
+          fi
+          printf 'TAURI_SIGNING_PRIVATE_KEY=%s\n' "$key" >> "$GITHUB_ENV"
 
       - name: Prepare Apple API key
         env:
@@ -83,7 +87,7 @@ jobs:
         working-directory: apps/desktop
         run: pnpm tauri build --target universal-apple-darwin --ci
         env:
-          TAURI_SIGNING_PRIVATE_KEY: /tmp/tauri-sign/key
+          TAURI_SIGNING_PRIVATE_KEY: ${{ env.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -153,15 +157,19 @@ jobs:
             echo "TAURI_SIGNING_PRIVATE_KEY secret is not set" >&2
             exit 1
           fi
-          mkdir -p /tmp/tauri-sign
-          printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY" > /tmp/tauri-sign/key
-          chmod 600 /tmp/tauri-sign/key
+          # Tauri wants the base64 key as a single line without the comment
+          key=$(printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY" | grep -v '^untrusted comment:' | tr -d '\n')
+          if [ -z "$key" ]; then
+            echo "Could not extract TAURI_SIGNING_PRIVATE_KEY" >&2
+            exit 1
+          fi
+          printf 'TAURI_SIGNING_PRIVATE_KEY=%s\n' "$key" >> "$GITHUB_ENV"
 
       - name: Build Tauri bundle
         working-directory: apps/desktop
         run: pnpm tauri build --target x86_64-pc-windows-msvc --ci
         env:
-          TAURI_SIGNING_PRIVATE_KEY: /tmp/tauri-sign/key
+          TAURI_SIGNING_PRIVATE_KEY: ${{ env.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload bundle
