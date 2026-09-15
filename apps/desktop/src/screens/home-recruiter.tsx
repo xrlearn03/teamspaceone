@@ -1,14 +1,10 @@
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import {
-  ArrowRight,
   CalendarDays,
-  Check,
-  ClipboardCheck,
   FileText,
   Phone,
   Plus,
-  Sparkles,
   Star,
   Users,
   Video,
@@ -24,6 +20,8 @@ import {
   CreateCandidateDialog,
   CreateJobDialog,
 } from "../components/interview/create-dialogs";
+import { AiDailyBrief } from "../components/ai-daily-brief";
+import { QuickCheckInCard } from "../features/dashboard/widgets";
 
 /* =========================================================
    HELPERS
@@ -151,35 +149,6 @@ function InitialsAvatar({ name, className }: { name: string; className?: string 
       )}
     >
       {initials(name)}
-    </div>
-  );
-}
-
-function BriefItem({
-  icon,
-  iconClass,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  iconClass: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <div
-        className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-          iconClass,
-        )}
-      >
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[12px] font-medium text-text">{title}</p>
-        <p className="mt-0.5 text-[10px] leading-4 text-text-muted">{description}</p>
-      </div>
     </div>
   );
 }
@@ -586,42 +555,33 @@ export function RecruiterHomeScreen() {
   });
 
   /* ---------------- daily brief ---------------- */
-  const briefs = [
-    {
-      icon: <Check size={16} />,
-      iconClass: "bg-success/10 text-success",
-      title: `${todaySessions.length} interview${todaySessions.length === 1 ? "" : "s"} scheduled today`,
-      description: `${completedToday} completed · ${remainingToday} upcoming`,
-    },
-    {
-      icon: <CalendarDays size={16} />,
-      iconClass: "bg-info/10 text-info",
-      title: nextSession
-        ? `Next interview at ${formatTime(nextSession.scheduledAt)}`
-        : "No upcoming interviews",
-      description: nextSession
-        ? `${nextSession.candidate?.name ?? "Candidate"} · ${nextSession.jobOpening?.title ?? "Interview"}`
-        : "You're all caught up",
-    },
-    {
-      icon: <ClipboardCheck size={16} />,
-      iconClass: "bg-mention/10 text-mention",
-      title: `${pendingFeedback.length} feedback form${pendingFeedback.length === 1 ? "" : "s"} pending`,
-      description: "Complete evaluations after your interviews",
-    },
-    {
-      icon: <Star size={16} />,
-      iconClass: "bg-warning/10 text-warning",
-      title:
-        avgRating === null
-          ? "No ratings submitted yet"
-          : `Average rating is ${avgRating.toFixed(1)} / 5`,
-      description:
-        ratingDelta !== null
-          ? `${ratingDelta >= 0 ? "↑" : "↓"} ${Math.abs(ratingDelta).toFixed(1)} compared with last month`
-          : "across your submitted evaluations",
-    },
-  ];
+  const briefFallback = useMemo(
+    () => [
+      `${todaySessions.length} interview${todaySessions.length === 1 ? "" : "s"} scheduled today — ${completedToday} completed · ${remainingToday} upcoming.`,
+      nextSession
+        ? `Next interview at ${formatTime(nextSession.scheduledAt)} — ${nextSession.candidate?.name ?? "Candidate"} · ${nextSession.jobOpening?.title ?? "Interview"}.`
+        : "No upcoming interviews — you're all caught up.",
+      `${pendingFeedback.length} feedback form${pendingFeedback.length === 1 ? "" : "s"} pending — complete evaluations after your interviews.`,
+      avgRating === null
+        ? "No ratings submitted yet across your evaluations."
+        : `Average rating is ${avgRating.toFixed(1)} / 5${
+            ratingDelta !== null
+              ? ` — ${ratingDelta >= 0 ? "up" : "down"} ${Math.abs(ratingDelta).toFixed(1)} vs last month`
+              : " across your submitted evaluations"
+          }.`,
+    ],
+    [todaySessions.length, completedToday, remainingToday, nextSession, pendingFeedback.length, avgRating, ratingDelta],
+  );
+
+  const briefRecommendation = useMemo(() => {
+    if (pendingFeedback.length > 0) {
+      return `Complete the ${pendingFeedback.length} pending evaluation${pendingFeedback.length === 1 ? "" : "s"} while the conversations are still fresh.`;
+    }
+    if (nextSession) {
+      return `Prepare for your next interview at ${formatTime(nextSession.scheduledAt)} with ${nextSession.candidate?.name ?? "the candidate"}.`;
+    }
+    return "Nothing urgent right now — review open roles and keep the pipeline moving.";
+  }, [pendingFeedback.length, nextSession]);
 
   const stats = [
     {
@@ -732,74 +692,13 @@ export function RecruiterHomeScreen() {
         {/* =================================================
             AI DAILY BRIEF
         ================================================= */}
-        <section className="relative mt-6 overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-surface to-surface shadow-sm">
-          {/* decorative glows */}
-          <div className="pointer-events-none absolute -right-20 -top-24 h-[330px] w-[500px] rounded-full bg-primary/10 blur-[100px]" />
-          <div className="pointer-events-none absolute bottom-[-100px] right-[25%] h-[250px] w-[400px] rounded-full bg-mention/10 blur-[100px]" />
-
-          {/* decorative rings */}
-          <div className="pointer-events-none absolute right-[8%] top-[-90px] h-[330px] w-[600px] rotate-[-13deg] rounded-[50%] border border-primary/[0.08]" />
-          <div className="pointer-events-none absolute right-[5%] top-[-65px] h-[290px] w-[550px] rotate-[-13deg] rounded-[50%] border border-mention/[0.07]" />
-
-          <div className="relative grid min-h-[250px] lg:grid-cols-[1fr_360px]">
-            {/* Brief content */}
-            <div className="p-6 lg:p-7">
-              <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-mention/15 text-mention ring-1 ring-mention/20">
-                  <Sparkles size={25} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-[19px] font-semibold text-text">
-                      AI Daily Brief
-                    </h2>
-                    <span className="rounded-full bg-mention/20 px-2.5 py-1 text-[9px] font-semibold text-mention">
-                      Beta
-                    </span>
-                  </div>
-                  <p className="mt-1 text-[12px] text-text-muted">
-                    Your personalized interview update for today
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                {briefs.map((brief) => (
-                  <BriefItem key={brief.title} {...brief} />
-                ))}
-              </div>
-            </div>
-
-            {/* AI visual */}
-            <div className="relative flex min-h-[230px] items-center justify-center overflow-hidden border-t border-primary/10 lg:border-l lg:border-t-0">
-              <div className="absolute h-[235px] w-[235px] rounded-full border border-primary/[0.1]" />
-              <div className="absolute h-[180px] w-[180px] rounded-full border border-mention/[0.1]" />
-              <div className="absolute h-[135px] w-[135px] rounded-full border border-info/[0.1]" />
-              <div className="absolute h-40 w-40 rounded-full bg-primary/15 blur-[50px]" />
-
-              {/* Orb */}
-              <div className="relative flex h-[118px] w-[118px] items-center justify-center rounded-full border border-primary/20 bg-gradient-to-br from-primary/20 via-mention/10 to-mention/20 shadow-[0_0_70px_rgba(59,130,246,.25)]">
-                <div className="flex h-[82px] w-[82px] items-center justify-center rounded-full border border-primary/20 bg-surface shadow-inner">
-                  <Sparkles size={38} className="text-primary" />
-                </div>
-              </div>
-
-              {/* Status message */}
-              <div className="absolute bottom-5 right-6 rounded-xl border border-border bg-surface/90 px-5 py-3 backdrop-blur-xl">
-                <p className="text-center text-[13px] font-medium leading-5 text-text">
-                  {pendingFeedback.length > 0
-                    ? "Feedback is waiting."
-                    : "Stay focused."}
-                  <br />
-                  <span className="text-primary">
-                    {pendingFeedback.length > 0
-                      ? `${pendingFeedback.length} evaluation${pendingFeedback.length === 1 ? "" : "s"} to complete`
-                      : "You’re on track!"}
-                  </span>
-                </p>
-              </div>
-            </div>
-          </div>
+        <section className="mt-6 grid gap-4 xl:grid-cols-[1.7fr_1fr]">
+          <AiDailyBrief
+            subtitle="Your personalized interview update for today"
+            fallbackPoints={briefFallback}
+            recommendation={briefRecommendation}
+          />
+          <QuickCheckInCard />
         </section>
 
         {/* =================================================
@@ -1050,38 +949,6 @@ export function RecruiterHomeScreen() {
                 </div>
               )}
             </Panel>
-
-            {/* AI interview assistant */}
-            <div className="overflow-hidden rounded-xl border border-primary/25 bg-gradient-to-br from-primary/15 via-surface to-surface p-5">
-              <div className="flex gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/20 text-primary ring-1 ring-primary/20">
-                  <Sparkles size={28} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-[17px] font-semibold text-text">
-                      AI Interview Assistant
-                    </h2>
-                    <span className="rounded-full bg-success/20 px-2 py-0.5 text-[9px] font-semibold text-success">
-                      Beta
-                    </span>
-                  </div>
-                  <p className="mt-2 text-[12px] leading-5 text-text-muted">
-                    Get real-time insights, suggested questions, and evaluation
-                    support during interviews.
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={goSessions}
-                className="mt-5 flex h-12 w-full items-center justify-center gap-3 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 text-[13px] font-medium text-white shadow-[0_10px_35px_rgba(79,70,229,.25)] transition hover:brightness-110"
-              >
-                <Sparkles size={18} />
-                Open AI Assistant
-                <ArrowRight size={16} />
-              </button>
-            </div>
 
             {/* Recent feedback */}
             <Panel

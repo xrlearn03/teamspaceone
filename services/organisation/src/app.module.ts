@@ -4,6 +4,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { HealthModule } from './health/health.module.js';
 import { OrganisationModule } from './organisation/organisation.module.js';
+import { PlatformModule } from './platform/platform.module.js';
 import { EventsModule } from './events/events.module.js';
 import { OutboxModule } from './outbox/outbox.module.js';
 
@@ -33,6 +34,7 @@ function parseRedisUrl(url?: string) {
     EventsModule,
     OutboxModule,
     OrganisationModule,
+    PlatformModule,
   ],
 })
 export class AppModule {}

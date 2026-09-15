@@ -43,6 +43,9 @@ model JobOpening {
   departmentName  String?
   hiringManagerId String?
   recruiterId     String?
+  location        String?
+  workplaceType   String?
+  employmentType  String?
   description     String?
   requirements    String?
   status          String   @default("open")

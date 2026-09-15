@@ -22,6 +22,7 @@ import { HrmsScreen } from "@/screens/hrms";
 import { HrPayrollScreen } from "@/screens/hr/payroll";
 import { InterviewScreen } from "@/screens/interview";
 import { AiInterviewScreen } from "@/screens/ai-interview";
+import { JobsScreen, TalentPoolScreen, InterviewsScreen } from "@/screens/recruiting";
 import { AdminScreen } from "@/screens/admin";
 import { AssetsScreen } from "@/screens/assets";
 import { TicketsScreen } from "@/screens/tickets";
@@ -40,6 +41,7 @@ import { MyLeavesScreen } from "@/screens/my-leaves";
 import { MyPayrollScreen } from "@/screens/my-payroll";
 import { MyPerformanceScreen } from "@/screens/my-performance";
 import { HelpScreen } from "@/screens/help";
+import { PlatformScreen } from "@/screens/platform";
 
 const screens: Record<View, React.ComponentType> = {
   home: HomeScreen,
@@ -59,6 +61,9 @@ const screens: Record<View, React.ComponentType> = {
   payroll: HrPayrollScreen,
   interview: InterviewScreen,
   "ai-interview": AiInterviewScreen,
+  jobs: JobsScreen,
+  "talent-pool": TalentPoolScreen,
+  interviews: InterviewsScreen,
   admin: AdminScreen,
   assets: AssetsScreen,
   tickets: TicketsScreen,
@@ -76,6 +81,7 @@ const screens: Record<View, React.ComponentType> = {
   "my-leaves": MyLeavesScreen,
   "my-payroll": MyPayrollScreen,
   "my-performance": MyPerformanceScreen,
+  platform: PlatformScreen,
   settings: SettingsScreen,
   help: HelpScreen,
 };

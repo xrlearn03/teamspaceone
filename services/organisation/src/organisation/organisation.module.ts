@@ -7,6 +7,7 @@ import { HrmsProvisioningConsumer } from '../events/hrms-provisioning.consumer.j
 import { HrmsOffboardingConsumer } from '../events/hrms-offboarding.consumer.js';
 import { UserActivationConsumer } from '../events/user-activation.consumer.js';
 import { OrganisationService } from './organisation.service.js';
+import { RbacReconcileService } from './rbac-reconcile.service.js';
 import { OrganisationController } from './organisation.controller.js';
 import { InternalOrganisationController } from './internal-organisation.controller.js';
 import { AuthorizationService } from './authorization.service.js';
@@ -19,7 +20,7 @@ import { AssetController } from '../assets/asset.controller.js';
 @Module({
   imports: [PrismaModule, OutboxModule, EventsModule, InboxModule],
   controllers: [OrganisationController, InternalOrganisationController, TicketController, AssetController],
-  providers: [OrganisationService, AuthorizationService, OrganisationPermissionGuard, TicketService, AssetService, HrmsProvisioningConsumer, HrmsOffboardingConsumer, UserActivationConsumer],
+  providers: [OrganisationService, AuthorizationService, OrganisationPermissionGuard, TicketService, AssetService, HrmsProvisioningConsumer, HrmsOffboardingConsumer, UserActivationConsumer, RbacReconcileService],
   exports: [OrganisationService, AuthorizationService],
 })
 export class OrganisationModule {}

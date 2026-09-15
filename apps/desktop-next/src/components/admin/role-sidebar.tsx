@@ -1,4 +1,6 @@
 import {
+  Briefcase,
+  Building2,
   Calendar,
   CalendarCheck,
   CalendarClock,
@@ -41,6 +43,7 @@ interface MenuItem {
   icon: React.ElementType;
   hrmsTab?: string;
   projectsTab?: string;
+  interviewTab?: string;
   /** Hidden from candidate/guest/external members. */
   internalOnly?: boolean;
 }
@@ -65,6 +68,15 @@ const INTERVIEW_SECTION: MenuItem[] = [
   { view: "interview", label: "Interview", icon: ClipboardCheck },
 ];
 
+// Recruiting roles get dedicated recruiting screens instead of the projects
+// section — each deep-links straight into its board (the interview workspace
+// still hosts the same boards as tabs).
+const RECRUITING_SECTION: MenuItem[] = [
+  { view: "jobs", label: "Jobs", icon: Briefcase },
+  { view: "talent-pool", label: "Talent Pool", icon: Users },
+  { view: "interviews", label: "Interviews", icon: CalendarClock },
+];
+
 const SELF_SERVICE_SECTION: MenuItem[] = [
   { view: "my-attendance", label: "My Attendance", icon: Clock, internalOnly: true },
   { view: "my-timesheet", label: "My Timesheet", icon: Timer, internalOnly: true },
@@ -79,11 +91,19 @@ const FOOTER_SECTION: MenuItem[] = [
 ];
 
 /**
+ * Platform administration — only surfaced while the active organisation is
+ * the dedicated platform org. The view itself is gated on
+ * admin.system.settings; the extra flag keeps the item hidden for ordinary
+ * org owners whose `*` grant would otherwise match it.
+ */
+const PLATFORM_SECTION: MenuItem[] = [
+  { view: "platform", label: "Platform", icon: Building2 },
+];
+
+/**
  * Role-specific menu sections, sandwiched between the shared top group and
- * the shared bottom groups. The common menus render at fixed positions for
- * every user type — Home/Channels/Messages/Meetings at the top of the nav and
- * the self-service + Files/Help groups anchored to the bottom — so switching
- * roles never shifts them.
+ * the shared bottom groups. All sections render inside a single scrollable
+ * nav so nothing is ever pinned out of reach on short windows.
  */
 const ROLE_MENU_SECTIONS: Record<ShellVariant, MenuItem[][]> = {
   admin: [
@@ -107,15 +127,17 @@ const ROLE_MENU_SECTIONS: Record<ShellVariant, MenuItem[][]> = {
       { view: "tickets", label: "Tickets", icon: Ticket },
     ],
   ],
+  recruiter: [RECRUITING_SECTION],
   member: [INTERVIEW_SECTION, PROJECTS_SECTION],
 };
 
 export function RoleSidebar({ variant }: { variant: ShellVariant }) {
-  const { activeView, hrmsTab, projectsTab, setActiveView, theme, setTheme } = useUIStore(
+  const { activeView, hrmsTab, projectsTab, interviewTab, setActiveView, theme, setTheme } = useUIStore(
     useShallow((s) => ({
       activeView: s.activeView,
       hrmsTab: s.hrmsTab,
       projectsTab: s.projectsTab,
+      interviewTab: s.interviewTab,
       setActiveView: s.setActiveView,
       theme: s.theme,
       setTheme: s.setTheme,
@@ -143,6 +165,7 @@ export function RoleSidebar({ variant }: { variant: ShellVariant }) {
   const topSections = visibleSections([
     SHARED_SECTION_1,
     ...ROLE_MENU_SECTIONS[variant],
+    ...(myContext?.isPlatformOrganisation ? [PLATFORM_SECTION] : []),
   ]);
   const bottomSections = visibleSections([SELF_SERVICE_SECTION, FOOTER_SECTION]);
 
@@ -155,7 +178,9 @@ export function RoleSidebar({ variant }: { variant: ShellVariant }) {
           ? activeView === "hrms" && hrmsTab === item.hrmsTab
           : item.projectsTab
             ? activeView === "my-projects" && projectsTab === item.projectsTab
-            : activeView === item.view;
+            : item.interviewTab
+              ? activeView === "interview" && interviewTab === item.interviewTab
+              : activeView === item.view;
         return (
           <button
             key={item.label}
@@ -164,6 +189,7 @@ export function RoleSidebar({ variant }: { variant: ShellVariant }) {
               setActiveView(item.view, {
                 hrmsTab: item.hrmsTab,
                 projectsTab: item.projectsTab,
+                interviewTab: item.interviewTab,
               })
             }
             className={cn(
@@ -208,15 +234,14 @@ export function RoleSidebar({ variant }: { variant: ShellVariant }) {
         {topSections.map((section, i) =>
           renderSection(section, `top-${i}`, i > 0),
         )}
+        {bottomSections.map((section, i) =>
+          renderSection(
+            section,
+            `bottom-${i}`,
+            i > 0 || topSections.length > 0,
+          ),
+        )}
       </nav>
-
-      {bottomSections.length > 0 && (
-        <div className="flex shrink-0 flex-col gap-1 px-4 pb-3">
-          {bottomSections.map((section, i) =>
-            renderSection(section, `bottom-${i}`, i > 0 || topSections.length > 0),
-          )}
-        </div>
-      )}
 
       <div className="flex h-9 shrink-0 items-center justify-between border-t border-border px-5">
         {canAccessView(user, "members") ? (

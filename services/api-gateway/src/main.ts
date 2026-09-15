@@ -232,6 +232,12 @@ async function bootstrap() {
   app.use('/organisations', createAuthMiddleware(jwtSecret));
   app.use('/organisations', proxy(orgUrl));
 
+  // Platform administration lives in the organisation service but is gated by
+  // PlatformAdminGuard — the caller's x-organisation-id must be the dedicated
+  // platform organisation and the actor must hold admin.system.settings.
+  app.use('/platform', createAuthMiddleware(jwtSecret));
+  app.use('/platform', proxy(orgUrl));
+
   app.use(['/channels', '/messages'], createAuthMiddleware(jwtSecret));
   app.use(['/channels', '/messages'], proxy(msgUrl));
 

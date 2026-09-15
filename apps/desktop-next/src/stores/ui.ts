@@ -45,6 +45,9 @@ export type View =
   | "payroll"
   | "interview"
   | "ai-interview"
+  | "jobs"
+  | "talent-pool"
+  | "interviews"
   | "admin"
   | "assets"
   | "tickets"
@@ -62,6 +65,7 @@ export type View =
   | "my-leaves"
   | "my-payroll"
   | "my-performance"
+  | "platform"
   | "settings"
   | "help";
 

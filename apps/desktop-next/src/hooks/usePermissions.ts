@@ -49,7 +49,27 @@ export function usePermissions() {
   };
 }
 
-export type ShellVariant = "admin" | "hr" | "member";
+export type ShellVariant = "admin" | "hr" | "recruiter" | "member";
+
+/**
+ * Recruiters, hiring managers and interviewers. Detected via role name, or
+ * interview-module permissions held by an internal member —
+ * candidates/guests keep the applicant-facing views even though their roles
+ * also carry interview.* permissions.
+ */
+function isRecruitingContext(data?: {
+  roleName?: string | null;
+  roleCategory?: string | null;
+  permissions?: string[];
+}): boolean {
+  const roleName = (data?.roleName ?? "").toLowerCase().replace(/[\s_-]+/g, "");
+  if (/recruiter|hiringmanager|interviewer/.test(roleName)) return true;
+  const category = data?.roleCategory ?? "";
+  if (category === "candidate" || category === "guest" || category === "external") {
+    return false;
+  }
+  return (data?.permissions ?? []).some((p) => p.startsWith("interview."));
+}
 
 /**
  * Which sidebar chrome the caller gets — every organisation role uses the
@@ -60,9 +80,10 @@ export type ShellVariant = "admin" | "hr" | "member";
  * - "hr": HR Admin and HR Manager — HR menu (Employees / Departments /
  *   Designations / Leaves / Tickets). Detected via the role name or HR-ops
  *   permissions that only HR roles carry.
+ * - "recruiter": recruiters / hiring managers / interviewers — recruitment
+ *   menu (Jobs / Talent Pool / Interviews deep-links into the interview view).
  * - "member": everyone else (employee, managers, finance/payroll staff,
- *   recruiting roles, candidates, clients) — the common collaboration +
- *   self-service menus only.
+ *   candidates, clients) — the common collaboration + self-service menus only.
  */
 export function useShellVariant(): ShellVariant {
   const { data } = useMyContext();
@@ -80,22 +101,15 @@ export function useShellVariant(): ShellVariant {
     );
   if (isHr) return "hr";
   if (data?.roleCategory === "administrative") return "admin";
+  if (isRecruitingContext(data)) return "recruiter";
   return "member";
 }
 
 /**
  * Recruiters, hiring managers and interviewers land on the recruiter home
- * dashboard. Detected via role name, or interview-module permissions held by
- * an internal member — candidates/guests keep the applicant-facing views even
- * though their roles also carry interview.* permissions.
+ * dashboard.
  */
 export function useIsRecruitingRole() {
   const { data } = useMyContext();
-  const roleName = (data?.roleName ?? "").toLowerCase().replace(/[\s_-]+/g, "");
-  if (/recruiter|hiringmanager|interviewer/.test(roleName)) return true;
-  const category = data?.roleCategory ?? "";
-  if (category === "candidate" || category === "guest" || category === "external") {
-    return false;
-  }
-  return (data?.permissions ?? []).some((p) => p.startsWith("interview."));
+  return isRecruitingContext(data);
 }

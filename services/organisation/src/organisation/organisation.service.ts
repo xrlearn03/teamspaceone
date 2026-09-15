@@ -1053,7 +1053,8 @@ export class OrganisationService {
   }
 
   async listForActor(actorId: string): Promise<unknown[]> {
-    return this.prisma.organisation.findMany({
+    const platformSlug = this.config.get<string>('PLATFORM_ORGANISATION_SLUG');
+    const organisations = await this.prisma.organisation.findMany({
       where: {
         OR: [
           { ownerId: actorId },
@@ -1062,6 +1063,10 @@ export class OrganisationService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    return organisations.map((org) => ({
+      ...org,
+      isPlatform: Boolean(platformSlug) && org.slug === platformSlug,
+    }));
   }
 
   async resolveWorkspaceAccess(workspaceId: string, actorId: string) {

@@ -58,6 +58,9 @@ export function CreateJobDialog({
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [departmentName, setDepartmentName] = useState("");
+  const [location, setLocation] = useState("");
+  const [workplaceType, setWorkplaceType] = useState("");
+  const [employmentType, setEmploymentType] = useState("");
   const [description, setDescription] = useState("");
   const [requirements, setRequirements] = useState("");
   const { mutate, isPending } = useCreateJobOpening();
@@ -69,6 +72,9 @@ export function CreateJobDialog({
       {
         title: title.trim(),
         departmentName: departmentName.trim() || undefined,
+        location: location.trim() || undefined,
+        workplaceType: workplaceType || undefined,
+        employmentType: employmentType || undefined,
         description: description.trim() || undefined,
         requirements: requirements.trim() || undefined,
       },
@@ -77,6 +83,9 @@ export function CreateJobDialog({
           setOpen(false);
           setTitle("");
           setDepartmentName("");
+          setLocation("");
+          setWorkplaceType("");
+          setEmploymentType("");
           setDescription("");
           setRequirements("");
           onCreated?.();
@@ -110,6 +119,35 @@ export function CreateJobDialog({
           <Field label="Department">
             <Input value={departmentName} onChange={(e) => setDepartmentName(e.target.value)} placeholder="e.g. Engineering" />
           </Field>
+          <Field label="Location">
+            <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Bengaluru, India" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Workplace">
+              <select
+                className="flex h-9 w-full rounded-md border bg-surface px-3 py-1 text-sm shadow-sm focus-visible:border-primary"
+                value={workplaceType}
+                onChange={(e) => setWorkplaceType(e.target.value)}
+              >
+                <option value="">—</option>
+                <option value="Remote">Remote</option>
+                <option value="Hybrid">Hybrid</option>
+                <option value="On-site">On-site</option>
+              </select>
+            </Field>
+            <Field label="Employment type">
+              <select
+                className="flex h-9 w-full rounded-md border bg-surface px-3 py-1 text-sm shadow-sm focus-visible:border-primary"
+                value={employmentType}
+                onChange={(e) => setEmploymentType(e.target.value)}
+              >
+                <option value="">—</option>
+                <option value="Full-time">Full-time</option>
+                <option value="Part-time">Part-time</option>
+                <option value="Contract">Contract</option>
+              </select>
+            </Field>
+          </div>
           <Field label="Description">
             <TextArea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Role summary" />
           </Field>
@@ -232,10 +270,13 @@ export function CreateSessionDialog({
   candidates,
   jobs,
   onCreated,
+  trigger,
 }: {
   candidates: Candidate[];
   jobs: JobOpening[];
   onCreated?: () => void;
+  /** Custom trigger element — receives an onClick that opens the dialog. */
+  trigger?: React.ReactElement<{ onClick?: () => void }>;
 }) {
   const [open, setOpen] = useState(false);
   const [candidateId, setCandidateId] = useState("");
@@ -276,10 +317,14 @@ export function CreateSessionDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)} className="gap-1">
-        <CalendarClock className="h-3.5 w-3.5" />
-        Schedule
-      </Button>
+      {trigger ? (
+        cloneElement(trigger, { onClick: () => setOpen(true) })
+      ) : (
+        <Button variant="secondary" size="sm" onClick={() => setOpen(true)} className="gap-1">
+          <CalendarClock className="h-3.5 w-3.5" />
+          Schedule
+        </Button>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

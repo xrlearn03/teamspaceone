@@ -2329,6 +2329,9 @@ export interface JobOpening {
   departmentName?: string | null;
   hiringManagerId?: string | null;
   recruiterId?: string | null;
+  location?: string | null;
+  workplaceType?: string | null;
+  employmentType?: string | null;
   description?: string | null;
   requirements?: string | null;
   status: string;
@@ -2341,6 +2344,7 @@ export interface CandidateApplication {
   jobOpeningId: string;
   stage: string;
   jobOpening?: { id: string; title: string } | null;
+  screeningResult?: { skillsFound?: unknown; matchScore?: number | null } | null;
   createdAt: string;
 }
 
@@ -2397,6 +2401,9 @@ export function createJobOpening(body: {
   departmentName?: string;
   hiringManagerId?: string;
   recruiterId?: string;
+  location?: string;
+  workplaceType?: string;
+  employmentType?: string;
   description?: string;
   requirements?: string;
 }) {
@@ -2406,8 +2413,12 @@ export function createJobOpening(body: {
 export function updateJobOpening(id: string, body: Partial<{
   title: string;
   departmentId: string | null;
+  departmentName: string | null;
   hiringManagerId: string | null;
   recruiterId: string | null;
+  location: string | null;
+  workplaceType: string | null;
+  employmentType: string | null;
   description: string | null;
   requirements: string | null;
   status: string;

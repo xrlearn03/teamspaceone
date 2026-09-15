@@ -259,6 +259,8 @@ export interface Organisation {
   slug: string;
   ownerId: string;
   createdAt: string;
+  /** True when this org is the dedicated platform administration org. */
+  isPlatform?: boolean;
 }
 
 export interface Workspace {
@@ -796,6 +798,7 @@ export interface UserContext {
   roleName?: string | null;
   roleCategory?: string | null;
   roleIds?: string[];
+  isPlatformOrganisation?: boolean;
 }
 
 export function getMyContext(organisationId: string) {
@@ -2270,6 +2273,9 @@ export interface JobOpening {
   departmentName?: string | null;
   hiringManagerId?: string | null;
   recruiterId?: string | null;
+  location?: string | null;
+  workplaceType?: string | null;
+  employmentType?: string | null;
   description?: string | null;
   requirements?: string | null;
   status: string;
@@ -2282,6 +2288,7 @@ export interface CandidateApplication {
   jobOpeningId: string;
   stage: string;
   jobOpening?: { id: string; title: string } | null;
+  screeningResult?: { skillsFound?: unknown; matchScore?: number | null } | null;
   createdAt: string;
 }
 
@@ -2338,6 +2345,9 @@ export function createJobOpening(body: {
   departmentName?: string;
   hiringManagerId?: string;
   recruiterId?: string;
+  location?: string;
+  workplaceType?: string;
+  employmentType?: string;
   description?: string;
   requirements?: string;
 }) {
@@ -2347,8 +2357,12 @@ export function createJobOpening(body: {
 export function updateJobOpening(id: string, body: Partial<{
   title: string;
   departmentId: string | null;
+  departmentName: string | null;
   hiringManagerId: string | null;
   recruiterId: string | null;
+  location: string | null;
+  workplaceType: string | null;
+  employmentType: string | null;
   description: string | null;
   requirements: string | null;
   status: string;
@@ -2985,4 +2999,120 @@ export async function exportPayrollPeriodCsv(periodId: string): Promise<Blob> {
     throw new Error(`Export error ${response.status}: ${text}`);
   }
   return response.blob();
+}
+
+// ── Platform administration ────────────────────────────────────────────────
+// Cross-organisation endpoints under /platform (proxied to the organisation
+// service). Only usable while the active organisation is the dedicated
+// platform org — the backend guard verifies both the org context and the
+// admin.system.settings permission.
+
+export interface PlatformOverview {
+  organisations: number;
+  members: number;
+  pendingInvitations: number;
+  recentOrganisations: number;
+}
+
+export interface PlatformOrganisationSummary {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  memberCount: number;
+  pendingInvitations: number;
+  owner: { id: string; email: string | null; name: string | null; active: boolean | null };
+}
+
+export interface PlatformOrganisationList {
+  total: number;
+  organisations: PlatformOrganisationSummary[];
+}
+
+export interface PlatformOrganisationDetail {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  updatedAt: string;
+  owner: {
+    id: string;
+    email: string | null;
+    name: string | null;
+    active: boolean | null;
+    emailVerified: boolean | null;
+  };
+  counts: {
+    members: number;
+    workspaces: number;
+    roles: number;
+    clients: number;
+    tickets: number;
+    assets: number;
+    invitations: Record<string, number>;
+  };
+}
+
+export interface PlatformMember {
+  membershipId: string;
+  userId: string;
+  isOwner: boolean;
+  isGuest: boolean;
+  role: { id: string; name: string; category: string } | null;
+  extraRoles: { id: string; name: string }[];
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  active: boolean | null;
+  emailVerified: boolean | null;
+  userCreatedAt: string | null;
+  joinedAt: string;
+}
+
+export interface PlatformMemberList {
+  total: number;
+  members: PlatformMember[];
+}
+
+export interface PlatformInvitation {
+  id: string;
+  email: string;
+  status: string;
+  roleName: string | null;
+  userId: string | null;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export function getPlatformOverview() {
+  return apiRequest<PlatformOverview>("/platform/overview");
+}
+
+export function getPlatformOrganisations(params?: { search?: string; take?: number; skip?: number }) {
+  const query = new URLSearchParams();
+  if (params?.search) query.set("search", params.search);
+  if (params?.take) query.set("take", String(params.take));
+  if (params?.skip) query.set("skip", String(params.skip));
+  const qs = query.toString();
+  return apiRequest<PlatformOrganisationList>(`/platform/organisations${qs ? `?${qs}` : ""}`);
+}
+
+export function getPlatformOrganisation(id: string) {
+  return apiRequest<PlatformOrganisationDetail>(`/platform/organisations/${encodeURIComponent(id)}`);
+}
+
+export function getPlatformOrganisationMembers(id: string, params?: { take?: number; skip?: number }) {
+  const query = new URLSearchParams();
+  if (params?.take) query.set("take", String(params.take));
+  if (params?.skip) query.set("skip", String(params.skip));
+  const qs = query.toString();
+  return apiRequest<PlatformMemberList>(
+    `/platform/organisations/${encodeURIComponent(id)}/members${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export function getPlatformOrganisationInvitations(id: string) {
+  return apiRequest<{ invitations: PlatformInvitation[] }>(
+    `/platform/organisations/${encodeURIComponent(id)}/invitations`,
+  );
 }

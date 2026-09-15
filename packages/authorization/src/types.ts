@@ -30,6 +30,8 @@ export interface AuthorizableUser {
   roleCategory?: string;
   /** All role ids the user holds in this organisation (primary + extra). */
   roleIds?: string[];
+  /** True when the context organisation is the dedicated platform org (PLATFORM_ORGANISATION_SLUG). */
+  isPlatformOrganisation?: boolean;
 }
 
 export interface ScopeContext {

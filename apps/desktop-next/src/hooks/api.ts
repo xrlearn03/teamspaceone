@@ -2211,3 +2211,45 @@ export function useMarkPayrollPeriodPaid() {
     onSuccess: () => invalidatePayroll(client),
   });
 }
+
+// ── Platform administration ────────────────────────────────────────────────
+
+export function usePlatformOverview(enabled = true) {
+  return useQuery({
+    queryKey: ["platform", "overview", orgId()],
+    queryFn: api.getPlatformOverview,
+    enabled,
+  });
+}
+
+export function usePlatformOrganisations(search?: string, enabled = true) {
+  return useQuery({
+    queryKey: ["platform", "organisations", orgId(), search ?? ""],
+    queryFn: () => api.getPlatformOrganisations({ search, take: 100 }),
+    enabled,
+  });
+}
+
+export function usePlatformOrganisation(id?: string, enabled = true) {
+  return useQuery({
+    queryKey: ["platform", "organisation", id],
+    queryFn: () => api.getPlatformOrganisation(id as string),
+    enabled: enabled && Boolean(id),
+  });
+}
+
+export function usePlatformOrganisationMembers(id?: string, enabled = true) {
+  return useQuery({
+    queryKey: ["platform", "organisation-members", id],
+    queryFn: () => api.getPlatformOrganisationMembers(id as string, { take: 100 }),
+    enabled: enabled && Boolean(id),
+  });
+}
+
+export function usePlatformOrganisationInvitations(id?: string, enabled = true) {
+  return useQuery({
+    queryKey: ["platform", "organisation-invitations", id],
+    queryFn: () => api.getPlatformOrganisationInvitations(id as string),
+    enabled: enabled && Boolean(id),
+  });
+}

@@ -40,6 +40,9 @@ export interface CreateJobInput {
   departmentName?: string;
   hiringManagerId?: string;
   recruiterId?: string;
+  location?: string;
+  workplaceType?: string;
+  employmentType?: string;
   description?: string;
   requirements?: string;
 }
@@ -345,6 +348,9 @@ export class InterviewService {
         departmentName: dto.departmentName ?? null,
         hiringManagerId: dto.hiringManagerId ?? null,
         recruiterId: dto.recruiterId ?? actorId,
+        location: dto.location ?? null,
+        workplaceType: dto.workplaceType ?? null,
+        employmentType: dto.employmentType ?? null,
         description: dto.description ?? null,
         requirements: dto.requirements ?? null,
         createdBy: actorId,
@@ -364,6 +370,9 @@ export class InterviewService {
         ...(dto.departmentName !== undefined ? { departmentName: dto.departmentName } : {}),
         ...(dto.hiringManagerId !== undefined ? { hiringManagerId: dto.hiringManagerId } : {}),
         ...(dto.recruiterId !== undefined ? { recruiterId: dto.recruiterId } : {}),
+        ...(dto.location !== undefined ? { location: dto.location } : {}),
+        ...(dto.workplaceType !== undefined ? { workplaceType: dto.workplaceType } : {}),
+        ...(dto.employmentType !== undefined ? { employmentType: dto.employmentType } : {}),
         ...(dto.description !== undefined ? { description: dto.description } : {}),
         ...(dto.requirements !== undefined ? { requirements: dto.requirements } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
@@ -378,7 +387,12 @@ export class InterviewService {
     return this.prisma.candidate.findMany({
       where: { ...where, ...(status ? { status } : {}) },
       include: {
-        applications: { include: { jobOpening: { select: { id: true, title: true } } } },
+        applications: {
+          include: {
+            jobOpening: { select: { id: true, title: true } },
+            screeningResult: { select: { skillsFound: true, matchScore: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });

@@ -18,23 +18,14 @@ import { Button } from "@teamspace-one/ui/button";
 import { EmptyState } from "@teamspace-one/ui/empty-state";
 import { Skeleton } from "@teamspace-one/ui/skeleton";
 import {
-  useCandidates,
   useHiringDecisions,
   useInterviewOverview,
-  useInterviewSessions,
-  useJobOpenings,
   usePendingEvaluations,
 } from "@/hooks/api";
-import {
-  CreateCandidateDialog,
-  CreateJobDialog,
-  CreateSessionDialog,
-} from "@/components/interview/create-dialogs";
-import { ResumeUploadButton } from "@/components/interview/resume-upload";
-import { RunScreeningButton } from "@/components/interview/screening-dialog";
-import { AiInterviewButton } from "@/components/interview/ai-interview-dialog";
-import { HiringDecisionButton } from "@/components/interview/hiring-decision-dialog";
 import { TemplatesSection } from "@/components/interview/templates-panel";
+import { TalentPool } from "@/components/interview/talent-pool";
+import { JobsBoard } from "@/components/interview/jobs-board";
+import { InterviewsBoard } from "@/components/interview/interviews-board";
 
 type TabId = "overview" | "jobs" | "candidates" | "sessions" | "evaluations" | "decisions" | "templates";
 
@@ -134,161 +125,6 @@ function OverviewSection() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function JobsSection() {
-  const { data: jobs, isLoading } = useJobOpenings();
-  const { can } = usePermissions();
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <CardTitle className="text-sm">Job openings</CardTitle>
-          <Badge variant="secondary">{jobs?.length ?? 0}</Badge>
-        </div>
-        {can("interview.job.create") ? <CreateJobDialog /> : null}
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <SectionSkeletonRows />
-        ) : jobs && jobs.length > 0 ? (
-          <div className="divide-y">
-            {jobs.map((j) => (
-              <div key={j.id} className="flex items-center justify-between py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-text">{j.title}</p>
-                  <p className="truncate text-xs text-text-muted">{j.departmentName ?? "—"}</p>
-                </div>
-                <Badge variant={j.status === "open" ? "success" : "secondary"}>{j.status}</Badge>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState icon={Briefcase} title="No job openings" />
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function CandidatesSection() {
-  const { data: candidates, isLoading } = useCandidates();
-  const { data: jobs } = useJobOpenings();
-  const { can } = usePermissions();
-  const canRunScreening = can("interview.screening.run");
-  const canMakeDecision = can("interview.decision.make");
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <CardTitle className="text-sm">Candidates</CardTitle>
-          <Badge variant="secondary">{candidates?.length ?? 0}</Badge>
-        </div>
-        {can("interview.candidate.create") ? <CreateCandidateDialog jobs={jobs ?? []} /> : null}
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <SectionSkeletonRows />
-        ) : candidates && candidates.length > 0 ? (
-          <div className="divide-y">
-            {candidates.map((c) => (
-              <div key={c.id} className="py-2">
-                <div className="flex items-center justify-between">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm text-text">{c.name}</p>
-                    <p className="truncate text-xs text-text-muted">{c.email}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <ResumeUploadButton candidateId={c.id} hasResume={Boolean(c.resumeFileId)} />
-                    <Badge variant="secondary">{c.status}</Badge>
-                  </div>
-                </div>
-                {c.applications && c.applications.length > 0 && (
-                  <div className="mt-1.5 space-y-1">
-                    {c.applications.map((a) => (
-                      <div
-                        key={a.id}
-                        className="flex items-center justify-between rounded-md border px-2 py-1.5"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-xs text-text">
-                            {a.jobOpening?.title ?? a.jobOpeningId}
-                          </p>
-                          <p className="text-xs text-text-muted">{a.stage}</p>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {canRunScreening && (
-                            <RunScreeningButton applicationId={a.id} hasResume={Boolean(c.resumeFileId)} />
-                          )}
-                          {canMakeDecision && (
-                            <HiringDecisionButton applicationId={a.id} candidateName={c.name} />
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState icon={Users} title="No candidates" />
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function SessionsSection() {
-  const { data: sessions, isLoading } = useInterviewSessions();
-  const { data: candidates } = useCandidates();
-  const { data: jobs } = useJobOpenings();
-  const { can } = usePermissions();
-  const canConduct = can("interview.interview.conduct");
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <CardTitle className="text-sm">Interview sessions</CardTitle>
-          <Badge variant="secondary">{sessions?.length ?? 0}</Badge>
-        </div>
-        {can("interview.interview.schedule") ? (
-          <CreateSessionDialog candidates={candidates ?? []} jobs={jobs ?? []} />
-        ) : null}
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <SectionSkeletonRows />
-        ) : sessions && sessions.length > 0 ? (
-          <div className="divide-y">
-            {sessions.map((s) => (
-              <div key={s.id} className="flex items-center justify-between py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-text">{s.candidate?.name ?? "Interview"}</p>
-                  <p className="truncate text-xs text-text-muted">
-                    {s.jobOpening?.title ?? s.interviewType}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 text-right">
-                  <div>
-                    <Badge variant={s.status === "scheduled" ? "default" : "secondary"}>{s.status}</Badge>
-                    <p className="mt-0.5 text-xs text-text-muted">
-                      {s.scheduledAt ? new Date(s.scheduledAt).toLocaleString() : "Unscheduled"}
-                    </p>
-                  </div>
-                  {canConduct && (
-                    <AiInterviewButton sessionId={s.id} candidateName={s.candidate?.name} />
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState icon={CalendarClock} title="No interview sessions" />
-        )}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -451,15 +287,9 @@ export function InterviewScreen() {
       </header>
       <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
         {activeTab === "overview" && <OverviewSection />}
-        {activeTab === "jobs" && (
-          <SectionShell><JobsSection /></SectionShell>
-        )}
-        {activeTab === "candidates" && (
-          <SectionShell><CandidatesSection /></SectionShell>
-        )}
-        {activeTab === "sessions" && (
-          <SectionShell><SessionsSection /></SectionShell>
-        )}
+        {activeTab === "jobs" && <JobsBoard />}
+        {activeTab === "candidates" && <TalentPool />}
+        {activeTab === "sessions" && <InterviewsBoard />}
         {activeTab === "evaluations" && (
           <SectionShell><EvaluationsSection /></SectionShell>
         )}

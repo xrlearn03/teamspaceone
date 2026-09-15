@@ -94,6 +94,24 @@ export class AuthController {
   }
 
   /**
+   * Service-to-service only: batch-fetch user records by id
+   * (`?ids=a,b,c`, capped at 100).
+   */
+  @Get('internal/users')
+  async internalFindMany(
+    @Query('ids') ids: string | undefined,
+    @Headers('x-internal-api-key') internalApiKey?: string,
+    @Headers('x-internal-caller') internalCaller?: string,
+  ) {
+    this.assertInternal(internalApiKey, internalCaller);
+    const idList = (ids ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return this.auth.findMany(idList);
+  }
+
+  /**
    * Service-to-service only: fetch a user record by id.
    */
   @Get('internal/users/:id')

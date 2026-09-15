@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma, type PrismaClient, type Role, type OrganisationMembership } from '#prisma';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -166,6 +167,8 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
       ...STAFF_BASELINE_ALLOW,
       'interview.candidate.*',
       'interview.job.view',
+      'interview.job.create',
+      'interview.job.edit',
       'interview.screening.run',
       'interview.screening.view',
       'interview.template.view',
@@ -448,7 +451,10 @@ export function expandPermissions(
 export class AuthorizationService {
   private readonly defaultRoles = DEFAULT_ROLES;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   getDefaultRoleNames(): string[] {
     return this.defaultRoles.map((r) => r.name);
@@ -568,6 +574,9 @@ export class AuthorizationService {
 
     if (!org) return null;
 
+    const platformSlug = this.config.get<string>('PLATFORM_ORGANISATION_SLUG');
+    const isPlatformOrganisation = Boolean(platformSlug) && org.slug === platformSlug;
+
     // Organisation owner bypasses role checks but is still scoped to the org.
     if (org.ownerId === userId) {
       return {
@@ -578,6 +587,7 @@ export class AuthorizationService {
         isSuperAdmin: true,
         roleName: 'Organisation Super Admin',
         roleCategory: 'administrative',
+        isPlatformOrganisation,
       };
     }
 
@@ -625,6 +635,7 @@ export class AuthorizationService {
         membership.roleId,
         ...membership.userRoles.map((ur) => ur.roleId),
       ].filter(Boolean),
+      isPlatformOrganisation,
     };
   }
 
